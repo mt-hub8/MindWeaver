@@ -30,3 +30,6 @@ Spring Web
 Spring Data JPA
 MySQL
 Lombok
+
+```text
+Update README for V0.1
