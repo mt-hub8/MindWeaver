@@ -23,13 +23,3 @@ Request:
 POST /tasks
 Content-Type: application/json
 
-## Tech Stack
-Java 21
-Spring Boot
-Spring Web
-Spring Data JPA
-MySQL
-Lombok
-
-```text
-Update README for V0.1
