@@ -27,6 +27,11 @@ public class TaskExecutionService {
                 return;
             }
 
+            if (!taskService.isTaskRunning(taskId)) {
+                log.info("Task is no longer running, skip marking success, taskId={}", taskId);
+                return;
+            }
+
             taskService.updateTaskStatus(
                     taskId,
                     TaskStatus.SUCCESS,
@@ -37,6 +42,11 @@ public class TaskExecutionService {
         } catch (Exception e) {
             if (taskService.isTaskCancelled(taskId)) {
                 log.info("Task execution cancelled, taskId={}", taskId);
+                return;
+            }
+
+            if (!taskService.isTaskRunning(taskId)) {
+                log.info("Task is no longer running, skip failure handling, taskId={}", taskId);
                 return;
             }
 

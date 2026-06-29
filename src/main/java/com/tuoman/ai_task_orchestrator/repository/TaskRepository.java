@@ -13,4 +13,9 @@ public interface TaskRepository extends JpaRepository<TaskEntity, Long> {
             TaskStatus status,
             LocalDateTime now
     );
+
+    List<TaskEntity> findTop20ByStatusAndTimeoutAtLessThanEqualOrderByTimeoutAtAsc(
+            TaskStatus status,
+            LocalDateTime now
+    );
 }

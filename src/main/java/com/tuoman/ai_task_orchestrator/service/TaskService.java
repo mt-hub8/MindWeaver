@@ -237,6 +237,49 @@ public class TaskService {
         return task.getStatus() == TaskStatus.CANCELLED;
     }
 
+    @Transactional(readOnly = true)
+    public boolean isTaskRunning(Long taskId) {
+        TaskEntity task = findTaskOrThrow(taskId);
+        return task.getStatus() == TaskStatus.RUNNING;
+    }
+
+    @Transactional
+    public TaskDetailResponse markTaskTimedOut(Long taskId) {
+        TaskEntity task = findTaskOrThrow(taskId);
+        TaskStatus currentStatus = task.getStatus();
+
+        if (currentStatus != TaskStatus.RUNNING) {
+            return toTaskDetailResponse(task);
+        }
+
+        TaskStatus targetStatus = TaskStatus.FAILED;
+
+        if (!taskStateMachine.canTransit(currentStatus, targetStatus)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "非法状态流转：" + currentStatus + " -> " + targetStatus
+            );
+        }
+
+        String errorMessage = "任务执行超时";
+
+        task.setStatus(targetStatus);
+        task.setErrorMessage(errorMessage);
+        task.setNextRetryAt(null);
+
+        TaskEntity savedTask = taskRepository.save(task);
+
+        recordTaskEvent(
+                savedTask.getId(),
+                TaskEventType.STATUS_CHANGED,
+                currentStatus,
+                targetStatus,
+                errorMessage
+        );
+
+        return toTaskDetailResponse(savedTask);
+    }
+
     private String normalizeErrorMessage(String errorMessage) {
         String normalizedErrorMessage = errorMessage;
 
