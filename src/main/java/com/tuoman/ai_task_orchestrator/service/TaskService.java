@@ -92,6 +92,38 @@ public class TaskService {
     }
 
     @Transactional
+    public boolean tryStartTaskExecution(Long taskId, String message) {
+        TaskEntity task = findTaskOrThrow(taskId);
+        TaskStatus currentStatus = task.getStatus();
+        TaskStatus targetStatus = TaskStatus.RUNNING;
+
+        if (currentStatus != TaskStatus.PENDING && currentStatus != TaskStatus.RETRY_PENDING) {
+            return false;
+        }
+
+        if (!taskStateMachine.canTransit(currentStatus, targetStatus)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "非法状态流转：" + currentStatus + " -> " + targetStatus
+            );
+        }
+
+        task.setStatus(targetStatus);
+
+        TaskEntity savedTask = taskRepository.save(task);
+
+        recordTaskEvent(
+                savedTask.getId(),
+                TaskEventType.STATUS_CHANGED,
+                currentStatus,
+                targetStatus,
+                message
+        );
+
+        return true;
+    }
+
+    @Transactional
     public TaskDetailResponse markTaskFailed(Long taskId, String errorMessage) {
         TaskEntity task = findTaskOrThrow(taskId);
         TaskStatus currentStatus = task.getStatus();

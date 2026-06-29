@@ -16,11 +16,11 @@ public class TaskExecutionService {
         log.info("Start executing task, taskId={}", taskId);
 
         try {
-            taskService.updateTaskStatus(
-                    taskId,
-                    TaskStatus.RUNNING,
-                    "任务开始执行"
-            );
+            boolean started = taskService.tryStartTaskExecution(taskId, "任务开始执行");
+            if (!started) {
+                log.info("Ignore duplicated task execution message, taskId={}", taskId);
+                return;
+            }
 
             simulateTaskExecution(taskId);
 
