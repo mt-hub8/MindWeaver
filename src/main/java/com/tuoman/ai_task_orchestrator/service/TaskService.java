@@ -198,7 +198,9 @@ public class TaskService {
         TaskStatus currentStatus = task.getStatus();
         TaskStatus targetStatus = TaskStatus.CANCELLED;
 
-        if (currentStatus != TaskStatus.PENDING && currentStatus != TaskStatus.RETRY_PENDING) {
+        if (currentStatus != TaskStatus.PENDING
+                && currentStatus != TaskStatus.RETRY_PENDING
+                && currentStatus != TaskStatus.RUNNING) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "当前任务状态不允许取消");
         }
 
@@ -223,6 +225,12 @@ public class TaskService {
         );
 
         return toTaskDetailResponse(savedTask);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isTaskCancelled(Long taskId) {
+        TaskEntity task = findTaskOrThrow(taskId);
+        return task.getStatus() == TaskStatus.CANCELLED;
     }
 
     private String normalizeErrorMessage(String errorMessage) {

@@ -22,7 +22,10 @@ public class TaskExecutionService {
                 return;
             }
 
-            simulateTaskExecution(taskId);
+            boolean completed = simulateTaskExecution(taskId);
+            if (!completed) {
+                return;
+            }
 
             taskService.updateTaskStatus(
                     taskId,
@@ -32,6 +35,11 @@ public class TaskExecutionService {
 
             log.info("Finish executing task, taskId={}", taskId);
         } catch (Exception e) {
+            if (taskService.isTaskCancelled(taskId)) {
+                log.info("Task execution cancelled, taskId={}", taskId);
+                return;
+            }
+
             log.error("Task execution failed, taskId={}", taskId, e);
             try {
                 taskService.markTaskRetryPending(taskId, e.getMessage());
@@ -43,14 +51,24 @@ public class TaskExecutionService {
         }
     }
 
-    private void simulateTaskExecution(Long taskId) {
+    private boolean simulateTaskExecution(Long taskId) {
         try {
             log.info("Simulating task execution, taskId={}", taskId);
             String prompt = taskService.getTaskById(taskId).getPrompt();
+
+            for (int i = 0; i < 5; i++) {
+                Thread.sleep(1000);
+                if (taskService.isTaskCancelled(taskId)) {
+                    log.info("Task execution cancelled, taskId={}", taskId);
+                    return false;
+                }
+            }
+
             if (prompt != null && (prompt.contains("fail") || prompt.contains("失败"))) {
                 throw new RuntimeException("模拟任务执行失败");
             }
-            Thread.sleep(3000);
+
+            return true;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("任务执行被中断", e);
