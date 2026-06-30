@@ -2,7 +2,11 @@ package com.tuoman.ai_task_orchestrator.controller;
 
 import com.tuoman.ai_task_orchestrator.dto.DocumentChunkResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentDetailResponse;
+import com.tuoman.ai_task_orchestrator.dto.DocumentEmbeddingResponse;
+import com.tuoman.ai_task_orchestrator.dto.DocumentSearchRequest;
+import com.tuoman.ai_task_orchestrator.dto.DocumentSearchResultResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentUploadResponse;
+import com.tuoman.ai_task_orchestrator.service.DocumentEmbeddingService;
 import com.tuoman.ai_task_orchestrator.service.DocumentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +21,8 @@ public class DocumentController {
 
     private final DocumentService documentService;
 
+    private final DocumentEmbeddingService documentEmbeddingService;
+
     @PostMapping
     public DocumentUploadResponse uploadDocument(@RequestParam("file") MultipartFile file) {
         return documentService.uploadDocument(file);
@@ -30,5 +36,15 @@ public class DocumentController {
     @GetMapping("/{documentId}/chunks")
     public List<DocumentChunkResponse> getDocumentChunks(@PathVariable Long documentId) {
         return documentService.getDocumentChunks(documentId);
+    }
+
+    @PostMapping("/{documentId}/embeddings")
+    public DocumentEmbeddingResponse embedDocument(@PathVariable Long documentId) {
+        return documentEmbeddingService.embedDocument(documentId);
+    }
+
+    @PostMapping("/search")
+    public List<DocumentSearchResultResponse> search(@RequestBody DocumentSearchRequest request) {
+        return documentEmbeddingService.search(request);
     }
 }
