@@ -75,6 +75,17 @@ public class TaskExecutionService {
 
             log.info("Calling LlmClient, taskId={}, model={}", taskId, request.getModel());
             LlmResponse response = llmClient.generate(request);
+            if (response != null) {
+                taskService.saveLlmMetadata(
+                        taskId,
+                        response.getProvider(),
+                        response.getModel(),
+                        response.getPromptTokenCount(),
+                        response.getCompletionTokenCount(),
+                        response.getTotalTokenCount(),
+                        response.getLatencyMs()
+                );
+            }
 
             if (!response.isSuccess()) {
                 log.warn("LLM execution returned failure, taskId={}, errorMessage={}",

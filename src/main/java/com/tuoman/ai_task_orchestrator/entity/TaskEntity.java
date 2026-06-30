@@ -54,6 +54,21 @@ public class TaskEntity {
     @Column(name = "prompt_template_code", length = 100)
     private String promptTemplateCode;
 
+    @Column(name = "llm_provider", length = 100)
+    private String llmProvider;
+
+    @Column(name = "prompt_token_count")
+    private Integer promptTokenCount;
+
+    @Column(name = "completion_token_count")
+    private Integer completionTokenCount;
+
+    @Column(name = "total_token_count")
+    private Integer totalTokenCount;
+
+    @Column(name = "llm_latency_ms")
+    private Long llmLatencyMs;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 

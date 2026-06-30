@@ -36,6 +36,16 @@ public class TaskDetailResponse {
 
     private String promptTemplateCode;
 
+    private String llmProvider;
+
+    private Integer promptTokenCount;
+
+    private Integer completionTokenCount;
+
+    private Integer totalTokenCount;
+
+    private Long llmLatencyMs;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

@@ -199,6 +199,26 @@ public class TaskService {
     }
 
     @Transactional
+    public void saveLlmMetadata(
+            Long taskId,
+            String llmProvider,
+            String llmModel,
+            Integer promptTokenCount,
+            Integer completionTokenCount,
+            Integer totalTokenCount,
+            Long llmLatencyMs
+    ) {
+        TaskEntity task = findTaskOrThrow(taskId);
+        task.setLlmProvider(llmProvider);
+        task.setLlmModel(llmModel);
+        task.setPromptTokenCount(promptTokenCount);
+        task.setCompletionTokenCount(completionTokenCount);
+        task.setTotalTokenCount(totalTokenCount);
+        task.setLlmLatencyMs(llmLatencyMs);
+        taskRepository.save(task);
+    }
+
+    @Transactional
     public TaskDetailResponse markTaskRetryPending(Long taskId, String errorMessage) {
         TaskEntity task = findTaskOrThrow(taskId);
         TaskStatus currentStatus = task.getStatus();
@@ -371,6 +391,11 @@ public class TaskService {
                 task.getLlmModel(),
                 task.getRenderedPrompt(),
                 task.getPromptTemplateCode(),
+                task.getLlmProvider(),
+                task.getPromptTokenCount(),
+                task.getCompletionTokenCount(),
+                task.getTotalTokenCount(),
+                task.getLlmLatencyMs(),
                 task.getCreatedAt(),
                 task.getUpdatedAt()
         );

@@ -11,9 +11,19 @@ public class LlmResponse {
 
     private String model;
 
+    private String provider;
+
     private String content;
 
     private boolean success;
 
     private String errorMessage;
+
+    private Integer promptTokenCount;
+
+    private Integer completionTokenCount;
+
+    private Integer totalTokenCount;
+
+    private Long latencyMs;
 }
