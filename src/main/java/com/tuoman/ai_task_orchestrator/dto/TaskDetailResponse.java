@@ -28,6 +28,10 @@ public class TaskDetailResponse {
 
     private LocalDateTime timeoutAt;
 
+    private String resultContent;
+
+    private String llmModel;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

@@ -159,6 +159,38 @@ public class TaskService {
     }
 
     @Transactional
+    public TaskDetailResponse markTaskSucceeded(Long taskId, String resultContent, String llmModel) {
+        TaskEntity task = findTaskOrThrow(taskId);
+        TaskStatus currentStatus = task.getStatus();
+        TaskStatus targetStatus = TaskStatus.SUCCESS;
+
+        if (!taskStateMachine.canTransit(currentStatus, targetStatus)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "非法状态流转：" + currentStatus + " -> " + targetStatus
+            );
+        }
+
+        task.setStatus(targetStatus);
+        task.setResultContent(resultContent);
+        task.setLlmModel(llmModel);
+        task.setNextRetryAt(null);
+        task.setErrorMessage(null);
+
+        TaskEntity savedTask = taskRepository.save(task);
+
+        recordTaskEvent(
+                savedTask.getId(),
+                TaskEventType.STATUS_CHANGED,
+                currentStatus,
+                targetStatus,
+                "LLM 任务执行成功"
+        );
+
+        return toTaskDetailResponse(savedTask);
+    }
+
+    @Transactional
     public TaskDetailResponse markTaskRetryPending(Long taskId, String errorMessage) {
         TaskEntity task = findTaskOrThrow(taskId);
         TaskStatus currentStatus = task.getStatus();
@@ -327,6 +359,8 @@ public class TaskService {
                 task.getNextRetryAt(),
                 task.getTimeoutSeconds(),
                 task.getTimeoutAt(),
+                task.getResultContent(),
+                task.getLlmModel(),
                 task.getCreatedAt(),
                 task.getUpdatedAt()
         );

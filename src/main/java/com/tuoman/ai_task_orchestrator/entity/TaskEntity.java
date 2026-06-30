@@ -42,6 +42,12 @@ public class TaskEntity {
     @Column(name = "timeout_at")
     private LocalDateTime timeoutAt;
 
+    @Column(name = "result_content", columnDefinition = "TEXT")
+    private String resultContent;
+
+    @Column(name = "llm_model", length = 100)
+    private String llmModel;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 

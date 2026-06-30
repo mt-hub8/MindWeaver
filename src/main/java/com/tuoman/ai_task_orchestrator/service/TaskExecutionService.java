@@ -1,6 +1,5 @@
 package com.tuoman.ai_task_orchestrator.service;
 
-import com.tuoman.ai_task_orchestrator.enums.TaskStatus;
 import com.tuoman.ai_task_orchestrator.llm.LlmClient;
 import com.tuoman.ai_task_orchestrator.llm.LlmRequest;
 import com.tuoman.ai_task_orchestrator.llm.LlmResponse;
@@ -66,11 +65,7 @@ public class TaskExecutionService {
                 return;
             }
 
-            taskService.updateTaskStatus(
-                    taskId,
-                    TaskStatus.SUCCESS,
-                    "LLM 任务执行成功"
-            );
+            taskService.markTaskSucceeded(taskId, response.getContent(), response.getModel());
 
             log.info("Finish executing task, taskId={}", taskId);
         } catch (Exception e) {
