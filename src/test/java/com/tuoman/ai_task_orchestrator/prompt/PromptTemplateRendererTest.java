@@ -65,4 +65,21 @@ class PromptTemplateRendererTest {
 
         assertEquals("Template content must not be blank", exception.getMessage());
     }
+
+    @Test
+    void render_shouldKeepTemplateWithoutVariables() {
+        String result = renderer.render("plain template", Map.of());
+
+        assertEquals("plain template", result);
+    }
+
+    @Test
+    void render_shouldReplaceChinesePrompt() {
+        String result = renderer.render(
+                "用户输入：{{prompt}}",
+                Map.of("prompt", "请总结退款政策")
+        );
+
+        assertEquals("用户输入：请总结退款政策", result);
+    }
 }

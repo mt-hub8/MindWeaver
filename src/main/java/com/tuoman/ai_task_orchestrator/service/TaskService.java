@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -97,35 +98,52 @@ public class TaskService {
     @Transactional
     public boolean tryStartTaskExecution(Long taskId, String message) {
         TaskEntity task = findTaskOrThrow(taskId);
-        TaskStatus currentStatus = task.getStatus();
         TaskStatus targetStatus = TaskStatus.RUNNING;
+        int timeoutSeconds = task.getTimeoutSeconds() == null ? 30 : task.getTimeoutSeconds();
+        LocalDateTime timeoutAt = LocalDateTime.now().plusSeconds(timeoutSeconds);
+        TaskStatus claimedFromStatus = claimTaskForExecution(taskId, targetStatus, timeoutAt);
 
-        if (currentStatus != TaskStatus.PENDING && currentStatus != TaskStatus.RETRY_PENDING) {
+        if (claimedFromStatus == null) {
             return false;
         }
 
-        if (!taskStateMachine.canTransit(currentStatus, targetStatus)) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "非法状态流转：" + currentStatus + " -> " + targetStatus
-            );
-        }
-
-        task.setStatus(targetStatus);
-        int timeoutSeconds = task.getTimeoutSeconds() == null ? 30 : task.getTimeoutSeconds();
-        task.setTimeoutAt(LocalDateTime.now().plusSeconds(timeoutSeconds));
-
-        TaskEntity savedTask = taskRepository.save(task);
-
         recordTaskEvent(
-                savedTask.getId(),
+                taskId,
                 TaskEventType.STATUS_CHANGED,
-                currentStatus,
+                claimedFromStatus,
                 targetStatus,
                 message
         );
 
         return true;
+    }
+
+    private TaskStatus claimTaskForExecution(Long taskId, TaskStatus targetStatus, LocalDateTime timeoutAt) {
+        if (taskStateMachine.canTransit(TaskStatus.PENDING, targetStatus)) {
+            int updated = taskRepository.claimTaskForExecution(
+                    taskId,
+                    targetStatus,
+                    timeoutAt,
+                    List.of(TaskStatus.PENDING)
+            );
+            if (updated == 1) {
+                return TaskStatus.PENDING;
+            }
+        }
+
+        if (taskStateMachine.canTransit(TaskStatus.RETRY_PENDING, targetStatus)) {
+            int updated = taskRepository.claimTaskForExecution(
+                    taskId,
+                    targetStatus,
+                    timeoutAt,
+                    List.of(TaskStatus.RETRY_PENDING)
+            );
+            if (updated == 1) {
+                return TaskStatus.RETRY_PENDING;
+            }
+        }
+
+        return null;
     }
 
     @Transactional

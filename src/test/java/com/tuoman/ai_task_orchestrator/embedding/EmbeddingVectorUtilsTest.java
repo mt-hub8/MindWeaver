@@ -50,6 +50,13 @@ class EmbeddingVectorUtilsTest {
         )).isEqualTo(0.0);
     }
 
+    @Test
+    void shouldHandleNegativeVectors() {
+        List<Double> vector = EmbeddingVectorUtils.l2Normalize(List.of(-1.0, -2.0, 0.0));
+
+        assertThat(EmbeddingVectorUtils.cosineSimilarity(vector, vector)).isCloseTo(1.0, within(0.000001));
+    }
+
     private org.assertj.core.data.Offset<Double> within(double value) {
         return org.assertj.core.data.Offset.offset(value);
     }

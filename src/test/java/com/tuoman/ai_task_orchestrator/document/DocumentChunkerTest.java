@@ -76,4 +76,40 @@ class DocumentChunkerTest {
     void shouldReturnEmptyChunksForBlankText() {
         assertThat(documentChunker.chunk("   ")).isEmpty();
     }
+
+    @Test
+    void shouldSplitChinesePunctuationWithoutBlankChunks() {
+        String content = ("这是第一句。这是第二句？这是第三句！").repeat(80);
+
+        List<DocumentChunkResult> chunks = documentChunker.chunk(content);
+
+        assertThat(chunks).hasSizeGreaterThan(1);
+        assertThat(chunks).allSatisfy(chunk -> {
+            assertThat(chunk.getContent()).isNotBlank();
+            assertThat(chunk.getChunkStrategy()).isNotBlank();
+        });
+    }
+
+    @Test
+    void shouldSplitEnglishPunctuationWithoutBlankChunks() {
+        String content = ("This is sentence one. Is this sentence two? This is sentence three! ").repeat(80);
+
+        List<DocumentChunkResult> chunks = documentChunker.chunk(content);
+
+        assertThat(chunks).hasSizeGreaterThan(1);
+        assertThat(chunks).allSatisfy(chunk -> assertThat(chunk.getContent()).isNotBlank());
+    }
+
+    @Test
+    void shouldCreateValidOffsets() {
+        String content = ("offset test paragraph.\n\n").repeat(100);
+
+        List<DocumentChunkResult> chunks = documentChunker.chunk(content);
+
+        assertThat(chunks).allSatisfy(chunk -> {
+            assertThat(chunk.getStartOffset()).isGreaterThanOrEqualTo(0);
+            assertThat(chunk.getEndOffset()).isGreaterThan(chunk.getStartOffset());
+            assertThat(chunk.getEndOffset()).isLessThanOrEqualTo(content.length());
+        });
+    }
 }

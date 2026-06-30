@@ -54,6 +54,30 @@ class MockEmbeddingClientTest {
         assertThat(relatedScore).isGreaterThan(unrelatedScore);
     }
 
+    @Test
+    void shouldTendToGenerateDifferentVectorsForDifferentInputs() {
+        EmbeddingResponse first = embed("refund policy");
+        EmbeddingResponse second = embed("task retry nextRetryAt");
+
+        assertThat(first.getVector()).isNotEqualTo(second.getVector());
+    }
+
+    @Test
+    void shouldGenerateNonZeroVectorForChineseText() {
+        EmbeddingResponse response = embed("退款政策需要七天内提交申请");
+
+        assertThat(response.getVector()).hasSize(128);
+        assertThat(response.getVector()).anyMatch(value -> value != 0.0);
+    }
+
+    @Test
+    void shouldGenerateNonZeroVectorForEnglishText() {
+        EmbeddingResponse response = embed("task retry policy");
+
+        assertThat(response.getVector()).hasSize(128);
+        assertThat(response.getVector()).anyMatch(value -> value != 0.0);
+    }
+
     private EmbeddingResponse embed(String text) {
         EmbeddingRequest request = new EmbeddingRequest();
         request.setText(text);
