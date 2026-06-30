@@ -2,6 +2,7 @@ package com.tuoman.ai_task_orchestrator.service;
 
 import com.tuoman.ai_task_orchestrator.dto.TaskDetailResponse;
 import com.tuoman.ai_task_orchestrator.entity.PromptTemplateEntity;
+import com.tuoman.ai_task_orchestrator.entity.TaskAttemptEntity;
 import com.tuoman.ai_task_orchestrator.llm.LlmClient;
 import com.tuoman.ai_task_orchestrator.llm.LlmRequest;
 import com.tuoman.ai_task_orchestrator.llm.LlmResponse;
@@ -25,6 +26,8 @@ public class TaskExecutionService {
 
     private final TaskOutputChunkService taskOutputChunkService;
 
+    private final TaskAttemptService taskAttemptService;
+
     private final LlmClient llmClient;
 
     private final ModelRouter modelRouter;
@@ -36,19 +39,35 @@ public class TaskExecutionService {
     public void executeTask(Long taskId) {
         log.info("Start executing task, taskId={}", taskId);
 
+        TaskAttemptEntity attempt = null;
+        String renderedPrompt = null;
+        LlmResponse response = null;
+
         try {
-            boolean started = taskService.tryStartTaskExecution(taskId, "任务开始执行");
+            boolean started = taskService.tryStartTaskExecution(taskId, "Task execution started");
             if (!started) {
+                log.info("task_execution_claim_conflict taskId={}", taskId);
                 log.info("Ignore duplicated task execution message, taskId={}", taskId);
                 return;
             }
 
+            attempt = taskAttemptService.createRunningAttempt(taskId);
+            log.info(
+                    "task_execution_claimed taskId={} attemptId={} attemptNo={} status={}",
+                    taskId,
+                    attempt.getId(),
+                    attempt.getAttemptNo(),
+                    attempt.getStatus()
+            );
+
             boolean completed = simulateExecutionDelay(taskId);
             if (!completed) {
+                taskAttemptService.markCancelled(attempt.getId(), "Task execution cancelled");
                 return;
             }
 
             if (!taskService.isTaskRunning(taskId)) {
+                taskAttemptService.markFailed(attempt.getId(), "Task is no longer running", response, renderedPrompt, DEFAULT_TEMPLATE_CODE);
                 log.info("Task is no longer running, skip LLM execution, taskId={}", taskId);
                 return;
             }
@@ -68,7 +87,7 @@ public class TaskExecutionService {
                     "taskId", String.valueOf(taskId),
                     "model", selectedModel
             );
-            String renderedPrompt = promptTemplateRenderer.render(template.getTemplateContent(), variables);
+            renderedPrompt = promptTemplateRenderer.render(template.getTemplateContent(), variables);
             log.info("Prompt template rendered, taskId={}, templateCode={}, renderedPromptLength={}",
                     taskId,
                     DEFAULT_TEMPLATE_CODE,
@@ -79,8 +98,12 @@ public class TaskExecutionService {
             request.setPrompt(renderedPrompt);
             request.setModel(selectedModel);
 
-            log.info("Calling LlmClient, taskId={}, model={}", taskId, request.getModel());
-            LlmResponse response = llmClient.generate(request);
+            log.info("Calling LlmClient, taskId={}, attemptId={}, attemptNo={}, model={}",
+                    taskId,
+                    attempt.getId(),
+                    attempt.getAttemptNo(),
+                    request.getModel());
+            response = llmClient.generate(request);
             if (response != null) {
                 taskService.saveLlmMetadata(
                         taskId,
@@ -91,24 +114,37 @@ public class TaskExecutionService {
                         response.getTotalTokenCount(),
                         response.getLatencyMs()
                 );
+                log.info(
+                        "llm_execution_completed taskId={} attemptId={} attemptNo={} status={} provider={} model={} latencyMs={} totalTokenCount={}",
+                        taskId,
+                        attempt.getId(),
+                        attempt.getAttemptNo(),
+                        response.isSuccess() ? "SUCCESS" : "FAILED",
+                        response.getProvider(),
+                        response.getModel(),
+                        response.getLatencyMs(),
+                        response.getTotalTokenCount()
+                );
             }
 
-            if (!response.isSuccess()) {
-                log.warn("LLM execution returned failure, taskId={}, errorMessage={}",
-                        taskId,
-                        response.getErrorMessage());
-                handleTaskExecutionFailure(taskId, response.getErrorMessage());
+            if (response == null || !response.isSuccess()) {
+                String errorMessage = response == null ? "LLM response is null" : response.getErrorMessage();
+                taskAttemptService.markFailed(attempt.getId(), errorMessage, response, renderedPrompt, DEFAULT_TEMPLATE_CODE);
+                log.warn("LLM execution returned failure, taskId={}, errorMessage={}", taskId, errorMessage);
+                handleTaskExecutionFailure(taskId, attempt, errorMessage);
                 return;
             }
 
             log.info("LLM execution succeeded, taskId={}, model={}", taskId, response.getModel());
 
             if (taskService.isTaskCancelled(taskId)) {
+                taskAttemptService.markCancelled(attempt.getId(), "Task execution cancelled");
                 log.info("Task execution cancelled, taskId={}", taskId);
                 return;
             }
 
             if (!taskService.isTaskRunning(taskId)) {
+                taskAttemptService.markFailed(attempt.getId(), "Task is no longer running", response, renderedPrompt, DEFAULT_TEMPLATE_CODE);
                 log.info("Task is no longer running, skip marking success, taskId={}", taskId);
                 return;
             }
@@ -116,9 +152,12 @@ public class TaskExecutionService {
             taskOutputChunkService.saveChunks(taskId, response.getContent());
 
             if (!taskService.isTaskRunning(taskId)) {
+                taskAttemptService.markFailed(attempt.getId(), "Task is no longer running after saving chunks", response, renderedPrompt, DEFAULT_TEMPLATE_CODE);
                 log.info("Task is no longer running, skip marking success after saving chunks, taskId={}", taskId);
                 return;
             }
+
+            taskAttemptService.markSuccess(attempt.getId(), response, renderedPrompt, DEFAULT_TEMPLATE_CODE);
 
             taskService.markTaskSucceeded(
                     taskId,
@@ -128,10 +167,20 @@ public class TaskExecutionService {
                     DEFAULT_TEMPLATE_CODE
             );
 
+            log.info(
+                    "task_final_status_updated taskId={} attemptId={} attemptNo={} status={}",
+                    taskId,
+                    attempt.getId(),
+                    attempt.getAttemptNo(),
+                    "SUCCESS"
+            );
             log.info("Finish executing task, taskId={}", taskId);
         } catch (Exception e) {
             log.error("LLM execution exception, taskId={}", taskId, e);
-            handleTaskExecutionFailure(taskId, e.getMessage());
+            if (attempt != null) {
+                taskAttemptService.markFailed(attempt.getId(), e.getMessage(), response, renderedPrompt, DEFAULT_TEMPLATE_CODE);
+            }
+            handleTaskExecutionFailure(taskId, attempt, e.getMessage());
         }
     }
 
@@ -150,12 +199,15 @@ public class TaskExecutionService {
             return true;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("任务执行被中断", e);
+            throw new RuntimeException("Task execution interrupted", e);
         }
     }
 
-    private void handleTaskExecutionFailure(Long taskId, String errorMessage) {
+    private void handleTaskExecutionFailure(Long taskId, TaskAttemptEntity attempt, String errorMessage) {
         if (taskService.isTaskCancelled(taskId)) {
+            if (attempt != null) {
+                taskAttemptService.markCancelled(attempt.getId(), "Task execution cancelled");
+            }
             log.info("Task execution cancelled, taskId={}", taskId);
             return;
         }
@@ -167,10 +219,24 @@ public class TaskExecutionService {
 
         try {
             taskService.markTaskRetryPending(taskId, errorMessage);
+            log.info(
+                    "task_final_status_updated taskId={} attemptId={} attemptNo={} status={}",
+                    taskId,
+                    attempt == null ? null : attempt.getId(),
+                    attempt == null ? null : attempt.getAttemptNo(),
+                    "RETRY_PENDING"
+            );
             log.info("Task entered retry pending, taskId={}", taskId);
         } catch (Exception retryPendingException) {
             log.error("Task cannot retry, mark as failed, taskId={}", taskId, retryPendingException);
             taskService.markTaskFailed(taskId, errorMessage);
+            log.info(
+                    "task_final_status_updated taskId={} attemptId={} attemptNo={} status={}",
+                    taskId,
+                    attempt == null ? null : attempt.getId(),
+                    attempt == null ? null : attempt.getAttemptNo(),
+                    "FAILED"
+            );
         }
     }
 }
