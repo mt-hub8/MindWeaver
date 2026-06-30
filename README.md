@@ -231,3 +231,103 @@ docker compose up -d
 - Agent Runtime
 - KV Cache-aware Scheduling
 
+---
+
+## 附录：当前阶段 Portfolio 展示补充
+
+> 本节用于补充当前项目进度，保留上文原有项目介绍、启动命令、接口列表、版本说明和项目边界说明。
+
+### 项目定位
+
+AI Task Orchestrator 是一个基于 Java / Spring Boot 的 AI 任务编排后端系统。它的重点不是简单调用大模型 API，而是构建面向 LLM / RAG / Agent 工作负载的异步任务编排底座。
+
+当前项目已经覆盖任务创建、异步调度、状态机、失败处理、重试、取消、超时、LLM 调用抽象、Prompt Template、Model Router、文档切分、Mock Embedding 检索，以及 V2.2.x 阶段的可靠性硬化。
+
+### 当前能力总览
+
+阶段 0：可靠异步任务系统
+
+- 任务创建 / 查询；
+- 状态机；
+- `task_event`；
+- RabbitMQ；
+- Consumer；
+- 失败处理；
+- retry；
+- cancellation；
+- timeout；
+- Docker Compose 本地 MySQL / RabbitMQ。
+
+阶段 1：LLM 执行系统
+
+- `LlmClient`；
+- `MockLlmClient`；
+- Prompt Template；
+- Model Router；
+- LLM usage metadata；
+- persisted output chunks。
+
+阶段 2：RAG 前置与检索系统
+
+- Document Upload；
+- Adaptive Chunking；
+- Mock Embedding；
+- `document_chunk_embedding`；
+- Java cosine similarity search；
+- `POST /documents/{documentId}/embeddings`；
+- `POST /documents/search`。
+
+阶段 2.2.x：Production Hardening
+
+- CI；
+- baseline tests；
+- atomic task claim；
+- transactional outbox；
+- reliable dispatch；
+- `task_attempt`；
+- structured logs / basic metrics baseline。
+
+### 当前不是生产级的部分
+
+当前项目仍然保留以下边界：
+
+- 当前使用 Mock LLM；
+- 当前使用 Mock Embedding；
+- 当前用 MySQL TEXT 存向量；
+- 当前向量检索是 Java 内存 exact scan；
+- 还没有真实 RAG Answer；
+- 还没有真实 Embedding Provider；
+- 还没有 Vector DB；
+- 还没有 Evaluation Harness；
+- 还没有完整 Agent Runtime。
+
+这些限制是当前阶段的工程边界，不代表项目已经是完整 production-grade Agent Platform。
+
+### 后续路线
+
+- V2.3 RAG Answer with Citation；
+- V2.4 Chunking Evaluation；
+- V2.5 Real Embedding Provider；
+- V2.6 Vector DB Selection；
+- V2.7 Retrieval Policy & VIP Search；
+- Agent Runtime；
+- KV Cache-aware Scheduling。
+
+### 本地运行命令
+
+PowerShell：
+
+```powershell
+cd E:\code\ai-task-orchestrator
+docker compose up -d
+docker compose ps
+.\mvnw.cmd test
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=docker"
+```
+
+注意：PowerShell 中使用 `cd E:\code\ai-task-orchestrator`，不要使用 `cd /d E:\code\ai-task-orchestrator`。
+
+### 相关面试文档
+
+- [V2.2 Mock Embedding & Vector Search](docs/interview/V2.2-mock-embedding-vector-search.md)
+- [V2.2.x Production Hardening](docs/interview/V2.2.x-production-hardening.md)
