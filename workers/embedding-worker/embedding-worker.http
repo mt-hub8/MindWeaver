@@ -1,0 +1,31 @@
+### Local Embedding Worker — 手工验证
+
+@baseUrl = http://127.0.0.1:8001
+
+### Health check
+GET {{baseUrl}}/health
+
+###
+
+### 单条文本 embedding（model + input 为必填字段）
+POST {{baseUrl}}/embeddings
+Content-Type: application/json
+
+{
+  "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "input": "AI Task Orchestrator is a backend system."
+}
+
+###
+
+### 批量 embedding（input 为字符串数组）
+POST {{baseUrl}}/embeddings
+Content-Type: application/json
+
+{
+  "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "input": [
+    "AI Task Orchestrator is a backend system.",
+    "Vector search needs stable embedding dimensions."
+  ]
+}

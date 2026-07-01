@@ -11,6 +11,11 @@ PROVIDER = "local-worker"
 app = FastAPI(title="AI Task Orchestrator Embedding Worker")
 
 
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok", "provider": PROVIDER}
+
+
 class EmbeddingRequest(BaseModel):
     model: str
     input: Union[str, List[str]]
