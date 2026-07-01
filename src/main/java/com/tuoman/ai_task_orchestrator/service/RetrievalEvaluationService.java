@@ -130,8 +130,10 @@ public class RetrievalEvaluationService {
         return new RetrievalEvaluationSummaryResponse(
                 k,
                 average(metricsAtK.stream().map(RetrievalMetricAtKResponse::getRecallAtK).toList()),
+                average(metricsAtK.stream().map(RetrievalMetricAtKResponse::getPrecisionAtK).toList()),
                 average(metricsAtK.stream().map(RetrievalMetricAtKResponse::getHitRateAtK).toList()),
                 average(metricsAtK.stream().map(RetrievalMetricAtKResponse::getMrr).toList()),
+                average(metricsAtK.stream().map(RetrievalMetricAtKResponse::getNdcgAtK).toList()),
                 average(metricsAtK.stream().map(RetrievalMetricAtKResponse::getContextPrecisionAtK).toList())
         );
     }

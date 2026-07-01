@@ -67,6 +67,8 @@ class RetrievalEvaluationServiceTest {
         assertThat(response.getCases().getFirst().getMetrics().get(1).getRecallAtK()).isCloseTo(0.5, within(0.000001));
         assertThat(response.getSummary()).hasSize(3);
         assertThat(response.getSummary().get(2).getRecallAtK()).isCloseTo(1.0, within(0.000001));
+        assertThat(response.getSummary().get(2).getPrecisionAtK()).isCloseTo(0.4, within(0.000001));
+        assertThat(response.getSummary().get(2).getNdcgAtK()).isCloseTo(0.650921, within(0.000001));
         assertThat(response.getSummary().get(2).getContextPrecisionAtK()).isCloseTo(0.4, within(0.000001));
     }
 
@@ -95,8 +97,10 @@ class RetrievalEvaluationServiceTest {
 
         assertThat(response.getSummary()).hasSize(1);
         assertThat(response.getSummary().getFirst().getRecallAtK()).isCloseTo(0.5, within(0.000001));
+        assertThat(response.getSummary().getFirst().getPrecisionAtK()).isCloseTo(1.0 / 6.0, within(0.000001));
         assertThat(response.getSummary().getFirst().getHitRateAtK()).isCloseTo(0.5, within(0.000001));
         assertThat(response.getSummary().getFirst().getMrr()).isCloseTo(0.5, within(0.000001));
+        assertThat(response.getSummary().getFirst().getNdcgAtK()).isCloseTo(0.5, within(0.000001));
         assertThat(response.getSummary().getFirst().getContextPrecisionAtK()).isCloseTo(0.25, within(0.000001));
         verify(documentEmbeddingService, times(2)).search(any(DocumentSearchRequest.class));
     }
@@ -157,6 +161,8 @@ class RetrievalEvaluationServiceTest {
 
         assertThat(response.getCases().getFirst().getExpectedChunkIds()).containsExactly(12L, 13L);
         assertThat(response.getCases().getFirst().getMetrics().getFirst().getRecallAtK()).isEqualTo(1.0);
+        assertThat(response.getCases().getFirst().getMetrics().getFirst().getPrecisionAtK()).isEqualTo(1.0);
+        assertThat(response.getCases().getFirst().getMetrics().getFirst().getNdcgAtK()).isEqualTo(1.0);
     }
 
     @Test

@@ -11,9 +11,13 @@ public class RetrievalEvaluationSummaryResponse {
 
     private Double recallAtK;
 
+    private Double precisionAtK;
+
     private Double hitRateAtK;
 
     private Double mrr;
+
+    private Double ndcgAtK;
 
     private Double contextPrecisionAtK;
 }
