@@ -1,0 +1,111 @@
+package com.tuoman.ai_task_orchestrator.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tuoman.ai_task_orchestrator.entity.TaskOutboxEntity;
+import com.tuoman.ai_task_orchestrator.enums.TaskOutboxStatus;
+import com.tuoman.ai_task_orchestrator.mq.TaskDispatchProducer;
+import com.tuoman.ai_task_orchestrator.repository.TaskOutboxRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.lang.management.ManagementFactory;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
+@Service
+@RequiredArgsConstructor
+public class TaskOutboxDispatchService {
+
+    private static final int LOCK_STALE_SECONDS = 60;
+
+    private static final int RETRY_DELAY_SECONDS = 30;
+
+    private final TaskOutboxRepository taskOutboxRepository;
+
+    private final TaskDispatchProducer taskDispatchProducer;
+
+    private final ObjectMapper objectMapper;
+
+    private final MetricsRecorder metricsRecorder;
+
+    private final String dispatcherId = ManagementFactory.getRuntimeMXBean().getName();
+
+    @Transactional
+    public Optional<TaskOutboxEntity> claimDueOutbox(Long outboxId) {
+        LocalDateTime now = LocalDateTime.now();
+        int claimed = taskOutboxRepository.claimOutbox(
+                outboxId,
+                TaskOutboxStatus.PROCESSING,
+                List.of(TaskOutboxStatus.PENDING, TaskOutboxStatus.FAILED),
+                dispatcherId,
+                now,
+                now,
+                now.minusSeconds(LOCK_STALE_SECONDS)
+        );
+
+        if (claimed != 1) {
+            metricsRecorder.recordOutboxClaimConflict();
+            return Optional.empty();
+        }
+
+        metricsRecorder.recordOutboxClaimSuccess();
+        return taskOutboxRepository.findById(outboxId);
+    }
+
+    public Long sendOutboxMessage(TaskOutboxEntity outbox) {
+        if (!TaskOutboxService.EVENT_TYPE_TASK_DISPATCH_REQUESTED.equals(outbox.getEventType())) {
+            throw new IllegalStateException("Unsupported task outbox event type: " + outbox.getEventType());
+        }
+
+        Long taskId = extractTaskId(outbox.getPayload());
+        taskDispatchProducer.sendTaskCreatedMessage(taskId);
+        return taskId;
+    }
+
+    @Transactional
+    public void markSent(Long outboxId) {
+        taskOutboxRepository.markSent(
+                outboxId,
+                TaskOutboxStatus.PROCESSING,
+                TaskOutboxStatus.SENT,
+                LocalDateTime.now()
+        );
+        metricsRecorder.recordOutboxDispatchSuccess();
+    }
+
+    @Transactional
+    public void markFailed(Long outboxId, Exception exception) {
+        taskOutboxRepository.markFailed(
+                outboxId,
+                TaskOutboxStatus.PROCESSING,
+                TaskOutboxStatus.FAILED,
+                LocalDateTime.now().plusSeconds(RETRY_DELAY_SECONDS),
+                normalizeErrorMessage(exception.getMessage()),
+                LocalDateTime.now()
+        );
+        metricsRecorder.recordOutboxDispatchFailed();
+    }
+
+    private Long extractTaskId(String payload) {
+        try {
+            JsonNode root = objectMapper.readTree(payload);
+            JsonNode taskIdNode = root.get("taskId");
+            if (taskIdNode == null || !taskIdNode.canConvertToLong()) {
+                throw new IllegalArgumentException("Missing taskId in outbox payload");
+            }
+            return taskIdNode.asLong();
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Invalid task outbox payload", e);
+        }
+    }
+
+    private String normalizeErrorMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return "Unknown outbox dispatch error";
+        }
+        return message.length() > 2000 ? message.substring(0, 2000) : message;
+    }
+}

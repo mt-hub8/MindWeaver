@@ -17,13 +17,21 @@ public interface TaskOutboxRepository extends JpaRepository<TaskOutboxEntity, Lo
     @Query("""
             select o
             from TaskOutboxEntity o
-            where o.status in :statuses
-              and (o.nextRetryAt is null or o.nextRetryAt <= :now)
+            where (
+                    o.status in :statuses
+                    and (o.nextRetryAt is null or o.nextRetryAt <= :now)
+                  )
+               or (
+                    o.status = :processingStatus
+                    and o.lockedAt < :staleThreshold
+                  )
             order by o.createdAt asc
             """)
     List<TaskOutboxEntity> findDueOutboxes(
             @Param("statuses") Collection<TaskOutboxStatus> statuses,
+            @Param("processingStatus") TaskOutboxStatus processingStatus,
             @Param("now") LocalDateTime now,
+            @Param("staleThreshold") LocalDateTime staleThreshold,
             Pageable pageable
     );
 

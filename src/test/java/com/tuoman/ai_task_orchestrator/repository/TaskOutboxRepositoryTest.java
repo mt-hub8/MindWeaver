@@ -116,12 +116,118 @@ class TaskOutboxRepositoryTest {
 
         List<TaskOutboxEntity> dueOutboxes = taskOutboxRepository.findDueOutboxes(
                 List.of(TaskOutboxStatus.PENDING, TaskOutboxStatus.FAILED),
+                TaskOutboxStatus.PROCESSING,
                 LocalDateTime.now(),
+                LocalDateTime.now().minusSeconds(60),
                 PageRequest.of(0, 20)
         );
 
         assertThat(dueOutboxes).extracting(TaskOutboxEntity::getId).contains(due.getId());
         assertThat(dueOutboxes).extracting(TaskOutboxEntity::getId).doesNotContain(future.getId());
+    }
+
+    @Test
+    void failedOutboxShouldBeClaimedOnlyWhenDue() {
+        TaskOutboxEntity dueFailed = saveOutbox(TaskOutboxStatus.FAILED);
+        dueFailed.setNextRetryAt(LocalDateTime.now().minusSeconds(1));
+        taskOutboxRepository.saveAndFlush(dueFailed);
+
+        TaskOutboxEntity nonDueFailed = saveOutbox(TaskOutboxStatus.FAILED);
+        nonDueFailed.setNextRetryAt(LocalDateTime.now().plusMinutes(5));
+        taskOutboxRepository.saveAndFlush(nonDueFailed);
+
+        LocalDateTime now = LocalDateTime.now();
+        int dueClaimed = taskOutboxRepository.claimOutbox(
+                dueFailed.getId(),
+                TaskOutboxStatus.PROCESSING,
+                List.of(TaskOutboxStatus.PENDING, TaskOutboxStatus.FAILED),
+                "dispatcher-a",
+                now,
+                now,
+                now.minusSeconds(60)
+        );
+        int nonDueClaimed = taskOutboxRepository.claimOutbox(
+                nonDueFailed.getId(),
+                TaskOutboxStatus.PROCESSING,
+                List.of(TaskOutboxStatus.PENDING, TaskOutboxStatus.FAILED),
+                "dispatcher-a",
+                now,
+                now,
+                now.minusSeconds(60)
+        );
+
+        assertThat(dueClaimed).isEqualTo(1);
+        assertThat(nonDueClaimed).isZero();
+    }
+
+    @Test
+    void staleProcessingOutboxShouldBeClaimedAgain() {
+        TaskOutboxEntity outbox = saveOutbox(TaskOutboxStatus.PROCESSING);
+        outbox.setLockedBy("stale-dispatcher");
+        outbox.setLockedAt(LocalDateTime.now().minusMinutes(2));
+        taskOutboxRepository.saveAndFlush(outbox);
+
+        LocalDateTime now = LocalDateTime.now();
+        int claimed = taskOutboxRepository.claimOutbox(
+                outbox.getId(),
+                TaskOutboxStatus.PROCESSING,
+                List.of(TaskOutboxStatus.PENDING, TaskOutboxStatus.FAILED),
+                "dispatcher-b",
+                now,
+                now,
+                now.minusSeconds(60)
+        );
+
+        assertThat(claimed).isEqualTo(1);
+        TaskOutboxEntity saved = taskOutboxRepository.findById(outbox.getId()).orElseThrow();
+        assertThat(saved.getStatus()).isEqualTo(TaskOutboxStatus.PROCESSING);
+        assertThat(saved.getLockedBy()).isEqualTo("dispatcher-b");
+        assertThat(saved.getLockedAt()).isNotNull();
+    }
+
+    @Test
+    void nonStaleProcessingOutboxShouldNotBeClaimedAgain() {
+        TaskOutboxEntity outbox = saveOutbox(TaskOutboxStatus.PROCESSING);
+        outbox.setLockedBy("active-dispatcher");
+        outbox.setLockedAt(LocalDateTime.now());
+        taskOutboxRepository.saveAndFlush(outbox);
+
+        LocalDateTime now = LocalDateTime.now();
+        int claimed = taskOutboxRepository.claimOutbox(
+                outbox.getId(),
+                TaskOutboxStatus.PROCESSING,
+                List.of(TaskOutboxStatus.PENDING, TaskOutboxStatus.FAILED),
+                "dispatcher-b",
+                now,
+                now,
+                now.minusSeconds(60)
+        );
+
+        assertThat(claimed).isZero();
+    }
+
+    @Test
+    void findDueOutboxesShouldIncludeStaleProcessingRows() {
+        TaskOutboxEntity stale = saveOutbox(TaskOutboxStatus.PROCESSING);
+        stale.setLockedBy("stale-dispatcher");
+        stale.setLockedAt(LocalDateTime.now().minusMinutes(2));
+        taskOutboxRepository.saveAndFlush(stale);
+
+        TaskOutboxEntity active = saveOutbox(TaskOutboxStatus.PROCESSING);
+        active.setLockedBy("active-dispatcher");
+        active.setLockedAt(LocalDateTime.now());
+        taskOutboxRepository.saveAndFlush(active);
+
+        List<TaskOutboxEntity> dueOutboxes = taskOutboxRepository.findDueOutboxes(
+                List.of(TaskOutboxStatus.PENDING, TaskOutboxStatus.FAILED),
+                TaskOutboxStatus.PROCESSING,
+                LocalDateTime.now(),
+                LocalDateTime.now().minusSeconds(60),
+                PageRequest.of(0, 20)
+        );
+
+        assertThat(dueOutboxes).extracting(TaskOutboxEntity::getId).contains(stale.getId());
+        assertThat(dueOutboxes).extracting(TaskOutboxEntity::getId).doesNotContain(active.getId());
     }
 
     private TaskOutboxEntity saveOutbox(TaskOutboxStatus status) {
