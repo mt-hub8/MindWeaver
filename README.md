@@ -8,8 +8,8 @@
 |---|---|
 | **适用场景** | 内部知识库问答、RAG 方案验证、检索策略对比（dense / rerank / hybrid）、演示与面试展示 |
 | **核心能力** | 文档切块与向量化 · 带 Citations 的 RAG 问答 · 检索质量评估 · 二阶段 Rerank · Hybrid 融合检索 |
-| **5 分钟体验** | 启动服务 → API 上传文档并 embedding → 打开 **`/`** 或 **`/ask.html`** 提问 → **`/documents.html`** 查看文档 → **`/evaluation.html`** 了解评估报告 |
-| **主要入口** | Web：`/` · `/ask.html` · `/documents.html` · `/evaluation.html` · API：`POST /rag/answers` · `GET /documents` |
+| **5 分钟体验** | 启动服务 → **Documents 上传** txt/md/pdf → **Ask 提问** → 查看 citations → （可选）Evaluation |
+| **主要入口** | Web：`/` · `/documents.html`（上传）· `/ask.html` · API：`POST /documents/upload` · `POST /rag/answers` |
 
 > 技术栈：Java 17 · Spring Boot · MySQL · RabbitMQ · JPA/Flyway · 可选 Qdrant / Local Embedding Worker。下文保留完整能力与架构说明。
 
@@ -115,7 +115,7 @@ AI Task Orchestrator 是一个基于 Java / Spring Boot 的 AI 任务编排与 R
 - Real billing / subscription system
 - Evaluation result persistence
 - Generation Evaluation（Faithfulness、LLM-as-a-judge 等）
-- Web UI 登录 / 权限 / 文档上传与编辑（当前 Documents 页为只读）
+- Web UI 登录 / 权限 / 文档删除与编辑
 
 ---
 
@@ -233,13 +233,14 @@ PowerShell 不要使用 `cd /d E:\code\ai-task-orchestrator`。
 | --- | --- | --- |
 | 产品首页 | `/` 或 `/index.html` | 能力说明与导航 |
 | 知识库问答 | `/ask.html`（兼容 `/rag-demo.html`） | 提问、Citations、Metadata |
-| 文档浏览 | `/documents.html` | 只读文档与 chunks |
+| 文档浏览 / 上传 | `/documents.html` · `POST /documents/upload`（txt/md/pdf 同步 ingestion） |
 | 评估说明 | `/evaluation.html` | 指标与报告路径 |
 
 完整 E2E 演示见：[docs/demo/e2e-demo.md](docs/demo/e2e-demo.md)（配合 `docs/demo/task-flow.http` 与 `docs/demo/rag-flow.http`）。
 
 | 能力 | HTTP 入口 |
 | --- | --- |
+| 文档上传（同步 ingestion） | `POST /documents/upload` |
 | 文档列表（只读） | `GET /documents` |
 | 创建任务 | `POST /tasks` |
 | 查询任务 | `GET /tasks/{taskId}` |
@@ -303,7 +304,7 @@ PowerShell 不要使用 `cd /d E:\code\ai-task-orchestrator`。
 - Qdrant 接入为实验性实现，无 Docker Compose 集成与生产级运维。
 - Local Embedding Worker 需手工启动 Python 环境。
 - 无多租户、鉴权、限流、完整 observability。
-- Web UI 为 MVP：无登录、无上传、Documents 只读。
+- Web UI 为 MVP：无登录、无权限、无文档删除/编辑；支持 Documents 页面上传 txt/md/pdf。
 - 不是完整 Agent Runtime。
 
 ---

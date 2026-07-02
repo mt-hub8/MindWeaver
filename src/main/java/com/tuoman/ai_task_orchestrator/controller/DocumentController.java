@@ -5,9 +5,11 @@ import com.tuoman.ai_task_orchestrator.dto.DocumentDetailResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentEmbeddingResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentSearchRequest;
 import com.tuoman.ai_task_orchestrator.dto.DocumentSearchResultResponse;
+import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentSummaryResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentUploadResponse;
 import com.tuoman.ai_task_orchestrator.service.DocumentEmbeddingService;
+import com.tuoman.ai_task_orchestrator.service.DocumentIngestionService;
 import com.tuoman.ai_task_orchestrator.service.DocumentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -24,9 +26,16 @@ public class DocumentController {
 
     private final DocumentEmbeddingService documentEmbeddingService;
 
+    private final DocumentIngestionService documentIngestionService;
+
     @GetMapping
     public List<DocumentSummaryResponse> listDocuments() {
         return documentService.listDocuments();
+    }
+
+    @PostMapping("/upload")
+    public DocumentIngestionResponse uploadAndIngest(@RequestParam("file") MultipartFile file) {
+        return documentIngestionService.ingest(file);
     }
 
     @PostMapping

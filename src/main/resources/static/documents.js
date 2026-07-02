@@ -1,4 +1,15 @@
 (function () {
+    const fileInput = document.getElementById("file-input");
+    const uploadButton = document.getElementById("upload-button");
+    const uploadLoading = document.getElementById("upload-loading");
+    const uploadSuccess = document.getElementById("upload-success");
+    const summaryDocumentId = document.getElementById("summary-document-id");
+    const summaryTitle = document.getElementById("summary-title");
+    const summaryStatus = document.getElementById("summary-status");
+    const summaryChunkCount = document.getElementById("summary-chunk-count");
+    const summaryEmbeddingCount = document.getElementById("summary-embedding-count");
+    const summaryVectorCount = document.getElementById("summary-vector-count");
+
     const loadingStatus = document.getElementById("loading-status");
     const errorStatus = document.getElementById("error-status");
     const errorCode = document.getElementById("error-code");
@@ -13,12 +24,75 @@
     const chunksList = document.getElementById("chunks-list");
 
     const SNIPPET_MAX = 300;
-    let selectedDocumentId = null;
 
+    uploadButton.addEventListener("click", uploadDocument);
     loadDocuments();
 
+    async function uploadDocument() {
+        clearError();
+        uploadSuccess.classList.add("hidden");
+
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+            showError({
+                code: "CLIENT_VALIDATION",
+                message: "请先选择要上传的文件。",
+                traceId: "-"
+            });
+            return;
+        }
+
+        setUploadLoading(true);
+        const formData = new FormData();
+        formData.append("file", file);
+
+        try {
+            const response = await fetch("/documents/upload", {
+                method: "POST",
+                body: formData
+            });
+            const responseText = await response.text();
+            let payload = null;
+            if (responseText) {
+                try {
+                    payload = JSON.parse(responseText);
+                } catch (parseError) {
+                    payload = null;
+                }
+            }
+
+            if (!response.ok) {
+                showError(extractError(payload, response.status, responseText));
+                return;
+            }
+
+            renderUploadSuccess(payload || {});
+            await loadDocuments();
+        } catch (networkError) {
+            showError({
+                code: "NETWORK_ERROR",
+                message: networkError && networkError.message
+                    ? networkError.message
+                    : "上传失败，请确认服务已启动。",
+                traceId: "-"
+            });
+        } finally {
+            setUploadLoading(false);
+        }
+    }
+
+    function renderUploadSuccess(summary) {
+        summaryDocumentId.textContent = safeValue(summary.documentId);
+        summaryTitle.textContent = safeValue(summary.title);
+        summaryStatus.textContent = safeValue(summary.status);
+        summaryChunkCount.textContent = safeValue(summary.chunkCount);
+        summaryEmbeddingCount.textContent = safeValue(summary.embeddingCount);
+        summaryVectorCount.textContent = safeValue(summary.vectorWriteCount);
+        uploadSuccess.classList.remove("hidden");
+    }
+
     async function loadDocuments() {
-        setLoading(true);
+        setListLoading(true);
         clearError();
         hideChunks();
 
@@ -54,7 +128,7 @@
             documentsPanel.classList.add("hidden");
             emptyState.classList.add("hidden");
         } finally {
-            setLoading(false);
+            setListLoading(false);
         }
     }
 
@@ -73,11 +147,12 @@
             const row = document.createElement("tr");
             row.className = "doc-row";
             row.dataset.documentId = String(doc.documentId);
+            const statusLabel = formatStatus(doc.status);
             row.innerHTML =
                 "<td>" + escapeHtml(doc.documentId) + "</td>" +
                 "<td>" + escapeHtml(doc.title || "-") + "</td>" +
                 "<td>" + escapeHtml(doc.chunkCount) + "</td>" +
-                "<td>" + escapeHtml(doc.status || "-") + "</td>" +
+                "<td>" + statusLabel + "</td>" +
                 "<td>" + escapeHtml(formatDate(doc.createdAt)) + "</td>";
             row.addEventListener("click", function () {
                 selectDocument(doc.documentId, doc.title, row);
@@ -86,8 +161,17 @@
         });
     }
 
+    function formatStatus(status) {
+        if (!status) {
+            return "-";
+        }
+        if (status === "READY") {
+            return '<span class="status-badge ready">READY</span>';
+        }
+        return escapeHtml(status);
+    }
+
     async function selectDocument(documentId, title, row) {
-        selectedDocumentId = documentId;
         Array.from(documentsBody.querySelectorAll(".doc-row")).forEach(function (item) {
             item.classList.toggle("selected", item === row);
         });
@@ -96,7 +180,7 @@
         chunksPanel.classList.remove("hidden");
         chunksList.innerHTML = "";
         chunksEmpty.classList.add("hidden");
-        setLoading(true);
+        setListLoading(true);
         clearError();
 
         try {
@@ -132,7 +216,7 @@
             chunksEmpty.classList.remove("hidden");
             chunksEmpty.textContent = "无法加载 chunks。";
         } finally {
-            setLoading(false);
+            setListLoading(false);
         }
     }
 
@@ -167,10 +251,20 @@
 
     function hideChunks() {
         chunksPanel.classList.add("hidden");
-        selectedDocumentId = null;
     }
 
-    function setLoading(isLoading) {
+    function setUploadLoading(isLoading) {
+        uploadButton.disabled = isLoading;
+        uploadLoading.classList.toggle("hidden", !isLoading);
+        if (isLoading) {
+            uploadLoading.classList.add("visible");
+        } else {
+            uploadLoading.classList.remove("visible");
+        }
+    }
+
+    function setListLoading(isLoading) {
+        loadingStatus.classList.toggle("hidden", !isLoading);
         loadingStatus.classList.toggle("visible", isLoading);
     }
 

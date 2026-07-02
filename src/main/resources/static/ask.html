@@ -22,6 +22,17 @@
         <p class="lead">基于已摄入文档提问，系统返回带引用的回答。Citations 用于追踪答案来源，降低幻觉风险。</p>
     </header>
 
+    <section class="panel quick-start" aria-labelledby="upload-to-ask-title">
+        <h2 id="upload-to-ask-title">Upload-to-Ask 流程</h2>
+        <ol>
+            <li>打开 <a href="/documents.html">Documents</a> 页面。</li>
+            <li>上传 <code>.txt</code>、<code>.md</code> 或文本型 <code>.pdf</code>（不支持扫描版 OCR）。</li>
+            <li>等待上传成功 summary（chunk / embedding / vector 写入完成）。</li>
+            <li>返回本页 Ask，输入与文档相关的问题。</li>
+            <li>查看 Answer 与 Citations，核对 retrieval metadata。</li>
+        </ol>
+    </section>
+
     <section class="panel" aria-labelledby="query-section-title">
         <h2 id="query-section-title">提问</h2>
         <label for="query-input">您的问题</label>

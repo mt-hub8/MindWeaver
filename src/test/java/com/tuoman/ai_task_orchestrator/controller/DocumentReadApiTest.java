@@ -4,6 +4,7 @@ import com.tuoman.ai_task_orchestrator.common.error.GlobalExceptionHandler;
 import com.tuoman.ai_task_orchestrator.dto.DocumentChunkResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentSummaryResponse;
 import com.tuoman.ai_task_orchestrator.service.DocumentEmbeddingService;
+import com.tuoman.ai_task_orchestrator.service.DocumentIngestionService;
 import com.tuoman.ai_task_orchestrator.service.DocumentService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +33,9 @@ class DocumentReadApiTest {
 
     @MockitoBean
     private DocumentEmbeddingService documentEmbeddingService;
+
+    @MockitoBean
+    private DocumentIngestionService documentIngestionService;
 
     @Test
     void listDocumentsShouldReturnEmptyArrayWhenNoData() throws Exception {

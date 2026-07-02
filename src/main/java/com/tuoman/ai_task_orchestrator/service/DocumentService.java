@@ -5,7 +5,6 @@ import com.tuoman.ai_task_orchestrator.dto.DocumentChunkResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentDetailResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentSummaryResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentUploadResponse;
-import com.tuoman.ai_task_orchestrator.dto.DocumentUploadResponse;
 import com.tuoman.ai_task_orchestrator.document.DocumentChunkResult;
 import com.tuoman.ai_task_orchestrator.document.DocumentChunker;
 import com.tuoman.ai_task_orchestrator.entity.DocumentChunkEntity;
@@ -34,48 +33,55 @@ public class DocumentService {
 
     @Transactional(noRollbackFor = BusinessException.class)
     public DocumentUploadResponse uploadDocument(MultipartFile file) {
-        validateFile(file);
+        validateLegacyUploadFile(file);
 
-        DocumentEntity document = new DocumentEntity();
-        document.setOriginalFilename(file.getOriginalFilename());
-        document.setContentType(file.getContentType());
-        document.setFileSize(file.getSize());
-        document.setStatus(DocumentStatus.UPLOADED);
-        document.setChunkCount(0);
-
-        DocumentEntity savedDocument = documentRepository.save(document);
+        DocumentEntity savedDocument = documentRepository.save(createDocumentEntity(file));
 
         try {
             String content = new String(file.getBytes(), StandardCharsets.UTF_8);
-            List<DocumentChunkResult> chunks = documentChunker.chunk(content);
-            List<DocumentChunkEntity> chunkEntities = new ArrayList<>();
-
-            for (DocumentChunkResult chunkResult : chunks) {
-                DocumentChunkEntity chunk = new DocumentChunkEntity();
-                chunk.setDocumentId(savedDocument.getId());
-                chunk.setChunkIndex(chunkResult.getChunkIndex());
-                chunk.setContent(chunkResult.getContent());
-                chunk.setContentLength(chunkResult.getContentLength());
-                chunk.setChunkStrategy(chunkResult.getChunkStrategy());
-                chunk.setStartOffset(chunkResult.getStartOffset());
-                chunk.setEndOffset(chunkResult.getEndOffset());
-                chunk.setHeadingPath(chunkResult.getHeadingPath());
-                chunkEntities.add(chunk);
-            }
-
-            documentChunkRepository.saveAll(chunkEntities);
-
-            savedDocument.setStatus(DocumentStatus.CHUNKED);
-            savedDocument.setChunkCount(chunkEntities.size());
-            DocumentEntity chunkedDocument = documentRepository.save(savedDocument);
-
-            return toUploadResponse(chunkedDocument);
+            chunkAndPersist(savedDocument, content);
+            return toUploadResponse(savedDocument);
         } catch (Exception e) {
             savedDocument.setStatus(DocumentStatus.FAILED);
             savedDocument.setErrorMessage(e.getMessage());
             documentRepository.save(savedDocument);
             throw BusinessException.internalError("Document processing failed");
         }
+    }
+
+    public DocumentEntity createDocumentEntity(MultipartFile file) {
+        DocumentEntity document = new DocumentEntity();
+        document.setOriginalFilename(file.getOriginalFilename());
+        document.setContentType(file.getContentType());
+        document.setFileSize(file.getSize());
+        document.setStatus(DocumentStatus.UPLOADED);
+        document.setChunkCount(0);
+        return document;
+    }
+
+    public int chunkAndPersist(DocumentEntity document, String content) {
+        List<DocumentChunkResult> chunks = documentChunker.chunk(content);
+        List<DocumentChunkEntity> chunkEntities = new ArrayList<>();
+
+        for (DocumentChunkResult chunkResult : chunks) {
+            DocumentChunkEntity chunk = new DocumentChunkEntity();
+            chunk.setDocumentId(document.getId());
+            chunk.setChunkIndex(chunkResult.getChunkIndex());
+            chunk.setContent(chunkResult.getContent());
+            chunk.setContentLength(chunkResult.getContentLength());
+            chunk.setChunkStrategy(chunkResult.getChunkStrategy());
+            chunk.setStartOffset(chunkResult.getStartOffset());
+            chunk.setEndOffset(chunkResult.getEndOffset());
+            chunk.setHeadingPath(chunkResult.getHeadingPath());
+            chunkEntities.add(chunk);
+        }
+
+        documentChunkRepository.saveAll(chunkEntities);
+
+        document.setStatus(DocumentStatus.CHUNKED);
+        document.setChunkCount(chunkEntities.size());
+        documentRepository.save(document);
+        return chunkEntities.size();
     }
 
     @Transactional(readOnly = true)
@@ -101,7 +107,7 @@ public class DocumentService {
                 .toList();
     }
 
-    private void validateFile(MultipartFile file) {
+    private void validateLegacyUploadFile(MultipartFile file) {
         if (file == null) {
             throw BusinessException.invalidRequest("File must not be null");
         }

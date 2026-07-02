@@ -18,10 +18,35 @@
 
     <header class="hero">
         <h1>Documents</h1>
-        <p class="lead">只读查看已摄入文档与 chunk 切片。上传请使用 API（<code>POST /documents</code>），本页不提供上传功能。</p>
+        <p class="lead">上传 <code>.txt</code> / <code>.md</code> / 文本型 <code>.pdf</code>，同步完成切块与 embedding，然后到 Ask 页面提问。</p>
     </header>
 
-    <div id="loading-status" class="status loading" role="status" aria-live="polite">
+    <section class="panel upload-panel" aria-labelledby="upload-title">
+        <h2 id="upload-title">Upload Document</h2>
+        <p class="upload-hint">
+            支持 <strong>.txt</strong>、<strong>.md</strong>、<strong>.pdf</strong>（文本型 PDF，最大 2MB）。
+            不支持扫描版 PDF / OCR、加密 PDF、Word / Excel。
+        </p>
+        <label for="file-input">选择文件</label>
+        <input id="file-input" type="file" accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf">
+        <div class="upload-actions">
+            <button id="upload-button" type="button">Upload</button>
+            <span id="upload-loading" class="status loading hidden" role="status">正在上传并生成 embedding…</span>
+        </div>
+        <div id="upload-success" class="success-box hidden" aria-live="polite">
+            <h3>Upload successful</h3>
+            <dl>
+                <dt>documentId</dt><dd id="summary-document-id"></dd>
+                <dt>title</dt><dd id="summary-title"></dd>
+                <dt>status</dt><dd id="summary-status"></dd>
+                <dt>chunkCount</dt><dd id="summary-chunk-count"></dd>
+                <dt>embeddingCount</dt><dd id="summary-embedding-count"></dd>
+                <dt>vectorWriteCount</dt><dd id="summary-vector-count"></dd>
+            </dl>
+        </div>
+    </section>
+
+    <div id="loading-status" class="status loading hidden" role="status" aria-live="polite">
         正在加载文档列表…
     </div>
 
@@ -34,7 +59,7 @@
         </dl>
     </div>
 
-    <p id="documents-empty" class="empty-state hidden">No documents have been ingested yet.</p>
+    <p id="documents-empty" class="empty-state hidden">No documents have been ingested yet. Upload a document above to get started.</p>
 
     <section id="documents-panel" class="panel hidden" aria-labelledby="documents-title">
         <h2 id="documents-title">Document List</h2>

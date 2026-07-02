@@ -29,11 +29,11 @@
     <section class="card-grid" aria-label="Product entry points">
         <a class="entry-card" href="/ask.html">
             <h2>Ask Knowledge Base</h2>
-            <p>向已摄入文档提问，查看回答、引用来源与检索 metadata。</p>
+            <p>上传文档后在此提问，查看回答、引用来源与检索 metadata。</p>
         </a>
         <a class="entry-card" href="/documents.html">
             <h2>Documents</h2>
-            <p>浏览已上传文档与 chunk 切片（只读）。</p>
+            <p>上传 .txt / .md / 文本型 PDF，查看文档列表与 chunk 预览。</p>
         </a>
         <a class="entry-card" href="/evaluation.html">
             <h2>Evaluation Reports</h2>
@@ -49,10 +49,10 @@
         <h2>5 分钟体验路径</h2>
         <ol>
             <li>启动服务（见 README「本地快速启动」）。</li>
-            <li>通过 API 上传文档并生成 embedding（<code>POST /documents</code> → <code>POST /documents/{id}/embeddings</code>）。</li>
-            <li>打开 <a href="/ask.html">Ask</a> 页面提问，查看 citations 与 retrieval metadata。</li>
-            <li>在 <a href="/documents.html">Documents</a> 确认文档与 chunks 已入库。</li>
-            <li>（可选）按 <a href="/evaluation.html">Evaluation</a> 说明运行检索评估并查看报告。</li>
+            <li>打开 <a href="/documents.html">Documents</a>，上传 <code>.txt</code> / <code>.md</code> / 文本型 <code>.pdf</code>。</li>
+            <li>确认上传 summary 显示 <code>READY</code> 与 chunk / embedding 数量。</li>
+            <li>打开 <a href="/ask.html">Ask</a> 提问，查看 citations 与 retrieval metadata。</li>
+            <li>（可选）按 <a href="/evaluation.html">Evaluation</a> 说明运行检索评估。</li>
         </ol>
     </section>
 

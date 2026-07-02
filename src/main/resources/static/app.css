@@ -343,3 +343,59 @@ pre.path-box {
     border: 1px solid var(--border);
     overflow-x: auto;
 }
+
+.upload-panel label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.upload-panel input[type="file"] {
+    width: 100%;
+    margin-bottom: 12px;
+}
+
+.upload-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.upload-hint {
+    margin: 0 0 12px;
+    color: var(--muted);
+    font-size: 0.95rem;
+}
+
+.success-box {
+    margin-top: 16px;
+    padding: 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--accent-soft);
+}
+
+.success-box dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 12px;
+}
+
+.success-box dt {
+    font-weight: 600;
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    background: var(--accent-soft);
+}
+
+.status-badge.ready {
+    color: var(--accent);
+}

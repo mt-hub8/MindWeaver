@@ -40,7 +40,23 @@ class ProductMvpStaticResourceTest {
         mockMvc.perform(get("/ask.html"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Ask Knowledge Base")))
+                .andExpect(content().string(containsString("Upload-to-Ask")))
                 .andExpect(content().string(containsString("/ask.js")));
+    }
+
+    @Test
+    void shouldServeDocumentsHtmlWithUploadSection() throws Exception {
+        mockMvc.perform(get("/documents.html"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("Upload Document")))
+                .andExpect(content().string(containsString(".pdf")));
+    }
+
+    @Test
+    void shouldServeDocumentsJsWithUploadEndpoint() throws Exception {
+        mockMvc.perform(get("/documents.js"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("/documents/upload")));
     }
 
     @Test
