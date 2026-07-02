@@ -1,11 +1,13 @@
 package com.tuoman.ai_task_orchestrator.controller;
 
 import com.tuoman.ai_task_orchestrator.common.error.GlobalExceptionHandler;
+import com.tuoman.ai_task_orchestrator.dto.DocumentReindexSubmitResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentDeleteResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentChunkResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentSummaryResponse;
 import com.tuoman.ai_task_orchestrator.service.DocumentEmbeddingService;
 import com.tuoman.ai_task_orchestrator.service.DocumentIngestionService;
+import com.tuoman.ai_task_orchestrator.service.DocumentReindexService;
 import com.tuoman.ai_task_orchestrator.service.DocumentService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,6 +41,9 @@ class DocumentReadApiTest {
     @MockitoBean
     private DocumentIngestionService documentIngestionService;
 
+    @MockitoBean
+    private DocumentReindexService documentReindexService;
+
     @Test
     void listDocumentsShouldReturnEmptyArrayWhenNoData() throws Exception {
         when(documentService.listDocuments()).thenReturn(List.of());
@@ -63,6 +68,11 @@ class DocumentReadApiTest {
                         null,
                         true,
                         true,
+                        1,
+                        0,
+                        null,
+                        true,
+                        null,
                         createdAt,
                         createdAt
                 )
@@ -77,7 +87,26 @@ class DocumentReadApiTest {
                 .andExpect(jsonPath("$[0].displayStatus").value("已启用"))
                 .andExpect(jsonPath("$[0].processingStatus").value("READY"))
                 .andExpect(jsonPath("$[0].canDelete").value(true))
-                .andExpect(jsonPath("$[0].canAsk").value(true));
+                .andExpect(jsonPath("$[0].canAsk").value(true))
+                .andExpect(jsonPath("$[0].currentGeneration").value(1))
+                .andExpect(jsonPath("$[0].canReindex").value(true));
+    }
+
+    @Test
+    void reindexDocumentShouldReturnAcceptedResponse() throws Exception {
+        when(documentReindexService.submitReindex(1L)).thenReturn(new DocumentReindexSubmitResponse(
+                2001L,
+                1L,
+                "demo.md",
+                "PENDING",
+                "待处理",
+                "已提交重新索引任务，系统将重新切分文档并建立新的知识库索引。"
+        ));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/documents/1/reindex"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.taskId").value(2001))
+                .andExpect(jsonPath("$.displayMessage").value("已提交重新索引任务，系统将重新切分文档并建立新的知识库索引。"));
     }
 
     @Test

@@ -193,7 +193,11 @@ class DocumentIngestionApiTest {
                 "已启用",
                 null,
                 true,
-                false
+                false,
+                "INGEST",
+                "文档摄入",
+                true,
+                null
         );
     }
 }

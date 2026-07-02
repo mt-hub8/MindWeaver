@@ -47,6 +47,15 @@ public class DocumentEntity {
     @Column(name = "source_text", columnDefinition = "MEDIUMTEXT")
     private String sourceText;
 
+    @Column(name = "current_generation", nullable = false)
+    private Integer currentGeneration;
+
+    @Column(name = "reindex_count", nullable = false)
+    private Integer reindexCount;
+
+    @Column(name = "last_reindexed_at")
+    private LocalDateTime lastReindexedAt;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -60,6 +69,12 @@ public class DocumentEntity {
         this.updatedAt = now;
         if (this.lifecycleStatus == null) {
             this.lifecycleStatus = DocumentLifecycleStatus.ACTIVE;
+        }
+        if (this.currentGeneration == null) {
+            this.currentGeneration = 1;
+        }
+        if (this.reindexCount == null) {
+            this.reindexCount = 0;
         }
     }
 

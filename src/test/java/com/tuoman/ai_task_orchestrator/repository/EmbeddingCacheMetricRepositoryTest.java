@@ -2,6 +2,7 @@ package com.tuoman.ai_task_orchestrator.repository;
 
 import com.tuoman.ai_task_orchestrator.entity.EmbeddingCacheMetricEntity;
 import com.tuoman.ai_task_orchestrator.embedding.MockEmbeddingClient;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,17 +21,24 @@ class EmbeddingCacheMetricRepositoryTest {
     @Autowired
     private EmbeddingCacheMetricRepository embeddingCacheMetricRepository;
 
+    private String testProvider;
+
+    @BeforeEach
+    void setUpUniqueProvider() {
+        testProvider = "metric-repo-" + System.nanoTime();
+    }
+
     @Test
     void shouldCreateMetricRow() {
         EmbeddingCacheMetricEntity entity = saveMetric(
-                MockEmbeddingClient.PROVIDER,
+                testProvider,
                 MockEmbeddingClient.DEFAULT_MODEL,
                 MockEmbeddingClient.DIMENSION
         );
 
         assertThat(entity.getId()).isNotNull();
         assertThat(embeddingCacheMetricRepository.findByProviderAndModelAndDimension(
-                MockEmbeddingClient.PROVIDER,
+                testProvider,
                 MockEmbeddingClient.DEFAULT_MODEL,
                 MockEmbeddingClient.DIMENSION
         )).isPresent();
@@ -38,17 +46,17 @@ class EmbeddingCacheMetricRepositoryTest {
 
     @Test
     void shouldIncrementHitCountAtomically() {
-        saveMetric(MockEmbeddingClient.PROVIDER, MockEmbeddingClient.DEFAULT_MODEL, MockEmbeddingClient.DIMENSION);
+        saveMetric(testProvider, MockEmbeddingClient.DEFAULT_MODEL, MockEmbeddingClient.DIMENSION);
 
         int updated = embeddingCacheMetricRepository.incrementHit(
-                MockEmbeddingClient.PROVIDER,
+                testProvider,
                 MockEmbeddingClient.DEFAULT_MODEL,
                 MockEmbeddingClient.DIMENSION,
                 LocalDateTime.now()
         );
 
         EmbeddingCacheMetricEntity loaded = embeddingCacheMetricRepository.findByProviderAndModelAndDimension(
-                MockEmbeddingClient.PROVIDER,
+                testProvider,
                 MockEmbeddingClient.DEFAULT_MODEL,
                 MockEmbeddingClient.DIMENSION
         ).orElseThrow();
@@ -60,17 +68,17 @@ class EmbeddingCacheMetricRepositoryTest {
 
     @Test
     void shouldIncrementMissCountAtomically() {
-        saveMetric(MockEmbeddingClient.PROVIDER, MockEmbeddingClient.DEFAULT_MODEL, MockEmbeddingClient.DIMENSION);
+        saveMetric(testProvider, MockEmbeddingClient.DEFAULT_MODEL, MockEmbeddingClient.DIMENSION);
 
         embeddingCacheMetricRepository.incrementMiss(
-                MockEmbeddingClient.PROVIDER,
+                testProvider,
                 MockEmbeddingClient.DEFAULT_MODEL,
                 MockEmbeddingClient.DIMENSION,
                 LocalDateTime.now()
         );
 
         EmbeddingCacheMetricEntity loaded = embeddingCacheMetricRepository.findByProviderAndModelAndDimension(
-                MockEmbeddingClient.PROVIDER,
+                testProvider,
                 MockEmbeddingClient.DEFAULT_MODEL,
                 MockEmbeddingClient.DIMENSION
         ).orElseThrow();
@@ -81,17 +89,17 @@ class EmbeddingCacheMetricRepositoryTest {
 
     @Test
     void shouldIncrementWriteCountAtomically() {
-        saveMetric(MockEmbeddingClient.PROVIDER, MockEmbeddingClient.DEFAULT_MODEL, MockEmbeddingClient.DIMENSION);
+        saveMetric(testProvider, MockEmbeddingClient.DEFAULT_MODEL, MockEmbeddingClient.DIMENSION);
 
         embeddingCacheMetricRepository.incrementWrite(
-                MockEmbeddingClient.PROVIDER,
+                testProvider,
                 MockEmbeddingClient.DEFAULT_MODEL,
                 MockEmbeddingClient.DIMENSION,
                 LocalDateTime.now()
         );
 
         assertThat(embeddingCacheMetricRepository.findByProviderAndModelAndDimension(
-                MockEmbeddingClient.PROVIDER,
+                testProvider,
                 MockEmbeddingClient.DEFAULT_MODEL,
                 MockEmbeddingClient.DIMENSION
         ).orElseThrow().getWriteCount()).isEqualTo(1L);
@@ -99,17 +107,17 @@ class EmbeddingCacheMetricRepositoryTest {
 
     @Test
     void shouldIncrementConflictCountAtomically() {
-        saveMetric(MockEmbeddingClient.PROVIDER, MockEmbeddingClient.DEFAULT_MODEL, MockEmbeddingClient.DIMENSION);
+        saveMetric(testProvider, MockEmbeddingClient.DEFAULT_MODEL, MockEmbeddingClient.DIMENSION);
 
         embeddingCacheMetricRepository.incrementConflict(
-                MockEmbeddingClient.PROVIDER,
+                testProvider,
                 MockEmbeddingClient.DEFAULT_MODEL,
                 MockEmbeddingClient.DIMENSION,
                 LocalDateTime.now()
         );
 
         assertThat(embeddingCacheMetricRepository.findByProviderAndModelAndDimension(
-                MockEmbeddingClient.PROVIDER,
+                testProvider,
                 MockEmbeddingClient.DEFAULT_MODEL,
                 MockEmbeddingClient.DIMENSION
         ).orElseThrow().getConflictCount()).isEqualTo(1L);
@@ -117,10 +125,10 @@ class EmbeddingCacheMetricRepositoryTest {
 
     @Test
     void shouldRejectDuplicateEmbeddingSpace() {
-        saveMetric(MockEmbeddingClient.PROVIDER, MockEmbeddingClient.DEFAULT_MODEL, MockEmbeddingClient.DIMENSION);
+        saveMetric(testProvider, MockEmbeddingClient.DEFAULT_MODEL, MockEmbeddingClient.DIMENSION);
 
         EmbeddingCacheMetricEntity duplicate = new EmbeddingCacheMetricEntity();
-        duplicate.setProvider(MockEmbeddingClient.PROVIDER);
+        duplicate.setProvider(testProvider);
         duplicate.setModel(MockEmbeddingClient.DEFAULT_MODEL);
         duplicate.setDimension(MockEmbeddingClient.DIMENSION);
 
@@ -130,15 +138,17 @@ class EmbeddingCacheMetricRepositoryTest {
 
     @Test
     void shouldTrackDifferentEmbeddingSpacesSeparately() {
-        saveMetric("provider-a", "model-a", 128);
-        saveMetric("provider-b", "model-b", 256);
+        String providerA = testProvider + "-a";
+        String providerB = testProvider + "-b";
+        saveMetric(providerA, "model-a", 128);
+        saveMetric(providerB, "model-b", 256);
 
-        embeddingCacheMetricRepository.incrementHit("provider-a", "model-a", 128, LocalDateTime.now());
-        embeddingCacheMetricRepository.incrementMiss("provider-b", "model-b", 256, LocalDateTime.now());
+        embeddingCacheMetricRepository.incrementHit(providerA, "model-a", 128, LocalDateTime.now());
+        embeddingCacheMetricRepository.incrementMiss(providerB, "model-b", 256, LocalDateTime.now());
 
-        assertThat(embeddingCacheMetricRepository.findByProviderAndModelAndDimension("provider-a", "model-a", 128)
+        assertThat(embeddingCacheMetricRepository.findByProviderAndModelAndDimension(providerA, "model-a", 128)
                 .orElseThrow().getHitCount()).isEqualTo(1L);
-        assertThat(embeddingCacheMetricRepository.findByProviderAndModelAndDimension("provider-b", "model-b", 256)
+        assertThat(embeddingCacheMetricRepository.findByProviderAndModelAndDimension(providerB, "model-b", 256)
                 .orElseThrow().getMissCount()).isEqualTo(1L);
     }
 

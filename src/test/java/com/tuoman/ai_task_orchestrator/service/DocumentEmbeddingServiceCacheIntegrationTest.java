@@ -1,5 +1,6 @@
 package com.tuoman.ai_task_orchestrator.service;
 
+import com.tuoman.ai_task_orchestrator.embedding.ChunkHashService;
 import com.tuoman.ai_task_orchestrator.embedding.EmbeddingProvider;
 import com.tuoman.ai_task_orchestrator.embedding.EmbeddingRequest;
 import com.tuoman.ai_task_orchestrator.embedding.EmbeddingResponse;
@@ -8,6 +9,7 @@ import com.tuoman.ai_task_orchestrator.entity.DocumentChunkEmbeddingEntity;
 import com.tuoman.ai_task_orchestrator.entity.DocumentChunkEntity;
 import com.tuoman.ai_task_orchestrator.entity.DocumentEntity;
 import com.tuoman.ai_task_orchestrator.entity.EmbeddingCacheEntity;
+import com.tuoman.ai_task_orchestrator.enums.ChunkStatus;
 import com.tuoman.ai_task_orchestrator.enums.DocumentStatus;
 import com.tuoman.ai_task_orchestrator.repository.DocumentChunkEmbeddingRepository;
 import com.tuoman.ai_task_orchestrator.repository.DocumentChunkRepository;
@@ -53,6 +55,9 @@ class DocumentEmbeddingServiceCacheIntegrationTest {
     @Autowired
     private EmbeddingCacheRepository embeddingCacheRepository;
 
+    @Autowired
+    private ChunkHashService chunkHashService;
+
     @MockitoBean
     private EmbeddingProvider embeddingProvider;
 
@@ -89,8 +94,13 @@ class DocumentEmbeddingServiceCacheIntegrationTest {
         documentEmbeddingService.embedDocument(secondDocument.getId());
         assertThat(embedInvocationCount.get()).isEqualTo(callsAfterFirstDocument);
 
-        List<EmbeddingCacheEntity> cacheEntries = embeddingCacheRepository.findAll();
-        assertThat(cacheEntries).hasSize(1);
+        String chunkHash = chunkHashService.hash(SHARED_CHUNK_CONTENT);
+        assertThat(embeddingCacheRepository.findByChunkHashAndProviderAndModelAndDimension(
+                chunkHash,
+                MockEmbeddingClient.PROVIDER,
+                MockEmbeddingClient.DEFAULT_MODEL,
+                MockEmbeddingClient.DIMENSION
+        )).isPresent();
 
         List<DocumentChunkEmbeddingEntity> embeddings = documentChunkEmbeddingRepository
                 .findByDocumentIdAndEmbeddingProviderAndEmbeddingModel(
@@ -132,6 +142,8 @@ class DocumentEmbeddingServiceCacheIntegrationTest {
         document.setFileSize((long) label.getBytes(StandardCharsets.UTF_8).length);
         document.setStatus(DocumentStatus.CHUNKED);
         document.setChunkCount(1);
+        document.setCurrentGeneration(1);
+        document.setReindexCount(0);
         return documentRepository.saveAndFlush(document);
     }
 
@@ -145,6 +157,8 @@ class DocumentEmbeddingServiceCacheIntegrationTest {
         chunk.setStartOffset(0);
         chunk.setEndOffset(content.length());
         chunk.setHeadingPath("Test");
+        chunk.setChunkStatus(ChunkStatus.ACTIVE);
+        chunk.setGeneration(1);
         return documentChunkRepository.saveAndFlush(chunk);
     }
 }

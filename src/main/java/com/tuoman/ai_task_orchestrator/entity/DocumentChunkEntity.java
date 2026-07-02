@@ -1,5 +1,6 @@
 package com.tuoman.ai_task_orchestrator.entity;
 
+import com.tuoman.ai_task_orchestrator.enums.ChunkStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -40,11 +41,24 @@ public class DocumentChunkEntity {
     @Column(name = "heading_path", length = 500)
     private String headingPath;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "chunk_status", nullable = false, length = 50)
+    private ChunkStatus chunkStatus;
+
+    @Column(nullable = false)
+    private Integer generation;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
     @PrePersist
     public void prePersist() {
         this.createdAt = LocalDateTime.now();
+        if (this.chunkStatus == null) {
+            this.chunkStatus = ChunkStatus.ACTIVE;
+        }
+        if (this.generation == null) {
+            this.generation = 1;
+        }
     }
 }

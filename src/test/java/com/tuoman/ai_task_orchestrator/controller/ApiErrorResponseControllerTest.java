@@ -4,6 +4,7 @@ import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
 import com.tuoman.ai_task_orchestrator.common.error.GlobalExceptionHandler;
 import com.tuoman.ai_task_orchestrator.service.DocumentEmbeddingService;
 import com.tuoman.ai_task_orchestrator.service.DocumentIngestionService;
+import com.tuoman.ai_task_orchestrator.service.DocumentReindexService;
 import com.tuoman.ai_task_orchestrator.service.DocumentService;
 import com.tuoman.ai_task_orchestrator.service.TaskAttemptService;
 import com.tuoman.ai_task_orchestrator.service.TaskOutputChunkService;
@@ -47,6 +48,9 @@ class ApiErrorResponseControllerTest {
 
     @MockitoBean
     private DocumentIngestionService documentIngestionService;
+
+    @MockitoBean
+    private DocumentReindexService documentReindexService;
 
     @Test
     void getMissingTaskShouldReturnTaskNotFoundErrorResponse() throws Exception {

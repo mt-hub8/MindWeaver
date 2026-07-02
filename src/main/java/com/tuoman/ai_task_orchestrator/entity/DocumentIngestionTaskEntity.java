@@ -2,6 +2,7 @@ package com.tuoman.ai_task_orchestrator.entity;
 
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStep;
+import com.tuoman.ai_task_orchestrator.enums.IngestionTaskType;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -34,6 +35,13 @@ public class DocumentIngestionTaskEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
     private IngestionTaskStep step;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "task_type", nullable = false, length = 50)
+    private IngestionTaskType taskType;
+
+    @Column(name = "target_generation")
+    private Integer targetGeneration;
 
     @Column(name = "source_text", nullable = false, columnDefinition = "MEDIUMTEXT")
     private String sourceText;
@@ -81,6 +89,9 @@ public class DocumentIngestionTaskEntity {
         }
         if (this.retryCount == null) {
             this.retryCount = 0;
+        }
+        if (this.taskType == null) {
+            this.taskType = IngestionTaskType.INGEST;
         }
     }
 

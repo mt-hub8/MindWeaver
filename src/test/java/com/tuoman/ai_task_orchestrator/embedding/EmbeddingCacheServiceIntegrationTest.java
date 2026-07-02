@@ -1,6 +1,7 @@
 package com.tuoman.ai_task_orchestrator.embedding;
 
 import com.tuoman.ai_task_orchestrator.repository.EmbeddingCacheRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,6 +22,16 @@ class EmbeddingCacheServiceIntegrationTest {
 
     @Autowired
     private EmbeddingCacheRepository embeddingCacheRepository;
+
+    @Autowired
+    private ChunkHashService chunkHashService;
+
+    private String testProviderSuffix;
+
+    @BeforeEach
+    void setUpUniqueProviderSuffix() {
+        testProviderSuffix = "cache-it-" + System.nanoTime();
+    }
 
     @Test
     void shouldHitCacheForSameProviderModelAndDimension() {
@@ -44,7 +55,7 @@ class EmbeddingCacheServiceIntegrationTest {
         assertThat(first.cacheHit()).isFalse();
         assertThat(second.cacheHit()).isTrue();
         assertThat(second.embedding()).isEqualTo(first.embedding());
-        assertThat(embeddingCacheRepository.findAll()).hasSize(1);
+        assertThat(cacheEntryExists(provider.provider(), provider.model(), provider.dimension())).isTrue();
     }
 
     @Test
@@ -68,7 +79,8 @@ class EmbeddingCacheServiceIntegrationTest {
         );
 
         assertThat(differentModel.cacheHit()).isFalse();
-        assertThat(embeddingCacheRepository.findAll()).hasSize(2);
+        assertThat(cacheEntryExists(provider.provider(), "model-a", provider.dimension())).isTrue();
+        assertThat(cacheEntryExists(provider.provider(), "model-b", provider.dimension())).isTrue();
     }
 
     @Test
@@ -94,7 +106,8 @@ class EmbeddingCacheServiceIntegrationTest {
         );
 
         assertThat(differentDimension.cacheHit()).isFalse();
-        assertThat(embeddingCacheRepository.findAll()).hasSize(2);
+        assertThat(cacheEntryExists(provider.provider(), provider.model(), 128)).isTrue();
+        assertThat(cacheEntryExists(provider.provider(), provider.model(), 64)).isTrue();
     }
 
     @Test
@@ -102,24 +115,39 @@ class EmbeddingCacheServiceIntegrationTest {
         MockEmbeddingClient provider = new MockEmbeddingClient();
         List<Double> vector = provider.embed(embeddingRequest(provider, CONTENT)).getVector();
 
+        String providerA = scopedProvider("provider-a");
+        String providerB = scopedProvider("provider-b");
+
         embeddingCacheService.getOrCompute(
                 CONTENT,
-                "provider-a",
+                providerA,
                 provider.model(),
                 provider.dimension(),
-                namedProvider("provider-a", provider.model(), provider.dimension(), vector)
+                namedProvider(providerA, provider.model(), provider.dimension(), vector)
         );
 
         CachedEmbeddingResult differentProvider = embeddingCacheService.getOrCompute(
                 CONTENT,
-                "provider-b",
+                providerB,
                 provider.model(),
                 provider.dimension(),
-                namedProvider("provider-b", provider.model(), provider.dimension(), vector)
+                namedProvider(providerB, provider.model(), provider.dimension(), vector)
         );
 
         assertThat(differentProvider.cacheHit()).isFalse();
-        assertThat(embeddingCacheRepository.findAll()).hasSize(2);
+        assertThat(cacheEntryExists(providerA, provider.model(), provider.dimension())).isTrue();
+        assertThat(cacheEntryExists(providerB, provider.model(), provider.dimension())).isTrue();
+    }
+
+    private String scopedProvider(String base) {
+        return base + "-" + testProviderSuffix;
+    }
+
+    private boolean cacheEntryExists(String provider, String model, int dimension) {
+        String chunkHash = chunkHashService.hash(CONTENT);
+        return embeddingCacheRepository
+                .findByChunkHashAndProviderAndModelAndDimension(chunkHash, provider, model, dimension)
+                .isPresent();
     }
 
     private EmbeddingProvider fixedResponseProvider(

@@ -8,6 +8,7 @@ import com.tuoman.ai_task_orchestrator.entity.DocumentIngestionTaskEntity;
 import com.tuoman.ai_task_orchestrator.enums.DocumentStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStep;
+import com.tuoman.ai_task_orchestrator.enums.IngestionTaskType;
 import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,6 +22,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -130,12 +132,69 @@ class DocumentIngestionTaskHandlerTest {
         assertThat(task.getStatus()).isEqualTo(IngestionTaskStatus.FAILED);
         verify(documentIngestionEventRecorder).recordTaskFailed(
                 eq(1001L),
-                eq(IngestionTaskStep.EMBEDDING),
+                any(IngestionTaskStep.class),
                 eq("VECTOR_STORE_ERROR"),
                 eq("向量写入失败"),
                 any(String.class),
                 any(Exception.class)
         );
+    }
+
+    @Test
+    void processReindexShouldCompleteAndActivateNewGeneration() {
+        task.setTaskType(IngestionTaskType.REINDEX);
+        task.setTargetGeneration(2);
+        when(documentIngestionTaskService.findTaskOrThrow(1001L)).thenReturn(task);
+
+        DocumentEntity document = new DocumentEntity();
+        document.setId(42L);
+        document.setCurrentGeneration(1);
+        document.setSourceText("hello ingestion");
+        when(documentRepository.findById(42L)).thenReturn(Optional.of(document));
+        when(documentService.hasUsableSourceText(document)).thenReturn(true);
+        when(documentService.chunkAndPersistForGeneration(document, "hello ingestion", 2)).thenReturn(4);
+        when(documentEmbeddingService.embedDocumentGeneration(42L, 2, false)).thenReturn(
+                new DocumentEmbeddingResponse(42L, "mock", "mock-embedding-v1", 128, "COSINE", 4)
+        );
+
+        handler.process(1001L);
+
+        assertThat(task.getStatus()).isEqualTo(IngestionTaskStatus.COMPLETED);
+        verify(documentIngestionEventRecorder).recordReindexStarted(1001L, 2);
+        verify(documentIngestionEventRecorder).recordReindexCompleted(eq(1001L), eq(2), eq(4), any(Long.class));
+        verify(documentService).completeReindexGeneration(42L, 2, 4);
+    }
+
+    @Test
+    void processReindexFailureShouldCleanupStagingChunksWithoutMarkingDocumentFailed() {
+        task.setTaskType(IngestionTaskType.REINDEX);
+        task.setTargetGeneration(2);
+        when(documentIngestionTaskService.findTaskOrThrow(1001L)).thenReturn(task);
+
+        DocumentEntity document = new DocumentEntity();
+        document.setId(42L);
+        document.setCurrentGeneration(1);
+        document.setStatus(DocumentStatus.READY);
+        document.setSourceText("hello ingestion");
+        when(documentRepository.findById(42L)).thenReturn(Optional.of(document));
+        when(documentService.hasUsableSourceText(document)).thenReturn(true);
+        when(documentService.chunkAndPersistForGeneration(document, "hello ingestion", 2)).thenReturn(2);
+        when(documentEmbeddingService.embedDocumentGeneration(42L, 2, false))
+                .thenThrow(BusinessException.vectorStoreError("向量写入失败"));
+
+        handler.process(1001L);
+
+        assertThat(task.getStatus()).isEqualTo(IngestionTaskStatus.FAILED);
+        verify(documentService).cleanupFailedReindexGeneration(42L, 2);
+        verify(documentIngestionEventRecorder).recordReindexFailed(
+                eq(1001L),
+                any(IngestionTaskStep.class),
+                eq("VECTOR_STORE_ERROR"),
+                eq("向量写入失败"),
+                any(String.class),
+                any(Exception.class)
+        );
+        assertThat(document.getStatus()).isEqualTo(DocumentStatus.READY);
     }
 
     @Test

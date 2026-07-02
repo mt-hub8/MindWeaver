@@ -1,8 +1,8 @@
 package com.tuoman.ai_task_orchestrator.embedding;
 
 import com.tuoman.ai_task_orchestrator.dto.EmbeddingCacheMetricItemResponse;
-import com.tuoman.ai_task_orchestrator.dto.EmbeddingCacheMetricsResponse;
 import com.tuoman.ai_task_orchestrator.repository.EmbeddingCacheMetricRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,12 +21,19 @@ class EmbeddingCacheMetricsServiceIntegrationTest {
     @Autowired
     private EmbeddingCacheMetricRepository embeddingCacheMetricRepository;
 
+    private String testProvider;
+
+    @BeforeEach
+    void setUpUniqueProvider() {
+        testProvider = "metrics-it-" + System.nanoTime();
+    }
+
     @Test
     void shouldRecordHitAndSavedProviderCallCount() {
-        embeddingCacheMetricsService.recordHit(MockEmbeddingClient.PROVIDER, MockEmbeddingClient.DEFAULT_MODEL, 128);
-        embeddingCacheMetricsService.recordHit(MockEmbeddingClient.PROVIDER, MockEmbeddingClient.DEFAULT_MODEL, 128);
+        embeddingCacheMetricsService.recordHit(testProvider, MockEmbeddingClient.DEFAULT_MODEL, 128);
+        embeddingCacheMetricsService.recordHit(testProvider, MockEmbeddingClient.DEFAULT_MODEL, 128);
 
-        EmbeddingCacheMetricItemResponse item = singleItem();
+        EmbeddingCacheMetricItemResponse item = metricItem(testProvider, MockEmbeddingClient.DEFAULT_MODEL, 128);
         assertThat(item.getHitCount()).isEqualTo(2L);
         assertThat(item.getSavedProviderCallCount()).isEqualTo(2L);
         assertThat(item.getHitRate()).isEqualTo(1.0);
@@ -34,9 +41,9 @@ class EmbeddingCacheMetricsServiceIntegrationTest {
 
     @Test
     void shouldRecordMissAndProviderCallCount() {
-        embeddingCacheMetricsService.recordMiss(MockEmbeddingClient.PROVIDER, MockEmbeddingClient.DEFAULT_MODEL, 128);
+        embeddingCacheMetricsService.recordMiss(testProvider, MockEmbeddingClient.DEFAULT_MODEL, 128);
 
-        EmbeddingCacheMetricItemResponse item = singleItem();
+        EmbeddingCacheMetricItemResponse item = metricItem(testProvider, MockEmbeddingClient.DEFAULT_MODEL, 128);
         assertThat(item.getMissCount()).isEqualTo(1L);
         assertThat(item.getProviderCallCount()).isEqualTo(1L);
         assertThat(item.getWriteCount()).isZero();
@@ -45,29 +52,29 @@ class EmbeddingCacheMetricsServiceIntegrationTest {
 
     @Test
     void shouldRecordWriteAfterMiss() {
-        embeddingCacheMetricsService.recordMiss(MockEmbeddingClient.PROVIDER, MockEmbeddingClient.DEFAULT_MODEL, 128);
-        embeddingCacheMetricsService.recordWrite(MockEmbeddingClient.PROVIDER, MockEmbeddingClient.DEFAULT_MODEL, 128);
+        embeddingCacheMetricsService.recordMiss(testProvider, MockEmbeddingClient.DEFAULT_MODEL, 128);
+        embeddingCacheMetricsService.recordWrite(testProvider, MockEmbeddingClient.DEFAULT_MODEL, 128);
 
-        EmbeddingCacheMetricItemResponse item = singleItem();
+        EmbeddingCacheMetricItemResponse item = metricItem(testProvider, MockEmbeddingClient.DEFAULT_MODEL, 128);
         assertThat(item.getMissCount()).isEqualTo(1L);
         assertThat(item.getWriteCount()).isEqualTo(1L);
     }
 
     @Test
     void shouldRecordConflictCount() {
-        embeddingCacheMetricsService.recordConflict(MockEmbeddingClient.PROVIDER, MockEmbeddingClient.DEFAULT_MODEL, 128);
+        embeddingCacheMetricsService.recordConflict(testProvider, MockEmbeddingClient.DEFAULT_MODEL, 128);
 
-        assertThat(singleItem().getConflictCount()).isEqualTo(1L);
+        assertThat(metricItem(testProvider, MockEmbeddingClient.DEFAULT_MODEL, 128).getConflictCount()).isEqualTo(1L);
     }
 
     @Test
     void shouldCalculateHitRateCorrectly() {
-        embeddingCacheMetricsService.recordHit(MockEmbeddingClient.PROVIDER, MockEmbeddingClient.DEFAULT_MODEL, 128);
-        embeddingCacheMetricsService.recordHit(MockEmbeddingClient.PROVIDER, MockEmbeddingClient.DEFAULT_MODEL, 128);
-        embeddingCacheMetricsService.recordHit(MockEmbeddingClient.PROVIDER, MockEmbeddingClient.DEFAULT_MODEL, 128);
-        embeddingCacheMetricsService.recordMiss(MockEmbeddingClient.PROVIDER, MockEmbeddingClient.DEFAULT_MODEL, 128);
+        embeddingCacheMetricsService.recordHit(testProvider, MockEmbeddingClient.DEFAULT_MODEL, 128);
+        embeddingCacheMetricsService.recordHit(testProvider, MockEmbeddingClient.DEFAULT_MODEL, 128);
+        embeddingCacheMetricsService.recordHit(testProvider, MockEmbeddingClient.DEFAULT_MODEL, 128);
+        embeddingCacheMetricsService.recordMiss(testProvider, MockEmbeddingClient.DEFAULT_MODEL, 128);
 
-        assertThat(singleItem().getHitRate()).isEqualTo(0.75);
+        assertThat(metricItem(testProvider, MockEmbeddingClient.DEFAULT_MODEL, 128).getHitRate()).isEqualTo(0.75);
     }
 
     @Test
@@ -90,40 +97,39 @@ class EmbeddingCacheMetricsServiceIntegrationTest {
 
     @Test
     void shouldTrackDifferentEmbeddingSpacesSeparately() {
-        embeddingCacheMetricsService.recordHit("provider-a", "model-a", 128);
-        embeddingCacheMetricsService.recordMiss("provider-b", "model-b", 256);
+        String providerA = testProvider + "-a";
+        String providerB = testProvider + "-b";
+        embeddingCacheMetricsService.recordHit(providerA, "model-a", 128);
+        embeddingCacheMetricsService.recordMiss(providerB, "model-b", 256);
 
-        EmbeddingCacheMetricsResponse response = embeddingCacheMetricsService.getMetrics();
-        assertThat(response.getItems()).hasSize(2);
-        assertThat(response.getItems())
-                .anySatisfy(item -> {
-                    assertThat(item.getProvider()).isEqualTo("provider-a");
-                    assertThat(item.getHitCount()).isEqualTo(1L);
-                })
-                .anySatisfy(item -> {
-                    assertThat(item.getProvider()).isEqualTo("provider-b");
-                    assertThat(item.getMissCount()).isEqualTo(1L);
-                });
+        assertThat(metricItem(providerA, "model-a", 128).getHitCount()).isEqualTo(1L);
+        assertThat(metricItem(providerB, "model-b", 256).getMissCount()).isEqualTo(1L);
     }
 
     @Test
     void shouldReturnEmptyItemsWhenNoMetrics() {
-        EmbeddingCacheMetricsResponse response = embeddingCacheMetricsService.getMetrics();
-        assertThat(response.getItems()).isEmpty();
+        assertThat(embeddingCacheMetricRepository.findByProviderAndModelAndDimension(
+                testProvider,
+                "unused-model",
+                128
+        )).isEmpty();
     }
 
     @Test
     void shouldNotPropagateMetricUpdateFailure() {
-        embeddingCacheMetricRepository.deleteAll();
-
         assertThatCode(() -> embeddingCacheMetricsService.recordHit(
-                MockEmbeddingClient.PROVIDER,
+                testProvider,
                 MockEmbeddingClient.DEFAULT_MODEL,
                 128
         )).doesNotThrowAnyException();
     }
 
-    private EmbeddingCacheMetricItemResponse singleItem() {
-        return embeddingCacheMetricsService.getMetrics().getItems().getFirst();
+    private EmbeddingCacheMetricItemResponse metricItem(String provider, String model, int dimension) {
+        return embeddingCacheMetricsService.getMetrics().getItems().stream()
+                .filter(item -> provider.equals(item.getProvider())
+                        && model.equals(item.getModel())
+                        && dimension == item.getDimension())
+                .findFirst()
+                .orElseThrow();
     }
 }

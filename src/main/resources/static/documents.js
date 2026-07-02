@@ -164,6 +164,10 @@
             const lifecycleDisplay = task.documentDisplayStatus || (lifecycleStatus === "DELETED" ? "已删除" : "已启用");
             const lifecycleClass = lifecycleStatus === "DELETED" ? "deleted" : "active";
 
+            const taskTypeHint = task.displayTaskType && task.displayTaskType !== "文档摄入"
+                ? '<p class="task-type muted">任务类型：' + escapeHtml(task.displayTaskType) + "</p>"
+                : "";
+
             const failureHint = task.status === "FAILED" && task.errorMessage
                 ? '<p class="task-error muted">处理失败：' + escapeHtml(task.errorMessage) + "</p>"
                 : "";
@@ -199,9 +203,20 @@
             } else if (lifecycleStatus === "DELETED") {
                 actions.push('<span class="muted deleted-label">已删除</span>');
             }
+            if (task.canReindex === true) {
+                actions.push(
+                    '<button type="button" class="reindex-button" data-document-id="'
+                    + escapeHtml(task.documentId) + '" data-filename="' + escapeHtml(task.filename) + '">重新建立索引</button>'
+                );
+            } else if (task.reindexDisabledReason) {
+                actions.push(
+                    '<span class="muted reindex-disabled" title="' + escapeHtml(task.reindexDisabledReason) + '">'
+                    + escapeHtml(task.reindexDisabledReason) + "</span>"
+                );
+            }
 
             row.innerHTML =
-                "<td>" + escapeHtml(task.filename || "-") + failureHint + techInfo + "</td>" +
+                "<td>" + escapeHtml(task.filename || "-") + taskTypeHint + failureHint + techInfo + "</td>" +
                 '<td><span class="status-badge ' + lifecycleClass + '">' + escapeHtml(lifecycleDisplay) + "</span></td>" +
                 '<td><span class="status-badge ' + statusClass + '">' + escapeHtml(task.displayStatus || task.status) + "</span></td>" +
                 "<td>" + escapeHtml(task.displayStep || task.step || "-") + "</td>" +
@@ -240,6 +255,14 @@
                 deleteButton.addEventListener("click", function (event) {
                     event.stopPropagation();
                     confirmDeleteDocument(task.documentId, task.filename);
+                });
+            }
+
+            const reindexButton = row.querySelector(".reindex-button");
+            if (reindexButton) {
+                reindexButton.addEventListener("click", function (event) {
+                    event.stopPropagation();
+                    confirmReindexDocument(task.documentId, task.filename);
                 });
             }
 
@@ -351,6 +374,51 @@
         } catch (error) {
             return "-";
         }
+    }
+
+    async function confirmReindexDocument(documentId, filename) {
+        const confirmed = window.confirm(
+            "确认重新索引「" + (filename || "文档 " + documentId) + "」？\n\n"
+            + "系统会重新切分该文档并生成新的知识库索引。旧索引不会立即物理删除，但不会再用于后续问答。"
+        );
+        if (!confirmed) {
+            return;
+        }
+
+        clearError();
+        setListLoading(true);
+        try {
+            const response = await fetch("/documents/" + documentId + "/reindex", {
+                method: "POST"
+            });
+            const payload = await parseJsonResponse(response);
+            if (!response.ok) {
+                showError(extractError(payload, response.status));
+                return;
+            }
+            if (payload && payload.displayMessage) {
+                renderReindexSuccess(payload);
+            }
+            await loadIngestionTasks();
+        } catch (networkError) {
+            showError({
+                code: "NETWORK_ERROR",
+                message: "重新索引失败，请稍后重试。",
+                traceId: "-"
+            });
+        } finally {
+            setListLoading(false);
+        }
+    }
+
+    function renderReindexSuccess(summary) {
+        summaryTaskId.textContent = safeValue(summary.taskId);
+        summaryDocumentId.textContent = safeValue(summary.documentId);
+        summaryFilename.textContent = safeValue(summary.filename);
+        summaryStatus.textContent = safeValue(summary.displayStatus || summary.status);
+        uploadSuccessMessage.textContent = summary.displayMessage
+            || "已提交重新索引任务，系统将重新切分文档并建立新的知识库索引。";
+        uploadSuccess.classList.remove("hidden");
     }
 
     async function confirmDeleteDocument(documentId, filename) {

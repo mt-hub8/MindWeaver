@@ -68,6 +68,30 @@ public class BusinessException extends RuntimeException {
         );
     }
 
+    public static BusinessException documentDeletedCannotReindex() {
+        return new BusinessException(
+                ErrorCode.DOCUMENT_DELETED_CANNOT_REINDEX,
+                HttpStatus.CONFLICT,
+                "当前文档已删除，不能重新索引"
+        );
+    }
+
+    public static BusinessException documentSourceTextMissing() {
+        return new BusinessException(
+                ErrorCode.DOCUMENT_SOURCE_TEXT_MISSING,
+                HttpStatus.BAD_REQUEST,
+                "当前文档缺少原始文本，无法重新建立索引。请重新上传文档。"
+        );
+    }
+
+    public static BusinessException documentReindexAlreadyRunning() {
+        return new BusinessException(
+                ErrorCode.DOCUMENT_REINDEX_ALREADY_RUNNING,
+                HttpStatus.CONFLICT,
+                "该文档已有重新索引任务正在处理。"
+        );
+    }
+
     public static BusinessException internalError(String message) {
         return new BusinessException(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR, message);
     }

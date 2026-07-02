@@ -170,10 +170,8 @@ public class RagTwoStageRetrievalService {
         LexicalRetrievalResponse lexicalResponse = lexicalRetriever.retrieve(
                 new LexicalRetrievalRequest(query, lexicalTopK, null)
         );
-        Set<Long> deletedDocumentIds = documentLifecycleFilterService.findDeletedDocumentIds();
         List<LexicalCandidate> lexicalCandidates = documentLifecycleFilterService.filterLexicalCandidates(
-                lexicalResponse.candidates(),
-                deletedDocumentIds
+                lexicalResponse.candidates()
         );
 
         FusionResponse fusionResponse = fusionRanker.fuse(
@@ -365,10 +363,7 @@ public class RagTwoStageRetrievalService {
                     .stream()
                     .map(this::toSearchResponse)
                     .toList();
-            return documentLifecycleFilterService.filterSearchResults(
-                    results,
-                    documentLifecycleFilterService.findDeletedDocumentIds()
-            );
+            return documentLifecycleFilterService.filterSearchResults(results);
         } catch (QdrantVectorStoreException exception) {
             throw exception;
         } catch (RuntimeException exception) {

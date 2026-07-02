@@ -281,6 +281,107 @@ public class DocumentIngestionEventRecorder {
         );
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordReindexRequested(Long taskId, Long documentId, int targetGeneration) {
+        record(
+                taskId,
+                IngestionEventType.DOCUMENT_REINDEX_REQUESTED,
+                IngestionTaskStep.TEXT_EXTRACTED,
+                IngestionEventStatus.COMPLETED,
+                "Reindex requested",
+                "用户已请求重新建立该文档的知识库索引。",
+                null,
+                metadata("documentId", documentId, "targetGeneration", targetGeneration),
+                null,
+                null,
+                null
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordReindexQueued(Long taskId, int targetGeneration) {
+        record(
+                taskId,
+                IngestionEventType.DOCUMENT_REINDEX_QUEUED,
+                IngestionTaskStep.TEXT_EXTRACTED,
+                IngestionEventStatus.COMPLETED,
+                "Reindex queued",
+                "重新索引任务已进入处理队列。",
+                null,
+                metadata("targetGeneration", targetGeneration),
+                null,
+                null,
+                null
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordReindexStarted(Long taskId, int targetGeneration) {
+        record(
+                taskId,
+                IngestionEventType.DOCUMENT_REINDEX_STARTED,
+                IngestionTaskStep.CHUNKING,
+                IngestionEventStatus.STARTED,
+                "Reindex started",
+                "开始重新切分文档内容并生成新的知识库索引。",
+                null,
+                metadata("targetGeneration", targetGeneration),
+                null,
+                null,
+                null
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordReindexCompleted(Long taskId, int targetGeneration, int chunkCount, long totalDurationMs) {
+        record(
+                taskId,
+                IngestionEventType.DOCUMENT_REINDEX_COMPLETED,
+                IngestionTaskStep.COMPLETED,
+                IngestionEventStatus.COMPLETED,
+                "Reindex completed",
+                "重新索引完成，新的文档片段已可用于知识库问答。",
+                totalDurationMs,
+                metadata("targetGeneration", targetGeneration, "chunkCount", chunkCount),
+                null,
+                null,
+                null
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordReindexFailed(
+            Long taskId,
+            IngestionTaskStep failedStep,
+            String errorCode,
+            String errorMessage,
+            String traceId,
+            Throwable throwable
+    ) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("failedStep", failedStep == null ? null : failedStep.name());
+        if (throwable != null) {
+            metadata.put("exceptionClass", throwable.getClass().getSimpleName());
+        }
+        String displayMessage = "重新索引失败，系统将保留旧索引继续用于问答。";
+        if (errorMessage != null && !errorMessage.isBlank()) {
+            displayMessage = "重新索引失败：" + errorMessage + "。系统将保留旧索引继续用于问答。";
+        }
+        record(
+                taskId,
+                IngestionEventType.DOCUMENT_REINDEX_FAILED,
+                failedStep == null ? IngestionTaskStep.FAILED : failedStep,
+                IngestionEventStatus.FAILED,
+                "Reindex failed",
+                displayMessage,
+                null,
+                metadata,
+                errorCode,
+                errorMessage,
+                traceId
+        );
+    }
+
     public static String newTraceId() {
         return UUID.randomUUID().toString();
     }

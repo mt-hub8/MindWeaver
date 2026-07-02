@@ -14,6 +14,7 @@ import com.tuoman.ai_task_orchestrator.enums.DocumentLifecycleStatus;
 import com.tuoman.ai_task_orchestrator.enums.DocumentStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStep;
+import com.tuoman.ai_task_orchestrator.enums.IngestionTaskType;
 import com.tuoman.ai_task_orchestrator.mq.DocumentIngestionMessage;
 import com.tuoman.ai_task_orchestrator.mq.DocumentIngestionMessagePublisher;
 import com.tuoman.ai_task_orchestrator.repository.DocumentIngestionEventRepository;
@@ -117,6 +118,8 @@ public class DocumentIngestionTaskService {
                 .findTopByTaskIdOrderByCreatedAtDesc(task.getId())
                 .orElse(null);
         DocumentLifecycleFields lifecycleFields = resolveLifecycleFields(task.getDocumentId());
+        IngestionTaskType taskType = task.getTaskType() == null ? IngestionTaskType.INGEST : task.getTaskType();
+        ReindexFields reindexFields = resolveReindexFields(task.getDocumentId(), lifecycleFields);
         return new DocumentIngestionTaskResponse(
                 task.getId(),
                 task.getDocumentId(),
@@ -141,7 +144,11 @@ public class DocumentIngestionTaskService {
                 lifecycleFields.displayStatus(),
                 lifecycleFields.deletedAt(),
                 lifecycleFields.canDelete(),
-                lifecycleFields.canAsk()
+                lifecycleFields.canAsk(),
+                taskType.name(),
+                IngestionDisplayTexts.displayTaskType(taskType),
+                reindexFields.canReindex(),
+                reindexFields.disabledReason()
         );
     }
 
@@ -188,9 +195,42 @@ public class DocumentIngestionTaskService {
 
     private String resolveDisplayMessage(DocumentIngestionTaskEntity task) {
         if (task.getStatus() == IngestionTaskStatus.FAILED && task.getErrorMessage() != null) {
+            if (task.getTaskType() == IngestionTaskType.REINDEX) {
+                return "重新索引失败：" + task.getErrorMessage();
+            }
             return "处理失败：" + task.getErrorMessage();
         }
+        if (task.getTaskType() == IngestionTaskType.REINDEX) {
+            return IngestionDisplayTexts.reindexDisplayMessage(task.getStatus(), task.getStep());
+        }
         return IngestionDisplayTexts.displayMessage(task.getStatus(), task.getStep());
+    }
+
+    private ReindexFields resolveReindexFields(Long documentId, DocumentLifecycleFields lifecycleFields) {
+        if (documentId == null) {
+            return ReindexFields.disabled("文档不存在");
+        }
+        if (!Boolean.TRUE.equals(lifecycleFields.canDelete())) {
+            return ReindexFields.disabled("当前文档已删除，不能重新索引");
+        }
+        return documentRepository.findById(documentId)
+                .map(document -> {
+                    if (!documentService.hasUsableSourceText(document)) {
+                        return ReindexFields.disabled("当前文档缺少原始文本，无法重新索引");
+                    }
+                    return ReindexFields.enabled();
+                })
+                .orElse(ReindexFields.disabled("文档不存在"));
+    }
+
+    private record ReindexFields(Boolean canReindex, String disabledReason) {
+        static ReindexFields enabled() {
+            return new ReindexFields(true, null);
+        }
+
+        static ReindexFields disabled(String reason) {
+            return new ReindexFields(false, reason);
+        }
     }
 
     public static String resolveErrorCode(Throwable throwable) {

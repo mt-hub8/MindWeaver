@@ -56,4 +56,37 @@ public final class IngestionDisplayTexts {
         }
         return "系统正在处理文档，请稍候。";
     }
+
+    public static String displayTaskType(com.tuoman.ai_task_orchestrator.enums.IngestionTaskType taskType) {
+        if (taskType == null || taskType == com.tuoman.ai_task_orchestrator.enums.IngestionTaskType.INGEST) {
+            return "文档摄入";
+        }
+        return "重新索引";
+    }
+
+    public static String reindexSubmitMessage() {
+        return "已提交重新索引任务，系统将重新切分文档并建立新的知识库索引。";
+    }
+
+    public static String reindexDisplayMessage(IngestionTaskStatus status, IngestionTaskStep step) {
+        if (status == IngestionTaskStatus.PENDING) {
+            return "重新索引任务已提交，正在排队处理。";
+        }
+        if (status == IngestionTaskStatus.COMPLETED) {
+            return "重新索引完成，新的文档片段已可用于知识库问答。";
+        }
+        if (status == IngestionTaskStatus.FAILED) {
+            return "重新索引失败，系统将保留旧索引继续用于问答。";
+        }
+        if (step == IngestionTaskStep.CHUNKING) {
+            return "正在重新切分文档内容。";
+        }
+        if (step == IngestionTaskStep.EMBEDDING) {
+            return "正在重新生成文档向量。";
+        }
+        if (step == IngestionTaskStep.VECTOR_WRITING) {
+            return "正在写入新的知识库索引。";
+        }
+        return "系统正在重新建立知识库索引，请稍候。";
+    }
 }

@@ -98,7 +98,9 @@ class DocumentIngestionTaskServiceTest {
         document.setId(42L);
         document.setStatus(DocumentStatus.READY);
         document.setLifecycleStatus(DocumentLifecycleStatus.ACTIVE);
+        document.setSourceText("stored text");
         when(documentRepository.findById(42L)).thenReturn(Optional.of(document));
+        when(documentService.hasUsableSourceText(document)).thenReturn(true);
         when(documentIngestionEventRepository.findTopByTaskIdOrderByCreatedAtDesc(1001L)).thenReturn(Optional.empty());
 
         var response = documentIngestionTaskService.toResponse(task);
@@ -107,6 +109,7 @@ class DocumentIngestionTaskServiceTest {
         assertThat(response.getDocumentDisplayStatus()).isEqualTo("已启用");
         assertThat(response.getCanDelete()).isTrue();
         assertThat(response.getCanAsk()).isTrue();
+        assertThat(response.getCanReindex()).isTrue();
     }
 
     @Test

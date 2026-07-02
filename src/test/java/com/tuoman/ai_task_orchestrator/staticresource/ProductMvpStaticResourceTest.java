@@ -56,7 +56,23 @@ class ProductMvpStaticResourceTest {
     @Test
     void shouldServeAskHtmlWithDeletedDocumentHint() throws Exception {
         String content = fetchUtf8("/ask.html");
-        assertThat(content).contains("已删除文档不会再进入回答引用");
+        assertThat(content).contains("已删除文档");
+        assertThat(content).contains("旧版本片段不会再进入回答引用");
+    }
+
+    @Test
+    void shouldServeAskHtmlWithSupersededChunkHint() throws Exception {
+        String content = fetchUtf8("/ask.html");
+        assertThat(content).contains("旧版本片段不会再进入回答引用");
+    }
+
+    @Test
+    void shouldServeDocumentsJsWithReindexActions() throws Exception {
+        String content = fetchUtf8("/documents.js");
+        assertThat(content).contains("重新建立索引");
+        assertThat(content).contains("确认重新索引");
+        assertThat(content).contains("旧索引不会立即物理删除");
+        assertThat(content).contains("/reindex");
     }
 
     @Test

@@ -19,6 +19,7 @@ import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -97,5 +98,25 @@ class DocumentIngestionServiceTest {
         verify(documentIngestionEventRecorder).recordTextExtracted(1001L, "demo.txt");
         verify(documentIngestionMessagePublisher).publish(any(DocumentIngestionMessage.class));
         verify(documentIngestionEventRecorder).recordTaskQueued(1001L);
+    }
+
+    @Test
+    void submitUploadShouldPersistSourceTextForFutureReindex() {
+        String extractedText = "cache key content for ingestion";
+        DocumentEntity document = new DocumentEntity();
+        document.setId(10L);
+        document.setOriginalFilename("demo.txt");
+        when(documentService.createDocumentEntity(any())).thenReturn(document);
+        ArgumentCaptor<DocumentEntity> documentCaptor = ArgumentCaptor.forClass(DocumentEntity.class);
+        when(documentRepository.save(documentCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(documentIngestionTaskRepository.save(any())).thenAnswer(invocation -> {
+            DocumentIngestionTaskEntity task = invocation.getArgument(0);
+            task.setId(1001L);
+            return task;
+        });
+
+        documentIngestionService.submitUpload(TestDocumentFiles.txtFile("demo.txt", extractedText));
+
+        assertThat(documentCaptor.getValue().getSourceText()).isEqualTo(extractedText);
     }
 }

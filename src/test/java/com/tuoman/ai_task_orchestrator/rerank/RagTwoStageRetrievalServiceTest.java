@@ -71,10 +71,9 @@ class RagTwoStageRetrievalServiceTest {
                 fusionRanker,
                 documentLifecycleFilterService
         );
-        lenient().when(documentLifecycleFilterService.findDeletedDocumentIds()).thenReturn(Set.of());
-        lenient().when(documentLifecycleFilterService.filterSearchResults(any(), any()))
+        lenient().when(documentLifecycleFilterService.filterSearchResults(any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
-        lenient().when(documentLifecycleFilterService.filterLexicalCandidates(any(), any()))
+        lenient().when(documentLifecycleFilterService.filterLexicalCandidates(any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         lenient().when(embeddingProvider.provider()).thenReturn(MockEmbeddingClient.PROVIDER);
         lenient().when(embeddingProvider.model()).thenReturn(MockEmbeddingClient.DEFAULT_MODEL);
@@ -219,12 +218,10 @@ class RagTwoStageRetrievalServiceTest {
                 deletedSearchResult(20L, 2L, 0.99, "deleted doc"),
                 searchResult(10L, 0.8, "active doc")
         ));
-        when(documentLifecycleFilterService.findDeletedDocumentIds()).thenReturn(Set.of(2L));
-        when(documentLifecycleFilterService.filterSearchResults(any(), any())).thenAnswer(invocation -> {
+        when(documentLifecycleFilterService.filterSearchResults(any())).thenAnswer(invocation -> {
             List<DocumentSearchResultResponse> results = invocation.getArgument(0);
-            Set<Long> deletedIds = invocation.getArgument(1);
             return results.stream()
-                    .filter(result -> !deletedIds.contains(result.getDocumentId()))
+                    .filter(result -> !Long.valueOf(2L).equals(result.getDocumentId()))
                     .toList();
         });
 
@@ -244,14 +241,7 @@ class RagTwoStageRetrievalServiceTest {
         when(vectorStore.search(any(VectorSearchRequest.class))).thenReturn(List.of(
                 deletedSearchResult(20L, 2L, 0.99, "deleted dense")
         ));
-        when(documentLifecycleFilterService.findDeletedDocumentIds()).thenReturn(Set.of(2L));
-        when(documentLifecycleFilterService.filterSearchResults(any(), any())).thenAnswer(invocation -> {
-            List<DocumentSearchResultResponse> results = invocation.getArgument(0);
-            Set<Long> deletedIds = invocation.getArgument(1);
-            return results.stream()
-                    .filter(result -> !deletedIds.contains(result.getDocumentId()))
-                    .toList();
-        });
+        when(documentLifecycleFilterService.filterSearchResults(any())).thenReturn(List.of());
         when(lexicalRetriever.retrieve(any())).thenReturn(new com.tuoman.ai_task_orchestrator.hybrid.LexicalRetrievalResponse(
                 List.of(
                         new com.tuoman.ai_task_orchestrator.hybrid.LexicalCandidate(
@@ -263,11 +253,10 @@ class RagTwoStageRetrievalServiceTest {
                 ),
                 1L
         ));
-        when(documentLifecycleFilterService.filterLexicalCandidates(any(), any())).thenAnswer(invocation -> {
+        when(documentLifecycleFilterService.filterLexicalCandidates(any())).thenAnswer(invocation -> {
             List<com.tuoman.ai_task_orchestrator.hybrid.LexicalCandidate> candidates = invocation.getArgument(0);
-            Set<Long> deletedIds = invocation.getArgument(1);
             return candidates.stream()
-                    .filter(candidate -> !deletedIds.contains(candidate.documentId()))
+                    .filter(candidate -> candidate.documentId() == 1L)
                     .toList();
         });
         when(fusionRanker.fuse(any(), anyInt())).thenReturn(new com.tuoman.ai_task_orchestrator.hybrid.FusionResponse(
@@ -283,6 +272,25 @@ class RagTwoStageRetrievalServiceTest {
         assertThat(outcome.hybridEnabled()).isTrue();
         assertThat(outcome.chunks()).extracting(RagTwoStageRetrievalService.RagRetrievedChunk::documentId)
                 .containsExactly(1L);
+    }
+
+    @Test
+    void retrieveShouldFilterSupersededChunksFromDenseResults() {
+        when(vectorStore.search(any(VectorSearchRequest.class))).thenReturn(List.of(
+                searchResult(20L, 0.99, "old chunk"),
+                searchResult(10L, 0.8, "current chunk")
+        ));
+        when(documentLifecycleFilterService.filterSearchResults(any())).thenAnswer(invocation -> {
+            List<DocumentSearchResultResponse> results = invocation.getArgument(0);
+            return results.stream()
+                    .filter(result -> Long.valueOf(10L).equals(result.getChunkId()))
+                    .toList();
+        });
+
+        RagTwoStageRetrievalService.RagRetrievalOutcome outcome = retrievalService.retrieve("current", 2, false);
+
+        assertThat(outcome.chunks()).extracting(RagTwoStageRetrievalService.RagRetrievedChunk::chunkId)
+                .containsExactly(10L);
     }
 
     private VectorSearchResult deletedSearchResult(Long chunkId, Long documentId, double score, String content) {

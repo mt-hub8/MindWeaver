@@ -1,6 +1,7 @@
 package com.tuoman.ai_task_orchestrator.controller;
 
 import com.tuoman.ai_task_orchestrator.dto.DocumentChunkResponse;
+import com.tuoman.ai_task_orchestrator.dto.DocumentReindexSubmitResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentDeleteResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentDetailResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentEmbeddingResponse;
@@ -11,6 +12,7 @@ import com.tuoman.ai_task_orchestrator.dto.DocumentSummaryResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentUploadResponse;
 import com.tuoman.ai_task_orchestrator.service.DocumentEmbeddingService;
 import com.tuoman.ai_task_orchestrator.service.DocumentIngestionService;
+import com.tuoman.ai_task_orchestrator.service.DocumentReindexService;
 import com.tuoman.ai_task_orchestrator.service.DocumentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -29,6 +31,8 @@ public class DocumentController {
     private final DocumentEmbeddingService documentEmbeddingService;
 
     private final DocumentIngestionService documentIngestionService;
+
+    private final DocumentReindexService documentReindexService;
 
     @GetMapping
     public List<DocumentSummaryResponse> listDocuments() {
@@ -49,6 +53,12 @@ public class DocumentController {
     @DeleteMapping("/{documentId}")
     public DocumentDeleteResponse deleteDocument(@PathVariable Long documentId) {
         return documentService.softDeleteDocument(documentId);
+    }
+
+    @PostMapping("/{documentId}/reindex")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public DocumentReindexSubmitResponse reindexDocument(@PathVariable Long documentId) {
+        return documentReindexService.submitReindex(documentId);
     }
 
     @GetMapping("/{documentId}")

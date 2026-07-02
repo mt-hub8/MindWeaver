@@ -56,4 +56,12 @@ public class DocumentIngestionTaskResponse {
     private Boolean canDelete;
 
     private Boolean canAsk;
+
+    private String taskType;
+
+    private String displayTaskType;
+
+    private Boolean canReindex;
+
+    private String reindexDisabledReason;
 }

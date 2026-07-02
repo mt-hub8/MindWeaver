@@ -9,6 +9,12 @@
 5. 打开 **知识库问答**（`/ask.html`）提问
 6. 查看 **回答**、**检索引用（Citation）** 与 retrieval metadata
 
+## 文档重新索引（V4.0 Batch 2）
+
+- 对已启用文档调用 `POST /documents/{documentId}/reindex` 可异步重新建立索引。
+- 系统会复用已保存的 `sourceText` 重新切分、生成向量并写入索引。
+- 旧 chunks / vectors 不会立即物理删除，但不会再进入知识库问答。
+
 ## 文档生命周期（V4.0 Batch 1）
 
 - 在 **文档管理** 页面可对已启用文档执行「删除文档」（软删除）。

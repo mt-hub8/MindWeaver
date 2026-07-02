@@ -27,6 +27,16 @@ public class DocumentSummaryResponse {
 
     private Boolean canAsk;
 
+    private Integer currentGeneration;
+
+    private Integer reindexCount;
+
+    private LocalDateTime lastReindexedAt;
+
+    private Boolean canReindex;
+
+    private String reindexDisabledReason;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

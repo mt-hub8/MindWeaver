@@ -1,14 +1,12 @@
 package com.tuoman.ai_task_orchestrator.service;
 
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
-import com.tuoman.ai_task_orchestrator.document.extract.DocumentTextExtractorRegistry;
-import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentFileValidator;
 import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionEventRecorder;
 import com.tuoman.ai_task_orchestrator.document.ingestion.IngestionDisplayTexts;
-import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionSubmitResponse;
+import com.tuoman.ai_task_orchestrator.dto.DocumentReindexSubmitResponse;
 import com.tuoman.ai_task_orchestrator.entity.DocumentEntity;
 import com.tuoman.ai_task_orchestrator.entity.DocumentIngestionTaskEntity;
-import com.tuoman.ai_task_orchestrator.enums.DocumentStatus;
+import com.tuoman.ai_task_orchestrator.enums.DocumentLifecycleStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStep;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskType;
@@ -17,19 +15,16 @@ import com.tuoman.ai_task_orchestrator.mq.DocumentIngestionMessagePublisher;
 import com.tuoman.ai_task_orchestrator.repository.DocumentIngestionTaskRepository;
 import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
+
+@Slf4j
 @Service
 @RequiredArgsConstructor
-public class DocumentIngestionService {
-
-    private final DocumentFileValidator documentFileValidator;
-
-    private final DocumentTextExtractorRegistry documentTextExtractorRegistry;
-
-    private final DocumentService documentService;
+public class DocumentReindexService {
 
     private final DocumentRepository documentRepository;
 
@@ -41,48 +36,57 @@ public class DocumentIngestionService {
 
     private final DocumentIngestionTaskProgressService documentIngestionTaskProgressService;
 
+    private final DocumentService documentService;
+
     @Transactional
-    public DocumentIngestionSubmitResponse submitUpload(MultipartFile file) {
-        var fileType = documentFileValidator.validate(file);
-        String text = documentTextExtractorRegistry.extract(file, fileType);
-        if (text == null || text.isBlank()) {
-            throw BusinessException.validationError("提取的文档文本不能为空");
+    public DocumentReindexSubmitResponse submitReindex(Long documentId) {
+        DocumentEntity document = documentRepository.findById(documentId)
+                .orElseThrow(BusinessException::documentNotFound);
+
+        if (document.getLifecycleStatus() == DocumentLifecycleStatus.DELETED) {
+            throw BusinessException.documentDeletedCannotReindex();
         }
 
-        DocumentEntity document = documentService.createDocumentEntity(file);
-        document.setSourceText(text);
-        document.setCurrentGeneration(1);
-        document.setReindexCount(0);
-        document.setStatus(DocumentStatus.UPLOADED);
-        DocumentEntity savedDocument = documentRepository.save(document);
+        if (!documentService.hasUsableSourceText(document)) {
+            throw BusinessException.documentSourceTextMissing();
+        }
+
+        if (documentIngestionTaskRepository.existsByDocumentIdAndTaskTypeAndStatusIn(
+                documentId,
+                IngestionTaskType.REINDEX,
+                List.of(IngestionTaskStatus.PENDING, IngestionTaskStatus.PROCESSING)
+        )) {
+            throw BusinessException.documentReindexAlreadyRunning();
+        }
+
+        int targetGeneration = document.getCurrentGeneration() == null ? 2 : document.getCurrentGeneration() + 1;
 
         DocumentIngestionTaskEntity task = new DocumentIngestionTaskEntity();
-        task.setDocumentId(savedDocument.getId());
-        task.setFilename(savedDocument.getOriginalFilename());
-        task.setContentType(savedDocument.getContentType());
+        task.setDocumentId(document.getId());
+        task.setFilename(document.getOriginalFilename());
+        task.setContentType(document.getContentType());
+        task.setTaskType(IngestionTaskType.REINDEX);
+        task.setTargetGeneration(targetGeneration);
         task.setStatus(IngestionTaskStatus.PENDING);
         task.setStep(IngestionTaskStep.TEXT_EXTRACTED);
-        task.setTaskType(IngestionTaskType.INGEST);
-        task.setSourceText(text);
+        task.setSourceText(document.getSourceText());
         DocumentIngestionTaskEntity savedTask = documentIngestionTaskRepository.save(task);
 
-        documentIngestionEventRecorder.recordTaskCreated(
-                savedTask.getId(),
-                savedDocument.getOriginalFilename(),
-                savedDocument.getId()
-        );
-        documentIngestionEventRecorder.recordTextExtracted(savedTask.getId(), savedDocument.getOriginalFilename());
+        log.info("Document reindex requested, documentId={}, taskId={}, targetGeneration={}",
+                documentId, savedTask.getId(), targetGeneration);
+
+        documentIngestionEventRecorder.recordReindexRequested(savedTask.getId(), documentId, targetGeneration);
 
         try {
             documentIngestionMessagePublisher.publish(
-                    new DocumentIngestionMessage(savedTask.getId(), savedDocument.getId())
+                    new DocumentIngestionMessage(savedTask.getId(), document.getId())
             );
-            documentIngestionEventRecorder.recordTaskQueued(savedTask.getId());
+            documentIngestionEventRecorder.recordReindexQueued(savedTask.getId(), targetGeneration);
         } catch (RuntimeException exception) {
             String traceId = DocumentIngestionEventRecorder.newTraceId();
             String errorCode = DocumentIngestionTaskService.resolveErrorCode(exception);
             String errorMessage = DocumentIngestionTaskService.resolveErrorMessage(exception);
-            documentIngestionEventRecorder.recordTaskFailed(
+            documentIngestionEventRecorder.recordReindexFailed(
                     savedTask.getId(),
                     IngestionTaskStep.TEXT_EXTRACTED,
                     errorCode,
@@ -95,26 +99,17 @@ public class DocumentIngestionService {
                     savedTask.getId(),
                     exception
             );
-            markDocumentFailed(savedDocument.getId(), errorMessage);
-            throw BusinessException.internalError("文档已进入队列失败，请稍后重试");
+            throw BusinessException.internalError("重新索引任务进入队列失败，请稍后重试");
         }
 
         IngestionTaskStatus status = savedTask.getStatus();
-        return new DocumentIngestionSubmitResponse(
+        return new DocumentReindexSubmitResponse(
                 savedTask.getId(),
-                savedDocument.getId(),
-                savedDocument.getOriginalFilename(),
+                document.getId(),
+                document.getOriginalFilename(),
                 status.name(),
                 IngestionDisplayTexts.displayStatus(status),
-                IngestionDisplayTexts.displayMessage(status, savedTask.getStep())
+                IngestionDisplayTexts.reindexSubmitMessage()
         );
-    }
-
-    private void markDocumentFailed(Long documentId, String errorMessage) {
-        documentRepository.findById(documentId).ifPresent(document -> {
-            document.setStatus(DocumentStatus.FAILED);
-            document.setErrorMessage(errorMessage);
-            documentRepository.save(document);
-        });
     }
 }

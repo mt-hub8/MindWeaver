@@ -11,6 +11,7 @@ import com.tuoman.ai_task_orchestrator.document.DocumentChunkResult;
 import com.tuoman.ai_task_orchestrator.document.DocumentChunker;
 import com.tuoman.ai_task_orchestrator.entity.DocumentChunkEntity;
 import com.tuoman.ai_task_orchestrator.entity.DocumentEntity;
+import com.tuoman.ai_task_orchestrator.enums.ChunkStatus;
 import com.tuoman.ai_task_orchestrator.enums.DocumentLifecycleStatus;
 import com.tuoman.ai_task_orchestrator.enums.DocumentStatus;
 import com.tuoman.ai_task_orchestrator.repository.DocumentChunkRepository;
@@ -45,6 +46,8 @@ public class DocumentService {
 
         try {
             String content = new String(file.getBytes(), StandardCharsets.UTF_8);
+            savedDocument.setSourceText(content);
+            documentRepository.save(savedDocument);
             chunkAndPersist(savedDocument, content);
             return toUploadResponse(savedDocument);
         } catch (Exception e) {
@@ -62,11 +65,18 @@ public class DocumentService {
         document.setFileSize(file.getSize());
         document.setStatus(DocumentStatus.UPLOADED);
         document.setLifecycleStatus(DocumentLifecycleStatus.ACTIVE);
+        document.setCurrentGeneration(1);
+        document.setReindexCount(0);
         document.setChunkCount(0);
         return document;
     }
 
     public int chunkAndPersist(DocumentEntity document, String content) {
+        int generation = document.getCurrentGeneration() == null ? 1 : document.getCurrentGeneration();
+        return chunkAndPersistForGeneration(document, content, generation);
+    }
+
+    public int chunkAndPersistForGeneration(DocumentEntity document, String content, int generation) {
         List<DocumentChunkResult> chunks = documentChunker.chunk(content);
         List<DocumentChunkEntity> chunkEntities = new ArrayList<>();
 
@@ -80,15 +90,56 @@ public class DocumentService {
             chunk.setStartOffset(chunkResult.getStartOffset());
             chunk.setEndOffset(chunkResult.getEndOffset());
             chunk.setHeadingPath(chunkResult.getHeadingPath());
+            chunk.setChunkStatus(ChunkStatus.ACTIVE);
+            chunk.setGeneration(generation);
             chunkEntities.add(chunk);
         }
 
         documentChunkRepository.saveAll(chunkEntities);
 
         document.setStatus(DocumentStatus.CHUNKED);
-        document.setChunkCount(chunkEntities.size());
+        document.setChunkCount(countActiveChunksAtGeneration(document.getId(), generation));
         documentRepository.save(document);
         return chunkEntities.size();
+    }
+
+    @Transactional
+    public void completeReindexGeneration(Long documentId, int newGeneration, int chunkCount) {
+        DocumentEntity document = findDocumentOrThrow(documentId);
+        documentChunkRepository.supersedeChunksBeforeGeneration(documentId, newGeneration);
+        document.setCurrentGeneration(newGeneration);
+        document.setReindexCount((document.getReindexCount() == null ? 0 : document.getReindexCount()) + 1);
+        document.setLastReindexedAt(LocalDateTime.now());
+        document.setChunkCount(chunkCount);
+        document.setStatus(DocumentStatus.READY);
+        document.setErrorMessage(null);
+        documentRepository.save(document);
+    }
+
+    @Transactional
+    public void cleanupFailedReindexGeneration(Long documentId, int generation) {
+        documentChunkRepository.deleteByDocumentIdAndGeneration(documentId, generation);
+        DocumentEntity document = findDocumentOrThrow(documentId);
+        int currentGeneration = document.getCurrentGeneration() == null ? 1 : document.getCurrentGeneration();
+        document.setChunkCount(countActiveChunksAtGeneration(documentId, currentGeneration));
+        if (document.getStatus() != DocumentStatus.READY) {
+            document.setStatus(DocumentStatus.READY);
+        }
+        documentRepository.save(document);
+    }
+
+    public boolean hasUsableSourceText(DocumentEntity document) {
+        return document != null
+                && document.getSourceText() != null
+                && !document.getSourceText().isBlank();
+    }
+
+    public int countActiveChunksAtGeneration(Long documentId, int generation) {
+        return documentChunkRepository.countByDocumentIdAndChunkStatusAndGeneration(
+                documentId,
+                ChunkStatus.ACTIVE,
+                generation
+        );
     }
 
     @Transactional
@@ -117,8 +168,13 @@ public class DocumentService {
 
     @Transactional(readOnly = true)
     public List<DocumentChunkResponse> getDocumentChunks(Long documentId) {
-        findDocumentOrThrow(documentId);
-        return documentChunkRepository.findByDocumentIdOrderByChunkIndexAsc(documentId)
+        DocumentEntity document = findDocumentOrThrow(documentId);
+        int generation = document.getCurrentGeneration() == null ? 1 : document.getCurrentGeneration();
+        return documentChunkRepository.findByDocumentIdAndChunkStatusAndGenerationOrderByChunkIndexAsc(
+                        documentId,
+                        ChunkStatus.ACTIVE,
+                        generation
+                )
                 .stream()
                 .map(this::toChunkResponse)
                 .toList();
@@ -182,6 +238,14 @@ public class DocumentService {
                 ? DocumentLifecycleStatus.ACTIVE
                 : document.getLifecycleStatus();
         boolean active = lifecycleStatus == DocumentLifecycleStatus.ACTIVE;
+        boolean canReindex = active && hasUsableSourceText(document);
+        String reindexDisabledReason = null;
+        if (!active) {
+            reindexDisabledReason = "当前文档已删除，不能重新索引";
+        } else if (!hasUsableSourceText(document)) {
+            reindexDisabledReason = "当前文档缺少原始文本，无法重新索引";
+        }
+        int currentGeneration = document.getCurrentGeneration() == null ? 1 : document.getCurrentGeneration();
         return new DocumentSummaryResponse(
                 document.getId(),
                 document.getOriginalFilename(),
@@ -192,6 +256,11 @@ public class DocumentService {
                 document.getDeletedAt(),
                 active,
                 active && document.getStatus() == DocumentStatus.READY,
+                currentGeneration,
+                document.getReindexCount() == null ? 0 : document.getReindexCount(),
+                document.getLastReindexedAt(),
+                canReindex,
+                reindexDisabledReason,
                 document.getCreatedAt(),
                 document.getUpdatedAt()
         );

@@ -78,7 +78,7 @@ public class VectorStoreBenchmarkRunner {
                 embeddingProvider,
                 embeddingCacheService,
                 measuringVectorStore,
-                new DocumentLifecycleFilterService(documentRepository)
+                new DocumentLifecycleFilterService(documentRepository, documentChunkRepository)
         );
         documentEmbeddingService.embedDocument(documentId);
 

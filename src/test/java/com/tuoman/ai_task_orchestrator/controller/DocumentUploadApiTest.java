@@ -5,6 +5,7 @@ import com.tuoman.ai_task_orchestrator.common.error.GlobalExceptionHandler;
 import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionSubmitResponse;
 import com.tuoman.ai_task_orchestrator.service.DocumentEmbeddingService;
 import com.tuoman.ai_task_orchestrator.service.DocumentIngestionService;
+import com.tuoman.ai_task_orchestrator.service.DocumentReindexService;
 import com.tuoman.ai_task_orchestrator.service.DocumentService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +37,9 @@ class DocumentUploadApiTest {
 
     @MockitoBean
     private DocumentIngestionService documentIngestionService;
+
+    @MockitoBean
+    private DocumentReindexService documentReindexService;
 
     @Test
     void uploadShouldReturnAcceptedIngestionTask() throws Exception {
