@@ -26,6 +26,10 @@ public class RabbitMQConfig {
 
     public static final String DOCUMENT_INGESTION_ROUTING_KEY = "document.ingestion";
 
+    public static final String AGENT_TASK_QUEUE = "agent.task.queue";
+
+    public static final String AGENT_TASK_ROUTING_KEY = "agent.task";
+
     @Bean
     public DirectExchange taskExchange() {
         return new DirectExchange(TASK_EXCHANGE);
@@ -55,6 +59,19 @@ public class RabbitMQConfig {
                 .bind(documentIngestionQueue())
                 .to(taskExchange())
                 .with(DOCUMENT_INGESTION_ROUTING_KEY);
+    }
+
+    @Bean
+    public Queue agentTaskQueue() {
+        return QueueBuilder.durable(AGENT_TASK_QUEUE).build();
+    }
+
+    @Bean
+    public Binding agentTaskBinding() {
+        return BindingBuilder
+                .bind(agentTaskQueue())
+                .to(taskExchange())
+                .with(AGENT_TASK_ROUTING_KEY);
     }
 
     @Bean

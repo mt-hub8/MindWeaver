@@ -1,10 +1,8 @@
 package com.tuoman.ai_task_orchestrator.llm;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 @Slf4j
-@Component
 public class MockLlmClient implements LlmClient {
 
     private static final String DEFAULT_MODEL = "mock-llm";

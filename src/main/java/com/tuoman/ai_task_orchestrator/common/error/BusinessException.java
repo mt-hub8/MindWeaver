@@ -123,4 +123,40 @@ public class BusinessException extends RuntimeException {
                 "该文档未加入此分组"
         );
     }
+
+    public static BusinessException agentTaskNotFound() {
+        return new BusinessException(ErrorCode.AGENT_TASK_NOT_FOUND, HttpStatus.NOT_FOUND, "AI 任务不存在");
+    }
+
+    public static BusinessException agentTaskCollectionNotFound() {
+        return new BusinessException(
+                ErrorCode.AGENT_TASK_COLLECTION_NOT_FOUND,
+                HttpStatus.NOT_FOUND,
+                "任务绑定的知识库分组不存在"
+        );
+    }
+
+    public static BusinessException agentTaskRetrievalFailed(String message) {
+        return new BusinessException(
+                ErrorCode.AGENT_TASK_RETRIEVAL_FAILED,
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                message
+        );
+    }
+
+    public static BusinessException agentTaskLlmFailed(String message) {
+        return new BusinessException(ErrorCode.AGENT_TASK_LLM_FAILED, HttpStatus.INTERNAL_SERVER_ERROR, message);
+    }
+
+    public static BusinessException aiRuntimeUnavailable(String message) {
+        return new BusinessException(ErrorCode.AI_RUNTIME_UNAVAILABLE, HttpStatus.SERVICE_UNAVAILABLE, message);
+    }
+
+    public static BusinessException aiRuntimeTimeout(String message) {
+        return new BusinessException(ErrorCode.AI_RUNTIME_TIMEOUT, HttpStatus.GATEWAY_TIMEOUT, message);
+    }
+
+    public static BusinessException agentTaskExecutionFailed(String message) {
+        return new BusinessException(ErrorCode.AGENT_TASK_EXECUTION_FAILED, HttpStatus.INTERNAL_SERVER_ERROR, message);
+    }
 }

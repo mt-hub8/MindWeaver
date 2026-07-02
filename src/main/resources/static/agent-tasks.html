@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 任务编排</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="page">
+    <nav class="app-nav" aria-label="主导航">
+        <a class="brand" href="/">AI 知识库助手</a>
+        <a class="nav-link" href="/">首页</a>
+        <a class="nav-link" href="/ask.html">知识库问答</a>
+        <a class="nav-link" href="/documents.html">文档管理</a>
+        <a class="nav-link" href="/collections.html">知识库分组</a>
+        <a class="nav-link active" href="/agent-tasks.html" aria-current="page">AI 任务编排</a>
+        <a class="nav-link" href="/evaluation.html">检索质量评估</a>
+        <a class="nav-link" href="/ingestion-analytics.html">文档处理分析</a>
+    </nav>
+
+    <header class="hero">
+        <h1>AI 任务编排</h1>
+        <p class="lead">提交一个 AI 任务，系统会在后台检索知识库、调用大模型，并生成带引用来源的结构化结果。</p>
+        <p class="muted">适合总结、分析、建议类任务；即时问答请使用「知识库问答」。</p>
+    </header>
+
+    <section class="panel" aria-labelledby="create-task-title">
+        <h2 id="create-task-title">新建 AI 任务</h2>
+        <label for="task-title-input">任务标题</label>
+        <input id="task-title-input" type="text" maxlength="256" placeholder="例如：总结项目 A 文档">
+
+        <label for="task-objective-input">任务目标</label>
+        <textarea id="task-objective-input" rows="5" placeholder="描述你希望系统完成的目标，例如：总结核心功能、风险点和下一步建议。"></textarea>
+
+        <label for="task-scope-select">知识库范围</label>
+        <select id="task-scope-select">
+            <option value="">全部文档</option>
+        </select>
+        <p class="muted">指定知识库分组时，只会在该分组范围内检索；已删除文档与旧版本片段不会进入任务上下文。</p>
+
+        <div class="upload-actions">
+            <button id="submit-task-button" type="button">提交任务</button>
+            <button id="refresh-tasks-button" type="button">刷新列表</button>
+            <span id="submit-loading" class="status loading hidden" role="status">正在提交任务…</span>
+        </div>
+        <div id="create-success" class="success-box hidden" aria-live="polite">
+            <h3>提交成功</h3>
+            <p id="create-success-message" class="muted"></p>
+        </div>
+    </section>
+
+    <div id="loading-status" class="status loading hidden" role="status">正在加载任务列表…</div>
+
+    <div id="error-status" class="status error" role="alert" aria-live="assertive">
+        <dl>
+            <dt>错误原因</dt><dd id="error-code"></dd>
+            <dt>说明</dt><dd id="error-message"></dd>
+            <dt>追踪 ID</dt><dd id="error-trace-id"></dd>
+        </dl>
+    </div>
+
+    <p id="tasks-empty" class="empty-state hidden">还没有 AI 任务。填写上方表单提交第一个任务。</p>
+
+    <section id="tasks-panel" class="panel hidden" aria-labelledby="tasks-list-title">
+        <h2 id="tasks-list-title">任务列表</h2>
+        <table class="doc-table">
+            <thead>
+            <tr>
+                <th>任务标题</th>
+                <th>状态</th>
+                <th>知识库范围</th>
+                <th>引用数</th>
+                <th>创建时间</th>
+                <th>操作</th>
+            </tr>
+            </thead>
+            <tbody id="tasks-body"></tbody>
+        </table>
+    </section>
+
+    <section id="detail-panel" class="panel hidden" aria-labelledby="detail-title">
+        <div class="section-header-row">
+            <h2 id="detail-title">任务详情</h2>
+            <button id="close-detail-button" type="button" class="link-button">返回列表</button>
+        </div>
+        <p id="detail-scope" class="muted"></p>
+        <p id="detail-status" class="muted"></p>
+
+        <h3>任务结果</h3>
+        <div id="detail-result" class="answer-box"></div>
+
+        <h3>引用来源</h3>
+        <p id="citations-empty" class="empty-state hidden">暂无引用来源。</p>
+        <ul id="citations-list" class="citation-list"></ul>
+
+        <h3>执行过程</h3>
+        <ol id="events-list" class="timeline-list"></ol>
+
+        <h3>模型调用信息</h3>
+        <pre id="model-metadata" class="metadata"></pre>
+
+        <div id="detail-error" class="status error hidden" role="alert">
+            <p><strong>错误原因</strong></p>
+            <dl>
+                <dt>错误码</dt><dd id="detail-error-code"></dd>
+                <dt>说明</dt><dd id="detail-error-message"></dd>
+                <dt>追踪 ID</dt><dd id="detail-trace-id"></dd>
+            </dl>
+        </div>
+
+        <details class="tech-details">
+            <summary>查看技术详情</summary>
+            <pre id="detail-tech-json"></pre>
+        </details>
+    </section>
+</div>
+
+<script src="/agent-tasks.js"></script>
+</body>
+</html>
