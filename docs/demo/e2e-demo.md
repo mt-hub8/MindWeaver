@@ -1,6 +1,6 @@
 # AI Task Orchestrator E2E Demo
 
-本指南提供一条 **5 分钟内可跑通** 的端到端演示路径，帮助 reviewer / 面试官快速理解项目两条核心链路：
+本指南提供一条 **5 分钟内可跑通** 的端到端演示路径，帮助 reviewer快速理解项目两条核心链路：
 
 1. **异步任务执行**（Outbox → RabbitMQ → Atomic Claim → Task Attempt → Output Chunks）
 2. **RAG 检索**（Document Upload → Chunking → Embedding → Vector Search → Retrieval Evaluation）
