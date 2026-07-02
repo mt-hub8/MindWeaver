@@ -185,6 +185,149 @@ public class RagRetrievalEvaluationExecutor {
         );
     }
 
+    public RagHybridComparisonReport evaluateHybridComparison(
+            RagRetrievalEvaluationDataset dataset,
+            String datasetPath,
+            int fallbackTopK,
+            int denseTopK,
+            int lexicalTopK,
+            int rrfK,
+            Long documentId,
+            boolean rerankEnabled
+    ) {
+        List<RagHybridComparisonCaseResult> comparisonCases = new ArrayList<>();
+        int datasetDefaultTopK = dataset.defaultTopK() == null ? fallbackTopK : dataset.defaultTopK();
+        String fusionStrategy = null;
+        String rerankerName = null;
+
+        for (RagRetrievalEvaluationCase evaluationCase : dataset.cases()) {
+            int finalTopK = normalizeTopK(evaluationCase.topK(), datasetDefaultTopK, fallbackTopK);
+            validateCandidateTopK(denseTopK, finalTopK);
+            if (lexicalTopK < 1) {
+                throw new IllegalArgumentException("lexicalTopK must be greater than or equal to 1");
+            }
+
+            long baselineStartedAt = System.nanoTime();
+            List<RagRetrievedItem> baselineItems;
+            if (rerankEnabled) {
+                RagEvaluationRetrievalHelper.RerankSearchOutcome baselineOutcome = retrievalHelper.searchWithRerank(
+                        documentEmbeddingService,
+                        reranker,
+                        evaluationCase.query(),
+                        finalTopK,
+                        denseTopK,
+                        documentId
+                );
+                baselineItems = baselineOutcome.items();
+                rerankerName = baselineOutcome.rerankerName();
+            } else {
+                baselineItems = retrievalHelper.searchBaseline(
+                        documentEmbeddingService,
+                        evaluationCase.query(),
+                        finalTopK,
+                        documentId
+                );
+            }
+            long baselineLatencyMs = (System.nanoTime() - baselineStartedAt) / 1_000_000;
+            RagRetrievalCaseResult baselineCase = toCaseResult(
+                    evaluationCase,
+                    finalTopK,
+                    baselineItems,
+                    baselineLatencyMs
+            );
+
+            RagEvaluationRetrievalHelper.HybridSearchOutcome hybridOutcome = retrievalHelper.searchHybrid(
+                    documentEmbeddingService,
+                    reranker,
+                    evaluationCase.query(),
+                    finalTopK,
+                    denseTopK,
+                    lexicalTopK,
+                    rrfK,
+                    documentId,
+                    rerankEnabled
+            );
+            fusionStrategy = hybridOutcome.fusionStrategy();
+            if (rerankEnabled) {
+                rerankerName = hybridOutcome.rerankerName();
+            }
+            RagRetrievalCaseResult hybridCase = toCaseResult(
+                    evaluationCase,
+                    finalTopK,
+                    hybridOutcome.items(),
+                    hybridOutcome.latencyMs()
+            );
+
+            comparisonCases.add(new RagHybridComparisonCaseResult(
+                    evaluationCase.caseId(),
+                    evaluationCase.query(),
+                    finalTopK,
+                    denseTopK,
+                    lexicalTopK,
+                    baselineCase,
+                    hybridCase,
+                    resolveOutcome(baselineCase, hybridCase)
+            ));
+        }
+
+        List<RagRetrievalCaseResult> baselineCases = comparisonCases.stream()
+                .map(RagHybridComparisonCaseResult::baseline)
+                .toList();
+        List<RagRetrievalCaseResult> hybridCases = comparisonCases.stream()
+                .map(RagHybridComparisonCaseResult::hybrid)
+                .toList();
+
+        RagRetrievalSummaryMetrics baselineSummary = summarize(baselineCases);
+        RagRetrievalSummaryMetrics hybridSummary = summarize(hybridCases);
+
+        return new RagHybridComparisonReport(
+                dataset.datasetName(),
+                datasetPath,
+                Instant.now(),
+                datasetDefaultTopK,
+                denseTopK,
+                lexicalTopK,
+                rrfK,
+                fusionStrategy,
+                rerankEnabled,
+                rerankerName,
+                embeddingProvider.provider(),
+                embeddingProvider.model(),
+                embeddingProvider.dimension(),
+                vectorStore.getClass().getSimpleName(),
+                baselineSummary,
+                hybridSummary,
+                toHybridDelta(baselineSummary, hybridSummary, comparisonCases),
+                comparisonCases
+        );
+    }
+
+    private RagRetrievalDeltaMetrics toHybridDelta(
+            RagRetrievalSummaryMetrics baseline,
+            RagRetrievalSummaryMetrics hybrid,
+            List<RagHybridComparisonCaseResult> cases
+    ) {
+        int improved = 0;
+        int regressed = 0;
+        int unchanged = 0;
+        for (RagHybridComparisonCaseResult caseResult : cases) {
+            switch (caseResult.outcome()) {
+                case "IMPROVED" -> improved++;
+                case "REGRESSED" -> regressed++;
+                default -> unchanged++;
+            }
+        }
+        return new RagRetrievalDeltaMetrics(
+                hybrid.hitRateAtK() - baseline.hitRateAtK(),
+                hybrid.averageRecallAtK() - baseline.averageRecallAtK(),
+                hybrid.averagePrecisionAtK() - baseline.averagePrecisionAtK(),
+                hybrid.mrr() - baseline.mrr(),
+                improved,
+                regressed,
+                unchanged
+        );
+    }
+
     private RagRetrievalCaseResult toCaseResult(
             RagRetrievalEvaluationCase evaluationCase,
             int topK,

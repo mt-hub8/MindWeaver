@@ -41,6 +41,26 @@ public class RagRetrievalEvaluationRunner implements ApplicationRunner {
         RagRetrievalEvaluationDataset dataset = datasetLoader.load(datasetPath);
         Path outputDir = Path.of(properties.getReportOutputDir());
 
+        if (properties.isCompareHybrid()) {
+            RagHybridComparisonReport comparisonReport = evaluationExecutor.evaluateHybridComparison(
+                    dataset,
+                    datasetPath.toString(),
+                    properties.getDefaultTopK(),
+                    properties.getDenseTopK(),
+                    properties.getLexicalTopK(),
+                    properties.getHybridRrfK(),
+                    properties.getDocumentId(),
+                    properties.isCompareHybridRerank()
+            );
+            RagRetrievalEvaluationReportWriter.ReportPaths reportPaths = reportWriter.writeHybridComparison(
+                    comparisonReport,
+                    outputDir
+            );
+            log.info("RAG hybrid retrieval comparison evaluation done, json={}, markdown={}",
+                    reportPaths.jsonPath(), reportPaths.markdownPath());
+            return;
+        }
+
         if (properties.isCompareRerank()) {
             RagRetrievalComparisonReport comparisonReport = evaluationExecutor.evaluateComparison(
                     dataset,

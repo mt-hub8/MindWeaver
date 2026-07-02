@@ -6,6 +6,9 @@ import com.tuoman.ai_task_orchestrator.embedding.EmbeddingProvider;
 import com.tuoman.ai_task_orchestrator.embedding.EmbeddingRequest;
 import com.tuoman.ai_task_orchestrator.embedding.EmbeddingResponse;
 import com.tuoman.ai_task_orchestrator.embedding.MockEmbeddingClient;
+import com.tuoman.ai_task_orchestrator.hybrid.FusionRanker;
+import com.tuoman.ai_task_orchestrator.hybrid.LexicalRetriever;
+import com.tuoman.ai_task_orchestrator.hybrid.RagHybridProperties;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorSearchRequest;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorSearchResult;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorStore;
@@ -21,6 +24,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
@@ -36,18 +40,30 @@ class RagTwoStageRetrievalServiceTest {
     @Mock
     private Reranker reranker;
 
+    @Mock
+    private LexicalRetriever lexicalRetriever;
+
+    @Mock
+    private FusionRanker fusionRanker;
+
     private RagRerankProperties rerankProperties;
+
+    private RagHybridProperties hybridProperties;
 
     private RagTwoStageRetrievalService retrievalService;
 
     @BeforeEach
     void setUp() {
         rerankProperties = new RagRerankProperties();
+        hybridProperties = new RagHybridProperties();
         retrievalService = new RagTwoStageRetrievalService(
                 embeddingProvider,
                 vectorStore,
                 reranker,
-                rerankProperties
+                rerankProperties,
+                hybridProperties,
+                lexicalRetriever,
+                fusionRanker
         );
         lenient().when(embeddingProvider.provider()).thenReturn(MockEmbeddingClient.PROVIDER);
         lenient().when(embeddingProvider.model()).thenReturn(MockEmbeddingClient.DEFAULT_MODEL);
@@ -107,6 +123,83 @@ class RagTwoStageRetrievalServiceTest {
         assertThatThrownBy(() -> retrievalService.resolveCandidateTopK(5))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("candidateTopK must be greater than or equal to finalTopK");
+    }
+
+    @Test
+    void retrieveShouldUseHybridFusionOrderWhenHybridEnabled() {
+        hybridProperties.setEnabled(true);
+        hybridProperties.setDenseTopK(3);
+        hybridProperties.setLexicalTopK(3);
+        when(vectorStore.search(any(VectorSearchRequest.class))).thenReturn(List.of(
+                searchResult(10L, 0.99, "irrelevant"),
+                searchResult(11L, 0.50, "cache key")
+        ));
+        when(lexicalRetriever.retrieve(any())).thenReturn(new com.tuoman.ai_task_orchestrator.hybrid.LexicalRetrievalResponse(
+                List.of(new com.tuoman.ai_task_orchestrator.hybrid.LexicalCandidate(
+                        1, 1L, "heading", 12L, "cache key lexical", 0.95
+                )),
+                1L
+        ));
+        when(fusionRanker.fuse(any(), anyInt())).thenReturn(new com.tuoman.ai_task_orchestrator.hybrid.FusionResponse(
+                List.of(
+                        new com.tuoman.ai_task_orchestrator.hybrid.FusedCandidate(
+                                1, 1L, "heading", 12L, "cache key lexical",
+                                null, 1, null, 0.95, 0.03, false, true
+                        ),
+                        new com.tuoman.ai_task_orchestrator.hybrid.FusedCandidate(
+                                2, 1L, "heading", 11L, "cache key",
+                                2, null, 0.50, null, 0.02, true, false
+                        )
+                ),
+                "rrf"
+        ));
+
+        RagTwoStageRetrievalService.RagRetrievalOutcome outcome = retrievalService.retrieve("cache key", 2, false);
+
+        assertThat(outcome.hybridEnabled()).isTrue();
+        assertThat(outcome.fusionStrategy()).isEqualTo("rrf");
+        assertThat(outcome.chunks()).extracting(RagTwoStageRetrievalService.RagRetrievedChunk::chunkId)
+                .containsExactly(12L, 11L);
+        assertThat(outcome.chunks().getFirst().fusionScore()).isEqualTo(0.03);
+        assertThat(outcome.chunks().getFirst().lexicalHit()).isTrue();
+    }
+
+    @Test
+    void retrieveShouldRerankAfterHybridFusionWhenRerankEnabled() {
+        hybridProperties.setEnabled(true);
+        hybridProperties.setDenseTopK(2);
+        hybridProperties.setLexicalTopK(2);
+        rerankProperties.setEnabled(true);
+        when(vectorStore.search(any(VectorSearchRequest.class))).thenReturn(List.of(
+                searchResult(11L, 0.50, "cache key")
+        ));
+        when(lexicalRetriever.retrieve(any())).thenReturn(new com.tuoman.ai_task_orchestrator.hybrid.LexicalRetrievalResponse(
+                List.of(new com.tuoman.ai_task_orchestrator.hybrid.LexicalCandidate(
+                        1, 1L, "heading", 11L, "cache key", 0.9
+                )),
+                1L
+        ));
+        when(fusionRanker.fuse(any(), anyInt())).thenReturn(new com.tuoman.ai_task_orchestrator.hybrid.FusionResponse(
+                List.of(new com.tuoman.ai_task_orchestrator.hybrid.FusedCandidate(
+                        1, 1L, "heading", 11L, "cache key",
+                        1, 1, 0.50, 0.9, 0.032, true, true
+                )),
+                "rrf"
+        ));
+        when(reranker.rerank(any())).thenReturn(new RerankResponse(
+                List.of(new RerankedItem(1, 1, 1L, "heading", 11L, "cache key", 0.032, 0.98)),
+                "lexical",
+                2L
+        ));
+
+        RagTwoStageRetrievalService.RagRetrievalOutcome outcome = retrievalService.retrieve("cache key", 1, true);
+
+        assertThat(outcome.hybridEnabled()).isTrue();
+        assertThat(outcome.rerankEnabled()).isTrue();
+        assertThat(outcome.chunks().getFirst().chunkId()).isEqualTo(11L);
+        assertThat(outcome.chunks().getFirst().rerankScore()).isEqualTo(0.98);
+        assertThat(outcome.chunks().getFirst().denseHit()).isTrue();
+        assertThat(outcome.chunks().getFirst().lexicalHit()).isTrue();
     }
 
     private VectorSearchResult searchResult(Long chunkId, double score, String content) {

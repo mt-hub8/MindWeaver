@@ -22,6 +22,10 @@ public class RagRetrievalEvaluationReportWriter {
 
     public static final String COMPARISON_MARKDOWN_REPORT_NAME = "rag-retrieval-comparison-report.md";
 
+    public static final String HYBRID_COMPARISON_JSON_REPORT_NAME = "rag-hybrid-comparison-report.json";
+
+    public static final String HYBRID_COMPARISON_MARKDOWN_REPORT_NAME = "rag-hybrid-comparison-report.md";
+
     private final ObjectMapper objectMapper;
 
     public RagRetrievalEvaluationReportWriter(ObjectMapper objectMapper) {
@@ -39,6 +43,19 @@ public class RagRetrievalEvaluationReportWriter {
         Files.writeString(markdownPath, toMarkdown(report));
         return new ReportPaths(jsonPath, markdownPath);
     }
+
+    public ReportPaths writeHybridComparison(RagHybridComparisonReport report, Path outputDir) throws IOException {
+        Files.createDirectories(outputDir);
+
+        Path jsonPath = outputDir.resolve(HYBRID_COMPARISON_JSON_REPORT_NAME);
+        ObjectMapper prettyMapper = createPrettyMapper();
+        prettyMapper.writeValue(jsonPath.toFile(), report);
+
+        Path markdownPath = outputDir.resolve(HYBRID_COMPARISON_MARKDOWN_REPORT_NAME);
+        Files.writeString(markdownPath, toHybridComparisonMarkdown(report));
+        return new ReportPaths(jsonPath, markdownPath);
+    }
+
 
     public ReportPaths writeComparison(RagRetrievalComparisonReport report, Path outputDir) throws IOException {
         Files.createDirectories(outputDir);
@@ -107,6 +124,69 @@ public class RagRetrievalEvaluationReportWriter {
         markdown.append("- 本报告中的 `Precision@K` 使用 `matched expected count / retrieved count`，");
         markdown.append("分母为该 case 实际返回结果条数，而非固定 K。\n");
         return markdown.toString();
+    }
+
+    private String toHybridComparisonMarkdown(RagHybridComparisonReport report) {
+        StringBuilder markdown = new StringBuilder();
+        markdown.append("# RAG Retrieval Dense vs Hybrid Comparison Report\n\n");
+        markdown.append("- **Dataset**: ").append(report.datasetName()).append('\n');
+        markdown.append("- **Dataset path**: ").append(report.datasetPath()).append('\n');
+        markdown.append("- **Run at**: ").append(report.runAt()).append('\n');
+        markdown.append("- **Default TopK**: ").append(report.defaultTopK()).append('\n');
+        markdown.append("- **Dense TopK**: ").append(report.denseTopK()).append('\n');
+        markdown.append("- **Lexical TopK**: ").append(report.lexicalTopK()).append('\n');
+        markdown.append("- **RRF k**: ").append(report.rrfK()).append('\n');
+        markdown.append("- **Fusion strategy**: ").append(report.fusionStrategy()).append('\n');
+        markdown.append("- **Rerank enabled**: ").append(report.rerankEnabled()).append('\n');
+        if (report.rerankerName() != null) {
+            markdown.append("- **Reranker**: ").append(report.rerankerName()).append('\n');
+        }
+        markdown.append('\n');
+
+        appendSummaryTable(markdown, "Dense Baseline Summary", report.baselineSummary());
+        markdown.append('\n');
+        appendSummaryTable(markdown, "Hybrid Summary", report.hybridSummary());
+        markdown.append("\n## Delta (hybrid - dense baseline)\n\n");
+        RagRetrievalDeltaMetrics delta = report.delta();
+        markdown.append("| HitRate@K Δ | Recall@K Δ | Precision@K Δ | MRR Δ | improved | regressed | unchanged |\n");
+        markdown.append("|---:|---:|---:|---:|---:|---:|---:|\n");
+        markdown.append('|').append(format(delta.hitRateDelta())).append('|');
+        markdown.append(format(delta.recallDelta())).append('|');
+        markdown.append(format(delta.precisionDelta())).append('|');
+        markdown.append(format(delta.mrrDelta())).append('|');
+        markdown.append(delta.improvedCount()).append('|');
+        markdown.append(delta.regressedCount()).append('|');
+        markdown.append(delta.unchangedCount()).append("|\n\n");
+
+        markdown.append("## Per-case Comparison\n\n");
+        markdown.append("| caseId | outcome | baseline rr | hybrid rr | baseline hit | hybrid hit |\n");
+        markdown.append("|---|---|---:|---:|---:|---:|\n");
+        for (RagHybridComparisonCaseResult caseResult : report.cases()) {
+            markdown.append('|').append(caseResult.caseId()).append('|');
+            markdown.append(caseResult.outcome()).append('|');
+            markdown.append(format(caseResult.baseline().rrAtK())).append('|');
+            markdown.append(format(caseResult.hybrid().rrAtK())).append('|');
+            markdown.append(caseResult.baseline().hit() ? "1" : "0").append('|');
+            markdown.append(caseResult.hybrid().hit() ? "1" : "0").append("|\n");
+        }
+
+        markdown.append("\n## Improved Cases\n\n");
+        appendHybridCaseIds(markdown, report.cases().stream().filter(c -> "IMPROVED".equals(c.outcome())).toList());
+        markdown.append("\n## Regressed Cases\n\n");
+        appendHybridCaseIds(markdown, report.cases().stream().filter(c -> "REGRESSED".equals(c.outcome())).toList());
+        markdown.append("\n## Missed Cases (hybrid)\n\n");
+        appendHybridCaseIds(markdown, report.cases().stream().filter(c -> !c.hybrid().hit()).toList());
+        return markdown.toString();
+    }
+
+    private void appendHybridCaseIds(StringBuilder markdown, List<RagHybridComparisonCaseResult> cases) {
+        if (cases.isEmpty()) {
+            markdown.append("- None.\n");
+            return;
+        }
+        for (RagHybridComparisonCaseResult caseResult : cases) {
+            markdown.append("- `").append(caseResult.caseId()).append("`\n");
+        }
     }
 
     private String toComparisonMarkdown(RagRetrievalComparisonReport report) {

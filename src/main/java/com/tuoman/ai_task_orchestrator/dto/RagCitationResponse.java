@@ -27,6 +27,20 @@ public class RagCitationResponse {
 
     private Double rerankScore;
 
+    private Integer denseRank;
+
+    private Integer lexicalRank;
+
+    private Double denseScore;
+
+    private Double lexicalScore;
+
+    private Double fusionScore;
+
+    private Boolean denseHit;
+
+    private Boolean lexicalHit;
+
     public RagCitationResponse(
             Integer sourceIndex,
             Long documentId,
@@ -34,6 +48,54 @@ public class RagCitationResponse {
             Double score,
             String contentSnippet
     ) {
-        this(sourceIndex, documentId, chunkId, score, contentSnippet, null, null, null, null);
+        this(
+                sourceIndex,
+                documentId,
+                chunkId,
+                score,
+                contentSnippet,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    public RagCitationResponse(
+            Integer sourceIndex,
+            Long documentId,
+            Long chunkId,
+            Double score,
+            String contentSnippet,
+            Integer originalRank,
+            Integer rerankedRank,
+            Double originalScore,
+            Double rerankScore
+    ) {
+        this(
+                sourceIndex,
+                documentId,
+                chunkId,
+                score,
+                contentSnippet,
+                originalRank,
+                rerankedRank,
+                originalScore,
+                rerankScore,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
     }
 }

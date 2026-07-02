@@ -31,6 +31,22 @@ public class RagRetrievalMetadataResponse {
 
     private Long rerankLatencyMs;
 
+    private Boolean hybridEnabled;
+
+    private Integer denseTopK;
+
+    private Integer lexicalTopK;
+
+    private String fusionStrategy;
+
+    private Integer denseCandidateCount;
+
+    private Integer lexicalCandidateCount;
+
+    private Integer fusedCandidateCount;
+
+    private Long hybridLatencyMs;
+
     public RagRetrievalMetadataResponse(
             Integer topK,
             Integer returned,
@@ -39,6 +55,26 @@ public class RagRetrievalMetadataResponse {
             Integer dimension,
             String vectorStore
     ) {
-        this(topK, returned, provider, model, dimension, vectorStore, null, null, null, null, null);
+        this(
+                topK,
+                returned,
+                provider,
+                model,
+                dimension,
+                vectorStore,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
     }
 }

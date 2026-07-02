@@ -21,5 +21,15 @@ public class RagRetrievalEvaluationProperties {
 
     private boolean compareRerank = false;
 
+    private boolean compareHybrid = false;
+
+    private boolean compareHybridRerank = false;
+
     private int candidateTopK = 20;
+
+    private int denseTopK = 20;
+
+    private int lexicalTopK = 20;
+
+    private int hybridRrfK = 60;
 }

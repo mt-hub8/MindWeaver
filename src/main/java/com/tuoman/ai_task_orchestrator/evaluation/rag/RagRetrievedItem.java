@@ -10,7 +10,14 @@ public record RagRetrievedItem(
         Integer originalRank,
         Integer rerankedRank,
         Double originalScore,
-        Double rerankScore
+        Double rerankScore,
+        Integer denseRank,
+        Integer lexicalRank,
+        Double denseScore,
+        Double lexicalScore,
+        Double fusionScore,
+        Boolean denseHit,
+        Boolean lexicalHit
 ) {
     public RagRetrievedItem(
             int rank,
@@ -20,6 +27,24 @@ public record RagRetrievedItem(
             Double score,
             String contentSnippet
     ) {
-        this(rank, documentId, documentTitle, chunkId, score, contentSnippet, null, null, null, null);
+        this(
+                rank,
+                documentId,
+                documentTitle,
+                chunkId,
+                score,
+                contentSnippet,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
     }
 }

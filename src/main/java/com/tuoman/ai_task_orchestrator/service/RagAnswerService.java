@@ -57,7 +57,11 @@ public class RagAnswerService {
 
         int topK = normalizeTopK(request.getTopK());
         RagRetrievalOutcome retrievalOutcome = ragTwoStageRetrievalService.retrieve(request.getQuery(), topK);
-        List<RagCitationResponse> citations = toCitations(retrievalOutcome, retrievalOutcome.rerankEnabled());
+        List<RagCitationResponse> citations = toCitations(
+                retrievalOutcome,
+                retrievalOutcome.rerankEnabled(),
+                retrievalOutcome.hybridEnabled()
+        );
         RagRetrievalMetadataResponse retrieval = toRetrievalMetadata(retrievalOutcome);
 
         if (citations.isEmpty()) {
@@ -96,14 +100,25 @@ public class RagAnswerService {
         );
     }
 
-    private List<RagCitationResponse> toCitations(RagRetrievalOutcome outcome, boolean rerankEnabled) {
+    private List<RagCitationResponse> toCitations(
+            RagRetrievalOutcome outcome,
+            boolean rerankEnabled,
+            boolean hybridEnabled
+    ) {
         return outcome.chunks().stream()
-                .map(chunk -> toCitation(chunk, rerankEnabled))
+                .map(chunk -> toCitation(chunk, rerankEnabled, hybridEnabled))
                 .toList();
     }
 
-    private RagCitationResponse toCitation(RagRetrievedChunk chunk, boolean rerankEnabled) {
-        Double displayScore = rerankEnabled ? chunk.rerankScore() : chunk.originalScore();
+    private RagCitationResponse toCitation(RagRetrievedChunk chunk, boolean rerankEnabled, boolean hybridEnabled) {
+        Double displayScore;
+        if (rerankEnabled) {
+            displayScore = chunk.rerankScore();
+        } else if (hybridEnabled) {
+            displayScore = chunk.fusionScore() != null ? chunk.fusionScore() : chunk.originalScore();
+        } else {
+            displayScore = chunk.originalScore();
+        }
         return new RagCitationResponse(
                 chunk.rerankedRank(),
                 chunk.documentId(),
@@ -113,7 +128,14 @@ public class RagAnswerService {
                 rerankEnabled ? chunk.originalRank() : null,
                 rerankEnabled ? chunk.rerankedRank() : null,
                 rerankEnabled ? chunk.originalScore() : null,
-                rerankEnabled ? chunk.rerankScore() : null
+                rerankEnabled ? chunk.rerankScore() : null,
+                hybridEnabled ? chunk.denseRank() : null,
+                hybridEnabled ? chunk.lexicalRank() : null,
+                hybridEnabled ? chunk.denseScore() : null,
+                hybridEnabled ? chunk.lexicalScore() : null,
+                hybridEnabled ? chunk.fusionScore() : null,
+                hybridEnabled ? chunk.denseHit() : null,
+                hybridEnabled ? chunk.lexicalHit() : null
         );
     }
 
@@ -127,9 +149,17 @@ public class RagAnswerService {
                 resolveVectorStoreName(),
                 outcome.rerankEnabled(),
                 outcome.rerankerName(),
-                outcome.rerankEnabled() ? outcome.candidateTopK() : null,
+                outcome.rerankEnabled() || outcome.hybridEnabled() ? outcome.candidateTopK() : null,
                 outcome.finalTopK(),
-                outcome.rerankEnabled() ? outcome.rerankLatencyMs() : null
+                outcome.rerankEnabled() ? outcome.rerankLatencyMs() : null,
+                outcome.hybridEnabled(),
+                outcome.hybridEnabled() ? outcome.denseTopK() : null,
+                outcome.hybridEnabled() ? outcome.lexicalTopK() : null,
+                outcome.hybridEnabled() ? outcome.fusionStrategy() : null,
+                outcome.hybridEnabled() ? outcome.denseCandidateCount() : null,
+                outcome.hybridEnabled() ? outcome.lexicalCandidateCount() : null,
+                outcome.hybridEnabled() ? outcome.fusedCandidateCount() : null,
+                outcome.hybridEnabled() ? outcome.hybridLatencyMs() : null
         );
     }
 
