@@ -20,6 +20,10 @@
     const tasksEmpty = document.getElementById("tasks-empty");
     const tasksPanel = document.getElementById("tasks-panel");
     const tasksBody = document.getElementById("tasks-body");
+    const timelinePanel = document.getElementById("timeline-panel");
+    const timelineTitle = document.getElementById("timeline-title");
+    const timelineEmpty = document.getElementById("timeline-empty");
+    const timelineList = document.getElementById("timeline-list");
     const chunksPanel = document.getElementById("chunks-panel");
     const chunksTitle = document.getElementById("chunks-title");
     const chunksEmpty = document.getElementById("chunks-empty");
@@ -167,6 +171,10 @@
 
             const actions = [];
             actions.push(
+                '<button type="button" class="link-button view-timeline-button" data-task-id="'
+                + escapeHtml(task.taskId) + '" data-filename="' + escapeHtml(task.filename) + '">查看处理记录</button>'
+            );
+            actions.push(
                 '<button type="button" class="link-button view-chunks-button" data-document-id="'
                 + escapeHtml(task.documentId) + '" data-filename="' + escapeHtml(task.filename) + '">查看文档片段</button>'
             );
@@ -206,8 +214,122 @@
                 });
             }
 
+            const viewTimelineButton = row.querySelector(".view-timeline-button");
+            if (viewTimelineButton) {
+                viewTimelineButton.addEventListener("click", function (event) {
+                    event.stopPropagation();
+                    viewTaskTimeline(task.taskId, task.filename, row);
+                });
+            }
+
             tasksBody.appendChild(row);
         });
+    }
+
+    async function viewTaskTimeline(taskId, filename, row) {
+        Array.from(tasksBody.querySelectorAll(".task-row")).forEach(function (item) {
+            item.classList.toggle("selected", item === row);
+        });
+
+        timelineTitle.textContent = "处理记录 · 任务时间线 · " + (filename || "任务 " + taskId);
+        timelinePanel.classList.remove("hidden");
+        timelineList.innerHTML = "";
+        timelineEmpty.classList.add("hidden");
+        setListLoading(true);
+        clearError();
+
+        try {
+            const response = await fetch("/documents/ingestions/" + taskId + "/events");
+            const payload = await parseJsonResponse(response);
+
+            if (!response.ok) {
+                showError(extractError(payload, response.status));
+                timelineEmpty.classList.remove("hidden");
+                timelineEmpty.textContent = "无法加载任务时间线。";
+                return;
+            }
+
+            const events = payload && Array.isArray(payload.events) ? payload.events : [];
+            renderTimeline(events);
+        } catch (networkError) {
+            showError({
+                code: "NETWORK_ERROR",
+                message: "无法加载任务时间线。",
+                traceId: "-"
+            });
+            timelineEmpty.classList.remove("hidden");
+            timelineEmpty.textContent = "无法加载任务时间线。";
+        } finally {
+            setListLoading(false);
+        }
+    }
+
+    function renderTimeline(events) {
+        timelineList.innerHTML = "";
+        if (events.length === 0) {
+            timelineEmpty.classList.remove("hidden");
+            timelineEmpty.textContent = "暂无处理记录，任务可能刚提交。";
+            return;
+        }
+
+        timelineEmpty.classList.add("hidden");
+        events.forEach(function (event) {
+            const item = document.createElement("li");
+            item.className = "timeline-item";
+
+            const headline = document.createElement("div");
+            headline.className = "timeline-headline";
+            headline.textContent = event.displayMessage || "处理步骤更新";
+            item.appendChild(headline);
+
+            const meta = document.createElement("div");
+            meta.className = "timeline-meta muted";
+            let metaText = "时间：" + formatDate(event.createdAt);
+            if (event.durationMs !== null && event.durationMs !== undefined) {
+                metaText += " · 耗时：" + event.durationMs + " 毫秒";
+            }
+            meta.textContent = metaText;
+            item.appendChild(meta);
+
+            if (event.errorMessage) {
+                const errorLine = document.createElement("p");
+                errorLine.className = "timeline-error";
+                errorLine.textContent = "错误原因：" + event.errorMessage;
+                item.appendChild(errorLine);
+            }
+
+            const tech = document.createElement("details");
+            tech.className = "timeline-tech";
+            const techSummary = document.createElement("summary");
+            techSummary.textContent = "技术详情";
+            tech.appendChild(techSummary);
+
+            const techBody = document.createElement("div");
+            techBody.className = "timeline-tech-body muted";
+            techBody.innerHTML =
+                "事件类型（Event Type）：" + escapeHtml(event.eventType || "-") + "<br>" +
+                "处理步骤：" + escapeHtml(event.step || "-") + "<br>" +
+                "事件状态：" + escapeHtml(event.status || "-") + "<br>" +
+                "错误码：" + escapeHtml(event.errorCode || "-") + "<br>" +
+                "追踪 ID（Trace ID）：" + escapeHtml(event.traceId || "-") + "<br>" +
+                "技术消息：" + escapeHtml(event.message || "-") + "<br>" +
+                "扩展信息：" + escapeHtml(formatMetadata(event.metadata));
+            tech.appendChild(techBody);
+            item.appendChild(tech);
+
+            timelineList.appendChild(item);
+        });
+    }
+
+    function formatMetadata(metadata) {
+        if (!metadata || Object.keys(metadata).length === 0) {
+            return "-";
+        }
+        try {
+            return JSON.stringify(metadata);
+        } catch (error) {
+            return "-";
+        }
     }
 
     async function retryTask(taskId) {

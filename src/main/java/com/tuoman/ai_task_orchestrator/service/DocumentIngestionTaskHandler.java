@@ -1,6 +1,7 @@
 package com.tuoman.ai_task_orchestrator.service;
 
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
+import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionEventRecorder;
 import com.tuoman.ai_task_orchestrator.dto.DocumentEmbeddingResponse;
 import com.tuoman.ai_task_orchestrator.entity.DocumentEntity;
 import com.tuoman.ai_task_orchestrator.enums.DocumentStatus;
@@ -28,13 +29,20 @@ public class DocumentIngestionTaskHandler {
 
     private final DocumentRepository documentRepository;
 
+    private final DocumentIngestionEventRecorder documentIngestionEventRecorder;
+
     public void process(Long taskId) {
         DocumentIngestionTaskEntitySnapshot snapshot = loadPendingTask(taskId);
         if (snapshot == null) {
             return;
         }
 
+        long taskStartedAt = System.currentTimeMillis();
+        IngestionTaskStep currentStep = IngestionTaskStep.CHUNKING;
+
         try {
+            documentIngestionEventRecorder.recordTaskStarted(taskId);
+
             documentIngestionTaskProgressService.updateTask(taskId, task -> {
                 task.setStatus(IngestionTaskStatus.PROCESSING);
                 task.setStep(IngestionTaskStep.CHUNKING);
@@ -43,16 +51,42 @@ public class DocumentIngestionTaskHandler {
             DocumentEntity document = documentRepository.findById(snapshot.documentId())
                     .orElseThrow(BusinessException::documentNotFound);
 
+            currentStep = IngestionTaskStep.CHUNKING;
+            documentIngestionEventRecorder.recordChunkingStarted(taskId);
+            long chunkingStartedAt = System.currentTimeMillis();
             int chunkCount = documentService.chunkAndPersist(document, snapshot.sourceText());
+            documentIngestionEventRecorder.recordChunkingCompleted(
+                    taskId,
+                    chunkCount,
+                    System.currentTimeMillis() - chunkingStartedAt
+            );
+
             documentIngestionTaskProgressService.updateTask(taskId, task -> {
                 task.setChunkCount(chunkCount);
                 task.setStep(IngestionTaskStep.EMBEDDING);
             });
 
+            currentStep = IngestionTaskStep.EMBEDDING;
+            documentIngestionEventRecorder.recordEmbeddingStarted(taskId);
+            long embeddingStartedAt = System.currentTimeMillis();
             DocumentEmbeddingResponse embeddingResponse = documentEmbeddingService.embedDocument(document.getId());
             int embeddingCount = embeddingResponse.getEmbeddedChunkCount() == null
                     ? 0
                     : embeddingResponse.getEmbeddedChunkCount();
+            documentIngestionEventRecorder.recordEmbeddingCompleted(
+                    taskId,
+                    embeddingCount,
+                    System.currentTimeMillis() - embeddingStartedAt
+            );
+
+            currentStep = IngestionTaskStep.VECTOR_WRITING;
+            documentIngestionEventRecorder.recordVectorWriteStarted(taskId);
+            long vectorWriteStartedAt = System.currentTimeMillis();
+            documentIngestionEventRecorder.recordVectorWriteCompleted(
+                    taskId,
+                    embeddingCount,
+                    System.currentTimeMillis() - vectorWriteStartedAt
+            );
 
             documentIngestionTaskProgressService.updateTask(taskId, task -> {
                 task.setEmbeddingCount(embeddingCount);
@@ -68,8 +102,24 @@ public class DocumentIngestionTaskHandler {
                 task.setStep(IngestionTaskStep.COMPLETED);
                 task.setCompletedAt(LocalDateTime.now());
             });
+
+            documentIngestionEventRecorder.recordTaskCompleted(
+                    taskId,
+                    System.currentTimeMillis() - taskStartedAt
+            );
         } catch (Exception exception) {
             log.error("Document ingestion task failed, taskId={}", taskId, exception);
+            String traceId = DocumentIngestionEventRecorder.newTraceId();
+            String errorCode = DocumentIngestionTaskService.resolveErrorCode(exception);
+            String errorMessage = DocumentIngestionTaskService.resolveErrorMessage(exception);
+            documentIngestionEventRecorder.recordTaskFailed(
+                    taskId,
+                    currentStep,
+                    errorCode,
+                    errorMessage,
+                    traceId,
+                    exception
+            );
             DocumentIngestionTaskService.markFailed(
                     documentIngestionTaskProgressService,
                     taskId,

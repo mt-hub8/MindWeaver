@@ -3,6 +3,7 @@ package com.tuoman.ai_task_orchestrator.service;
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
 import com.tuoman.ai_task_orchestrator.document.extract.DocumentTextExtractorRegistry;
 import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentFileValidator;
+import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionEventRecorder;
 import com.tuoman.ai_task_orchestrator.document.ingestion.IngestionDisplayTexts;
 import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionSubmitResponse;
 import com.tuoman.ai_task_orchestrator.entity.DocumentEntity;
@@ -35,6 +36,10 @@ public class DocumentIngestionService {
 
     private final DocumentIngestionMessagePublisher documentIngestionMessagePublisher;
 
+    private final DocumentIngestionEventRecorder documentIngestionEventRecorder;
+
+    private final DocumentIngestionTaskProgressService documentIngestionTaskProgressService;
+
     @Transactional
     public DocumentIngestionSubmitResponse submitUpload(MultipartFile file) {
         var fileType = documentFileValidator.validate(file);
@@ -57,9 +62,38 @@ public class DocumentIngestionService {
         task.setSourceText(text);
         DocumentIngestionTaskEntity savedTask = documentIngestionTaskRepository.save(task);
 
-        documentIngestionMessagePublisher.publish(
-                new DocumentIngestionMessage(savedTask.getId(), savedDocument.getId())
+        documentIngestionEventRecorder.recordTaskCreated(
+                savedTask.getId(),
+                savedDocument.getOriginalFilename(),
+                savedDocument.getId()
         );
+        documentIngestionEventRecorder.recordTextExtracted(savedTask.getId(), savedDocument.getOriginalFilename());
+
+        try {
+            documentIngestionMessagePublisher.publish(
+                    new DocumentIngestionMessage(savedTask.getId(), savedDocument.getId())
+            );
+            documentIngestionEventRecorder.recordTaskQueued(savedTask.getId());
+        } catch (RuntimeException exception) {
+            String traceId = DocumentIngestionEventRecorder.newTraceId();
+            String errorCode = DocumentIngestionTaskService.resolveErrorCode(exception);
+            String errorMessage = DocumentIngestionTaskService.resolveErrorMessage(exception);
+            documentIngestionEventRecorder.recordTaskFailed(
+                    savedTask.getId(),
+                    IngestionTaskStep.TEXT_EXTRACTED,
+                    errorCode,
+                    errorMessage,
+                    traceId,
+                    exception
+            );
+            DocumentIngestionTaskService.markFailed(
+                    documentIngestionTaskProgressService,
+                    savedTask.getId(),
+                    exception
+            );
+            markDocumentFailed(savedDocument.getId(), errorMessage);
+            throw BusinessException.internalError("文档已进入队列失败，请稍后重试");
+        }
 
         IngestionTaskStatus status = savedTask.getStatus();
         return new DocumentIngestionSubmitResponse(
@@ -70,5 +104,13 @@ public class DocumentIngestionService {
                 IngestionDisplayTexts.displayStatus(status),
                 IngestionDisplayTexts.displayMessage(status, savedTask.getStep())
         );
+    }
+
+    private void markDocumentFailed(Long documentId, String errorMessage) {
+        documentRepository.findById(documentId).ifPresent(document -> {
+            document.setStatus(DocumentStatus.FAILED);
+            document.setErrorMessage(errorMessage);
+            documentRepository.save(document);
+        });
     }
 }

@@ -63,7 +63,7 @@
 
     <section id="tasks-panel" class="panel hidden" aria-labelledby="tasks-title">
         <h2 id="tasks-title">最近上传任务</h2>
-        <p class="muted">页面每 3 秒自动刷新处理状态。失败任务可点击「重新处理」；已完成任务可前往问答。</p>
+        <p class="muted">页面每 3 秒自动刷新处理状态。可点击「查看处理记录」查看任务时间线；失败任务可点击「重新处理」。</p>
         <table class="doc-table ingestion-table">
             <thead>
             <tr>
@@ -79,6 +79,13 @@
             </thead>
             <tbody id="tasks-body"></tbody>
         </table>
+    </section>
+
+    <section id="timeline-panel" class="panel hidden" aria-labelledby="timeline-title">
+        <h2 id="timeline-title">处理记录 · 任务时间线</h2>
+        <p class="muted">按时间顺序展示文档摄入各步骤、耗时与错误原因。技术详情包含事件类型（Event Type）、步骤、追踪 ID（Trace ID）等。</p>
+        <p id="timeline-empty" class="empty-state hidden">暂无处理记录。</p>
+        <ol id="timeline-list" class="timeline-list"></ol>
     </section>
 
     <section id="chunks-panel" class="panel hidden" aria-labelledby="chunks-title">

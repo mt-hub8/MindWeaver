@@ -2,14 +2,17 @@ package com.tuoman.ai_task_orchestrator.service;
 
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
 import com.tuoman.ai_task_orchestrator.common.error.ErrorCode;
+import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionEventRecorder;
 import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionProperties;
 import com.tuoman.ai_task_orchestrator.document.ingestion.IngestionDisplayTexts;
 import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionTaskResponse;
+import com.tuoman.ai_task_orchestrator.entity.DocumentIngestionEventEntity;
 import com.tuoman.ai_task_orchestrator.entity.DocumentIngestionTaskEntity;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStep;
 import com.tuoman.ai_task_orchestrator.mq.DocumentIngestionMessage;
 import com.tuoman.ai_task_orchestrator.mq.DocumentIngestionMessagePublisher;
+import com.tuoman.ai_task_orchestrator.repository.DocumentIngestionEventRepository;
 import com.tuoman.ai_task_orchestrator.repository.DocumentIngestionTaskRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -25,11 +28,15 @@ public class DocumentIngestionTaskService {
 
     private final DocumentIngestionTaskRepository documentIngestionTaskRepository;
 
+    private final DocumentIngestionEventRepository documentIngestionEventRepository;
+
     private final DocumentIngestionMessagePublisher documentIngestionMessagePublisher;
 
     private final DocumentIngestionProperties documentIngestionProperties;
 
     private final DocumentService documentService;
+
+    private final DocumentIngestionEventRecorder documentIngestionEventRecorder;
 
     @Transactional(readOnly = true)
     public DocumentIngestionTaskResponse getTask(Long taskId) {
@@ -68,9 +75,26 @@ public class DocumentIngestionTaskService {
 
         documentService.clearChunksForRetry(task.getDocumentId());
 
-        documentIngestionMessagePublisher.publish(
-                new DocumentIngestionMessage(task.getId(), task.getDocumentId())
-        );
+        documentIngestionEventRecorder.recordRetryRequested(taskId, task.getRetryCount());
+
+        try {
+            documentIngestionMessagePublisher.publish(
+                    new DocumentIngestionMessage(task.getId(), task.getDocumentId())
+            );
+            documentIngestionEventRecorder.recordRetryQueued(taskId, task.getRetryCount());
+        } catch (RuntimeException exception) {
+            String traceId = DocumentIngestionEventRecorder.newTraceId();
+            documentIngestionEventRecorder.recordTaskFailed(
+                    taskId,
+                    IngestionTaskStep.TEXT_EXTRACTED,
+                    resolveErrorCode(exception),
+                    resolveErrorMessage(exception),
+                    traceId,
+                    exception
+            );
+            throw BusinessException.internalError("重试任务进入队列失败，请稍后再试");
+        }
+
         return toResponse(task);
     }
 
@@ -82,6 +106,9 @@ public class DocumentIngestionTaskService {
     public DocumentIngestionTaskResponse toResponse(DocumentIngestionTaskEntity task) {
         IngestionTaskStatus status = task.getStatus();
         IngestionTaskStep step = task.getStep();
+        DocumentIngestionEventEntity latestEvent = documentIngestionEventRepository
+                .findTopByTaskIdOrderByCreatedAtDesc(task.getId())
+                .orElse(null);
         return new DocumentIngestionTaskResponse(
                 task.getId(),
                 task.getDocumentId(),
@@ -99,7 +126,9 @@ public class DocumentIngestionTaskService {
                 task.getRetryCount(),
                 task.getCreatedAt(),
                 task.getUpdatedAt(),
-                task.getCompletedAt()
+                task.getCompletedAt(),
+                latestEvent == null ? null : latestEvent.getDisplayMessage(),
+                latestEvent == null ? null : latestEvent.getCreatedAt()
         );
     }
 

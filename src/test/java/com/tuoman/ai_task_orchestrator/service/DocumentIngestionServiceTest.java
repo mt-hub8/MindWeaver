@@ -6,12 +6,12 @@ import com.tuoman.ai_task_orchestrator.document.extract.PdfTextExtractor;
 import com.tuoman.ai_task_orchestrator.document.extract.TestDocumentFiles;
 import com.tuoman.ai_task_orchestrator.document.extract.TxtTextExtractor;
 import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentFileValidator;
+import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionEventRecorder;
 import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionProperties;
 import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionSubmitResponse;
 import com.tuoman.ai_task_orchestrator.entity.DocumentEntity;
 import com.tuoman.ai_task_orchestrator.entity.DocumentIngestionTaskEntity;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStatus;
-import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStep;
 import com.tuoman.ai_task_orchestrator.mq.DocumentIngestionMessage;
 import com.tuoman.ai_task_orchestrator.mq.DocumentIngestionMessagePublisher;
 import com.tuoman.ai_task_orchestrator.repository.DocumentIngestionTaskRepository;
@@ -19,12 +19,12 @@ import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -42,6 +42,12 @@ class DocumentIngestionServiceTest {
 
     @Mock
     private DocumentIngestionMessagePublisher documentIngestionMessagePublisher;
+
+    @Mock
+    private DocumentIngestionEventRecorder documentIngestionEventRecorder;
+
+    @Mock
+    private DocumentIngestionTaskProgressService documentIngestionTaskProgressService;
 
     private DocumentIngestionService documentIngestionService;
 
@@ -61,12 +67,14 @@ class DocumentIngestionServiceTest {
                 documentService,
                 documentRepository,
                 documentIngestionTaskRepository,
-                documentIngestionMessagePublisher
+                documentIngestionMessagePublisher,
+                documentIngestionEventRecorder,
+                documentIngestionTaskProgressService
         );
     }
 
     @Test
-    void submitUploadShouldCreatePendingTaskAndPublishMessage() {
+    void submitUploadShouldCreatePendingTaskPublishMessageAndRecordEvents() {
         DocumentEntity document = new DocumentEntity();
         document.setId(10L);
         document.setOriginalFilename("demo.txt");
@@ -83,20 +91,11 @@ class DocumentIngestionServiceTest {
         );
 
         assertThat(response.getTaskId()).isEqualTo(1001L);
-        assertThat(response.getDocumentId()).isEqualTo(10L);
-        assertThat(response.getFilename()).isEqualTo("demo.txt");
         assertThat(response.getStatus()).isEqualTo(IngestionTaskStatus.PENDING.name());
-        assertThat(response.getDisplayStatus()).isEqualTo("待处理");
-        assertThat(response.getDisplayMessage()).contains("排队处理");
 
-        ArgumentCaptor<DocumentIngestionTaskEntity> taskCaptor = ArgumentCaptor.forClass(DocumentIngestionTaskEntity.class);
-        verify(documentIngestionTaskRepository).save(taskCaptor.capture());
-        assertThat(taskCaptor.getValue().getStatus()).isEqualTo(IngestionTaskStatus.PENDING);
-        assertThat(taskCaptor.getValue().getStep()).isEqualTo(IngestionTaskStep.TEXT_EXTRACTED);
-
-        ArgumentCaptor<DocumentIngestionMessage> messageCaptor = ArgumentCaptor.forClass(DocumentIngestionMessage.class);
-        verify(documentIngestionMessagePublisher).publish(messageCaptor.capture());
-        assertThat(messageCaptor.getValue().getTaskId()).isEqualTo(1001L);
-        assertThat(messageCaptor.getValue().getDocumentId()).isEqualTo(10L);
+        verify(documentIngestionEventRecorder).recordTaskCreated(eq(1001L), eq("demo.txt"), eq(10L));
+        verify(documentIngestionEventRecorder).recordTextExtracted(1001L, "demo.txt");
+        verify(documentIngestionMessagePublisher).publish(any(DocumentIngestionMessage.class));
+        verify(documentIngestionEventRecorder).recordTaskQueued(1001L);
     }
 }

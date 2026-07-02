@@ -59,12 +59,16 @@ class ProductMvpStaticResourceTest {
         assertThat(content).contains("/documents/upload");
         assertThat(content).contains("/documents/ingestions");
         assertThat(content).contains("重新处理");
+        assertThat(content).contains("查看处理记录");
+        assertThat(content).contains("技术详情");
     }
 
     @Test
     void shouldServeDocumentsHtmlWithChineseEmptyState() throws Exception {
         String content = fetchUtf8("/documents.html");
         assertThat(content).contains("还没有上传任何文档");
+        assertThat(content).contains("处理记录");
+        assertThat(content).contains("任务时间线");
         assertThat(content).contains("/documents.js");
     }
 

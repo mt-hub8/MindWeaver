@@ -1,23 +1,18 @@
 package com.tuoman.ai_task_orchestrator.service;
 
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
-import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionProperties;
+import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionEventRecorder;
 import com.tuoman.ai_task_orchestrator.dto.DocumentEmbeddingResponse;
 import com.tuoman.ai_task_orchestrator.entity.DocumentEntity;
 import com.tuoman.ai_task_orchestrator.entity.DocumentIngestionTaskEntity;
 import com.tuoman.ai_task_orchestrator.enums.DocumentStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStep;
-import com.tuoman.ai_task_orchestrator.mq.DocumentIngestionMessage;
-import com.tuoman.ai_task_orchestrator.mq.DocumentIngestionMessagePublisher;
-import com.tuoman.ai_task_orchestrator.repository.DocumentIngestionTaskRepository;
 import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -26,7 +21,6 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -52,6 +46,9 @@ class DocumentIngestionTaskHandlerTest {
     @Mock
     private DocumentRepository documentRepository;
 
+    @Mock
+    private DocumentIngestionEventRecorder documentIngestionEventRecorder;
+
     private DocumentIngestionTaskHandler handler;
 
     private DocumentIngestionTaskEntity task;
@@ -63,7 +60,8 @@ class DocumentIngestionTaskHandlerTest {
                 documentIngestionTaskProgressService,
                 documentService,
                 documentEmbeddingService,
-                documentRepository
+                documentRepository,
+                documentIngestionEventRecorder
         );
 
         task = new DocumentIngestionTaskEntity();
@@ -89,7 +87,7 @@ class DocumentIngestionTaskHandlerTest {
     }
 
     @Test
-    void processShouldCompleteTaskWithUpdatedCounts() {
+    void processShouldCompleteTaskRecordTimelineEventsAndDurations() {
         when(documentIngestionTaskService.findTaskOrThrow(1001L)).thenReturn(task);
 
         DocumentEntity document = new DocumentEntity();
@@ -104,16 +102,19 @@ class DocumentIngestionTaskHandlerTest {
         handler.process(1001L);
 
         assertThat(task.getStatus()).isEqualTo(IngestionTaskStatus.COMPLETED);
-        assertThat(task.getStep()).isEqualTo(IngestionTaskStep.COMPLETED);
-        assertThat(task.getChunkCount()).isEqualTo(3);
-        assertThat(task.getEmbeddingCount()).isEqualTo(3);
-        assertThat(task.getVectorWriteCount()).isEqualTo(3);
-        assertThat(task.getCompletedAt()).isNotNull();
+        verify(documentIngestionEventRecorder).recordTaskStarted(1001L);
+        verify(documentIngestionEventRecorder).recordChunkingStarted(1001L);
+        verify(documentIngestionEventRecorder).recordChunkingCompleted(eq(1001L), eq(3), any(Long.class));
+        verify(documentIngestionEventRecorder).recordEmbeddingStarted(1001L);
+        verify(documentIngestionEventRecorder).recordEmbeddingCompleted(eq(1001L), eq(3), any(Long.class));
+        verify(documentIngestionEventRecorder).recordVectorWriteStarted(1001L);
+        verify(documentIngestionEventRecorder).recordVectorWriteCompleted(eq(1001L), eq(3), any(Long.class));
+        verify(documentIngestionEventRecorder).recordTaskCompleted(eq(1001L), any(Long.class));
         assertThat(document.getStatus()).isEqualTo(DocumentStatus.READY);
     }
 
     @Test
-    void processShouldMarkTaskFailedWhenEmbeddingFails() {
+    void processShouldRecordTaskFailedWhenEmbeddingFails() {
         when(documentIngestionTaskService.findTaskOrThrow(1001L)).thenReturn(task);
 
         DocumentEntity document = new DocumentEntity();
@@ -127,9 +128,14 @@ class DocumentIngestionTaskHandlerTest {
         handler.process(1001L);
 
         assertThat(task.getStatus()).isEqualTo(IngestionTaskStatus.FAILED);
-        assertThat(task.getStep()).isEqualTo(IngestionTaskStep.FAILED);
-        assertThat(task.getErrorCode()).isEqualTo("VECTOR_STORE_ERROR");
-        assertThat(task.getErrorMessage()).contains("向量写入失败");
+        verify(documentIngestionEventRecorder).recordTaskFailed(
+                eq(1001L),
+                eq(IngestionTaskStep.EMBEDDING),
+                eq("VECTOR_STORE_ERROR"),
+                eq("向量写入失败"),
+                any(String.class),
+                any(Exception.class)
+        );
     }
 
     @Test

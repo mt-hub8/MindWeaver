@@ -32,6 +32,16 @@ POST /documents/ingestions/{taskId}/retry
 
 `retry` 仅支持 `FAILED` 状态，默认最多重试 3 次。
 
+### 摄入事件时间线（V3.4）
+
+```http
+GET /documents/ingestions/{taskId}/events
+```
+
+在 **文档管理** 页面点击「查看处理记录」，可按时间查看任务创建、排队、切块、向量生成、索引写入、完成或失败等步骤，以及每步耗时（durationMs）与错误码 / 追踪 ID（Trace ID）。
+
+本能力用于排查单次摄入任务，不是完整分布式追踪系统。
+
 兼容旧接口：`POST /documents`（仅 txt/md，仅切块）、`POST /documents/{id}/embeddings`（单独 embedding）。
 
 ## PDF 支持边界

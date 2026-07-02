@@ -454,3 +454,39 @@ pre.path-box {
 .ask-link {
     color: #2563eb;
 }
+
+.timeline-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.timeline-item {
+    border-left: 3px solid #dbeafe;
+    padding: 0.75rem 0 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.timeline-headline {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.timeline-meta {
+    font-size: 0.9rem;
+}
+
+.timeline-error {
+    color: #991b1b;
+    margin: 0.35rem 0 0;
+}
+
+.timeline-tech {
+    margin-top: 0.35rem;
+    font-size: 0.85rem;
+}
+
+.timeline-tech-body {
+    margin-top: 0.35rem;
+    word-break: break-all;
+}

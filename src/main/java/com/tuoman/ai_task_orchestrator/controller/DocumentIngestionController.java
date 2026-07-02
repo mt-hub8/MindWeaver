@@ -1,6 +1,8 @@
 package com.tuoman.ai_task_orchestrator.controller;
 
+import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionEventTimelineResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionTaskResponse;
+import com.tuoman.ai_task_orchestrator.service.DocumentIngestionEventService;
 import com.tuoman.ai_task_orchestrator.service.DocumentIngestionTaskService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,6 +20,8 @@ public class DocumentIngestionController {
 
     private final DocumentIngestionTaskService documentIngestionTaskService;
 
+    private final DocumentIngestionEventService documentIngestionEventService;
+
     @GetMapping("/{taskId}")
     public DocumentIngestionTaskResponse getTask(@PathVariable Long taskId) {
         return documentIngestionTaskService.getTask(taskId);
@@ -31,5 +35,10 @@ public class DocumentIngestionController {
     @PostMapping("/{taskId}/retry")
     public DocumentIngestionTaskResponse retryTask(@PathVariable Long taskId) {
         return documentIngestionTaskService.retryTask(taskId);
+    }
+
+    @GetMapping("/{taskId}/events")
+    public DocumentIngestionEventTimelineResponse getTaskEvents(@PathVariable Long taskId) {
+        return documentIngestionEventService.getEventTimeline(taskId);
     }
 }

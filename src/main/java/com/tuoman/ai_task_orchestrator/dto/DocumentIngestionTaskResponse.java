@@ -42,4 +42,8 @@ public class DocumentIngestionTaskResponse {
     private LocalDateTime updatedAt;
 
     private LocalDateTime completedAt;
+
+    private String latestEventMessage;
+
+    private LocalDateTime latestEventAt;
 }

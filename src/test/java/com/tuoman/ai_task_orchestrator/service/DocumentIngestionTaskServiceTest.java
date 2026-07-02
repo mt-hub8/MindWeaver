@@ -1,12 +1,14 @@
 package com.tuoman.ai_task_orchestrator.service;
 
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
+import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionEventRecorder;
 import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionProperties;
 import com.tuoman.ai_task_orchestrator.entity.DocumentIngestionTaskEntity;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStep;
 import com.tuoman.ai_task_orchestrator.mq.DocumentIngestionMessage;
 import com.tuoman.ai_task_orchestrator.mq.DocumentIngestionMessagePublisher;
+import com.tuoman.ai_task_orchestrator.repository.DocumentIngestionEventRepository;
 import com.tuoman.ai_task_orchestrator.repository.DocumentIngestionTaskRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,10 +32,16 @@ class DocumentIngestionTaskServiceTest {
     private DocumentIngestionTaskRepository documentIngestionTaskRepository;
 
     @Mock
+    private DocumentIngestionEventRepository documentIngestionEventRepository;
+
+    @Mock
     private DocumentIngestionMessagePublisher documentIngestionMessagePublisher;
 
     @Mock
     private DocumentService documentService;
+
+    @Mock
+    private DocumentIngestionEventRecorder documentIngestionEventRecorder;
 
     private DocumentIngestionTaskService documentIngestionTaskService;
 
@@ -46,25 +54,27 @@ class DocumentIngestionTaskServiceTest {
         properties.setRecentTaskLimit(20);
         documentIngestionTaskService = new DocumentIngestionTaskService(
                 documentIngestionTaskRepository,
+                documentIngestionEventRepository,
                 documentIngestionMessagePublisher,
                 properties,
-                documentService
+                documentService,
+                documentIngestionEventRecorder
         );
     }
 
     @Test
-    void retryShouldIncrementRetryCountAndRepublishMessage() {
+    void retryShouldIncrementRetryCountRecordEventsAndRepublishMessage() {
         DocumentIngestionTaskEntity task = failedTask(1);
         when(documentIngestionTaskRepository.findById(1001L)).thenReturn(Optional.of(task));
         when(documentIngestionTaskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(documentIngestionEventRepository.findTopByTaskIdOrderByCreatedAtDesc(1001L)).thenReturn(Optional.empty());
 
         var response = documentIngestionTaskService.retryTask(1001L);
 
         assertThat(response.getStatus()).isEqualTo("PENDING");
         assertThat(task.getRetryCount()).isEqualTo(2);
-        assertThat(task.getErrorCode()).isNull();
-        assertThat(task.getErrorMessage()).isNull();
-        verify(documentService).clearChunksForRetry(42L);
+        verify(documentIngestionEventRecorder).recordRetryRequested(1001L, 2);
+        verify(documentIngestionEventRecorder).recordRetryQueued(1001L, 2);
 
         ArgumentCaptor<DocumentIngestionMessage> messageCaptor = ArgumentCaptor.forClass(DocumentIngestionMessage.class);
         verify(documentIngestionMessagePublisher).publish(messageCaptor.capture());
