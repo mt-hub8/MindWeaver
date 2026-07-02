@@ -3,6 +3,8 @@ package com.tuoman.ai_task_orchestrator.service;
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
 import com.tuoman.ai_task_orchestrator.dto.DocumentChunkResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentDetailResponse;
+import com.tuoman.ai_task_orchestrator.dto.DocumentSummaryResponse;
+import com.tuoman.ai_task_orchestrator.dto.DocumentUploadResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentUploadResponse;
 import com.tuoman.ai_task_orchestrator.document.DocumentChunkResult;
 import com.tuoman.ai_task_orchestrator.document.DocumentChunker;
@@ -77,6 +79,14 @@ public class DocumentService {
     }
 
     @Transactional(readOnly = true)
+    public List<DocumentSummaryResponse> listDocuments() {
+        return documentRepository.findAllByOrderByCreatedAtDesc()
+                .stream()
+                .map(this::toSummaryResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public DocumentDetailResponse getDocument(Long documentId) {
         DocumentEntity document = findDocumentOrThrow(documentId);
         return toDetailResponse(document);
@@ -110,6 +120,17 @@ public class DocumentService {
     private DocumentEntity findDocumentOrThrow(Long documentId) {
         return documentRepository.findById(documentId)
                 .orElseThrow(BusinessException::documentNotFound);
+    }
+
+    private DocumentSummaryResponse toSummaryResponse(DocumentEntity document) {
+        return new DocumentSummaryResponse(
+                document.getId(),
+                document.getOriginalFilename(),
+                document.getChunkCount(),
+                document.getStatus().name(),
+                document.getCreatedAt(),
+                document.getUpdatedAt()
+        );
     }
 
     private DocumentUploadResponse toUploadResponse(DocumentEntity document) {

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Knowledge Assistant</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="page">
+    <nav class="app-nav" aria-label="Main navigation">
+        <a class="brand" href="/">AI Knowledge Assistant</a>
+        <a class="nav-link active" href="/" aria-current="page">Home</a>
+        <a class="nav-link" href="/ask.html">Ask</a>
+        <a class="nav-link" href="/documents.html">Documents</a>
+        <a class="nav-link" href="/evaluation.html">Evaluation</a>
+    </nav>
+
+    <header class="hero">
+        <h1>企业知识库问答与 RAG 质量调试</h1>
+        <p class="lead">
+            AI Task Orchestrator 帮助团队摄入私有文档，在浏览器中提问并获得带引用的回答，同时用指标评估检索策略（dense / rerank / hybrid）的效果。
+        </p>
+        <p class="sublead">
+            适用场景：内部知识库问答、RAG 方案验证、检索质量对比、演示与面试展示。
+        </p>
+    </header>
+
+    <section class="card-grid" aria-label="Product entry points">
+        <a class="entry-card" href="/ask.html">
+            <h2>Ask Knowledge Base</h2>
+            <p>向已摄入文档提问，查看回答、引用来源与检索 metadata。</p>
+        </a>
+        <a class="entry-card" href="/documents.html">
+            <h2>Documents</h2>
+            <p>浏览已上传文档与 chunk 切片（只读）。</p>
+        </a>
+        <a class="entry-card" href="/evaluation.html">
+            <h2>Evaluation Reports</h2>
+            <p>了解检索质量指标、对比模式与报告输出位置。</p>
+        </a>
+        <a class="entry-card" href="#capabilities">
+            <h2>System Capabilities</h2>
+            <p>查看 citations、cache、evaluation、rerank、hybrid 等能力说明。</p>
+        </a>
+    </section>
+
+    <section class="panel quick-start">
+        <h2>5 分钟体验路径</h2>
+        <ol>
+            <li>启动服务（见 README「本地快速启动」）。</li>
+            <li>通过 API 上传文档并生成 embedding（<code>POST /documents</code> → <code>POST /documents/{id}/embeddings</code>）。</li>
+            <li>打开 <a href="/ask.html">Ask</a> 页面提问，查看 citations 与 retrieval metadata。</li>
+            <li>在 <a href="/documents.html">Documents</a> 确认文档与 chunks 已入库。</li>
+            <li>（可选）按 <a href="/evaluation.html">Evaluation</a> 说明运行检索评估并查看报告。</li>
+        </ol>
+    </section>
+
+    <section id="capabilities" class="panel">
+        <h2>System Capabilities</h2>
+        <ul class="capability-list">
+            <li>
+                <strong>RAG Answer API with Citations</strong>
+                回答附带引用片段，帮助用户追踪来源、降低幻觉风险。
+            </li>
+            <li>
+                <strong>Embedding Cache / Dedup</strong>
+                相同 chunk 不重复计算 embedding，节省成本与延迟。
+            </li>
+            <li>
+                <strong>Embedding Cache Metrics</strong>
+                查看缓存命中情况，便于观察去重效果。
+            </li>
+            <li>
+                <strong>Qdrant Manual Verification</strong>
+                可切换 Qdrant 向量库做手工验证（非默认测试路径）。
+            </li>
+            <li>
+                <strong>Retrieval Evaluation</strong>
+                用 HitRate、Recall、Precision、MRR 等指标判断检索质量，而不是凭感觉。
+            </li>
+            <li>
+                <strong>Two-stage Retrieval &amp; Rerank</strong>
+                先扩大候选集再重排，提升关键词相关 chunk 的最终排名。
+            </li>
+            <li>
+                <strong>Hybrid Retrieval Fusion</strong>
+                同时兼顾语义相似（dense）与关键词精确匹配（lexical），经 RRF 融合。
+            </li>
+            <li>
+                <strong>Unified API Error Response</strong>
+                统一 code / message / traceId，便于前端与运维排查。
+            </li>
+        </ul>
+    </section>
+
+    <section class="panel">
+        <h2>主要入口</h2>
+        <p class="muted">Web UI（本页及子页面）+ 现有 REST API（RAG、Documents、Evaluation）。技术细节与 API 列表见项目 README。</p>
+        <ul>
+            <li>产品首页：<code>/</code> 或 <code>/index.html</code></li>
+            <li>问答：<code>/ask.html</code>（兼容 <code>/rag-demo.html</code>）</li>
+            <li>文档：<code>/documents.html</code> · API：<code>GET /documents</code></li>
+            <li>RAG API：<code>POST /rag/answers</code></li>
+        </ul>
+    </section>
+</div>
+</body>
+</html>

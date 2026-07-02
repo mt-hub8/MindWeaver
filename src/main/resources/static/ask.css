@@ -1,0 +1,146 @@
+label,
+textarea,
+input[type="number"],
+button {
+    font: inherit;
+}
+
+label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+textarea,
+input[type="number"] {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    background: transparent;
+    color: inherit;
+}
+
+textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 120px;
+    gap: 16px;
+    margin-top: 16px;
+    align-items: end;
+}
+
+button {
+    border: none;
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--accent);
+    color: #ffffff;
+}
+
+button:hover:not(:disabled) {
+    background: var(--accent-hover);
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.suggested-questions {
+    margin-top: 16px;
+}
+
+.suggested-questions h3 {
+    margin: 0 0 8px;
+    font-size: 0.95rem;
+    color: var(--muted);
+}
+
+.suggestion-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.chip-button {
+    background: var(--code-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+.chip-button:hover:not(:disabled) {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--text);
+}
+
+.answer-box {
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding: 14px;
+    border-radius: 8px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+}
+
+.citation-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 12px;
+}
+
+.citation-item {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    background: var(--code-bg);
+}
+
+.citation-item h3 {
+    margin: 0 0 8px;
+    font-size: 1rem;
+}
+
+.citation-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+    margin-bottom: 8px;
+    color: var(--muted);
+    font-size: 0.92rem;
+}
+
+.citation-snippet {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.metadata pre {
+    margin: 0;
+    padding: 14px;
+    border-radius: 8px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+@media (max-width: 640px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+}

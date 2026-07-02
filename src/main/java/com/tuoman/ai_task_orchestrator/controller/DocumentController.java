@@ -5,6 +5,7 @@ import com.tuoman.ai_task_orchestrator.dto.DocumentDetailResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentEmbeddingResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentSearchRequest;
 import com.tuoman.ai_task_orchestrator.dto.DocumentSearchResultResponse;
+import com.tuoman.ai_task_orchestrator.dto.DocumentSummaryResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentUploadResponse;
 import com.tuoman.ai_task_orchestrator.service.DocumentEmbeddingService;
 import com.tuoman.ai_task_orchestrator.service.DocumentService;
@@ -22,6 +23,11 @@ public class DocumentController {
     private final DocumentService documentService;
 
     private final DocumentEmbeddingService documentEmbeddingService;
+
+    @GetMapping
+    public List<DocumentSummaryResponse> listDocuments() {
+        return documentService.listDocuments();
+    }
 
     @PostMapping
     public DocumentUploadResponse uploadDocument(@RequestParam("file") MultipartFile file) {

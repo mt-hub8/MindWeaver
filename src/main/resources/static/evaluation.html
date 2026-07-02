@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evaluation Reports</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="page">
+    <nav class="app-nav" aria-label="Main navigation">
+        <a class="brand" href="/">AI Knowledge Assistant</a>
+        <a class="nav-link" href="/">Home</a>
+        <a class="nav-link" href="/ask.html">Ask</a>
+        <a class="nav-link" href="/documents.html">Documents</a>
+        <a class="nav-link active" href="/evaluation.html" aria-current="page">Evaluation</a>
+    </nav>
+
+    <header class="hero">
+        <h1>Evaluation Reports</h1>
+        <p class="lead">
+            系统支持对 RAG 检索质量进行离线评估，并对比 dense-only、rerank、hybrid 等策略差异。
+            本页说明指标含义与报告位置；不提供在线运行或图表 dashboard。
+        </p>
+    </header>
+
+    <section class="panel">
+        <h2>核心指标</h2>
+        <div class="metric-grid">
+            <div class="metric-card">
+                <h3>HitRate@K（命中率@K）</h3>
+                <p>TopK 结果中是否至少命中一条期望证据的 case 比例。越高说明「能找对」的问答越多。</p>
+            </div>
+            <div class="metric-card">
+                <h3>Recall@K（召回率@K）</h3>
+                <p>期望证据中被检索命中的比例。关注「该找的是否都找到了」。</p>
+            </div>
+            <div class="metric-card">
+                <h3>Precision@K（精确率@K）</h3>
+                <p>返回结果中有多少是期望相关的（本项目中为 matched / retrieved count）。</p>
+            </div>
+            <div class="metric-card">
+                <h3>MRR / RR@K</h3>
+                <p>平均倒数排名：第一个正确结果越靠前，分数越高。RR@K 为单 case 的 reciprocal rank。</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>对比模式</h2>
+        <ul>
+            <li><strong>Dense baseline</strong>：仅向量检索，作为基线。</li>
+            <li><strong>Dense + Rerank</strong>：扩大候选后 lexical 重排（V2.9）。</li>
+            <li><strong>Hybrid</strong>：dense + lexical + RRF 融合（V3.0），可选再 rerank。</li>
+        </ul>
+        <p class="muted">对比报告展示 baseline / variant 的 summary metrics 与 delta（improved / regressed / unchanged cases）。</p>
+    </section>
+
+    <section class="panel">
+        <h2>报告输出路径</h2>
+        <p>评估启用后，报告写入项目目录（默认）：</p>
+        <pre class="path-box">docs/evaluation/reports/
+
+rag-retrieval-evaluation-report.json
+rag-retrieval-evaluation-report.md
+rag-retrieval-comparison-report.json      # dense vs rerank
+rag-retrieval-comparison-report.md
+rag-hybrid-comparison-report.json         # dense vs hybrid
+rag-hybrid-comparison-report.md</pre>
+        <p class="muted">若尚未运行评估，上述文件可能不存在。请按下方步骤手工 opt-in 运行。</p>
+    </section>
+
+    <section class="panel">
+        <h2>如何手工运行 Evaluation</h2>
+        <ol>
+            <li>准备评估数据集：<code>docs/evaluation/rag-retrieval-eval-cases.json</code></li>
+            <li>在 <code>application.properties</code> 中设置：
+                <pre class="path-box">app.evaluation.retrieval.enabled=true
+app.evaluation.retrieval.compare-hybrid=true   # 或 compare-rerank=true</pre>
+            </li>
+            <li>启动应用，Runner 会在启动时执行评估并写入 <code>docs/evaluation/reports/</code></li>
+            <li>阅读 JSON（机器可读）或 Markdown（人类可读）报告</li>
+        </ol>
+        <p>详细说明见 <code>docs/manual/rag-retrieval-evaluation.md</code>、<code>docs/manual/rag-two-stage-retrieval-rerank.md</code>、<code>docs/manual/rag-hybrid-retrieval-fusion.md</code>。</p>
+    </section>
+
+    <section class="panel">
+        <h2>注意事项</h2>
+        <ul>
+            <li>默认 <code>.\mvnw.cmd test</code> 不运行真实 Qdrant / worker 评估。</li>
+            <li>本页面不触发评估执行，仅作说明与入口指引。</li>
+            <li>Hybrid 对比不保证指标一定提升，报告如实记录 delta。</li>
+        </ul>
+    </section>
+</div>
+</body>
+</html>

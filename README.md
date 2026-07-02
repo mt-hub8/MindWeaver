@@ -1,12 +1,27 @@
-# AI Task Orchestrator
+# AI Knowledge Assistant · AI Task Orchestrator
 
-## 1. 项目定位
+## 产品定位（第一屏）
+
+**AI Task Orchestrator 是一个面向企业 AI 应用的知识库问答与 RAG 质量调试系统。** 用户可以摄入私有文档，在浏览器中提问，系统基于文档生成带引用的回答，并展示检索策略、引用来源和质量评估结果。
+
+| | |
+|---|---|
+| **适用场景** | 内部知识库问答、RAG 方案验证、检索策略对比（dense / rerank / hybrid）、演示与面试展示 |
+| **核心能力** | 文档切块与向量化 · 带 Citations 的 RAG 问答 · 检索质量评估 · 二阶段 Rerank · Hybrid 融合检索 |
+| **5 分钟体验** | 启动服务 → API 上传文档并 embedding → 打开 **`/`** 或 **`/ask.html`** 提问 → **`/documents.html`** 查看文档 → **`/evaluation.html`** 了解评估报告 |
+| **主要入口** | Web：`/` · `/ask.html` · `/documents.html` · `/evaluation.html` · API：`POST /rag/answers` · `GET /documents` |
+
+> 技术栈：Java 17 · Spring Boot · MySQL · RabbitMQ · JPA/Flyway · 可选 Qdrant / Local Embedding Worker。下文保留完整能力与架构说明。
+
+---
+
+## 1. 项目定位（技术视角）
 
 AI Task Orchestrator 是一个基于 Java / Spring Boot 的 AI 任务编排与 RAG 检索后端系统。它的重点不是简单调用大模型 API，而是构建面向 LLM / RAG / Agent 工作负载的可靠异步底座，并在其上逐步扩展文档处理、Embedding、向量检索、检索评估与 RAG 问答能力。
 
 英文一句话定位：
 
-> AI Task Orchestrator is a Java / Spring Boot backend for orchestrating long-running AI workloads and building a RAG retrieval foundation, including async dispatch, transactional outbox, atomic task claiming, embedding provider abstraction, vector store abstraction, and retrieval evaluation.
+> AI Task Orchestrator is a Java / Spring Boot backend for orchestrating long-running AI workloads and building a RAG retrieval foundation, including async dispatch, transactional outbox, atomic task claiming, embedding provider abstraction, vector store abstraction, retrieval evaluation, rerank, and hybrid retrieval fusion.
 
 当前项目是 **production-oriented prototype**，不是完整 production-grade platform，也不是完整 Agent Runtime。
 
@@ -63,9 +78,12 @@ AI Task Orchestrator 是一个基于 Java / Spring Boot 的 AI 任务编排与 R
 - `QdrantVectorStore`（显式配置时启用）
 - VectorStore Benchmark Harness（测试 harness，baseline vs candidate）
 
-**RAG（基础链路）**
+**RAG（问答与检索策略）**
 
-- RAG Answer with Citation API（`POST /rag/answer`，当前基于 Mock LLM + 检索结果）
+- RAG Answer with Citation API（`POST /rag/answers`）
+- Two-stage Retrieval & Rerank（V2.9，配置 `rag.rerank.enabled`）
+- App-layer Hybrid Retrieval Fusion（V3.0，配置 `rag.hybrid.enabled`）
+- 浏览器产品入口：`/` · `/ask.html` · `/documents.html` · `/evaluation.html`
 
 **工程化**
 
@@ -87,8 +105,6 @@ AI Task Orchestrator 是一个基于 Java / Spring Boot 的 AI 任务编排与 R
 ### Not Implemented Yet（尚未实现）
 
 - Production-grade RAG answer / generation quality governance
-- Rerank
-- Hybrid Search / BM25
 - Auth / tenant / quota
 - API rate limit
 - Production observability dashboard（完整 metrics pipeline）
@@ -99,6 +115,7 @@ AI Task Orchestrator 是一个基于 Java / Spring Boot 的 AI 任务编排与 R
 - Real billing / subscription system
 - Evaluation result persistence
 - Generation Evaluation（Faithfulness、LLM-as-a-judge 等）
+- Web UI 登录 / 权限 / 文档上传与编辑（当前 Documents 页为只读）
 
 ---
 
@@ -210,10 +227,20 @@ PowerShell 不要使用 `cd /d E:\code\ai-task-orchestrator`。
 
 ## 7. 可运行 Demo 入口
 
+**Web UI（V3.1 产品入口）**
+
+| 页面 | 路径 | 说明 |
+| --- | --- | --- |
+| 产品首页 | `/` 或 `/index.html` | 能力说明与导航 |
+| 知识库问答 | `/ask.html`（兼容 `/rag-demo.html`） | 提问、Citations、Metadata |
+| 文档浏览 | `/documents.html` | 只读文档与 chunks |
+| 评估说明 | `/evaluation.html` | 指标与报告路径 |
+
 完整 E2E 演示见：[docs/demo/e2e-demo.md](docs/demo/e2e-demo.md)（配合 `docs/demo/task-flow.http` 与 `docs/demo/rag-flow.http`）。
 
 | 能力 | HTTP 入口 |
 | --- | --- |
+| 文档列表（只读） | `GET /documents` |
 | 创建任务 | `POST /tasks` |
 | 查询任务 | `GET /tasks/{taskId}` |
 | 查询 attempts | `GET /tasks/{taskId}/attempts` |
@@ -222,7 +249,7 @@ PowerShell 不要使用 `cd /d E:\code\ai-task-orchestrator`。
 | 生成 embedding | `POST /documents/{documentId}/embeddings` |
 | 文档检索 | `POST /documents/search` |
 | 检索评估 | `POST /evaluations/retrieval` |
-| RAG 问答 | `POST /rag/answer` |
+| RAG 问答 | `POST /rag/answers` |
 
 开发/调试接口（非生产）：
 
@@ -275,7 +302,8 @@ PowerShell 不要使用 `cd /d E:\code\ai-task-orchestrator`。
 - `ExactCosineVectorStore` 为 exact scan，不适合大规模生产检索。
 - Qdrant 接入为实验性实现，无 Docker Compose 集成与生产级运维。
 - Local Embedding Worker 需手工启动 Python 环境。
-- 无 Rerank、Hybrid Search、多租户、鉴权、限流、完整 observability。
+- 无多租户、鉴权、限流、完整 observability。
+- Web UI 为 MVP：无登录、无上传、Documents 只读。
 - 不是完整 Agent Runtime。
 
 ---
@@ -290,14 +318,13 @@ PowerShell 不要使用 `cd /d E:\code\ai-task-orchestrator`。
 4. **API Error Response Standardization** — 统一错误响应格式
 5. **Local Embedding Worker Packaging** — Docker 化与依赖治理
 6. **Retrieval Policy & VIP Search** — 按用户计划调整 topK / 检索策略
-7. **Rerank** — 二阶段排序
-8. **Hybrid Search** — 向量 + 关键词混合检索
-9. **RAG Answer Hardening** — 生产级 citation / generation 质量治理
-10. **Generation Evaluation** — Faithfulness、Answer Relevance、LLM-as-a-judge
-11. **Agent Runtime**
-12. **KV Cache-aware Scheduling**
+7. **RAG Answer Hardening** — 生产级 citation / generation 质量治理
+8. **Generation Evaluation** — Faithfulness、Answer Relevance、LLM-as-a-judge
+9. **Agent Runtime**
+10. **KV Cache-aware Scheduling**
+11. **Product UI** — 登录、权限、文档上传与管理
 
-已完成能力（V2.4–V2.6.x）不再列入待做：Retrieval Evaluation、EmbeddingProvider、Local Worker 接入、VectorStore 抽象、QdrantVectorStore、VectorStore Benchmark Harness。
+已完成能力（V2.4–V3.1）不再列入待做：Retrieval Evaluation、EmbeddingProvider、Local Worker 接入、VectorStore 抽象、QdrantVectorStore、VectorStore Benchmark Harness、Rerank、Hybrid Fusion、产品化 Web 入口。
 
 ---
 

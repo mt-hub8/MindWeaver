@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Documents</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="page">
+    <nav class="app-nav" aria-label="Main navigation">
+        <a class="brand" href="/">AI Knowledge Assistant</a>
+        <a class="nav-link" href="/">Home</a>
+        <a class="nav-link" href="/ask.html">Ask</a>
+        <a class="nav-link active" href="/documents.html" aria-current="page">Documents</a>
+        <a class="nav-link" href="/evaluation.html">Evaluation</a>
+    </nav>
+
+    <header class="hero">
+        <h1>Documents</h1>
+        <p class="lead">只读查看已摄入文档与 chunk 切片。上传请使用 API（<code>POST /documents</code>），本页不提供上传功能。</p>
+    </header>
+
+    <div id="loading-status" class="status loading" role="status" aria-live="polite">
+        正在加载文档列表…
+    </div>
+
+    <div id="error-status" class="status error" role="alert" aria-live="assertive">
+        <dl>
+            <dt>错误</dt>
+            <dd id="error-code"></dd>
+            <dd id="error-message"></dd>
+            <dd id="error-trace-id"></dd>
+        </dl>
+    </div>
+
+    <p id="documents-empty" class="empty-state hidden">No documents have been ingested yet.</p>
+
+    <section id="documents-panel" class="panel hidden" aria-labelledby="documents-title">
+        <h2 id="documents-title">Document List</h2>
+        <table class="doc-table">
+            <thead>
+            <tr>
+                <th>ID</th>
+                <th>Title</th>
+                <th>Chunks</th>
+                <th>Status</th>
+                <th>Created</th>
+            </tr>
+            </thead>
+            <tbody id="documents-body"></tbody>
+        </table>
+        <p class="muted">点击一行查看该文档的 chunks。</p>
+    </section>
+
+    <section id="chunks-panel" class="panel hidden" aria-labelledby="chunks-title">
+        <h2 id="chunks-title">Chunks</h2>
+        <p id="chunks-empty" class="empty-state hidden">该文档暂无 chunks。</p>
+        <ul id="chunks-list" class="chunk-list"></ul>
+    </section>
+</div>
+
+<script src="/documents.js"></script>
+</body>
+</html>

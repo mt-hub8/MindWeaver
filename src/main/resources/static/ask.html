@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAG Answer Demo</title>
+    <title>Ask Knowledge Base</title>
     <link rel="stylesheet" href="/app.css">
     <link rel="stylesheet" href="/ask.css">
 </head>
@@ -12,14 +12,14 @@
     <nav class="app-nav" aria-label="Main navigation">
         <a class="brand" href="/">AI Knowledge Assistant</a>
         <a class="nav-link" href="/">Home</a>
-        <a class="nav-link active" href="/rag-demo.html" aria-current="page">Ask</a>
+        <a class="nav-link active" href="/ask.html" aria-current="page">Ask</a>
         <a class="nav-link" href="/documents.html">Documents</a>
         <a class="nav-link" href="/evaluation.html">Evaluation</a>
     </nav>
 
     <header class="hero">
         <h1>Ask Knowledge Base</h1>
-        <p class="lead">兼容入口 <code>/rag-demo.html</code>。推荐使用 <a href="/ask.html">/ask.html</a>。</p>
+        <p class="lead">基于已摄入文档提问，系统返回带引用的回答。Citations 用于追踪答案来源，降低幻觉风险。</p>
     </header>
 
     <section class="panel" aria-labelledby="query-section-title">
@@ -29,7 +29,7 @@
 
         <div class="form-row">
             <div>
-                <label for="topk-input">Top K</label>
+                <label for="topk-input">Top K（检索条数）</label>
                 <input id="topk-input" type="number" min="1" max="10" value="5">
             </div>
             <button id="ask-button" type="button">Ask</button>
@@ -41,7 +41,7 @@
         </div>
 
         <div id="loading-status" class="status loading" role="status" aria-live="polite">
-            正在请求 RAG Answer，请稍候…
+            正在检索文档并生成回答，请稍候…
         </div>
 
         <div id="error-status" class="status error" role="alert" aria-live="assertive">
