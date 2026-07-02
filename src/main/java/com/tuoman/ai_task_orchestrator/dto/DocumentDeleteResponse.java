@@ -7,27 +7,15 @@ import java.time.LocalDateTime;
 
 @Getter
 @AllArgsConstructor
-public class DocumentSummaryResponse {
+public class DocumentDeleteResponse {
 
     private Long documentId;
-
-    private String title;
-
-    private Integer chunkCount;
 
     private String status;
 
     private String displayStatus;
 
-    private String processingStatus;
+    private String message;
 
     private LocalDateTime deletedAt;
-
-    private Boolean canDelete;
-
-    private Boolean canAsk;
-
-    private LocalDateTime createdAt;
-
-    private LocalDateTime updatedAt;
 }

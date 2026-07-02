@@ -1,6 +1,7 @@
 package com.tuoman.ai_task_orchestrator.controller;
 
 import com.tuoman.ai_task_orchestrator.dto.DocumentChunkResponse;
+import com.tuoman.ai_task_orchestrator.dto.DocumentDeleteResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentDetailResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentEmbeddingResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentSearchRequest;
@@ -43,6 +44,11 @@ public class DocumentController {
     @PostMapping
     public DocumentUploadResponse uploadDocument(@RequestParam("file") MultipartFile file) {
         return documentService.uploadDocument(file);
+    }
+
+    @DeleteMapping("/{documentId}")
+    public DocumentDeleteResponse deleteDocument(@PathVariable Long documentId) {
+        return documentService.softDeleteDocument(documentId);
     }
 
     @GetMapping("/{documentId}")

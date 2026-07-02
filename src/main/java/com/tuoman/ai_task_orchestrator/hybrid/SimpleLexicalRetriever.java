@@ -2,11 +2,14 @@ package com.tuoman.ai_task_orchestrator.hybrid;
 
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
 import com.tuoman.ai_task_orchestrator.entity.DocumentChunkEntity;
+import com.tuoman.ai_task_orchestrator.enums.DocumentLifecycleStatus;
 import com.tuoman.ai_task_orchestrator.repository.DocumentChunkRepository;
+import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -18,8 +21,14 @@ public class SimpleLexicalRetriever implements LexicalRetriever {
 
     private final DocumentChunkRepository documentChunkRepository;
 
-    public SimpleLexicalRetriever(DocumentChunkRepository documentChunkRepository) {
+    private final DocumentRepository documentRepository;
+
+    public SimpleLexicalRetriever(
+            DocumentChunkRepository documentChunkRepository,
+            DocumentRepository documentRepository
+    ) {
         this.documentChunkRepository = documentChunkRepository;
+        this.documentRepository = documentRepository;
     }
 
     @Override
@@ -73,10 +82,21 @@ public class SimpleLexicalRetriever implements LexicalRetriever {
     }
 
     private List<DocumentChunkEntity> loadChunks(Long documentId) {
+        Set<Long> deletedDocumentIds = new HashSet<>(
+                documentRepository.findIdsByLifecycleStatus(DocumentLifecycleStatus.DELETED)
+        );
+        List<DocumentChunkEntity> chunks;
         if (documentId == null) {
-            return documentChunkRepository.findAll();
+            chunks = documentChunkRepository.findAll();
+        } else {
+            if (deletedDocumentIds.contains(documentId)) {
+                return List.of();
+            }
+            chunks = documentChunkRepository.findByDocumentIdOrderByChunkIndexAsc(documentId);
         }
-        return documentChunkRepository.findByDocumentIdOrderByChunkIndexAsc(documentId);
+        return chunks.stream()
+                .filter(chunk -> !deletedDocumentIds.contains(chunk.getDocumentId()))
+                .toList();
     }
 
     private record ScoredChunk(DocumentChunkEntity chunk, double score) {

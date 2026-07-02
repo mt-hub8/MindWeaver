@@ -160,6 +160,10 @@
                 ? "ready"
                 : (task.status === "FAILED" ? "failed" : "pending");
 
+            const lifecycleStatus = task.documentLifecycleStatus || "ACTIVE";
+            const lifecycleDisplay = task.documentDisplayStatus || (lifecycleStatus === "DELETED" ? "已删除" : "已启用");
+            const lifecycleClass = lifecycleStatus === "DELETED" ? "deleted" : "active";
+
             const failureHint = task.status === "FAILED" && task.errorMessage
                 ? '<p class="task-error muted">处理失败：' + escapeHtml(task.errorMessage) + "</p>"
                 : "";
@@ -184,12 +188,21 @@
                     + escapeHtml(task.taskId) + '">重新处理</button>'
                 );
             }
-            if (task.status === "COMPLETED") {
+            if (task.status === "COMPLETED" && lifecycleStatus !== "DELETED") {
                 actions.push('<a class="ask-link" href="/ask.html">去提问</a>');
+            }
+            if (task.canDelete === true || (task.canDelete !== false && lifecycleStatus === "ACTIVE")) {
+                actions.push(
+                    '<button type="button" class="delete-button" data-document-id="'
+                    + escapeHtml(task.documentId) + '" data-filename="' + escapeHtml(task.filename) + '">删除文档</button>'
+                );
+            } else if (lifecycleStatus === "DELETED") {
+                actions.push('<span class="muted deleted-label">已删除</span>');
             }
 
             row.innerHTML =
                 "<td>" + escapeHtml(task.filename || "-") + failureHint + techInfo + "</td>" +
+                '<td><span class="status-badge ' + lifecycleClass + '">' + escapeHtml(lifecycleDisplay) + "</span></td>" +
                 '<td><span class="status-badge ' + statusClass + '">' + escapeHtml(task.displayStatus || task.status) + "</span></td>" +
                 "<td>" + escapeHtml(task.displayStep || task.step || "-") + "</td>" +
                 "<td>" + escapeHtml(task.chunkCount) + "</td>" +
@@ -219,6 +232,14 @@
                 viewTimelineButton.addEventListener("click", function (event) {
                     event.stopPropagation();
                     viewTaskTimeline(task.taskId, task.filename, row);
+                });
+            }
+
+            const deleteButton = row.querySelector(".delete-button");
+            if (deleteButton) {
+                deleteButton.addEventListener("click", function (event) {
+                    event.stopPropagation();
+                    confirmDeleteDocument(task.documentId, task.filename);
                 });
             }
 
@@ -329,6 +350,38 @@
             return JSON.stringify(metadata);
         } catch (error) {
             return "-";
+        }
+    }
+
+    async function confirmDeleteDocument(documentId, filename) {
+        const confirmed = window.confirm(
+            "确认删除「" + (filename || "文档 " + documentId) + "」？\n\n"
+            + "删除后，该文档不会再用于知识库问答。当前版本会保留历史记录，不会立即物理清理底层向量数据。"
+        );
+        if (!confirmed) {
+            return;
+        }
+
+        clearError();
+        setListLoading(true);
+        try {
+            const response = await fetch("/documents/" + documentId, {
+                method: "DELETE"
+            });
+            const payload = await parseJsonResponse(response);
+            if (!response.ok) {
+                showError(extractError(payload, response.status));
+                return;
+            }
+            await loadIngestionTasks();
+        } catch (networkError) {
+            showError({
+                code: "NETWORK_ERROR",
+                message: "删除失败，请稍后重试。",
+                traceId: "-"
+            });
+        } finally {
+            setListLoading(false);
         }
     }
 

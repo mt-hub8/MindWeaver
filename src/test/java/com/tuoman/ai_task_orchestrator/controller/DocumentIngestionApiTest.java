@@ -188,7 +188,12 @@ class DocumentIngestionApiTest {
                 LocalDateTime.now(),
                 null,
                 "文档已进入处理队列，请稍候。",
-                LocalDateTime.now()
+                LocalDateTime.now(),
+                "ACTIVE",
+                "已启用",
+                null,
+                true,
+                false
         );
     }
 }

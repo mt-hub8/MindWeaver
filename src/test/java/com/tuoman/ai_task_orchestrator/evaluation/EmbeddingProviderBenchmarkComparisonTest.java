@@ -21,6 +21,7 @@ import com.tuoman.ai_task_orchestrator.repository.DocumentChunkEmbeddingReposito
 import com.tuoman.ai_task_orchestrator.repository.DocumentChunkRepository;
 import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
 import com.tuoman.ai_task_orchestrator.service.DocumentEmbeddingService;
+import com.tuoman.ai_task_orchestrator.service.DocumentLifecycleFilterService;
 import com.tuoman.ai_task_orchestrator.service.RetrievalEvaluationService;
 import com.tuoman.ai_task_orchestrator.service.RetrievalMetricsCalculator;
 import com.tuoman.ai_task_orchestrator.vectorstore.ExactCosineVectorStore;
@@ -73,6 +74,9 @@ class EmbeddingProviderBenchmarkComparisonTest {
 
     @Autowired
     private EmbeddingCacheService embeddingCacheService;
+
+    @Autowired
+    private DocumentLifecycleFilterService documentLifecycleFilterService;
 
     @Test
     void shouldCompareBaselineAndCandidateProviderWithSameBenchmarkWithoutExternalApi() throws Exception {
@@ -160,7 +164,8 @@ class EmbeddingProviderBenchmarkComparisonTest {
                 documentChunkRepository,
                 provider,
                 embeddingCacheService,
-                new ExactCosineVectorStore(documentChunkEmbeddingRepository, documentChunkRepository)
+                new ExactCosineVectorStore(documentChunkEmbeddingRepository, documentChunkRepository),
+                documentLifecycleFilterService
         );
     }
 

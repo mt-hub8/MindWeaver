@@ -46,4 +46,14 @@ public class DocumentIngestionTaskResponse {
     private String latestEventMessage;
 
     private LocalDateTime latestEventAt;
+
+    private String documentLifecycleStatus;
+
+    private String documentDisplayStatus;
+
+    private LocalDateTime deletedAt;
+
+    private Boolean canDelete;
+
+    private Boolean canAsk;
 }

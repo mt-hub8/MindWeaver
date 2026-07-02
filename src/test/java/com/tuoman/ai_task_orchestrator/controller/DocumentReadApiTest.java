@@ -1,6 +1,7 @@
 package com.tuoman.ai_task_orchestrator.controller;
 
 import com.tuoman.ai_task_orchestrator.common.error.GlobalExceptionHandler;
+import com.tuoman.ai_task_orchestrator.dto.DocumentDeleteResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentChunkResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentSummaryResponse;
 import com.tuoman.ai_task_orchestrator.service.DocumentEmbeddingService;
@@ -17,6 +18,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -51,7 +53,19 @@ class DocumentReadApiTest {
     void listDocumentsShouldReturnSummaryFields() throws Exception {
         LocalDateTime createdAt = LocalDateTime.of(2026, 7, 2, 10, 0);
         when(documentService.listDocuments()).thenReturn(List.of(
-                new DocumentSummaryResponse(1L, "demo.md", 3, "CHUNKED", createdAt, createdAt)
+                new DocumentSummaryResponse(
+                        1L,
+                        "demo.md",
+                        3,
+                        "ACTIVE",
+                        "已启用",
+                        "READY",
+                        null,
+                        true,
+                        true,
+                        createdAt,
+                        createdAt
+                )
         ));
 
         mockMvc.perform(get("/documents"))
@@ -59,7 +73,40 @@ class DocumentReadApiTest {
                 .andExpect(jsonPath("$[0].documentId").value(1))
                 .andExpect(jsonPath("$[0].title").value("demo.md"))
                 .andExpect(jsonPath("$[0].chunkCount").value(3))
-                .andExpect(jsonPath("$[0].status").value("CHUNKED"));
+                .andExpect(jsonPath("$[0].status").value("ACTIVE"))
+                .andExpect(jsonPath("$[0].displayStatus").value("已启用"))
+                .andExpect(jsonPath("$[0].processingStatus").value("READY"))
+                .andExpect(jsonPath("$[0].canDelete").value(true))
+                .andExpect(jsonPath("$[0].canAsk").value(true));
+    }
+
+    @Test
+    void deleteDocumentShouldReturnLifecycleResponse() throws Exception {
+        LocalDateTime deletedAt = LocalDateTime.of(2026, 7, 2, 10, 30);
+        when(documentService.softDeleteDocument(1L)).thenReturn(new DocumentDeleteResponse(
+                1L,
+                "DELETED",
+                "已删除",
+                "文档已删除，后续知识库问答不会再使用该文档。",
+                deletedAt
+        ));
+
+        mockMvc.perform(delete("/documents/1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.documentId").value(1))
+                .andExpect(jsonPath("$.status").value("DELETED"))
+                .andExpect(jsonPath("$.displayStatus").value("已删除"))
+                .andExpect(jsonPath("$.message").value("文档已删除，后续知识库问答不会再使用该文档。"));
+    }
+
+    @Test
+    void deleteDocumentShouldReturnNotFoundForMissingDocument() throws Exception {
+        when(documentService.softDeleteDocument(99L))
+                .thenThrow(com.tuoman.ai_task_orchestrator.common.error.BusinessException.documentNotFound());
+
+        mockMvc.perform(delete("/documents/99"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("DOCUMENT_NOT_FOUND"));
     }
 
     @Test

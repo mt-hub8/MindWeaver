@@ -10,11 +10,13 @@ import com.tuoman.ai_task_orchestrator.hybrid.FusedCandidate;
 import com.tuoman.ai_task_orchestrator.hybrid.FusionRanker;
 import com.tuoman.ai_task_orchestrator.hybrid.FusionRequest;
 import com.tuoman.ai_task_orchestrator.hybrid.FusionResponse;
+import com.tuoman.ai_task_orchestrator.hybrid.LexicalCandidate;
 import com.tuoman.ai_task_orchestrator.hybrid.LexicalRetrievalRequest;
 import com.tuoman.ai_task_orchestrator.hybrid.LexicalRetrievalResponse;
 import com.tuoman.ai_task_orchestrator.hybrid.LexicalRetriever;
 import com.tuoman.ai_task_orchestrator.hybrid.RagHybridProperties;
 import com.tuoman.ai_task_orchestrator.hybrid.RrfFusionRanker;
+import com.tuoman.ai_task_orchestrator.service.DocumentLifecycleFilterService;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorSearchFilter;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorSearchRequest;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorSearchResult;
@@ -25,6 +27,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -44,6 +47,8 @@ public class RagTwoStageRetrievalService {
 
     private final FusionRanker fusionRanker;
 
+    private final DocumentLifecycleFilterService documentLifecycleFilterService;
+
     public RagRetrievalOutcome retrieve(String query, int finalTopK) {
         return retrieve(query, finalTopK, rerankProperties.isEnabled());
     }
@@ -61,7 +66,8 @@ public class RagTwoStageRetrievalService {
 
         if (!rerankEnabled) {
             List<RagRetrievedChunk> chunks = new ArrayList<>();
-            for (int i = 0; i < vectorResults.size(); i++) {
+            int limit = Math.min(finalTopK, vectorResults.size());
+            for (int i = 0; i < limit; i++) {
                 DocumentSearchResultResponse result = vectorResults.get(i);
                 chunks.add(new RagRetrievedChunk(
                         i + 1,
@@ -164,9 +170,14 @@ public class RagTwoStageRetrievalService {
         LexicalRetrievalResponse lexicalResponse = lexicalRetriever.retrieve(
                 new LexicalRetrievalRequest(query, lexicalTopK, null)
         );
+        Set<Long> deletedDocumentIds = documentLifecycleFilterService.findDeletedDocumentIds();
+        List<LexicalCandidate> lexicalCandidates = documentLifecycleFilterService.filterLexicalCandidates(
+                lexicalResponse.candidates(),
+                deletedDocumentIds
+        );
 
         FusionResponse fusionResponse = fusionRanker.fuse(
-                new FusionRequest(denseCandidates, lexicalResponse.candidates()),
+                new FusionRequest(denseCandidates, lexicalCandidates),
                 hybridProperties.getRrfK()
         );
         List<FusedCandidate> fusedCandidates = fusionResponse.candidates();
@@ -192,7 +203,7 @@ public class RagTwoStageRetrievalService {
                     lexicalTopK,
                     fusionResponse.fusionStrategy(),
                     denseCandidates.size(),
-                    lexicalResponse.candidates().size(),
+                    lexicalCandidates.size(),
                     fusedCandidates.size(),
                     hybridLatencyMs
             );
@@ -246,7 +257,7 @@ public class RagTwoStageRetrievalService {
                 lexicalTopK,
                 fusionResponse.fusionStrategy(),
                 denseCandidates.size(),
-                lexicalResponse.candidates().size(),
+                lexicalCandidates.size(),
                 fusedCandidates.size(),
                 hybridLatencyMs
         );
@@ -343,7 +354,7 @@ public class RagTwoStageRetrievalService {
         EmbeddingResponse queryEmbedding = embeddingProvider.embed(embeddingRequest);
 
         try {
-            return vectorStore.search(new VectorSearchRequest(
+            List<DocumentSearchResultResponse> results = vectorStore.search(new VectorSearchRequest(
                             queryEmbedding.getVector(),
                             topK,
                             embeddingProvider.provider(),
@@ -354,6 +365,10 @@ public class RagTwoStageRetrievalService {
                     .stream()
                     .map(this::toSearchResponse)
                     .toList();
+            return documentLifecycleFilterService.filterSearchResults(
+                    results,
+                    documentLifecycleFilterService.findDeletedDocumentIds()
+            );
         } catch (QdrantVectorStoreException exception) {
             throw exception;
         } catch (RuntimeException exception) {

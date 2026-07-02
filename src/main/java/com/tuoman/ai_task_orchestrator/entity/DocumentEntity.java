@@ -1,5 +1,6 @@
 package com.tuoman.ai_task_orchestrator.entity;
 
+import com.tuoman.ai_task_orchestrator.enums.DocumentLifecycleStatus;
 import com.tuoman.ai_task_orchestrator.enums.DocumentStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -30,6 +31,13 @@ public class DocumentEntity {
     @Column(nullable = false, length = 50)
     private DocumentStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "lifecycle_status", nullable = false, length = 50)
+    private DocumentLifecycleStatus lifecycleStatus;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
     @Column(name = "chunk_count", nullable = false)
     private Integer chunkCount;
 
@@ -50,6 +58,9 @@ public class DocumentEntity {
         LocalDateTime now = LocalDateTime.now();
         this.createdAt = now;
         this.updatedAt = now;
+        if (this.lifecycleStatus == null) {
+            this.lifecycleStatus = DocumentLifecycleStatus.ACTIVE;
+        }
     }
 
     @PreUpdate

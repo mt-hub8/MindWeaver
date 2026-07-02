@@ -43,6 +43,8 @@ public class DocumentEmbeddingService {
 
     private final VectorStore vectorStore;
 
+    private final DocumentLifecycleFilterService documentLifecycleFilterService;
+
     @Transactional
     public DocumentEmbeddingResponse embedDocument(Long documentId) {
         ensureDocumentExists(documentId);
@@ -107,7 +109,8 @@ public class DocumentEmbeddingService {
                 ? VectorSearchFilter.empty()
                 : new VectorSearchFilter(List.of(request.getDocumentId()), Map.of());
 
-        return vectorStore.search(new VectorSearchRequest(
+        return documentLifecycleFilterService.filterSearchResults(
+                vectorStore.search(new VectorSearchRequest(
                         queryEmbedding.getVector(),
                         topK,
                         embeddingProviderName,
@@ -117,7 +120,9 @@ public class DocumentEmbeddingService {
                 ))
                 .stream()
                 .map(this::toSearchResponse)
-                .toList();
+                .toList(),
+                documentLifecycleFilterService.findDeletedDocumentIds()
+        );
     }
 
     private VectorStoreDocument toVectorStoreDocument(

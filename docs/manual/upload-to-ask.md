@@ -9,6 +9,16 @@
 5. 打开 **知识库问答**（`/ask.html`）提问
 6. 查看 **回答**、**检索引用（Citation）** 与 retrieval metadata
 
+## 文档生命周期（V4.0 Batch 1）
+
+- 在 **文档管理** 页面可对已启用文档执行「删除文档」（软删除）。
+- 删除后文档不会再进入知识库问答的检索引用；底层向量数据不会立即物理清理。
+- `GET /documents` 可查看 `status`（ACTIVE / DELETED）与中文 `displayStatus`（已启用 / 已删除）。
+
+```http
+DELETE /documents/{documentId}
+```
+
 ## API
 
 ### 异步上传

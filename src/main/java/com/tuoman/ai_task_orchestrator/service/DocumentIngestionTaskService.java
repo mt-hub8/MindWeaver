@@ -2,18 +2,23 @@ package com.tuoman.ai_task_orchestrator.service;
 
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
 import com.tuoman.ai_task_orchestrator.common.error.ErrorCode;
+import com.tuoman.ai_task_orchestrator.document.lifecycle.DocumentLifecycleDisplayTexts;
 import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionEventRecorder;
 import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionProperties;
 import com.tuoman.ai_task_orchestrator.document.ingestion.IngestionDisplayTexts;
 import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionTaskResponse;
+import com.tuoman.ai_task_orchestrator.entity.DocumentEntity;
 import com.tuoman.ai_task_orchestrator.entity.DocumentIngestionEventEntity;
 import com.tuoman.ai_task_orchestrator.entity.DocumentIngestionTaskEntity;
+import com.tuoman.ai_task_orchestrator.enums.DocumentLifecycleStatus;
+import com.tuoman.ai_task_orchestrator.enums.DocumentStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStep;
 import com.tuoman.ai_task_orchestrator.mq.DocumentIngestionMessage;
 import com.tuoman.ai_task_orchestrator.mq.DocumentIngestionMessagePublisher;
 import com.tuoman.ai_task_orchestrator.repository.DocumentIngestionEventRepository;
 import com.tuoman.ai_task_orchestrator.repository.DocumentIngestionTaskRepository;
+import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +42,8 @@ public class DocumentIngestionTaskService {
     private final DocumentService documentService;
 
     private final DocumentIngestionEventRecorder documentIngestionEventRecorder;
+
+    private final DocumentRepository documentRepository;
 
     @Transactional(readOnly = true)
     public DocumentIngestionTaskResponse getTask(Long taskId) {
@@ -109,6 +116,7 @@ public class DocumentIngestionTaskService {
         DocumentIngestionEventEntity latestEvent = documentIngestionEventRepository
                 .findTopByTaskIdOrderByCreatedAtDesc(task.getId())
                 .orElse(null);
+        DocumentLifecycleFields lifecycleFields = resolveLifecycleFields(task.getDocumentId());
         return new DocumentIngestionTaskResponse(
                 task.getId(),
                 task.getDocumentId(),
@@ -128,8 +136,54 @@ public class DocumentIngestionTaskService {
                 task.getUpdatedAt(),
                 task.getCompletedAt(),
                 latestEvent == null ? null : latestEvent.getDisplayMessage(),
-                latestEvent == null ? null : latestEvent.getCreatedAt()
+                latestEvent == null ? null : latestEvent.getCreatedAt(),
+                lifecycleFields.lifecycleStatus(),
+                lifecycleFields.displayStatus(),
+                lifecycleFields.deletedAt(),
+                lifecycleFields.canDelete(),
+                lifecycleFields.canAsk()
         );
+    }
+
+    private DocumentLifecycleFields resolveLifecycleFields(Long documentId) {
+        if (documentId == null) {
+            return DocumentLifecycleFields.defaults();
+        }
+        return documentRepository.findById(documentId)
+                .map(this::toLifecycleFields)
+                .orElse(DocumentLifecycleFields.defaults());
+    }
+
+    private DocumentLifecycleFields toLifecycleFields(DocumentEntity document) {
+        DocumentLifecycleStatus lifecycleStatus = document.getLifecycleStatus() == null
+                ? DocumentLifecycleStatus.ACTIVE
+                : document.getLifecycleStatus();
+        boolean active = lifecycleStatus == DocumentLifecycleStatus.ACTIVE;
+        return new DocumentLifecycleFields(
+                lifecycleStatus.name(),
+                DocumentLifecycleDisplayTexts.displayStatus(lifecycleStatus),
+                document.getDeletedAt(),
+                active,
+                active && document.getStatus() == DocumentStatus.READY
+        );
+    }
+
+    private record DocumentLifecycleFields(
+            String lifecycleStatus,
+            String displayStatus,
+            LocalDateTime deletedAt,
+            Boolean canDelete,
+            Boolean canAsk
+    ) {
+        static DocumentLifecycleFields defaults() {
+            return new DocumentLifecycleFields(
+                    DocumentLifecycleStatus.ACTIVE.name(),
+                    DocumentLifecycleDisplayTexts.displayStatus(DocumentLifecycleStatus.ACTIVE),
+                    null,
+                    true,
+                    false
+            );
+        }
     }
 
     private String resolveDisplayMessage(DocumentIngestionTaskEntity task) {

@@ -3,13 +3,17 @@ package com.tuoman.ai_task_orchestrator.service;
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
 import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionEventRecorder;
 import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionProperties;
+import com.tuoman.ai_task_orchestrator.entity.DocumentEntity;
 import com.tuoman.ai_task_orchestrator.entity.DocumentIngestionTaskEntity;
+import com.tuoman.ai_task_orchestrator.enums.DocumentLifecycleStatus;
+import com.tuoman.ai_task_orchestrator.enums.DocumentStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStep;
 import com.tuoman.ai_task_orchestrator.mq.DocumentIngestionMessage;
 import com.tuoman.ai_task_orchestrator.mq.DocumentIngestionMessagePublisher;
 import com.tuoman.ai_task_orchestrator.repository.DocumentIngestionEventRepository;
 import com.tuoman.ai_task_orchestrator.repository.DocumentIngestionTaskRepository;
+import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,6 +47,9 @@ class DocumentIngestionTaskServiceTest {
     @Mock
     private DocumentIngestionEventRecorder documentIngestionEventRecorder;
 
+    @Mock
+    private DocumentRepository documentRepository;
+
     private DocumentIngestionTaskService documentIngestionTaskService;
 
     private DocumentIngestionProperties properties;
@@ -58,7 +65,8 @@ class DocumentIngestionTaskServiceTest {
                 documentIngestionMessagePublisher,
                 properties,
                 documentService,
-                documentIngestionEventRecorder
+                documentIngestionEventRecorder,
+                documentRepository
         );
     }
 
@@ -79,6 +87,26 @@ class DocumentIngestionTaskServiceTest {
         ArgumentCaptor<DocumentIngestionMessage> messageCaptor = ArgumentCaptor.forClass(DocumentIngestionMessage.class);
         verify(documentIngestionMessagePublisher).publish(messageCaptor.capture());
         assertThat(messageCaptor.getValue().getTaskId()).isEqualTo(1001L);
+    }
+
+    @Test
+    void toResponseShouldIncludeDocumentLifecycleFields() {
+        DocumentIngestionTaskEntity task = failedTask(0);
+        task.setStatus(IngestionTaskStatus.COMPLETED);
+        task.setStep(IngestionTaskStep.COMPLETED);
+        DocumentEntity document = new DocumentEntity();
+        document.setId(42L);
+        document.setStatus(DocumentStatus.READY);
+        document.setLifecycleStatus(DocumentLifecycleStatus.ACTIVE);
+        when(documentRepository.findById(42L)).thenReturn(Optional.of(document));
+        when(documentIngestionEventRepository.findTopByTaskIdOrderByCreatedAtDesc(1001L)).thenReturn(Optional.empty());
+
+        var response = documentIngestionTaskService.toResponse(task);
+
+        assertThat(response.getDocumentLifecycleStatus()).isEqualTo("ACTIVE");
+        assertThat(response.getDocumentDisplayStatus()).isEqualTo("已启用");
+        assertThat(response.getCanDelete()).isTrue();
+        assertThat(response.getCanAsk()).isTrue();
     }
 
     @Test

@@ -3,6 +3,8 @@ package com.tuoman.ai_task_orchestrator.hybrid;
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
 import com.tuoman.ai_task_orchestrator.entity.DocumentChunkEntity;
 import com.tuoman.ai_task_orchestrator.repository.DocumentChunkRepository;
+import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
+import com.tuoman.ai_task_orchestrator.enums.DocumentLifecycleStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -13,6 +15,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -21,11 +24,16 @@ class SimpleLexicalRetrieverTest {
     @Mock
     private DocumentChunkRepository documentChunkRepository;
 
+    @Mock
+    private DocumentRepository documentRepository;
+
     private SimpleLexicalRetriever lexicalRetriever;
 
     @BeforeEach
     void setUp() {
-        lexicalRetriever = new SimpleLexicalRetriever(documentChunkRepository);
+        lexicalRetriever = new SimpleLexicalRetriever(documentChunkRepository, documentRepository);
+        lenient().when(documentRepository.findIdsByLifecycleStatus(DocumentLifecycleStatus.DELETED))
+                .thenReturn(List.of());
     }
 
     @Test
@@ -56,6 +64,21 @@ class SimpleLexicalRetrieverTest {
 
         assertThat(response.candidates()).hasSize(1);
         assertThat(response.candidates().getFirst().documentId()).isEqualTo(9L);
+    }
+
+    @Test
+    void retrieveShouldExcludeDeletedDocuments() {
+        when(documentRepository.findIdsByLifecycleStatus(DocumentLifecycleStatus.DELETED))
+                .thenReturn(List.of(2L));
+        when(documentChunkRepository.findAll()).thenReturn(List.of(
+                chunk(1L, 1L, "cache key active"),
+                chunk(2L, 2L, "cache key deleted")
+        ));
+
+        LexicalRetrievalResponse response = lexicalRetriever.retrieve(new LexicalRetrievalRequest("cache key", 5, null));
+
+        assertThat(response.candidates()).hasSize(1);
+        assertThat(response.candidates().getFirst().documentId()).isEqualTo(1L);
     }
 
     @Test

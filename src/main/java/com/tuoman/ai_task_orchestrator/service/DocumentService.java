@@ -1,7 +1,9 @@
 package com.tuoman.ai_task_orchestrator.service;
 
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
+import com.tuoman.ai_task_orchestrator.document.lifecycle.DocumentLifecycleDisplayTexts;
 import com.tuoman.ai_task_orchestrator.dto.DocumentChunkResponse;
+import com.tuoman.ai_task_orchestrator.dto.DocumentDeleteResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentDetailResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentSummaryResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentUploadResponse;
@@ -9,18 +11,22 @@ import com.tuoman.ai_task_orchestrator.document.DocumentChunkResult;
 import com.tuoman.ai_task_orchestrator.document.DocumentChunker;
 import com.tuoman.ai_task_orchestrator.entity.DocumentChunkEntity;
 import com.tuoman.ai_task_orchestrator.entity.DocumentEntity;
+import com.tuoman.ai_task_orchestrator.enums.DocumentLifecycleStatus;
 import com.tuoman.ai_task_orchestrator.enums.DocumentStatus;
 import com.tuoman.ai_task_orchestrator.repository.DocumentChunkRepository;
 import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DocumentService {
@@ -55,6 +61,7 @@ public class DocumentService {
         document.setContentType(file.getContentType());
         document.setFileSize(file.getSize());
         document.setStatus(DocumentStatus.UPLOADED);
+        document.setLifecycleStatus(DocumentLifecycleStatus.ACTIVE);
         document.setChunkCount(0);
         return document;
     }
@@ -117,6 +124,38 @@ public class DocumentService {
                 .toList();
     }
 
+    @Transactional
+    public DocumentDeleteResponse softDeleteDocument(Long documentId) {
+        DocumentEntity document = findDocumentOrThrow(documentId);
+        LocalDateTime deletedAt = document.getDeletedAt();
+
+        if (document.getLifecycleStatus() == DocumentLifecycleStatus.DELETED) {
+            log.info("Document delete requested but already deleted, documentId={}", documentId);
+            return new DocumentDeleteResponse(
+                    document.getId(),
+                    DocumentLifecycleStatus.DELETED.name(),
+                    DocumentLifecycleDisplayTexts.displayStatus(DocumentLifecycleStatus.DELETED),
+                    "文档已删除，后续知识库问答不会再使用该文档。",
+                    deletedAt
+            );
+        }
+
+        log.info("Document soft delete requested, documentId={}, filename={}", documentId, document.getOriginalFilename());
+        LocalDateTime now = LocalDateTime.now();
+        document.setLifecycleStatus(DocumentLifecycleStatus.DELETED);
+        document.setDeletedAt(now);
+        documentRepository.save(document);
+        log.info("Document soft deleted, documentId={}, filename={}", documentId, document.getOriginalFilename());
+
+        return new DocumentDeleteResponse(
+                document.getId(),
+                DocumentLifecycleStatus.DELETED.name(),
+                DocumentLifecycleDisplayTexts.displayStatus(DocumentLifecycleStatus.DELETED),
+                "文档已删除，后续知识库问答不会再使用该文档。",
+                now
+        );
+    }
+
     private void validateLegacyUploadFile(MultipartFile file) {
         if (file == null) {
             throw BusinessException.invalidRequest("File must not be null");
@@ -139,11 +178,20 @@ public class DocumentService {
     }
 
     private DocumentSummaryResponse toSummaryResponse(DocumentEntity document) {
+        DocumentLifecycleStatus lifecycleStatus = document.getLifecycleStatus() == null
+                ? DocumentLifecycleStatus.ACTIVE
+                : document.getLifecycleStatus();
+        boolean active = lifecycleStatus == DocumentLifecycleStatus.ACTIVE;
         return new DocumentSummaryResponse(
                 document.getId(),
                 document.getOriginalFilename(),
                 document.getChunkCount(),
+                lifecycleStatus.name(),
+                DocumentLifecycleDisplayTexts.displayStatus(lifecycleStatus),
                 document.getStatus().name(),
+                document.getDeletedAt(),
+                active,
+                active && document.getStatus() == DocumentStatus.READY,
                 document.getCreatedAt(),
                 document.getUpdatedAt()
         );

@@ -54,6 +54,27 @@ class ProductMvpStaticResourceTest {
     }
 
     @Test
+    void shouldServeAskHtmlWithDeletedDocumentHint() throws Exception {
+        String content = fetchUtf8("/ask.html");
+        assertThat(content).contains("已删除文档不会再进入回答引用");
+    }
+
+    @Test
+    void shouldServeDocumentsJsWithDeleteActions() throws Exception {
+        String content = fetchUtf8("/documents.js");
+        assertThat(content).contains("删除文档");
+        assertThat(content).contains("确认删除");
+        assertThat(content).contains("已删除");
+        assertThat(content).contains("method: \"DELETE\"");
+    }
+
+    @Test
+    void shouldServeDocumentsHtmlWithLifecycleColumn() throws Exception {
+        String content = fetchUtf8("/documents.html");
+        assertThat(content).contains("文档状态");
+    }
+
+    @Test
     void shouldServeDocumentsJsWithIngestionEndpoints() throws Exception {
         String content = fetchUtf8("/documents.js");
         assertThat(content).contains("/documents/upload");
