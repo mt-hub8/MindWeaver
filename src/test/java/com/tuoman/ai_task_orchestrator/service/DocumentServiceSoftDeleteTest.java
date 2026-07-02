@@ -85,7 +85,7 @@ class DocumentServiceSoftDeleteTest {
         assertThat(response.getStatus()).isEqualTo("DELETED");
         assertThat(response.getDisplayStatus()).isEqualTo("已删除");
         assertThat(response.getDeletedAt()).isEqualTo(deletedAt);
-        assertThat(response.getMessage()).contains("文档已删除");
+        assertThat(response.getMessage()).contains("已删除");
     }
 
     @Test

@@ -14,6 +14,8 @@ public class DocumentIngestionEventResponse {
 
     private String eventType;
 
+    private String displayEventType;
+
     private String step;
 
     private String status;

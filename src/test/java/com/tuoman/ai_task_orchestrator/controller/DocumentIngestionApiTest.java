@@ -107,6 +107,7 @@ class DocumentIngestionApiTest {
                 List.of(new DocumentIngestionEventResponse(
                         1L,
                         "TASK_CREATED",
+                        "文档处理任务已创建",
                         "UPLOADED",
                         "COMPLETED",
                         "文档已提交，系统已创建处理任务。",

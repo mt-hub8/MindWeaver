@@ -65,6 +65,7 @@ class DocumentIngestionEventServiceTest {
         assertThat(response.getTaskId()).isEqualTo(1001L);
         assertThat(response.getEvents()).hasSize(2);
         assertThat(response.getEvents().get(0).getEventType()).isEqualTo("TASK_CREATED");
+        assertThat(response.getEvents().get(0).getDisplayEventType()).isEqualTo("文档处理任务已创建");
         assertThat(response.getEvents().get(1).getEventType()).isEqualTo("TASK_QUEUED");
     }
 

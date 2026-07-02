@@ -558,3 +558,39 @@ pre.path-box {
     padding: 0.5rem 0;
     border-bottom: 1px solid #e2e8f0;
 }
+
+.lifecycle-list {
+    margin: 0.5rem 0 0;
+    padding-left: 1.25rem;
+    color: #334155;
+    line-height: 1.6;
+}
+
+.lifecycle-list li + li {
+    margin-top: 0.35rem;
+}
+
+.lifecycle-hint {
+    border-left: 4px solid #2563eb;
+}
+
+.section-header-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.doc-hint {
+    margin: 0.35rem 0 0;
+    font-size: 0.9rem;
+}
+
+.action-links {
+    margin-top: 0.75rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}

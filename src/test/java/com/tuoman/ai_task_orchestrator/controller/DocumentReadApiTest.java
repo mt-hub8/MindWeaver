@@ -65,6 +65,8 @@ class DocumentReadApiTest {
                         "ACTIVE",
                         "已启用",
                         "READY",
+                        "索引就绪",
+                        "当前文档可以用于知识库问答。",
                         null,
                         true,
                         true,
@@ -86,6 +88,8 @@ class DocumentReadApiTest {
                 .andExpect(jsonPath("$[0].status").value("ACTIVE"))
                 .andExpect(jsonPath("$[0].displayStatus").value("已启用"))
                 .andExpect(jsonPath("$[0].processingStatus").value("READY"))
+                .andExpect(jsonPath("$[0].displayProcessingStatus").value("索引就绪"))
+                .andExpect(jsonPath("$[0].lifecycleHint").value("当前文档可以用于知识库问答。"))
                 .andExpect(jsonPath("$[0].canDelete").value(true))
                 .andExpect(jsonPath("$[0].canAsk").value(true))
                 .andExpect(jsonPath("$[0].currentGeneration").value(1))
@@ -100,13 +104,13 @@ class DocumentReadApiTest {
                 "demo.md",
                 "PENDING",
                 "待处理",
-                "已提交重新索引任务，系统将重新切分文档并建立新的知识库索引。"
+                "已提交重新索引任务，请在处理记录中查看进度。"
         ));
 
         mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/documents/1/reindex"))
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.taskId").value(2001))
-                .andExpect(jsonPath("$.displayMessage").value("已提交重新索引任务，系统将重新切分文档并建立新的知识库索引。"));
+                .andExpect(jsonPath("$.displayMessage").value("已提交重新索引任务，请在处理记录中查看进度。"));
     }
 
     @Test
@@ -116,7 +120,7 @@ class DocumentReadApiTest {
                 1L,
                 "DELETED",
                 "已删除",
-                "文档已删除，后续知识库问答不会再使用该文档。",
+                "删除成功：该文档不会再用于知识库问答。",
                 deletedAt
         ));
 
@@ -125,7 +129,7 @@ class DocumentReadApiTest {
                 .andExpect(jsonPath("$.documentId").value(1))
                 .andExpect(jsonPath("$.status").value("DELETED"))
                 .andExpect(jsonPath("$.displayStatus").value("已删除"))
-                .andExpect(jsonPath("$.message").value("文档已删除，后续知识库问答不会再使用该文档。"));
+                .andExpect(jsonPath("$.message").value("删除成功：该文档不会再用于知识库问答。"));
     }
 
     @Test

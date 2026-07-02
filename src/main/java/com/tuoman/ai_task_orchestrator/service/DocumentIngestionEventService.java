@@ -1,6 +1,7 @@
 package com.tuoman.ai_task_orchestrator.service;
 
 import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionEventRecorder;
+import com.tuoman.ai_task_orchestrator.document.ingestion.IngestionEventDisplayTexts;
 import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionEventResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionEventTimelineResponse;
 import com.tuoman.ai_task_orchestrator.entity.DocumentIngestionEventEntity;
@@ -36,6 +37,7 @@ public class DocumentIngestionEventService {
         return new DocumentIngestionEventResponse(
                 event.getId(),
                 event.getEventType().name(),
+                IngestionEventDisplayTexts.displayEventType(event.getEventType()),
                 event.getStep() == null ? null : event.getStep().name(),
                 event.getStatus().name(),
                 event.getDisplayMessage(),

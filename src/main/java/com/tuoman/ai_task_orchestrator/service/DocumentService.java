@@ -191,7 +191,7 @@ public class DocumentService {
                     document.getId(),
                     DocumentLifecycleStatus.DELETED.name(),
                     DocumentLifecycleDisplayTexts.displayStatus(DocumentLifecycleStatus.DELETED),
-                    "文档已删除，后续知识库问答不会再使用该文档。",
+                    DocumentLifecycleDisplayTexts.deleteAlreadyDeletedMessage(),
                     deletedAt
             );
         }
@@ -207,7 +207,7 @@ public class DocumentService {
                 document.getId(),
                 DocumentLifecycleStatus.DELETED.name(),
                 DocumentLifecycleDisplayTexts.displayStatus(DocumentLifecycleStatus.DELETED),
-                "文档已删除，后续知识库问答不会再使用该文档。",
+                DocumentLifecycleDisplayTexts.deleteSuccessMessage(),
                 now
         );
     }
@@ -246,6 +246,7 @@ public class DocumentService {
             reindexDisabledReason = "当前文档缺少原始文本，无法重新索引";
         }
         int currentGeneration = document.getCurrentGeneration() == null ? 1 : document.getCurrentGeneration();
+        boolean canAsk = active && document.getStatus() == DocumentStatus.READY;
         return new DocumentSummaryResponse(
                 document.getId(),
                 document.getOriginalFilename(),
@@ -253,9 +254,11 @@ public class DocumentService {
                 lifecycleStatus.name(),
                 DocumentLifecycleDisplayTexts.displayStatus(lifecycleStatus),
                 document.getStatus().name(),
+                DocumentLifecycleDisplayTexts.displayProcessingStatus(document.getStatus()),
+                DocumentLifecycleDisplayTexts.lifecycleHint(lifecycleStatus, document.getStatus(), canAsk),
                 document.getDeletedAt(),
                 active,
-                active && document.getStatus() == DocumentStatus.READY,
+                canAsk,
                 currentGeneration,
                 document.getReindexCount() == null ? 0 : document.getReindexCount(),
                 document.getLastReindexedAt(),

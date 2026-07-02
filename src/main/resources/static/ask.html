@@ -15,12 +15,23 @@
         <a class="nav-link active" href="/ask.html" aria-current="page">知识库问答</a>
         <a class="nav-link" href="/documents.html">文档管理</a>
         <a class="nav-link" href="/evaluation.html">检索质量评估</a>
+        <a class="nav-link" href="/ingestion-analytics.html">文档处理分析</a>
     </nav>
 
     <header class="hero">
         <h1>知识库问答</h1>
-        <p class="lead">基于已摄入文档提问，系统返回带检索引用（Citation）的回答，帮助核对来源、降低幻觉风险。知识库问答只会使用当前已启用、且处于最新索引版本的文档片段；已删除文档和旧版本片段不会再进入回答引用。</p>
+        <p class="lead">基于已摄入文档提问，系统返回带检索引用（Citation）的回答，帮助核对来源、降低幻觉风险。</p>
     </header>
+
+    <section class="panel lifecycle-hint" aria-labelledby="ask-lifecycle-title">
+        <h2 id="ask-lifecycle-title">知识库生命周期过滤说明</h2>
+        <ul class="lifecycle-list">
+            <li>知识库问答<strong>只会使用「已启用」的文档</strong>；已删除文档不会再进入回答引用。</li>
+            <li>重新建立索引后，系统<strong>只会使用最新有效的文档片段</strong>（当前索引版本）。</li>
+            <li><strong>旧版本片段</strong>（已被新索引替代）不会再进入回答引用，即使底层向量尚未物理删除。</li>
+            <li>如需管理文档状态，请前往 <a href="/documents.html">文档管理</a> 进行删除或重新建立索引。</li>
+        </ul>
+    </section>
 
     <section class="panel quick-start" aria-labelledby="upload-to-ask-title">
         <h2 id="upload-to-ask-title">上传文档后提问（Upload-to-Ask）</h2>

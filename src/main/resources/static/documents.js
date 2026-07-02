@@ -3,10 +3,11 @@
 
     const fileInput = document.getElementById("file-input");
     const uploadButton = document.getElementById("upload-button");
-    const refreshTasksButton = document.getElementById("refresh-tasks-button");
+    const refreshButton = document.getElementById("refresh-button");
     const uploadLoading = document.getElementById("upload-loading");
-    const uploadSuccess = document.getElementById("upload-success");
-    const uploadSuccessMessage = document.getElementById("upload-success-message");
+    const actionSuccess = document.getElementById("action-success");
+    const actionSuccessTitle = document.getElementById("action-success-title");
+    const actionSuccessMessage = document.getElementById("action-success-message");
     const summaryTaskId = document.getElementById("summary-task-id");
     const summaryDocumentId = document.getElementById("summary-document-id");
     const summaryFilename = document.getElementById("summary-filename");
@@ -17,6 +18,12 @@
     const errorCode = document.getElementById("error-code");
     const errorMessage = document.getElementById("error-message");
     const errorTraceId = document.getElementById("error-trace-id");
+    const errorDocumentId = document.getElementById("error-document-id");
+
+    const documentsEmpty = document.getElementById("documents-empty");
+    const documentsPanel = document.getElementById("documents-panel");
+    const documentsBody = document.getElementById("documents-body");
+
     const tasksEmpty = document.getElementById("tasks-empty");
     const tasksPanel = document.getElementById("tasks-panel");
     const tasksBody = document.getElementById("tasks-body");
@@ -31,10 +38,13 @@
 
     const SNIPPET_MAX = 300;
     let pollTimer = null;
+    let cachedTasks = [];
 
     uploadButton.addEventListener("click", uploadDocument);
-    refreshTasksButton.addEventListener("click", loadIngestionTasks);
-    loadIngestionTasks();
+    refreshButton.addEventListener("click", function () {
+        loadPageData();
+    });
+    loadPageData();
     startPolling();
 
     function startPolling() {
@@ -42,20 +52,68 @@
             clearInterval(pollTimer);
         }
         pollTimer = setInterval(function () {
-            loadIngestionTasks(true);
+            loadPageData(true);
         }, POLL_INTERVAL_MS);
+    }
+
+    async function loadPageData(silent) {
+        if (!silent) {
+            setListLoading(true);
+            clearError();
+        }
+
+        try {
+            const [documentsResponse, tasksResponse] = await Promise.all([
+                fetch("/documents"),
+                fetch("/documents/ingestions")
+            ]);
+            const documentsPayload = await parseJsonResponse(documentsResponse);
+            const tasksPayload = await parseJsonResponse(tasksResponse);
+
+            if (!documentsResponse.ok && !silent) {
+                showError(extractError(documentsPayload, documentsResponse.status));
+            } else {
+                const documents = Array.isArray(documentsPayload) ? documentsPayload : [];
+                renderDocuments(documents);
+            }
+
+            if (!tasksResponse.ok && !silent) {
+                if (documentsResponse.ok) {
+                    showError(extractError(tasksPayload, tasksResponse.status));
+                }
+            } else {
+                cachedTasks = Array.isArray(tasksPayload) ? tasksPayload : [];
+                renderTasks(cachedTasks);
+            }
+        } catch (networkError) {
+            if (!silent) {
+                showError({
+                    code: "NETWORK_ERROR",
+                    message: networkError && networkError.message
+                        ? networkError.message
+                        : "无法加载文档列表，请确认服务已启动。",
+                    traceId: "-",
+                    documentId: "-"
+                });
+            }
+        } finally {
+            if (!silent) {
+                setListLoading(false);
+            }
+        }
     }
 
     async function uploadDocument() {
         clearError();
-        uploadSuccess.classList.add("hidden");
+        actionSuccess.classList.add("hidden");
 
         const file = fileInput.files && fileInput.files[0];
         if (!file) {
             showError({
                 code: "CLIENT_VALIDATION",
                 message: "请先选择要上传的文件。",
-                traceId: "-"
+                traceId: "-",
+                documentId: "-"
             });
             return;
         }
@@ -76,76 +134,182 @@
                 return;
             }
 
-            renderUploadSuccess(payload || {});
-            await loadIngestionTasks();
+            renderActionSuccess("文档已提交", payload.displayMessage || "文档已提交，正在排队处理。", payload);
+            await loadPageData();
         } catch (networkError) {
             showError({
                 code: "NETWORK_ERROR",
                 message: networkError && networkError.message
                     ? networkError.message
                     : "上传失败，请确认服务已启动。",
-                traceId: "-"
+                traceId: "-",
+                documentId: "-"
             });
         } finally {
             setUploadLoading(false);
         }
     }
 
-    function renderUploadSuccess(summary) {
-        summaryTaskId.textContent = safeValue(summary.taskId);
-        summaryDocumentId.textContent = safeValue(summary.documentId);
-        summaryFilename.textContent = safeValue(summary.filename);
-        summaryStatus.textContent = safeValue(summary.displayStatus || summary.status);
-        uploadSuccessMessage.textContent = summary.displayMessage
-            || "文档已提交，正在排队处理。";
-        uploadSuccess.classList.remove("hidden");
+    function renderActionSuccess(title, message, summary) {
+        actionSuccessTitle.textContent = title || "操作成功";
+        summaryTaskId.textContent = safeValue(summary && summary.taskId);
+        summaryDocumentId.textContent = safeValue(summary && (summary.documentId || summary.documentId === 0 ? summary.documentId : "-"));
+        summaryFilename.textContent = safeValue(summary && summary.filename);
+        summaryStatus.textContent = safeValue(summary && (summary.displayStatus || summary.status));
+        actionSuccessMessage.textContent = message || "";
+        actionSuccess.classList.remove("hidden");
     }
 
-    async function loadIngestionTasks(silent) {
-        if (!silent) {
-            setListLoading(true);
-            clearError();
+    function renderDocuments(documents) {
+        documentsBody.innerHTML = "";
+        if (documents.length === 0) {
+            documentsPanel.classList.add("hidden");
+            documentsEmpty.classList.remove("hidden");
+            return;
         }
 
-        try {
-            const response = await fetch("/documents/ingestions");
-            const payload = await parseJsonResponse(response);
+        documentsEmpty.classList.add("hidden");
+        documentsPanel.classList.remove("hidden");
 
-            if (!response.ok) {
-                if (!silent) {
-                    showError(extractError(payload, response.status));
-                    tasksPanel.classList.add("hidden");
-                    tasksEmpty.classList.add("hidden");
-                }
-                return;
-            }
+        documents.forEach(function (doc) {
+            const row = document.createElement("tr");
+            row.className = "document-row";
+            const lifecycleStatus = doc.status || "ACTIVE";
+            const lifecycleClass = lifecycleStatus === "DELETED" ? "deleted" : "active";
+            const lifecycleDisplay = doc.displayStatus || (lifecycleStatus === "DELETED" ? "已删除" : "已启用");
+            const canAsk = doc.canAsk === true;
+            const hint = doc.lifecycleHint || lifecycleHintFallback(doc);
 
-            const tasks = Array.isArray(payload) ? payload : [];
-            renderTasks(tasks);
-        } catch (networkError) {
-            if (!silent) {
-                showError({
-                    code: "NETWORK_ERROR",
-                    message: networkError && networkError.message
-                        ? networkError.message
-                        : "无法加载摄入任务列表，请确认服务已启动。",
-                    traceId: "-"
-                });
-                tasksPanel.classList.add("hidden");
-                tasksEmpty.classList.add("hidden");
-            }
-        } finally {
-            if (!silent) {
-                setListLoading(false);
-            }
+            const actions = buildDocumentActions(doc);
+
+            row.innerHTML =
+                "<td>" +
+                "<strong>" + escapeHtml(doc.title || "-") + "</strong>" +
+                '<p class="muted doc-hint">' + escapeHtml(hint) + "</p>" +
+                "</td>" +
+                '<td><span class="status-badge ' + lifecycleClass + '">' + escapeHtml(lifecycleDisplay) + "</span></td>" +
+                "<td>" + escapeHtml(doc.displayProcessingStatus || doc.processingStatus || "-") + "</td>" +
+                "<td>" + escapeHtml(doc.currentGeneration != null ? doc.currentGeneration : 1) + "</td>" +
+                "<td>" + escapeHtml(doc.chunkCount) + "</td>" +
+                "<td>" + escapeHtml(doc.reindexCount != null ? doc.reindexCount : 0) + "</td>" +
+                "<td>" + escapeHtml(formatDate(doc.lastReindexedAt)) + "</td>" +
+                '<td>' + (canAsk ? '<span class="status-badge ready">是</span>' : '<span class="muted">否</span>') + "</td>" +
+                '<td class="task-actions">' + actions.join(" ") + "</td>";
+
+            bindDocumentRowActions(row, doc);
+            documentsBody.appendChild(row);
+        });
+    }
+
+    function lifecycleHintFallback(doc) {
+        if (doc.status === "DELETED") {
+            return "该文档已删除，不会再用于知识库问答。";
         }
+        if (doc.canAsk) {
+            return "当前文档可以用于知识库问答。";
+        }
+        return "文档索引尚未就绪，请等待处理完成。";
+    }
+
+    function buildDocumentActions(doc) {
+        const actions = [];
+        const lifecycleStatus = doc.status || "ACTIVE";
+
+        actions.push(
+            '<button type="button" class="link-button view-chunks-button" data-document-id="'
+            + escapeHtml(doc.documentId) + '" data-filename="' + escapeHtml(doc.title) + '">查看文档片段</button>'
+        );
+
+        const latestTask = findLatestTaskForDocument(doc.documentId);
+        if (latestTask) {
+            actions.push(
+                '<button type="button" class="link-button view-timeline-button" data-task-id="'
+                + escapeHtml(latestTask.taskId) + '" data-filename="' + escapeHtml(doc.title) + '">查看处理记录</button>'
+            );
+        }
+
+        if (doc.canAsk) {
+            actions.push('<a class="ask-link" href="/ask.html">去提问</a>');
+        }
+
+        if (doc.canDelete === true || (doc.canDelete !== false && lifecycleStatus === "ACTIVE")) {
+            actions.push(
+                '<button type="button" class="delete-button" data-document-id="'
+                + escapeHtml(doc.documentId) + '" data-filename="' + escapeHtml(doc.title) + '">删除文档</button>'
+            );
+        } else if (lifecycleStatus === "DELETED") {
+            actions.push('<span class="muted deleted-label">已删除</span>');
+        }
+
+        if (doc.canReindex === true) {
+            actions.push(
+                '<button type="button" class="reindex-button" data-document-id="'
+                + escapeHtml(doc.documentId) + '" data-filename="' + escapeHtml(doc.title) + '">重新建立索引</button>'
+            );
+        } else if (doc.reindexDisabledReason) {
+            actions.push(
+                '<span class="muted reindex-disabled" title="' + escapeHtml(doc.reindexDisabledReason) + '">'
+                + escapeHtml(doc.reindexDisabledReason) + "</span>"
+            );
+        }
+
+        return actions;
+    }
+
+    function bindDocumentRowActions(row, doc) {
+        const viewChunksButton = row.querySelector(".view-chunks-button");
+        if (viewChunksButton) {
+            viewChunksButton.addEventListener("click", function (event) {
+                event.stopPropagation();
+                selectDocument(doc.documentId, doc.title, row);
+            });
+        }
+
+        const viewTimelineButton = row.querySelector(".view-timeline-button");
+        if (viewTimelineButton) {
+            viewTimelineButton.addEventListener("click", function (event) {
+                event.stopPropagation();
+                const taskId = viewTimelineButton.getAttribute("data-task-id");
+                viewTaskTimeline(taskId, doc.title, row);
+            });
+        }
+
+        const deleteButton = row.querySelector(".delete-button");
+        if (deleteButton) {
+            deleteButton.addEventListener("click", function (event) {
+                event.stopPropagation();
+                confirmDeleteDocument(doc.documentId, doc.title);
+            });
+        }
+
+        const reindexButton = row.querySelector(".reindex-button");
+        if (reindexButton) {
+            reindexButton.addEventListener("click", function (event) {
+                event.stopPropagation();
+                confirmReindexDocument(doc.documentId, doc.title);
+            });
+        }
+    }
+
+    function findLatestTaskForDocument(documentId) {
+        const matches = cachedTasks.filter(function (task) {
+            return String(task.documentId) === String(documentId);
+        });
+        if (matches.length === 0) {
+            return null;
+        }
+        return matches[0];
     }
 
     function renderTasks(tasks) {
         tasksBody.innerHTML = "";
         if (tasks.length === 0) {
             tasksPanel.classList.add("hidden");
-            tasksEmpty.classList.remove("hidden");
+            if (documentsPanel.classList.contains("hidden")) {
+                tasksEmpty.classList.remove("hidden");
+            } else {
+                tasksEmpty.classList.add("hidden");
+            }
             return;
         }
 
@@ -163,12 +327,18 @@
             const lifecycleStatus = task.documentLifecycleStatus || "ACTIVE";
             const lifecycleDisplay = task.documentDisplayStatus || (lifecycleStatus === "DELETED" ? "已删除" : "已启用");
             const lifecycleClass = lifecycleStatus === "DELETED" ? "deleted" : "active";
+            const taskTypeDisplay = task.displayTaskType || "文档摄入";
 
-            const taskTypeHint = task.displayTaskType && task.displayTaskType !== "文档摄入"
-                ? '<p class="task-type muted">任务类型：' + escapeHtml(task.displayTaskType) + "</p>"
-                : "";
+            let statusHint = "";
+            if (task.taskType === "REINDEX" || taskTypeDisplay === "重新索引") {
+                if (task.status === "COMPLETED") {
+                    statusHint = '<p class="muted">重新索引完成，新的文档片段已可用于知识库问答。处理完成后可以前往「知识库问答」页面验证。</p>';
+                } else if (task.status === "FAILED") {
+                    statusHint = '<p class="task-error muted">重新索引失败，系统会保留旧索引继续用于问答。</p>';
+                }
+            }
 
-            const failureHint = task.status === "FAILED" && task.errorMessage
+            const failureHint = task.status === "FAILED" && task.errorMessage && task.taskType !== "REINDEX"
                 ? '<p class="task-error muted">处理失败：' + escapeHtml(task.errorMessage) + "</p>"
                 : "";
 
@@ -186,13 +356,13 @@
                 '<button type="button" class="link-button view-chunks-button" data-document-id="'
                 + escapeHtml(task.documentId) + '" data-filename="' + escapeHtml(task.filename) + '">查看文档片段</button>'
             );
-            if (task.status === "FAILED") {
+            if (task.status === "FAILED" && task.taskType !== "REINDEX") {
                 actions.push(
                     '<button type="button" class="retry-button" data-task-id="'
                     + escapeHtml(task.taskId) + '">重新处理</button>'
                 );
             }
-            if (task.status === "COMPLETED" && lifecycleStatus !== "DELETED") {
+            if (task.status === "COMPLETED" && lifecycleStatus !== "DELETED" && task.documentLifecycleStatus !== "DELETED") {
                 actions.push('<a class="ask-link" href="/ask.html">去提问</a>');
             }
             if (task.canDelete === true || (task.canDelete !== false && lifecycleStatus === "ACTIVE")) {
@@ -216,8 +386,9 @@
             }
 
             row.innerHTML =
-                "<td>" + escapeHtml(task.filename || "-") + taskTypeHint + failureHint + techInfo + "</td>" +
+                "<td>" + escapeHtml(task.filename || "-") + statusHint + failureHint + techInfo + "</td>" +
                 '<td><span class="status-badge ' + lifecycleClass + '">' + escapeHtml(lifecycleDisplay) + "</span></td>" +
+                "<td>" + escapeHtml(taskTypeDisplay) + "</td>" +
                 '<td><span class="status-badge ' + statusClass + '">' + escapeHtml(task.displayStatus || task.status) + "</span></td>" +
                 "<td>" + escapeHtml(task.displayStep || task.step || "-") + "</td>" +
                 "<td>" + escapeHtml(task.chunkCount) + "</td>" +
@@ -226,54 +397,57 @@
                 "<td>" + escapeHtml(formatDate(task.updatedAt)) + "</td>" +
                 '<td class="task-actions">' + actions.join(" ") + "</td>";
 
-            const retryButton = row.querySelector(".retry-button");
-            if (retryButton) {
-                retryButton.addEventListener("click", function (event) {
-                    event.stopPropagation();
-                    retryTask(task.taskId);
-                });
-            }
-
-            const viewChunksButton = row.querySelector(".view-chunks-button");
-            if (viewChunksButton) {
-                viewChunksButton.addEventListener("click", function (event) {
-                    event.stopPropagation();
-                    selectDocument(task.documentId, task.filename, row);
-                });
-            }
-
-            const viewTimelineButton = row.querySelector(".view-timeline-button");
-            if (viewTimelineButton) {
-                viewTimelineButton.addEventListener("click", function (event) {
-                    event.stopPropagation();
-                    viewTaskTimeline(task.taskId, task.filename, row);
-                });
-            }
-
-            const deleteButton = row.querySelector(".delete-button");
-            if (deleteButton) {
-                deleteButton.addEventListener("click", function (event) {
-                    event.stopPropagation();
-                    confirmDeleteDocument(task.documentId, task.filename);
-                });
-            }
-
-            const reindexButton = row.querySelector(".reindex-button");
-            if (reindexButton) {
-                reindexButton.addEventListener("click", function (event) {
-                    event.stopPropagation();
-                    confirmReindexDocument(task.documentId, task.filename);
-                });
-            }
-
+            bindTaskRowActions(row, task);
             tasksBody.appendChild(row);
         });
     }
 
+    function bindTaskRowActions(row, task) {
+        const retryButton = row.querySelector(".retry-button");
+        if (retryButton) {
+            retryButton.addEventListener("click", function (event) {
+                event.stopPropagation();
+                retryTask(task.taskId);
+            });
+        }
+
+        const viewChunksButton = row.querySelector(".view-chunks-button");
+        if (viewChunksButton) {
+            viewChunksButton.addEventListener("click", function (event) {
+                event.stopPropagation();
+                selectDocument(task.documentId, task.filename, row);
+            });
+        }
+
+        const viewTimelineButton = row.querySelector(".view-timeline-button");
+        if (viewTimelineButton) {
+            viewTimelineButton.addEventListener("click", function (event) {
+                event.stopPropagation();
+                viewTaskTimeline(task.taskId, task.filename, row);
+            });
+        }
+
+        const deleteButton = row.querySelector(".delete-button");
+        if (deleteButton) {
+            deleteButton.addEventListener("click", function (event) {
+                event.stopPropagation();
+                confirmDeleteDocument(task.documentId, task.filename);
+            });
+        }
+
+        const reindexButton = row.querySelector(".reindex-button");
+        if (reindexButton) {
+            reindexButton.addEventListener("click", function (event) {
+                event.stopPropagation();
+                confirmReindexDocument(task.documentId, task.filename);
+            });
+        }
+    }
+
     async function viewTaskTimeline(taskId, filename, row) {
-        Array.from(tasksBody.querySelectorAll(".task-row")).forEach(function (item) {
-            item.classList.toggle("selected", item === row);
-        });
+        if (row) {
+            row.classList.add("selected");
+        }
 
         timelineTitle.textContent = "处理记录 · 任务时间线 · " + (filename || "任务 " + taskId);
         timelinePanel.classList.remove("hidden");
@@ -299,7 +473,8 @@
             showError({
                 code: "NETWORK_ERROR",
                 message: "无法加载任务时间线。",
-                traceId: "-"
+                traceId: "-",
+                documentId: "-"
             });
             timelineEmpty.classList.remove("hidden");
             timelineEmpty.textContent = "无法加载任务时间线。";
@@ -345,12 +520,13 @@
             const tech = document.createElement("details");
             tech.className = "timeline-tech";
             const techSummary = document.createElement("summary");
-            techSummary.textContent = "技术详情";
+            techSummary.textContent = "查看技术详情";
             tech.appendChild(techSummary);
 
             const techBody = document.createElement("div");
             techBody.className = "timeline-tech-body muted";
             techBody.innerHTML =
+                "事件类型（中文）：" + escapeHtml(event.displayEventType || event.eventType || "-") + "<br>" +
                 "事件类型（Event Type）：" + escapeHtml(event.eventType || "-") + "<br>" +
                 "处理步骤：" + escapeHtml(event.step || "-") + "<br>" +
                 "事件状态：" + escapeHtml(event.status || "-") + "<br>" +
@@ -386,6 +562,7 @@
         }
 
         clearError();
+        actionSuccess.classList.add("hidden");
         setListLoading(true);
         try {
             const response = await fetch("/documents/" + documentId + "/reindex", {
@@ -393,44 +570,38 @@
             });
             const payload = await parseJsonResponse(response);
             if (!response.ok) {
-                showError(extractError(payload, response.status));
+                showError(extractError(payload, response.status, documentId));
                 return;
             }
-            if (payload && payload.displayMessage) {
-                renderReindexSuccess(payload);
-            }
-            await loadIngestionTasks();
+            renderActionSuccess(
+                "重新索引已提交",
+                payload.displayMessage || "已提交重新索引任务，请在处理记录中查看进度。",
+                payload
+            );
+            await loadPageData();
         } catch (networkError) {
             showError({
                 code: "NETWORK_ERROR",
                 message: "重新索引失败，请稍后重试。",
-                traceId: "-"
+                traceId: "-",
+                documentId: documentId
             });
         } finally {
             setListLoading(false);
         }
     }
 
-    function renderReindexSuccess(summary) {
-        summaryTaskId.textContent = safeValue(summary.taskId);
-        summaryDocumentId.textContent = safeValue(summary.documentId);
-        summaryFilename.textContent = safeValue(summary.filename);
-        summaryStatus.textContent = safeValue(summary.displayStatus || summary.status);
-        uploadSuccessMessage.textContent = summary.displayMessage
-            || "已提交重新索引任务，系统将重新切分文档并建立新的知识库索引。";
-        uploadSuccess.classList.remove("hidden");
-    }
-
     async function confirmDeleteDocument(documentId, filename) {
         const confirmed = window.confirm(
             "确认删除「" + (filename || "文档 " + documentId) + "」？\n\n"
-            + "删除后，该文档不会再用于知识库问答。当前版本会保留历史记录，不会立即物理清理底层向量数据。"
+            + "删除后，该文档不会再用于知识库问答。当前版本会保留历史记录和底层索引数据，不会立即物理清理。"
         );
         if (!confirmed) {
             return;
         }
 
         clearError();
+        actionSuccess.classList.add("hidden");
         setListLoading(true);
         try {
             const response = await fetch("/documents/" + documentId, {
@@ -438,15 +609,26 @@
             });
             const payload = await parseJsonResponse(response);
             if (!response.ok) {
-                showError(extractError(payload, response.status));
+                showError(extractError(payload, response.status, documentId));
                 return;
             }
-            await loadIngestionTasks();
+            renderActionSuccess(
+                "删除成功",
+                payload.message || "删除成功：该文档不会再用于知识库问答。",
+                {
+                    documentId: payload.documentId,
+                    filename: filename,
+                    displayStatus: payload.displayStatus || "已删除",
+                    status: payload.status
+                }
+            );
+            await loadPageData();
         } catch (networkError) {
             showError({
                 code: "NETWORK_ERROR",
-                message: "删除失败，请稍后重试。",
-                traceId: "-"
+                message: "删除失败，请查看错误原因。",
+                traceId: "-",
+                documentId: documentId
             });
         } finally {
             setListLoading(false);
@@ -465,12 +647,13 @@
                 showError(extractError(payload, response.status));
                 return;
             }
-            await loadIngestionTasks();
+            await loadPageData();
         } catch (networkError) {
             showError({
                 code: "NETWORK_ERROR",
                 message: "重新处理失败，请稍后重试。",
-                traceId: "-"
+                traceId: "-",
+                documentId: "-"
             });
         } finally {
             setListLoading(false);
@@ -478,11 +661,11 @@
     }
 
     async function selectDocument(documentId, title, row) {
-        Array.from(tasksBody.querySelectorAll(".task-row")).forEach(function (item) {
-            item.classList.toggle("selected", item === row);
-        });
+        if (row) {
+            row.classList.add("selected");
+        }
 
-        chunksTitle.textContent = "文档片段（Chunk）· " + (title || "文档 " + documentId);
+        chunksTitle.textContent = "文档片段（当前索引版本）· " + (title || "文档 " + documentId);
         chunksPanel.classList.remove("hidden");
         chunksList.innerHTML = "";
         chunksEmpty.classList.add("hidden");
@@ -494,7 +677,7 @@
             const payload = await parseJsonResponse(response);
 
             if (!response.ok) {
-                showError(extractError(payload, response.status));
+                showError(extractError(payload, response.status, documentId));
                 chunksList.innerHTML = "";
                 chunksEmpty.classList.remove("hidden");
                 chunksEmpty.textContent = "无法加载文档片段。";
@@ -507,7 +690,8 @@
             showError({
                 code: "NETWORK_ERROR",
                 message: "无法加载文档片段。",
-                traceId: "-"
+                traceId: "-",
+                documentId: documentId
             });
             chunksEmpty.classList.remove("hidden");
             chunksEmpty.textContent = "无法加载文档片段。";
@@ -520,7 +704,7 @@
         chunksList.innerHTML = "";
         if (chunks.length === 0) {
             chunksEmpty.classList.remove("hidden");
-            chunksEmpty.textContent = "该文档暂无文档片段，可能仍在处理中。";
+            chunksEmpty.textContent = "该文档暂无当前有效文档片段，可能仍在处理中。";
             return;
         }
 
@@ -561,27 +745,31 @@
         errorCode.textContent = "";
         errorMessage.textContent = "";
         errorTraceId.textContent = "";
+        errorDocumentId.textContent = "";
     }
 
     function showError(error) {
-        errorCode.textContent = "错误码: " + (error.code || "UNKNOWN");
-        errorMessage.textContent = error.message || "未知错误";
-        errorTraceId.textContent = "traceId: " + (error.traceId || "-");
+        errorCode.textContent = error.code || "UNKNOWN";
+        errorMessage.textContent = error.message || "删除失败，请查看错误原因。";
+        errorTraceId.textContent = error.traceId || "-";
+        errorDocumentId.textContent = error.documentId != null ? String(error.documentId) : "-";
         errorStatus.classList.add("visible");
     }
 
-    function extractError(payload, status) {
+    function extractError(payload, status, documentId) {
         if (payload && payload.code && payload.message) {
             return {
                 code: payload.code,
                 message: payload.message,
-                traceId: payload.traceId || "-"
+                traceId: payload.traceId || "-",
+                documentId: documentId != null ? documentId : "-"
             };
         }
         return {
             code: "HTTP_" + status,
-            message: "请求失败。",
-            traceId: "-"
+            message: "请求失败，请查看错误原因。",
+            traceId: "-",
+            documentId: documentId != null ? documentId : "-"
         };
     }
 

@@ -65,7 +65,7 @@ public final class IngestionDisplayTexts {
     }
 
     public static String reindexSubmitMessage() {
-        return "已提交重新索引任务，系统将重新切分文档并建立新的知识库索引。";
+        return "已提交重新索引任务，请在处理记录中查看进度。";
     }
 
     public static String reindexDisplayMessage(IngestionTaskStatus status, IngestionTaskStep step) {

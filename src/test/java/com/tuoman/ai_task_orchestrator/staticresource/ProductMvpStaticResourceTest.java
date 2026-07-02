@@ -56,14 +56,16 @@ class ProductMvpStaticResourceTest {
     @Test
     void shouldServeAskHtmlWithDeletedDocumentHint() throws Exception {
         String content = fetchUtf8("/ask.html");
-        assertThat(content).contains("已删除文档");
-        assertThat(content).contains("旧版本片段不会再进入回答引用");
+        assertThat(content).contains("已删除文档不会再进入回答引用");
+        assertThat(content).contains("旧版本片段");
+        assertThat(content).contains("知识库生命周期过滤说明");
     }
 
     @Test
     void shouldServeAskHtmlWithSupersededChunkHint() throws Exception {
         String content = fetchUtf8("/ask.html");
-        assertThat(content).contains("旧版本片段不会再进入回答引用");
+        assertThat(content).contains("旧版本片段");
+        assertThat(content).contains("最新有效的文档片段");
     }
 
     @Test
@@ -72,6 +74,7 @@ class ProductMvpStaticResourceTest {
         assertThat(content).contains("重新建立索引");
         assertThat(content).contains("确认重新索引");
         assertThat(content).contains("旧索引不会立即物理删除");
+        assertThat(content).contains("请在处理记录中查看进度");
         assertThat(content).contains("/reindex");
     }
 
@@ -98,6 +101,17 @@ class ProductMvpStaticResourceTest {
         assertThat(content).contains("重新处理");
         assertThat(content).contains("查看处理记录");
         assertThat(content).contains("技术详情");
+    }
+
+    @Test
+    void shouldServeDocumentsHtmlWithLifecycleManagement() throws Exception {
+        String content = fetchUtf8("/documents.html");
+        assertThat(content).contains("文档列表");
+        assertThat(content).contains("当前索引版本");
+        assertThat(content).contains("已启用");
+        assertThat(content).contains("已删除");
+        assertThat(content).contains("查看文档处理分析");
+        assertThat(content).contains("知识库生命周期说明");
     }
 
     @Test

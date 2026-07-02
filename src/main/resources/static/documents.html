@@ -19,60 +19,104 @@
 
     <header class="hero">
         <h1>文档管理</h1>
-        <p class="lead">上传 <code>.txt</code>、<code>.md</code> 或文本型 <code>.pdf</code>，系统会在后台异步建立知识库索引（向量索引）。处理完成后，可前往「知识库问答」页面提问。</p>
+        <p class="lead">管理知识库文档的完整生命周期：上传文档、建立索引、知识库问答、重新建立索引与删除文档。已删除文档和旧版本片段不会再用于问答。</p>
     </header>
+
+    <section class="panel lifecycle-hint" aria-labelledby="lifecycle-hint-title">
+        <h2 id="lifecycle-hint-title">知识库生命周期说明</h2>
+        <ul class="lifecycle-list">
+            <li><strong>已启用</strong>：文档可用于知识库问答（索引就绪后）。</li>
+            <li><strong>已删除</strong>：软删除，该文档不会再用于问答；历史记录与底层索引数据不会立即物理清理。</li>
+            <li><strong>重新建立索引</strong>：复用原始文本重新切分并生成新索引；旧索引不会立即物理删除，但不会再用于后续问答。</li>
+            <li><strong>当前索引版本</strong>：问答只使用最新有效版本的文档片段；旧版本片段视为旧版本，不会进入回答引用。</li>
+        </ul>
+        <p class="muted">处理完成后可前往 <a href="/ask.html">知识库问答</a> 验证；可查看 <a href="/ingestion-analytics.html">文档处理分析</a> 了解成功率与耗时。</p>
+    </section>
 
     <section class="panel upload-panel" aria-labelledby="upload-title">
         <h2 id="upload-title">上传文档</h2>
         <p class="upload-hint">
             支持 <strong>.txt</strong>、<strong>.md</strong>、<strong>文本型 .pdf</strong>（最大 2MB）。
-            当前暂不支持扫描版 PDF / 图片 OCR、加密 PDF、Word / Excel。
+            系统会保存原始文本，便于后续重新建立索引。当前暂不支持扫描版 PDF / 图片 OCR、加密 PDF、Word / Excel。
         </p>
         <label for="file-input">选择文件</label>
         <input id="file-input" type="file" accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf">
         <div class="upload-actions">
             <button id="upload-button" type="button">上传文档</button>
-            <button id="refresh-tasks-button" type="button">刷新任务状态</button>
+            <button id="refresh-button" type="button">刷新列表</button>
             <span id="upload-loading" class="status loading hidden" role="status">正在提交文档…</span>
         </div>
-        <div id="upload-success" class="success-box hidden" aria-live="polite">
-            <h3>文档已提交</h3>
-            <p id="upload-success-message" class="muted"></p>
+        <div id="action-success" class="success-box hidden" aria-live="polite">
+            <h3 id="action-success-title">操作成功</h3>
+            <p id="action-success-message" class="muted"></p>
             <dl>
                 <dt>任务 ID</dt><dd id="summary-task-id"></dd>
                 <dt>文档 ID</dt><dd id="summary-document-id"></dd>
                 <dt>文件名</dt><dd id="summary-filename"></dd>
                 <dt>处理状态</dt><dd id="summary-status"></dd>
             </dl>
+            <p class="action-links">
+                <a class="button-link secondary" href="/ask.html">去知识库问答</a>
+                <a class="button-link secondary" href="/ingestion-analytics.html">查看文档处理分析</a>
+            </p>
         </div>
     </section>
 
     <div id="loading-status" class="status loading hidden" role="status" aria-live="polite">
-        正在加载摄入任务列表…
+        正在加载文档与任务列表…
     </div>
 
     <div id="error-status" class="status error" role="alert" aria-live="assertive">
+        <p><strong>操作失败，请查看错误原因。</strong></p>
         <dl>
-            <dt>错误</dt>
-            <dd id="error-code"></dd>
-            <dd id="error-message"></dd>
-            <dd id="error-trace-id"></dd>
+            <dt>错误码</dt><dd id="error-code"></dd>
+            <dt>说明</dt><dd id="error-message"></dd>
+            <dt>追踪 ID</dt><dd id="error-trace-id"></dd>
+            <dt>文档 ID</dt><dd id="error-document-id"></dd>
         </dl>
+        <p class="muted">可点击「查看技术详情」了解更多信息，或稍后重试。</p>
     </div>
 
-    <p id="tasks-empty" class="empty-state hidden">还没有上传任何文档。请上传 .txt、.md 或文本型 PDF，系统会自动建立知识库索引。处理完成后，你可以前往「知识库问答」页面提问。</p>
+    <p id="documents-empty" class="empty-state hidden">还没有上传任何文档。请上传 .txt、.md 或文本型 PDF，系统会自动建立知识库索引。处理完成后，你可以前往「知识库问答」页面提问。</p>
+
+    <section id="documents-panel" class="panel hidden" aria-labelledby="documents-title">
+        <div class="section-header-row">
+            <h2 id="documents-title">文档列表</h2>
+            <a class="button-link secondary" href="/ingestion-analytics.html">查看文档处理分析</a>
+        </div>
+        <p class="muted">展示每个文档的生命周期状态、当前索引版本与可执行操作。删除与重新索引均会保留历史记录，不会立即物理清理底层数据。</p>
+        <table class="doc-table documents-table">
+            <thead>
+            <tr>
+                <th>文件名</th>
+                <th>文档状态</th>
+                <th>索引状态</th>
+                <th>当前索引版本</th>
+                <th>文档片段数</th>
+                <th>重新索引次数</th>
+                <th>最近重新索引</th>
+                <th>可用于问答</th>
+                <th>操作</th>
+            </tr>
+            </thead>
+            <tbody id="documents-body"></tbody>
+        </table>
+    </section>
+
+    <p id="tasks-empty" class="empty-state hidden">暂无处理任务记录。</p>
 
     <section id="tasks-panel" class="panel hidden" aria-labelledby="tasks-title">
         <div class="section-header-row">
-            <h2 id="tasks-title">最近上传任务</h2>
+            <h2 id="tasks-title">最近处理任务</h2>
             <a class="button-link secondary" href="/ingestion-analytics.html">查看文档处理分析</a>
         </div>
-        <p class="muted">页面每 3 秒自动刷新处理状态。可点击「查看处理记录」查看任务时间线；失败任务可点击「重新处理」。已启用文档可「重新建立索引」。已删除文档不会再用于知识库问答。</p>
+        <p class="muted">页面每 3 秒自动刷新处理状态。可点击「查看处理记录」查看任务时间线（含删除、重新索引相关事件）。失败任务可点击「重新处理」。</p>
         <table class="doc-table ingestion-table">
             <thead>
             <tr>
                 <th>文件名</th>
                 <th>文档状态</th>
+                <th>任务类型</th>
                 <th>处理状态</th>
                 <th>当前步骤</th>
                 <th>文档片段数</th>
@@ -88,13 +132,14 @@
 
     <section id="timeline-panel" class="panel hidden" aria-labelledby="timeline-title">
         <h2 id="timeline-title">处理记录 · 任务时间线</h2>
-        <p class="muted">按时间顺序展示文档摄入各步骤、耗时与错误原因。技术详情包含事件类型（Event Type）、步骤、追踪 ID（Trace ID）等。</p>
+        <p class="muted">按时间顺序展示文档摄入、重新索引各步骤、耗时与错误原因。主展示为中文说明；技术详情包含事件类型、步骤、追踪 ID 等。</p>
         <p id="timeline-empty" class="empty-state hidden">暂无处理记录。</p>
         <ol id="timeline-list" class="timeline-list"></ol>
     </section>
 
     <section id="chunks-panel" class="panel hidden" aria-labelledby="chunks-title">
-        <h2 id="chunks-title">文档片段（Chunk）</h2>
+        <h2 id="chunks-title">文档片段（当前索引版本）</h2>
+        <p class="muted">仅展示当前有效索引版本的文档片段；旧版本片段不会再用于知识库问答。</p>
         <p id="chunks-empty" class="empty-state hidden">该文档暂无文档片段。</p>
         <ul id="chunks-list" class="chunk-list"></ul>
     </section>

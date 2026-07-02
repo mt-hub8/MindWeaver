@@ -21,6 +21,10 @@ public class DocumentSummaryResponse {
 
     private String processingStatus;
 
+    private String displayProcessingStatus;
+
+    private String lifecycleHint;
+
     private LocalDateTime deletedAt;
 
     private Boolean canDelete;
