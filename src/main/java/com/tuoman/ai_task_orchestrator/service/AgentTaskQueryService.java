@@ -1,5 +1,7 @@
 package com.tuoman.ai_task_orchestrator.service;
 
+import com.tuoman.ai_task_orchestrator.agent.AgentTaskStepDisplayTexts;
+import com.tuoman.ai_task_orchestrator.agent.AgentWorkflowJsonCodec;
 import com.tuoman.ai_task_orchestrator.agent.AgentTaskDisplayTexts;
 import com.tuoman.ai_task_orchestrator.agent.AgentTaskEventDisplayTexts;
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
@@ -10,6 +12,9 @@ import com.tuoman.ai_task_orchestrator.dto.AgentTaskModelMetadataResponse;
 import com.tuoman.ai_task_orchestrator.dto.AgentTaskSummaryResponse;
 import com.tuoman.ai_task_orchestrator.entity.AgentTaskCitationEntity;
 import com.tuoman.ai_task_orchestrator.entity.AgentTaskEntity;
+import com.tuoman.ai_task_orchestrator.dto.AgentTaskStepResponse;
+import com.tuoman.ai_task_orchestrator.entity.AgentTaskStepEntity;
+import com.tuoman.ai_task_orchestrator.repository.AgentTaskStepRepository;
 import com.tuoman.ai_task_orchestrator.entity.AgentTaskEventEntity;
 import com.tuoman.ai_task_orchestrator.repository.AgentTaskCitationRepository;
 import com.tuoman.ai_task_orchestrator.repository.AgentTaskEventRepository;
@@ -30,6 +35,10 @@ public class AgentTaskQueryService {
 
     private final AgentTaskCitationRepository agentTaskCitationRepository;
 
+    private final AgentTaskStepRepository agentTaskStepRepository;
+
+    private final AgentWorkflowJsonCodec agentWorkflowJsonCodec;
+
     @Transactional(readOnly = true)
     public List<AgentTaskSummaryResponse> listTasks() {
         return agentTaskRepository.findTop20ByOrderByCreatedAtDesc()
@@ -44,6 +53,10 @@ public class AgentTaskQueryService {
         List<AgentTaskCitationResponse> citations = agentTaskCitationRepository.findByTaskIdOrderBySourceIndexAsc(taskId)
                 .stream()
                 .map(this::toCitation)
+                .toList();
+        List<AgentTaskStepResponse> steps = agentTaskStepRepository.findByTaskIdOrderByStepOrderAsc(taskId)
+                .stream()
+                .map(this::toStep)
                 .toList();
         return new AgentTaskDetailResponse(
                 task.getId(),
@@ -69,6 +82,11 @@ public class AgentTaskQueryService {
                         task.getCitationCount()
                 ),
                 citations,
+                steps,
+                task.getStepCount(),
+                task.getToolExecutionCount(),
+                task.getFailedStepCount(),
+                task.getFinalReportLatencyMs(),
                 task.getCreatedAt(),
                 task.getStartedAt(),
                 task.getCompletedAt()
@@ -100,6 +118,27 @@ public class AgentTaskQueryService {
                 task.getCitationCount(),
                 task.getCreatedAt(),
                 task.getCompletedAt()
+        );
+    }
+
+    private AgentTaskStepResponse toStep(AgentTaskStepEntity entity) {
+        return new AgentTaskStepResponse(
+                entity.getId(),
+                entity.getStepOrder(),
+                entity.getStepType().name(),
+                entity.getToolName(),
+                entity.getTitle(),
+                entity.getDisplayTitle(),
+                entity.getStatus().name(),
+                AgentTaskStepDisplayTexts.displayStatus(entity.getStatus()),
+                agentWorkflowJsonCodec.deserialize(entity.getInputJson()),
+                agentWorkflowJsonCodec.deserialize(entity.getOutputJson()),
+                entity.getErrorCode(),
+                entity.getErrorMessage(),
+                entity.getTraceId(),
+                entity.getStartedAt(),
+                entity.getCompletedAt(),
+                entity.getDurationMs()
         );
     }
 

@@ -2,6 +2,7 @@ package com.tuoman.ai_task_orchestrator.agent;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tuoman.ai_task_orchestrator.common.error.ErrorCode;
 import com.tuoman.ai_task_orchestrator.entity.AgentTaskEventEntity;
 import com.tuoman.ai_task_orchestrator.enums.AgentTaskEventStatus;
 import com.tuoman.ai_task_orchestrator.enums.AgentTaskEventType;
@@ -169,6 +170,132 @@ public class AgentTaskEventRecorder {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordStepPlanCreated(Long taskId) {
+        record(
+                taskId,
+                AgentTaskEventType.STEP_PLAN_CREATED,
+                AgentTaskStep.EXECUTION,
+                AgentTaskEventStatus.COMPLETED,
+                "Step plan created",
+                "已生成任务执行计划。",
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordToolExecutionStarted(Long taskId, String toolName, String displayTitle) {
+        record(
+                taskId,
+                AgentTaskEventType.TOOL_EXECUTION_STARTED,
+                AgentTaskStep.EXECUTION,
+                AgentTaskEventStatus.STARTED,
+                "Tool execution started",
+                "开始执行工具：" + displayTitle + "。",
+                null,
+                metadata("toolName", toolName, "displayTitle", displayTitle),
+                null,
+                null,
+                null
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordToolExecutionCompleted(Long taskId, String toolName, String displayTitle, long durationMs) {
+        record(
+                taskId,
+                AgentTaskEventType.TOOL_EXECUTION_COMPLETED,
+                AgentTaskStep.EXECUTION,
+                AgentTaskEventStatus.COMPLETED,
+                "Tool execution completed",
+                "工具执行完成：" + displayTitle + "。",
+                durationMs,
+                metadata("toolName", toolName, "displayTitle", displayTitle),
+                null,
+                null,
+                null
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordToolExecutionFailed(
+            Long taskId,
+            String toolName,
+            String displayTitle,
+            String errorCode,
+            String errorMessage,
+            String traceId
+    ) {
+        record(
+                taskId,
+                AgentTaskEventType.TOOL_EXECUTION_FAILED,
+                AgentTaskStep.EXECUTION,
+                AgentTaskEventStatus.FAILED,
+                "Tool execution failed",
+                "工具执行失败：" + displayTitle + "。",
+                null,
+                metadata("toolName", toolName, "displayTitle", displayTitle),
+                errorCode,
+                errorMessage,
+                traceId
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordFinalReportStarted(Long taskId) {
+        record(
+                taskId,
+                AgentTaskEventType.FINAL_REPORT_STARTED,
+                AgentTaskStep.LLM,
+                AgentTaskEventStatus.STARTED,
+                "Final report started",
+                "开始生成最终报告。",
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordFinalReportCompleted(Long taskId, long durationMs, Object metadata) {
+        record(
+                taskId,
+                AgentTaskEventType.FINAL_REPORT_COMPLETED,
+                AgentTaskStep.LLM,
+                AgentTaskEventStatus.COMPLETED,
+                "Final report completed",
+                "最终报告生成完成。",
+                durationMs,
+                metadata instanceof Map<?, ?> map ? castMetadata(map) : metadata("info", metadata),
+                null,
+                null,
+                null
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordFinalReportFailed(Long taskId, String errorMessage, String traceId) {
+        record(
+                taskId,
+                AgentTaskEventType.FINAL_REPORT_FAILED,
+                AgentTaskStep.LLM,
+                AgentTaskEventStatus.FAILED,
+                "Final report failed",
+                "最终报告生成失败。",
+                null,
+                null,
+                ErrorCode.AGENT_FINAL_REPORT_FAILED.name(),
+                errorMessage,
+                traceId
+        );
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordTaskFailed(
             Long taskId,
             AgentTaskStep step,
@@ -240,6 +367,13 @@ public class AgentTaskEventRecorder {
         for (int index = 0; index + 1 < keyValues.length; index += 2) {
             metadata.put(String.valueOf(keyValues[index]), keyValues[index + 1]);
         }
+        return metadata;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> castMetadata(Map<?, ?> map) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        map.forEach((key, value) -> metadata.put(String.valueOf(key), value));
         return metadata;
     }
 }

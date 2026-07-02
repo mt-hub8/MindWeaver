@@ -98,6 +98,11 @@ class AgentTaskControllerTest {
                 null,
                 new AgentTaskModelMetadataResponse("mock", "mock-llm", "mock", "mock-embedding-v1", 10, 20, 2, 1),
                 List.of(),
+                List.of(),
+                3,
+                2,
+                0,
+                120L,
                 LocalDateTime.of(2026, 7, 2, 10, 0),
                 LocalDateTime.of(2026, 7, 2, 10, 1),
                 LocalDateTime.of(2026, 7, 2, 10, 5)

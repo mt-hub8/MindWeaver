@@ -40,15 +40,39 @@ class KnowledgeBaseAgentTaskRegressionTest {
         assertThat(html).contains("新建 AI 任务");
         assertThat(html).contains("任务目标");
         assertThat(html).contains("知识库范围");
-        assertThat(html).contains("任务结果");
+        assertThat(html).contains("任务执行计划");
+        assertThat(html).contains("工具执行记录");
+        assertThat(html).contains("最终报告");
         assertThat(html).contains("引用来源");
         assertThat(html).contains("执行过程");
 
         String js = fetchUtf8("/agent-tasks.js");
         assertThat(js).contains("全部文档");
         assertThat(js).contains("/agent/tasks");
+        assertThat(js).contains("查看工具输入");
+        assertThat(js).contains("查看工具输出");
         assertThat(html).contains("模型调用信息");
         assertThat(html).contains("指定知识库分组");
+        assertThat(html).contains("当前可用工具");
+    }
+
+    @Test
+    void agentToolsPageShouldExposeChineseUi() throws Exception {
+        String html = fetchUtf8("/agent-tools.html");
+        assertThat(html).contains("可用工具");
+        assertThat(html).contains("检索知识库");
+        assertThat(html).contains("总结检索结果");
+        assertThat(html).contains("当前阶段仅支持内置安全工具");
+    }
+
+    @Test
+    void manualV70DocumentShouldExist() throws Exception {
+        Path manualPath = Path.of("docs/manual/tool-using-agent-workflow.md");
+        assertThat(Files.exists(manualPath)).isTrue();
+        String content = Files.readString(manualPath, StandardCharsets.UTF_8);
+        assertThat(content).contains("V7.0");
+        assertThat(content).contains("knowledge_search");
+        assertThat(content).contains("固定");
     }
 
     @Test
@@ -65,10 +89,11 @@ class KnowledgeBaseAgentTaskRegressionTest {
     }
 
     @Test
-    void readmeShouldMentionV60() throws Exception {
+    void readmeShouldMentionV70() throws Exception {
         String readme = Files.readString(Path.of("README.md"), StandardCharsets.UTF_8);
-        assertThat(readme).contains("V6.0");
+        assertThat(readme).contains("V7.0");
         assertThat(readme).contains("/agent-tasks.html");
+        assertThat(readme).contains("tool-using-agent-workflow.md");
     }
 
     private String fetchUtf8(String path) throws Exception {

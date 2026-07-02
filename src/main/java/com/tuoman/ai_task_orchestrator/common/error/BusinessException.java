@@ -159,4 +159,32 @@ public class BusinessException extends RuntimeException {
     public static BusinessException agentTaskExecutionFailed(String message) {
         return new BusinessException(ErrorCode.AGENT_TASK_EXECUTION_FAILED, HttpStatus.INTERNAL_SERVER_ERROR, message);
     }
+
+    public static BusinessException agentToolNotFound(String toolName) {
+        return new BusinessException(
+                ErrorCode.AGENT_TOOL_NOT_FOUND,
+                HttpStatus.NOT_FOUND,
+                "工具不存在或未启用：" + toolName
+        );
+    }
+
+    public static BusinessException agentToolInputInvalid(String message) {
+        return new BusinessException(ErrorCode.AGENT_TOOL_INPUT_INVALID, HttpStatus.BAD_REQUEST, message);
+    }
+
+    public static BusinessException agentToolExecutionFailed(String message) {
+        return new BusinessException(ErrorCode.AGENT_TOOL_EXECUTION_FAILED, HttpStatus.INTERNAL_SERVER_ERROR, message);
+    }
+
+    public static BusinessException agentStepFailed(String message) {
+        return new BusinessException(ErrorCode.AGENT_STEP_FAILED, HttpStatus.INTERNAL_SERVER_ERROR, message);
+    }
+
+    public static BusinessException agentFinalReportFailed(String message) {
+        return new BusinessException(ErrorCode.AGENT_FINAL_REPORT_FAILED, HttpStatus.INTERNAL_SERVER_ERROR, message);
+    }
+
+    public static BusinessException agentWorkflowFailed(String message) {
+        return new BusinessException(ErrorCode.AGENT_WORKFLOW_FAILED, HttpStatus.INTERNAL_SERVER_ERROR, message);
+    }
 }

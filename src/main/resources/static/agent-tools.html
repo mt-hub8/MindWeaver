@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent 工具</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="page">
+    <nav class="app-nav" aria-label="主导航">
+        <a class="brand" href="/">AI 知识库助手</a>
+        <a class="nav-link" href="/">首页</a>
+        <a class="nav-link" href="/ask.html">知识库问答</a>
+        <a class="nav-link" href="/documents.html">文档管理</a>
+        <a class="nav-link" href="/collections.html">知识库分组</a>
+        <a class="nav-link" href="/agent-tasks.html">AI 任务编排</a>
+        <a class="nav-link active" href="/agent-tools.html" aria-current="page">Agent 工具</a>
+        <a class="nav-link" href="/evaluation.html">检索质量评估</a>
+        <a class="nav-link" href="/ingestion-analytics.html">文档处理分析</a>
+    </nav>
+
+    <header class="hero">
+        <h1>Agent 工具</h1>
+        <p class="lead">当前阶段仅支持内置安全工具。AI 任务会按固定流程自动调用「检索知识库」「总结检索结果」，并生成最终报告。</p>
+    </header>
+
+    <div id="loading-status" class="status loading hidden" role="status">正在加载可用工具…</div>
+    <div id="error-status" class="status error" role="alert">
+        <p id="error-message"></p>
+    </div>
+
+    <section class="panel" aria-labelledby="tools-title">
+        <h2 id="tools-title">可用工具</h2>
+        <p id="tools-empty" class="empty-state hidden">暂无可用工具。</p>
+        <ul id="tools-list" class="citation-list"></ul>
+    </section>
+
+    <details class="tech-details">
+        <summary>查看技术详情</summary>
+        <p class="muted">API：<code>GET /agent/tools</code></p>
+        <pre id="tools-json"></pre>
+    </details>
+</div>
+
+<script>
+(function () {
+    const loadingStatus = document.getElementById("loading-status");
+    const errorStatus = document.getElementById("error-status");
+    const errorMessage = document.getElementById("error-message");
+    const toolsEmpty = document.getElementById("tools-empty");
+    const toolsList = document.getElementById("tools-list");
+    const toolsJson = document.getElementById("tools-json");
+
+    loadTools();
+
+    async function loadTools() {
+        loadingStatus.classList.remove("hidden");
+        errorStatus.classList.remove("visible");
+        try {
+            const response = await fetch("/agent/tools");
+            const payload = await response.json();
+            if (!response.ok) {
+                throw new Error(payload && payload.message ? payload.message : "加载失败");
+            }
+            renderTools(Array.isArray(payload) ? payload : []);
+            toolsJson.textContent = JSON.stringify(payload, null, 2);
+        } catch (error) {
+            errorMessage.textContent = error.message || "无法加载工具列表";
+            errorStatus.classList.add("visible");
+        } finally {
+            loadingStatus.classList.add("hidden");
+        }
+    }
+
+    function renderTools(tools) {
+        toolsList.innerHTML = "";
+        if (tools.length === 0) {
+            toolsEmpty.classList.remove("hidden");
+            return;
+        }
+        toolsEmpty.classList.add("hidden");
+        tools.forEach(function (tool) {
+            const item = document.createElement("li");
+            item.className = "citation-item";
+            item.innerHTML =
+                "<h3>" + escapeHtml(tool.displayName || tool.toolName) + "</h3>" +
+                "<p>" + escapeHtml(tool.description || "") + "</p>" +
+                '<p class="muted">技术名称：' + escapeHtml(tool.toolName) + "</p>";
+            toolsList.appendChild(item);
+        });
+    }
+
+    function escapeHtml(value) {
+        if (value === undefined || value === null) {
+            return "";
+        }
+        return String(value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
+    }
+})();
+</script>
+</body>
+</html>

@@ -14,6 +14,7 @@
         <a class="nav-link" href="/ask.html">知识库问答</a>
         <a class="nav-link" href="/documents.html">文档管理</a>
         <a class="nav-link" href="/collections.html">知识库分组</a>
+        <a class="nav-link" href="/agent-tools.html">Agent 工具</a>
         <a class="nav-link active" href="/agent-tasks.html" aria-current="page">AI 任务编排</a>
         <a class="nav-link" href="/evaluation.html">检索质量评估</a>
         <a class="nav-link" href="/ingestion-analytics.html">文档处理分析</a>
@@ -21,8 +22,8 @@
 
     <header class="hero">
         <h1>AI 任务编排</h1>
-        <p class="lead">提交一个 AI 任务，系统会在后台检索知识库、调用大模型，并生成带引用来源的结构化结果。</p>
-        <p class="muted">适合总结、分析、建议类任务；即时问答请使用「知识库问答」。</p>
+        <p class="lead">提交一个 AI 任务，系统会按固定工具流程在后台检索知识库、总结上下文并生成带引用来源的最终报告。</p>
+        <p class="muted">适合总结、分析、建议类任务；即时问答请使用「知识库问答」。当前阶段仅支持内置安全工具。</p>
     </header>
 
     <section class="panel" aria-labelledby="create-task-title">
@@ -87,7 +88,14 @@
         <p id="detail-scope" class="muted"></p>
         <p id="detail-status" class="muted"></p>
 
-        <h3>任务结果</h3>
+        <h3>任务执行计划</h3>
+        <p id="steps-empty" class="empty-state hidden">暂无执行步骤。</p>
+        <ol id="steps-list" class="timeline-list"></ol>
+
+        <h3>工具执行记录</h3>
+        <div id="tool-steps-panel"></div>
+
+        <h3>最终报告</h3>
         <div id="detail-result" class="answer-box"></div>
 
         <h3>引用来源</h3>
@@ -95,7 +103,12 @@
         <ul id="citations-list" class="citation-list"></ul>
 
         <h3>执行过程</h3>
+        <p class="muted">下方时间线记录任务创建、工具执行与最终报告生成过程。</p>
         <ol id="events-list" class="timeline-list"></ol>
+
+        <h3>当前可用工具</h3>
+        <p id="tools-empty" class="empty-state hidden">暂无可用工具。</p>
+        <ul id="tools-list" class="citation-list"></ul>
 
         <h3>模型调用信息</h3>
         <pre id="model-metadata" class="metadata"></pre>

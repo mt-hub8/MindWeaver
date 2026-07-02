@@ -7,9 +7,9 @@
 | | |
 |---|---|
 | **适用场景** | 内部知识库问答、RAG 方案验证、检索策略对比（dense / rerank / hybrid）、演示与面试展示 |
-| **核心能力** | **V6.0 AI 任务编排** · **V5.0 知识库分组** · **V4.0 知识库生命周期**（软删除 / 重新索引）· 带 Citations 的 RAG 问答 · 检索质量评估 · Rerank · Hybrid |
-| **5 分钟体验** | 启动服务 → Documents 上传 → （可选）Collections 分组 → Ask 提问 / **Agent Tasks 提交任务** → 查看结果 |
-| **主要入口** | Web：`/` · `/documents.html` · `/collections.html` · `/ask.html` · **`/agent-tasks.html`** · API：`POST /agent/tasks` · `POST /rag/answers` |
+| **核心能力** | **V7.0 Tool-Using Agent Workflow** · **V6.0 AI 任务编排** · **V5.0 知识库分组** · **V4.0 知识库生命周期**（软删除 / 重新索引）· 带 Citations 的 RAG 问答 · 检索质量评估 · Rerank · Hybrid |
+| **5 分钟体验** | 启动服务 → Documents 上传 → （可选）Collections 分组 → Ask 提问 / **Agent Tasks 提交任务** → 查看执行步骤与结果 |
+| **主要入口** | Web：`/` · `/documents.html` · `/collections.html` · `/ask.html` · **`/agent-tasks.html`** · **`/agent-tools.html`** · API：`GET /agent/tools` · `POST /agent/tasks` · `POST /rag/answers` |
 
 > 技术栈：Java 17 · Spring Boot · MySQL · RabbitMQ · JPA/Flyway · 可选 Qdrant / Local Embedding Worker。下文保留完整能力与架构说明。
 
@@ -111,6 +111,14 @@ AI Task Orchestrator 是一个基于 Java / Spring Boot 的 AI 任务编排与 R
 - AI 任务编排：`POST /agent/tasks` → RabbitMQ 异步执行 → 检索 + LLM → 结果 / 引用 / 事件时间线
 - 页面：`/agent-tasks.html`
 - 说明文档：[docs/manual/ai-runtime-and-agent-task-orchestration.md](docs/manual/ai-runtime-and-agent-task-orchestration.md)
+
+**Tool-Using Agent Workflow（V7.0）**
+
+- 固定三步工具流程：检索知识库 → 总结检索结果 → 生成最终报告
+- 内置工具注册表：`GET /agent/tools`（`knowledge_search`、`context_summary`、`collection_overview`）
+- 任务详情含执行步骤、工具输入/输出、引用来源与事件时间线
+- 页面：`/agent-tasks.html` · `/agent-tools.html`
+- 说明文档：[docs/manual/tool-using-agent-workflow.md](docs/manual/tool-using-agent-workflow.md)
 
 **工程化**
 

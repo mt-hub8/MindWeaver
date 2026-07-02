@@ -27,6 +27,8 @@ public class AgentTaskService {
 
     private final AgentTaskEventRecorder agentTaskEventRecorder;
 
+    private final AgentTaskStepService agentTaskStepService;
+
     @Transactional
     public CreateAgentTaskResponse createTask(CreateAgentTaskRequest request) {
         if (request == null) {
@@ -54,6 +56,8 @@ public class AgentTaskService {
         AgentTaskEntity saved = agentTaskRepository.save(task);
 
         agentTaskEventRecorder.recordTaskCreated(saved.getId());
+        agentTaskStepService.createFixedPlan(saved.getId());
+        agentTaskEventRecorder.recordStepPlanCreated(saved.getId());
 
         try {
             agentTaskMessagePublisher.publish(new AgentTaskMessage(saved.getId()));
@@ -80,7 +84,7 @@ public class AgentTaskService {
                 saved.getId(),
                 saved.getStatus().name(),
                 AgentTaskDisplayTexts.displayStatus(saved.getStatus()),
-                "AI 任务已创建，系统将在后台检索知识库并生成结果。"
+                "AI 任务已创建，系统将在后台按固定工具流程检索知识库、总结上下文并生成最终报告。"
         );
     }
 }

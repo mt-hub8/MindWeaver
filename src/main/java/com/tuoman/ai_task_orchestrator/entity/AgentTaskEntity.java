@@ -69,6 +69,18 @@ public class AgentTaskEntity {
     @Column(name = "citation_count")
     private Integer citationCount;
 
+    @Column(name = "step_count")
+    private Integer stepCount;
+
+    @Column(name = "tool_execution_count")
+    private Integer toolExecutionCount;
+
+    @Column(name = "failed_step_count")
+    private Integer failedStepCount;
+
+    @Column(name = "final_report_latency_ms")
+    private Long finalReportLatencyMs;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 

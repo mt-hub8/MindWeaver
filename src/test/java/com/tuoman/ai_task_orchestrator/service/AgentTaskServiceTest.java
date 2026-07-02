@@ -4,6 +4,7 @@ import com.tuoman.ai_task_orchestrator.agent.AgentTaskEventRecorder;
 import com.tuoman.ai_task_orchestrator.dto.CreateAgentTaskRequest;
 import com.tuoman.ai_task_orchestrator.dto.CreateAgentTaskResponse;
 import com.tuoman.ai_task_orchestrator.entity.AgentTaskEntity;
+import com.tuoman.ai_task_orchestrator.entity.AgentTaskStepEntity;
 import com.tuoman.ai_task_orchestrator.entity.KnowledgeCollectionEntity;
 import com.tuoman.ai_task_orchestrator.enums.AgentTaskStatus;
 import com.tuoman.ai_task_orchestrator.enums.CollectionStatus;
@@ -18,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -39,6 +41,9 @@ class AgentTaskServiceTest {
     @Mock
     private AgentTaskEventRecorder agentTaskEventRecorder;
 
+    @Mock
+    private AgentTaskStepService agentTaskStepService;
+
     private AgentTaskService agentTaskService;
 
     @BeforeEach
@@ -47,7 +52,8 @@ class AgentTaskServiceTest {
                 agentTaskRepository,
                 collectionService,
                 agentTaskMessagePublisher,
-                agentTaskEventRecorder
+                agentTaskEventRecorder,
+                agentTaskStepService
         );
     }
 
@@ -66,6 +72,7 @@ class AgentTaskServiceTest {
             entity.setUpdatedAt(LocalDateTime.now());
             return entity;
         });
+        when(agentTaskStepService.createFixedPlan(100L)).thenReturn(List.of(new AgentTaskStepEntity()));
 
         CreateAgentTaskRequest request = new CreateAgentTaskRequest();
         request.setTitle("总结项目 A");
@@ -81,6 +88,8 @@ class AgentTaskServiceTest {
         ArgumentCaptor<AgentTaskMessage> messageCaptor = ArgumentCaptor.forClass(AgentTaskMessage.class);
         verify(agentTaskMessagePublisher).publish(messageCaptor.capture());
         assertThat(messageCaptor.getValue().getTaskId()).isEqualTo(100L);
+        verify(agentTaskStepService).createFixedPlan(100L);
+        verify(agentTaskEventRecorder).recordStepPlanCreated(100L);
 
         ArgumentCaptor<AgentTaskEntity> entityCaptor = ArgumentCaptor.forClass(AgentTaskEntity.class);
         verify(agentTaskRepository).save(entityCaptor.capture());

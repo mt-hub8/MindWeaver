@@ -21,6 +21,13 @@ public final class AgentTaskEventDisplayTexts {
             case LLM_COMPLETED -> "大模型生成完成";
             case TASK_COMPLETED -> "任务完成";
             case TASK_FAILED -> "任务失败";
+            case STEP_PLAN_CREATED -> "任务执行计划";
+            case TOOL_EXECUTION_STARTED -> "工具执行开始";
+            case TOOL_EXECUTION_COMPLETED -> "工具执行完成";
+            case TOOL_EXECUTION_FAILED -> "工具执行失败";
+            case FINAL_REPORT_STARTED -> "生成最终报告";
+            case FINAL_REPORT_COMPLETED -> "最终报告完成";
+            case FINAL_REPORT_FAILED -> "最终报告失败";
         };
     }
 }

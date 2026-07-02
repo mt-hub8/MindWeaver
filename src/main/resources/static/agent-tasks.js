@@ -25,9 +25,14 @@
     const detailScope = document.getElementById("detail-scope");
     const detailStatus = document.getElementById("detail-status");
     const detailResult = document.getElementById("detail-result");
+    const stepsEmpty = document.getElementById("steps-empty");
+    const stepsList = document.getElementById("steps-list");
+    const toolStepsPanel = document.getElementById("tool-steps-panel");
     const citationsEmpty = document.getElementById("citations-empty");
     const citationsList = document.getElementById("citations-list");
     const eventsList = document.getElementById("events-list");
+    const toolsEmpty = document.getElementById("tools-empty");
+    const toolsList = document.getElementById("tools-list");
     const modelMetadata = document.getElementById("model-metadata");
     const detailError = document.getElementById("detail-error");
     const detailErrorCode = document.getElementById("detail-error-code");
@@ -44,6 +49,7 @@
     closeDetailButton.addEventListener("click", hideDetail);
 
     loadCollections();
+    loadTools();
     loadTasks();
     startPolling();
 
@@ -57,6 +63,37 @@
                 showTaskDetail(activeTaskId, true);
             }
         }, POLL_INTERVAL_MS);
+    }
+
+    async function loadTools() {
+        try {
+            const response = await fetch("/agent/tools");
+            const payload = await parseJsonResponse(response);
+            if (!response.ok || !Array.isArray(payload)) {
+                return;
+            }
+            renderTools(payload);
+        } catch (error) {
+            // 工具列表加载失败时不阻塞任务页面
+        }
+    }
+
+    function renderTools(tools) {
+        toolsList.innerHTML = "";
+        if (tools.length === 0) {
+            toolsEmpty.classList.remove("hidden");
+            return;
+        }
+        toolsEmpty.classList.add("hidden");
+        tools.forEach(function (tool) {
+            const item = document.createElement("li");
+            item.className = "citation-item";
+            item.innerHTML =
+                "<h3>" + escapeHtml(tool.displayName || tool.toolName) + "</h3>" +
+                "<p>" + escapeHtml(tool.description || "") + "</p>" +
+                '<p class="muted">技术名称：' + escapeHtml(tool.toolName) + "</p>";
+            toolsList.appendChild(item);
+        });
     }
 
     async function loadCollections() {
@@ -231,8 +268,11 @@
         detailTitle.textContent = "任务详情 · " + (detail.title || "未命名");
         detailScope.textContent = "知识库范围：" + (detail.scopeLabel || "全部文档");
         detailStatus.textContent = "状态：" + (detail.displayStatus || displayStatus(detail.status));
-        detailResult.textContent = detail.result || "（暂无任务结果）";
+        detailResult.textContent = detail.result || "（暂无最终报告）";
         detailTechJson.textContent = prettyJson(detail);
+
+        renderSteps(Array.isArray(detail.steps) ? detail.steps : []);
+        renderToolSteps(Array.isArray(detail.steps) ? detail.steps : []);
 
         citationsList.innerHTML = "";
         const citations = Array.isArray(detail.citations) ? detail.citations : [];
@@ -273,6 +313,60 @@
         } else {
             detailError.classList.add("hidden");
         }
+    }
+
+    function renderSteps(steps) {
+        stepsList.innerHTML = "";
+        if (steps.length === 0) {
+            stepsEmpty.classList.remove("hidden");
+            return;
+        }
+        stepsEmpty.classList.add("hidden");
+        steps.forEach(function (step) {
+            const item = document.createElement("li");
+            item.innerHTML =
+                "<strong>Step " + escapeHtml(step.stepOrder) + "：" +
+                escapeHtml(step.displayTitle || step.title) + " - " +
+                escapeHtml(step.displayStatus || displayStepStatus(step.status)) + "</strong>";
+            if (step.errorMessage) {
+                item.innerHTML +=
+                    '<p class="muted">错误原因：' + escapeHtml(step.errorMessage) +
+                    (step.traceId ? " · 追踪 ID：" + escapeHtml(step.traceId) : "") + "</p>";
+            }
+            stepsList.appendChild(item);
+        });
+    }
+
+    function renderToolSteps(steps) {
+        toolStepsPanel.innerHTML = "";
+        const toolSteps = steps.filter(function (step) {
+            return step.stepType === "TOOL_CALL";
+        });
+        if (toolSteps.length === 0) {
+            toolStepsPanel.innerHTML = '<p class="muted">暂无工具执行记录。</p>';
+            return;
+        }
+        toolSteps.forEach(function (step) {
+            const block = document.createElement("div");
+            block.className = "citation-item";
+            block.innerHTML =
+                "<h3>" + escapeHtml(step.displayTitle || step.title) + " · " +
+                escapeHtml(step.displayStatus || displayStepStatus(step.status)) + "</h3>" +
+                '<details><summary>查看工具输入</summary><pre>' + escapeHtml(prettyJson(step.input || {})) + "</pre></details>" +
+                '<details><summary>查看工具输出</summary><pre>' + escapeHtml(prettyJson(step.output || {})) + "</pre></details>";
+            toolStepsPanel.appendChild(block);
+        });
+    }
+
+    function displayStepStatus(status) {
+        const map = {
+            PENDING: "待执行",
+            RUNNING: "执行中",
+            COMPLETED: "已完成",
+            FAILED: "执行失败",
+            SKIPPED: "已跳过"
+        };
+        return map[status] || status || "-";
     }
 
     function hideDetail() {

@@ -38,6 +38,16 @@ public class AgentTaskDetailResponse {
 
     private List<AgentTaskCitationResponse> citations;
 
+    private List<AgentTaskStepResponse> steps;
+
+    private Integer stepCount;
+
+    private Integer toolExecutionCount;
+
+    private Integer failedStepCount;
+
+    private Long finalReportLatencyMs;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime startedAt;
