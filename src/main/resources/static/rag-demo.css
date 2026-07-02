@@ -1,0 +1,231 @@
+:root {
+    color-scheme: light dark;
+    --bg: #f4f6f8;
+    --panel: #ffffff;
+    --border: #d8dee4;
+    --text: #1f2933;
+    --muted: #5f6c7b;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --error-bg: #fef2f2;
+    --error-border: #fecaca;
+    --error-text: #991b1b;
+    --loading-bg: #eff6ff;
+    --loading-text: #1d4ed8;
+    --code-bg: #f8fafc;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #0f172a;
+        --panel: #111827;
+        --border: #334155;
+        --text: #e5e7eb;
+        --muted: #94a3b8;
+        --accent: #60a5fa;
+        --accent-hover: #93c5fd;
+        --error-bg: #3f1d1d;
+        --error-border: #7f1d1d;
+        --error-text: #fecaca;
+        --loading-bg: #172554;
+        --loading-text: #bfdbfe;
+        --code-bg: #0b1220;
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+}
+
+.page {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px 16px 48px;
+}
+
+header h1 {
+    margin: 0 0 8px;
+    font-size: 1.75rem;
+}
+
+header p {
+    margin: 0;
+    color: var(--muted);
+}
+
+.panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 20px;
+}
+
+label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+textarea,
+input[type="number"] {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    font: inherit;
+    background: transparent;
+    color: inherit;
+}
+
+textarea {
+    min-height: 120px;
+    resize: vertical;
+}
+
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 120px;
+    gap: 16px;
+    margin-top: 16px;
+    align-items: end;
+}
+
+button {
+    border: none;
+    border-radius: 8px;
+    padding: 12px 20px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--accent);
+    color: #ffffff;
+}
+
+button:hover:not(:disabled) {
+    background: var(--accent-hover);
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.status {
+    margin-top: 16px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    display: none;
+}
+
+.status.visible {
+    display: block;
+}
+
+.status.loading {
+    background: var(--loading-bg);
+    color: var(--loading-text);
+    border: 1px solid var(--border);
+}
+
+.status.error {
+    background: var(--error-bg);
+    color: var(--error-text);
+    border: 1px solid var(--error-border);
+}
+
+.status.error dt {
+    font-weight: 600;
+}
+
+.status.error dl {
+    margin: 0;
+}
+
+.status.error dd {
+    margin: 4px 0 0;
+    word-break: break-word;
+}
+
+.section-title {
+    margin: 0 0 12px;
+    font-size: 1.1rem;
+}
+
+.answer-box {
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding: 14px;
+    border-radius: 8px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+}
+
+.empty-state {
+    color: var(--muted);
+    font-style: italic;
+}
+
+.citation-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 12px;
+}
+
+.citation-item {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    background: var(--code-bg);
+}
+
+.citation-item h3 {
+    margin: 0 0 8px;
+    font-size: 1rem;
+}
+
+.citation-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+    margin-bottom: 8px;
+    color: var(--muted);
+    font-size: 0.92rem;
+}
+
+.citation-snippet {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.metadata pre {
+    margin: 0;
+    padding: 14px;
+    border-radius: 8px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.hidden {
+    display: none !important;
+}
+
+@media (max-width: 640px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+}

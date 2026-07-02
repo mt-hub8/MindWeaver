@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Answer Demo</title>
+    <link rel="stylesheet" href="/rag-demo.css">
+</head>
+<body>
+<main class="page">
+    <header>
+        <h1>RAG Answer Demo</h1>
+        <p>调用现有 <code>POST /rag/answers</code>，展示 answer、citations 与 metadata。</p>
+    </header>
+
+    <section class="panel" aria-labelledby="query-section-title">
+        <h2 id="query-section-title" class="section-title">提问</h2>
+        <label for="query-input">Query</label>
+        <textarea id="query-input" placeholder="例如：V2.6.8 Embedding Cache 的 cache key 为什么不能只用 chunkHash？"></textarea>
+
+        <div class="form-row">
+            <div>
+                <label for="topk-input">Top K</label>
+                <input id="topk-input" type="number" min="1" max="10" value="5">
+            </div>
+            <button id="ask-button" type="button">Ask</button>
+        </div>
+
+        <div id="loading-status" class="status loading" role="status" aria-live="polite">
+            正在请求 RAG Answer，请稍候…
+        </div>
+
+        <div id="error-status" class="status error" role="alert" aria-live="assertive">
+            <dl>
+                <dt>错误</dt>
+                <dd id="error-code"></dd>
+                <dd id="error-message"></dd>
+                <dd id="error-trace-id"></dd>
+            </dl>
+        </div>
+    </section>
+
+    <section id="answer-section" class="panel hidden" aria-labelledby="answer-section-title">
+        <h2 id="answer-section-title" class="section-title">Answer</h2>
+        <div id="answer-content" class="answer-box"></div>
+    </section>
+
+    <section id="citations-section" class="panel hidden" aria-labelledby="citations-section-title">
+        <h2 id="citations-section-title" class="section-title">Citations</h2>
+        <p id="citations-empty" class="empty-state hidden">暂无引用来源。</p>
+        <ul id="citations-list" class="citation-list"></ul>
+    </section>
+
+    <section id="retrieval-section" class="panel hidden metadata" aria-labelledby="retrieval-section-title">
+        <h2 id="retrieval-section-title" class="section-title">Retrieval Metadata</h2>
+        <pre id="retrieval-metadata"></pre>
+    </section>
+
+    <section id="generation-section" class="panel hidden metadata" aria-labelledby="generation-section-title">
+        <h2 id="generation-section-title" class="section-title">Generation Metadata</h2>
+        <pre id="generation-metadata"></pre>
+    </section>
+</main>
+
+<script src="/rag-demo.js"></script>
+</body>
+</html>
