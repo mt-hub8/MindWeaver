@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文档处理分析</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="page">
+    <nav class="app-nav" aria-label="主导航">
+        <a class="brand" href="/">AI 知识库助手</a>
+        <a class="nav-link" href="/">首页</a>
+        <a class="nav-link" href="/ask.html">知识库问答</a>
+        <a class="nav-link" href="/documents.html">文档管理</a>
+        <a class="nav-link" href="/evaluation.html">检索质量评估</a>
+        <a class="nav-link active" href="/ingestion-analytics.html" aria-current="page">文档处理分析</a>
+    </nav>
+
+    <header class="hero">
+        <h1>文档处理分析</h1>
+        <p class="lead">查看文档上传后的处理成功率、耗时分布和常见失败原因。数据来自摄入任务与事件时间线，不是 Prometheus / Grafana 监控大屏。</p>
+    </header>
+
+    <section class="panel" aria-labelledby="window-title">
+        <h2 id="window-title">时间范围</h2>
+        <div class="window-actions">
+            <button type="button" class="window-button active" data-window="24h">最近 24 小时</button>
+            <button type="button" class="window-button" data-window="7d">最近 7 天</button>
+            <button type="button" class="window-button" data-window="30d">最近 30 天</button>
+            <button type="button" class="window-button" data-window="all">全部时间</button>
+            <button type="button" id="refresh-analytics-button">刷新分析</button>
+        </div>
+        <p id="current-window-label" class="muted">当前范围：最近 24 小时</p>
+    </section>
+
+    <div id="loading-status" class="status loading hidden" role="status" aria-live="polite">
+        正在加载文档处理分析数据…
+    </div>
+
+    <div id="error-status" class="status error" role="alert" aria-live="assertive">
+        <dl>
+            <dt>错误</dt>
+            <dd id="error-code"></dd>
+            <dd id="error-message"></dd>
+            <dd id="error-trace-id"></dd>
+        </dl>
+    </div>
+
+    <p id="analytics-empty" class="empty-state hidden">当前时间范围内还没有文档处理任务。你可以先前往「<a href="/documents.html">文档管理</a>」页面上传文档。</p>
+
+    <section id="summary-panel" class="panel hidden" aria-labelledby="summary-title">
+        <h2 id="summary-title">处理概览</h2>
+        <div class="summary-grid">
+            <div class="summary-card"><span class="summary-label">总任务数</span><span id="summary-total" class="summary-value">-</span></div>
+            <div class="summary-card"><span class="summary-label">处理成功</span><span id="summary-completed" class="summary-value">-</span></div>
+            <div class="summary-card"><span class="summary-label">处理失败</span><span id="summary-failed" class="summary-value">-</span></div>
+            <div class="summary-card"><span class="summary-label">成功率</span><span id="summary-success-rate" class="summary-value">-</span></div>
+            <div class="summary-card"><span class="summary-label">失败率</span><span id="summary-failure-rate" class="summary-value">-</span></div>
+            <div class="summary-card"><span class="summary-label">平均处理耗时</span><span id="summary-avg-duration" class="summary-value">-</span></div>
+            <div class="summary-card"><span class="summary-label">处理中</span><span id="summary-processing" class="summary-value">-</span></div>
+            <div class="summary-card"><span class="summary-label">待处理</span><span id="summary-pending" class="summary-value">-</span></div>
+        </div>
+    </section>
+
+    <section id="stage-panel" class="panel hidden" aria-labelledby="stage-title">
+        <h2 id="stage-title">阶段平均耗时</h2>
+        <p class="muted">数据来自事件时间线中各阶段完成事件的耗时（durationMs）。</p>
+        <table class="doc-table">
+            <thead>
+            <tr>
+                <th>处理阶段</th>
+                <th>平均耗时</th>
+                <th>样本数</th>
+            </tr>
+            </thead>
+            <tbody id="stage-body"></tbody>
+        </table>
+    </section>
+
+    <section id="failure-reasons-panel" class="panel hidden" aria-labelledby="failure-reasons-title">
+        <h2 id="failure-reasons-title">常见失败原因</h2>
+        <p id="failure-reasons-empty" class="empty-state hidden">当前时间范围内暂无失败记录。</p>
+        <ul id="failure-reasons-list" class="reason-list"></ul>
+    </section>
+
+    <section id="recent-failures-panel" class="panel hidden" aria-labelledby="recent-failures-title">
+        <h2 id="recent-failures-title">最近失败任务</h2>
+        <p id="recent-failures-empty" class="empty-state hidden">当前时间范围内暂无失败任务。</p>
+        <table class="doc-table">
+            <thead>
+            <tr>
+                <th>文件名</th>
+                <th>失败原因</th>
+                <th>失败时间</th>
+                <th>重试次数</th>
+                <th>操作</th>
+            </tr>
+            </thead>
+            <tbody id="recent-failures-body"></tbody>
+        </table>
+    </section>
+
+    <section id="slow-tasks-panel" class="panel hidden" aria-labelledby="slow-tasks-title">
+        <h2 id="slow-tasks-title">处理较慢的任务</h2>
+        <p class="muted">仅统计已完成的任务，按总耗时降序排列。主要耗时阶段取自各阶段完成事件中耗时最长的一步。</p>
+        <p id="slow-tasks-empty" class="empty-state hidden">当前时间范围内暂无已完成任务。</p>
+        <table class="doc-table">
+            <thead>
+            <tr>
+                <th>文件名</th>
+                <th>总耗时</th>
+                <th>主要耗时阶段</th>
+                <th>完成时间</th>
+                <th>操作</th>
+            </tr>
+            </thead>
+            <tbody id="slow-tasks-body"></tbody>
+        </table>
+    </section>
+</div>
+
+<script src="/ingestion-analytics.js"></script>
+</body>
+</html>

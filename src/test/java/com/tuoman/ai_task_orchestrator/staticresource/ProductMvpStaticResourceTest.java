@@ -87,6 +87,29 @@ class ProductMvpStaticResourceTest {
     }
 
     @Test
+    void shouldServeIngestionAnalyticsHtmlWithChineseContent() throws Exception {
+        String content = fetchUtf8("/ingestion-analytics.html");
+        assertThat(content).contains("文档处理分析");
+        assertThat(content).contains("成功率");
+        assertThat(content).contains("常见失败原因");
+        assertThat(content).contains("处理较慢的任务");
+        assertThat(content).contains("/ingestion-analytics.js");
+    }
+
+    @Test
+    void shouldServeIngestionAnalyticsJsWithAnalyticsEndpoint() throws Exception {
+        String content = fetchUtf8("/ingestion-analytics.js");
+        assertThat(content).contains("/documents/ingestions/analytics");
+        assertThat(content).contains("最近 24 小时");
+    }
+
+    @Test
+    void shouldServeIndexHtmlWithAnalyticsEntry() throws Exception {
+        String content = fetchUtf8("/index.html");
+        assertThat(content).contains("文档处理分析");
+    }
+
+    @Test
     void shouldServeSharedAppCss() throws Exception {
         String content = fetchUtf8("/app.css");
         assertThat(content).contains(".app-nav");

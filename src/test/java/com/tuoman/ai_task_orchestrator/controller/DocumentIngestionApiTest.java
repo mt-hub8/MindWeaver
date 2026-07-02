@@ -5,8 +5,11 @@ import com.tuoman.ai_task_orchestrator.common.error.GlobalExceptionHandler;
 import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionEventResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionEventTimelineResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionTaskResponse;
+import com.tuoman.ai_task_orchestrator.dto.IngestionAnalyticsResponse;
+import com.tuoman.ai_task_orchestrator.dto.IngestionStageDurationResponse;
 import com.tuoman.ai_task_orchestrator.service.DocumentIngestionEventService;
 import com.tuoman.ai_task_orchestrator.service.DocumentIngestionTaskService;
+import com.tuoman.ai_task_orchestrator.service.IngestionAnalyticsService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -36,6 +39,45 @@ class DocumentIngestionApiTest {
 
     @MockitoBean
     private DocumentIngestionEventService documentIngestionEventService;
+
+    @MockitoBean
+    private IngestionAnalyticsService ingestionAnalyticsService;
+
+    @Test
+    void getAnalyticsShouldReturnSummary() throws Exception {
+        when(ingestionAnalyticsService.getAnalytics("24h")).thenReturn(new IngestionAnalyticsResponse(
+                "24h",
+                "最近 24 小时",
+                10,
+                8,
+                2,
+                0,
+                0,
+                0.8,
+                0.2,
+                4800L,
+                List.of(new IngestionStageDurationResponse("CHUNKING", "文档切分", 120L, 8)),
+                List.of(),
+                List.of(),
+                List.of()
+        ));
+
+        mockMvc.perform(get("/documents/ingestions/analytics"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayWindow").value("最近 24 小时"))
+                .andExpect(jsonPath("$.successRate").value(0.8))
+                .andExpect(jsonPath("$.stageDurations[0].displayName").value("文档切分"));
+    }
+
+    @Test
+    void getAnalyticsShouldRejectInvalidWindow() throws Exception {
+        when(ingestionAnalyticsService.getAnalytics("bad"))
+                .thenThrow(BusinessException.invalidRequest("不支持的时间范围参数，请使用 24h、7d、30d 或 all"));
+
+        mockMvc.perform(get("/documents/ingestions/analytics").param("window", "bad"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
+    }
 
     @Test
     void getTaskShouldReturnTaskDetail() throws Exception {

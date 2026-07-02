@@ -42,6 +42,13 @@ GET /documents/ingestions/{taskId}/events
 
 本能力用于排查单次摄入任务，不是完整分布式追踪系统。
 
+### 文档处理分析（V3.5）
+
+页面：`/ingestion-analytics.html`  
+API：`GET /documents/ingestions/analytics?window=24h|7d|30d|all`
+
+可查看总任务数、成功率 / 失败率、平均处理耗时、各阶段平均耗时、常见失败原因、最近失败任务与较慢任务。数据实时来自 `document_ingestion_task` 与 `document_ingestion_event`，不是 Prometheus / Grafana。
+
 兼容旧接口：`POST /documents`（仅 txt/md，仅切块）、`POST /documents/{id}/embeddings`（单独 embedding）。
 
 ## PDF 支持边界

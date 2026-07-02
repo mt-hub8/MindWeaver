@@ -14,6 +14,7 @@
         <a class="nav-link" href="/ask.html">知识库问答</a>
         <a class="nav-link active" href="/documents.html" aria-current="page">文档管理</a>
         <a class="nav-link" href="/evaluation.html">检索质量评估</a>
+        <a class="nav-link" href="/ingestion-analytics.html">文档处理分析</a>
     </nav>
 
     <header class="hero">
@@ -62,7 +63,10 @@
     <p id="tasks-empty" class="empty-state hidden">还没有上传任何文档。请上传 .txt、.md 或文本型 PDF，系统会自动建立知识库索引。处理完成后，你可以前往「知识库问答」页面提问。</p>
 
     <section id="tasks-panel" class="panel hidden" aria-labelledby="tasks-title">
-        <h2 id="tasks-title">最近上传任务</h2>
+        <div class="section-header-row">
+            <h2 id="tasks-title">最近上传任务</h2>
+            <a class="button-link secondary" href="/ingestion-analytics.html">查看文档处理分析</a>
+        </div>
         <p class="muted">页面每 3 秒自动刷新处理状态。可点击「查看处理记录」查看任务时间线；失败任务可点击「重新处理」。</p>
         <table class="doc-table ingestion-table">
             <thead>
