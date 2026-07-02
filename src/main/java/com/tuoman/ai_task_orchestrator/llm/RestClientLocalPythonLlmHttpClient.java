@@ -31,10 +31,14 @@ public class RestClientLocalPythonLlmHttpClient implements LocalPythonLlmHttpCli
                     .retrieve()
                     .body(LocalPythonLlmResponse.class);
         } catch (RestClientResponseException exception) {
-            if (exception.getStatusCode().value() == 408 || exception.getStatusCode().value() == 504) {
+            int status = exception.getStatusCode().value();
+            if (status == 408 || status == 504) {
                 throw BusinessException.aiRuntimeTimeout("Python LLM worker timeout: " + exception.getMessage());
             }
-            throw BusinessException.aiRuntimeUnavailable("Python LLM worker error: " + exception.getMessage());
+            if (status == 503) {
+                throw BusinessException.aiRuntimeUnavailable("Python LLM worker unavailable: " + exception.getMessage());
+            }
+            throw BusinessException.aiRuntimeBadResponse("Python LLM worker bad response: " + exception.getMessage());
         } catch (RestClientException exception) {
             throw BusinessException.aiRuntimeUnavailable(
                     "Python LLM worker unavailable: " + exception.getMessage()

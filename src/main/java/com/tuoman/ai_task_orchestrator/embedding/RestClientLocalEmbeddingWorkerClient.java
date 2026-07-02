@@ -1,7 +1,10 @@
 package com.tuoman.ai_task_orchestrator.embedding;
 
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.time.Duration;
 
@@ -28,11 +31,29 @@ public class RestClientLocalEmbeddingWorkerClient implements LocalEmbeddingWorke
                 ))
                 .build();
 
-        return restClient.post()
-                .uri("/embeddings")
-                .body(request)
-                .retrieve()
-                .body(LocalEmbeddingWorkerResponse.class);
+        try {
+            return restClient.post()
+                    .uri("/embeddings")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(request)
+                    .retrieve()
+                    .body(LocalEmbeddingWorkerResponse.class);
+        } catch (RestClientResponseException exception) {
+            int status = exception.getStatusCode().value();
+            if (status == 408 || status == 504) {
+                throw new EmbeddingProviderException("Python embedding worker timeout: " + exception.getMessage());
+            }
+            if (status == 503) {
+                throw new EmbeddingProviderException("Python embedding worker unavailable (Ollama may be down): "
+                        + exception.getMessage());
+            }
+            throw new EmbeddingProviderException("Python embedding worker bad response: " + exception.getMessage());
+        } catch (RestClientException exception) {
+            throw new EmbeddingProviderException(
+                    "Python embedding worker unavailable: " + exception.getMessage(),
+                    exception
+            );
+        }
     }
 
     private String normalizeBaseUrl(String baseUrl) {

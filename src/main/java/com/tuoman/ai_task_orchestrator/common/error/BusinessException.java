@@ -156,6 +156,10 @@ public class BusinessException extends RuntimeException {
         return new BusinessException(ErrorCode.AI_RUNTIME_TIMEOUT, HttpStatus.GATEWAY_TIMEOUT, message);
     }
 
+    public static BusinessException aiRuntimeBadResponse(String message) {
+        return new BusinessException(ErrorCode.AI_RUNTIME_BAD_RESPONSE, HttpStatus.BAD_GATEWAY, message);
+    }
+
     public static BusinessException agentTaskExecutionFailed(String message) {
         return new BusinessException(ErrorCode.AGENT_TASK_EXECUTION_FAILED, HttpStatus.INTERNAL_SERVER_ERROR, message);
     }

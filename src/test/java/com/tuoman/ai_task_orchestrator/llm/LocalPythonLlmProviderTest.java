@@ -65,4 +65,20 @@ class LocalPythonLlmProviderTest {
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.AI_RUNTIME_UNAVAILABLE);
     }
+
+    @Test
+    void generateShouldMapLocalOllamaProviderMetadata() {
+        LocalPythonLlmResponse response = new LocalPythonLlmResponse();
+        response.setProvider("local-ollama");
+        response.setModel("qwen2.5:7b");
+        response.setContent("真实回答");
+        response.setLatencyMs(321L);
+        when(httpClient.generate(any(), any())).thenReturn(response);
+
+        LlmGenerateResult result = provider.generate("system", "user", new LlmGenerateOptions());
+
+        assertThat(result.getProvider()).isEqualTo("local-ollama");
+        assertThat(result.getModel()).isEqualTo("qwen2.5:7b");
+        assertThat(result.getLatencyMs()).isEqualTo(321L);
+    }
 }

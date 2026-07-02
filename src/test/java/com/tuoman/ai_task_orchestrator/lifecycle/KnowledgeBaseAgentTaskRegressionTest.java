@@ -96,6 +96,24 @@ class KnowledgeBaseAgentTaskRegressionTest {
         assertThat(readme).contains("tool-using-agent-workflow.md");
     }
 
+    @Test
+    void readmeShouldMentionV80LocalAi() throws Exception {
+        String readme = Files.readString(Path.of("README.md"), StandardCharsets.UTF_8);
+        assertThat(readme).contains("V8.0");
+        assertThat(readme).contains("real-local-ai-runtime-with-ollama.md");
+    }
+
+    @Test
+    void manualV80DocumentShouldExist() throws Exception {
+        Path manualPath = Path.of("docs/manual/real-local-ai-runtime-with-ollama.md");
+        assertThat(Files.exists(manualPath)).isTrue();
+        String content = Files.readString(manualPath, StandardCharsets.UTF_8);
+        assertThat(content).contains("Ollama");
+        assertThat(content).contains("qwen3-embedding");
+        assertThat(content).contains("local-ai");
+        assertThat(content).contains("ollama pull");
+    }
+
     private String fetchUtf8(String path) throws Exception {
         MvcResult result = mockMvc.perform(get(path))
                 .andExpect(status().isOk())

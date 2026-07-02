@@ -38,7 +38,7 @@ public class LocalPythonLlmProvider implements LlmProvider {
         } catch (BusinessException exception) {
             throw exception;
         } catch (RuntimeException exception) {
-            throw BusinessException.agentTaskLlmFailed(
+            throw BusinessException.aiRuntimeUnavailable(
                     exception.getMessage() == null ? "Python LLM worker call failed" : exception.getMessage()
             );
         }
@@ -62,7 +62,10 @@ public class LocalPythonLlmProvider implements LlmProvider {
                 outputTokens,
                 response.getLatencyMs() == null ? elapsed(started) : response.getLatencyMs(),
                 response.getFinishReason(),
-                Map.of("source", "local-python-worker")
+                Map.of(
+                        "source", "local-python-worker",
+                        "ollamaProvider", response.getProvider() == null ? PROVIDER : response.getProvider()
+                )
         );
     }
 

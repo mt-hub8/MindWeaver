@@ -1,33 +1,298 @@
-from functools import lru_cache
-from typing import List, Optional, Union
+"""AI Runtime Worker – Ollama adapter (V8.0)."""
 
+from __future__ import annotations
+
+import os
+import time
+from datetime import datetime, timezone
+from typing import Any, List, Optional, Tuple, Union
+
+import httpx
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
-from sentence_transformers import SentenceTransformer
+from pydantic import BaseModel, Field, field_validator
+
+PROVIDER = "local-ollama"
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "qwen3-embedding:0.6b")
+OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:7b")
+OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "120"))
+
+app = FastAPI(title="AI Task Orchestrator AI Runtime Worker (Ollama)")
 
 
-PROVIDER = "local-python"
-DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-DEFAULT_LLM_MODEL = "mock-llm-template"
+class OllamaClientError(Exception):
+    def __init__(
+        self,
+        message: str,
+        code: str = "OLLAMA_ERROR",
+        status_code: int = 502,
+        detail: Optional[str] = None,
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.code = code
+        self.status_code = status_code
+        self.detail = detail or message
 
-app = FastAPI(title="AI Task Orchestrator AI Runtime Worker")
+
+def is_ollama_reachable() -> bool:
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(f"{OLLAMA_BASE_URL}/api/version")
+            return response.status_code == 200
+    except Exception:
+        return False
+
+
+def embed_texts(texts: List[str], model: Optional[str] = None) -> Tuple[List[List[float]], str, int, int]:
+    if not texts:
+        raise OllamaClientError("texts must not be empty", code="INVALID_REQUEST", status_code=400)
+
+    model_name = (model or OLLAMA_EMBEDDING_MODEL).strip()
+    if not model_name:
+        raise OllamaClientError("model must not be blank", code="INVALID_REQUEST", status_code=400)
+
+    # Ollama /api/embed expects "input" as an array, even for a single text.
+    payload = {
+        "model": model_name,
+        "input": texts,
+    }
+
+    started = time.perf_counter()
+    try:
+        with httpx.Client(timeout=OLLAMA_TIMEOUT_SECONDS) as client:
+            response = client.post(f"{OLLAMA_BASE_URL}/api/embed", json=payload)
+    except httpx.TimeoutException as exc:
+        raise OllamaClientError(
+            f"Ollama embed timeout after {OLLAMA_TIMEOUT_SECONDS}s",
+            code="OLLAMA_TIMEOUT",
+            status_code=504,
+        ) from exc
+    except httpx.RequestError as exc:
+        raise OllamaClientError(
+            f"Ollama unavailable: {exc}",
+            code="OLLAMA_UNAVAILABLE",
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+
+    latency_ms = int((time.perf_counter() - started) * 1000)
+
+    if response.status_code >= 400:
+        raise OllamaClientError(
+            f"Ollama embed HTTP {response.status_code}",
+            code="OLLAMA_BAD_RESPONSE",
+            status_code=502,
+            detail=response.text,
+        )
+
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise OllamaClientError(
+            "Ollama embed returned non-JSON response",
+            code="OLLAMA_BAD_RESPONSE",
+            status_code=502,
+            detail=response.text,
+        ) from exc
+
+    vectors = extract_embeddings(body, len(texts))
+    dimension = len(vectors[0])
+    resolved_model = str(body.get("model") or model_name)
+    return vectors, resolved_model, dimension, latency_ms
+
+
+def generate_text(
+    system_prompt: Optional[str],
+    user_prompt: str,
+    model: Optional[str] = None,
+    temperature: float = 0.2,
+    max_tokens: int = 1200,
+) -> Tuple[str, str, Optional[dict[str, int]], int, str]:
+    user_prompt = (user_prompt or "").strip()
+    if not user_prompt:
+        raise OllamaClientError("userPrompt must not be blank", code="INVALID_REQUEST", status_code=400)
+
+    model_name = (model or OLLAMA_LLM_MODEL).strip()
+    if not model_name:
+        raise OllamaClientError("model must not be blank", code="INVALID_REQUEST", status_code=400)
+
+    prompt_parts: List[str] = []
+    if system_prompt and system_prompt.strip():
+        prompt_parts.append(system_prompt.strip())
+    prompt_parts.append(user_prompt)
+    prompt = "\n\n".join(prompt_parts)
+
+    payload = {
+        "model": model_name,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "temperature": temperature,
+            "num_predict": max_tokens,
+        },
+    }
+
+    started = time.perf_counter()
+    try:
+        with httpx.Client(timeout=OLLAMA_TIMEOUT_SECONDS) as client:
+            response = client.post(f"{OLLAMA_BASE_URL}/api/generate", json=payload)
+    except httpx.TimeoutException as exc:
+        raise OllamaClientError(
+            f"Ollama generate timeout after {OLLAMA_TIMEOUT_SECONDS}s",
+            code="OLLAMA_TIMEOUT",
+            status_code=504,
+        ) from exc
+    except httpx.RequestError as exc:
+        raise OllamaClientError(
+            f"Ollama unavailable: {exc}",
+            code="OLLAMA_UNAVAILABLE",
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+
+    latency_ms = int((time.perf_counter() - started) * 1000)
+
+    if response.status_code >= 400:
+        raise OllamaClientError(
+            f"Ollama generate HTTP {response.status_code}",
+            code="OLLAMA_BAD_RESPONSE",
+            status_code=502,
+            detail=response.text,
+        )
+
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise OllamaClientError(
+            "Ollama generate returned non-JSON response",
+            code="OLLAMA_BAD_RESPONSE",
+            status_code=502,
+            detail=response.text,
+        ) from exc
+
+    content = body.get("response")
+    if content is None or not str(content).strip():
+        raise OllamaClientError(
+            "Ollama generate returned empty content",
+            code="OLLAMA_BAD_RESPONSE",
+            status_code=502,
+            detail=str(body),
+        )
+
+    usage = extract_usage(body)
+    resolved_model = str(body.get("model") or model_name)
+    finish_reason = str(body.get("done_reason") or "stop")
+    return str(content), resolved_model, usage, latency_ms, finish_reason
+
+
+def extract_embeddings(body: dict[str, Any], expected_count: int) -> List[List[float]]:
+    raw_items: Optional[List[Any]] = None
+
+    if isinstance(body.get("embeddings"), list):
+        raw_items = body["embeddings"]
+    elif isinstance(body.get("embedding"), list):
+        raw_items = [body["embedding"]]
+
+    if raw_items is None:
+        raise OllamaClientError(
+            "Ollama embed response missing embeddings/embedding field",
+            code="OLLAMA_BAD_RESPONSE",
+            status_code=502,
+            detail=str(list(body.keys())),
+        )
+
+    vectors: List[List[float]] = []
+    for item in raw_items:
+        vector = normalize_vector(item)
+        if not vector:
+            raise OllamaClientError(
+                "Ollama embed returned an empty embedding vector",
+                code="OLLAMA_BAD_RESPONSE",
+                status_code=502,
+            )
+        vectors.append(vector)
+
+    if not vectors:
+        raise OllamaClientError(
+            "Ollama embed returned empty embeddings array",
+            code="OLLAMA_BAD_RESPONSE",
+            status_code=502,
+        )
+
+    if len(vectors) != expected_count:
+        raise OllamaClientError(
+            f"Ollama embed vector count mismatch: expected {expected_count}, got {len(vectors)}",
+            code="OLLAMA_BAD_RESPONSE",
+            status_code=502,
+            detail=f"embeddings length={len(vectors)}",
+        )
+
+    return vectors
+
+
+def normalize_vector(item: Any) -> List[float]:
+    if isinstance(item, list):
+        return [float(value) for value in item]
+    if isinstance(item, dict):
+        for key in ("embedding", "vector", "values"):
+            nested = item.get(key)
+            if isinstance(nested, list):
+                return [float(value) for value in nested]
+    raise OllamaClientError(
+        "Ollama embed item is not a numeric vector",
+        code="OLLAMA_BAD_RESPONSE",
+        status_code=502,
+        detail=str(type(item)),
+    )
+
+
+def extract_usage(body: dict[str, Any]) -> Optional[dict[str, int]]:
+    input_tokens = body.get("prompt_eval_count")
+    output_tokens = body.get("eval_count")
+    if input_tokens is None and output_tokens is None:
+        return None
+    return {
+        "inputTokens": int(input_tokens or 0),
+        "outputTokens": int(output_tokens or 0),
+    }
 
 
 @app.get("/health")
 def health() -> dict:
-    return {
-        "status": "ok",
+    reachable = is_ollama_reachable()
+    payload = {
+        "status": "ok" if reachable else "degraded",
         "provider": PROVIDER,
-        "availableModels": {
-            "embedding": [DEFAULT_EMBEDDING_MODEL],
-            "llm": [DEFAULT_LLM_MODEL],
-        },
+        "ollamaBaseUrl": OLLAMA_BASE_URL,
+        "embeddingModel": OLLAMA_EMBEDDING_MODEL,
+        "llmModel": OLLAMA_LLM_MODEL,
+        "ollamaReachable": reachable,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+    if not reachable:
+        payload["warning"] = (
+            "Ollama is not reachable at /api/version; "
+            "worker is up but real model calls will fail until Ollama starts."
+        )
+    return payload
 
 
 class EmbedRequest(BaseModel):
-    texts: List[str] = Field(default_factory=list)
+    texts: Union[str, List[str]] = Field(default_factory=list)
     model: Optional[str] = None
+
+    @field_validator("texts", mode="before")
+    @classmethod
+    def coerce_texts(cls, value: Any) -> List[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, list):
+            return value
+        raise ValueError("texts must be a string or list of strings")
 
 
 class EmbedResponse(BaseModel):
@@ -35,10 +300,11 @@ class EmbedResponse(BaseModel):
     model: str
     dimension: int
     vectors: List[List[float]]
+    latencyMs: int
 
 
 class EmbeddingCompatRequest(BaseModel):
-    model: str
+    model: Optional[str] = None
     input: Union[str, List[str]]
 
 
@@ -55,8 +321,8 @@ class EmbeddingCompatResponse(BaseModel):
 
 
 class GenerateUsage(BaseModel):
-    inputTokens: int = 0
-    outputTokens: int = 0
+    inputTokens: Optional[int] = None
+    outputTokens: Optional[int] = None
 
 
 class GenerateRequest(BaseModel):
@@ -71,125 +337,103 @@ class GenerateResponse(BaseModel):
     provider: str
     model: str
     content: str
-    usage: GenerateUsage
+    usage: Optional[GenerateUsage] = None
     latencyMs: int
     finishReason: str = "stop"
 
 
-@lru_cache(maxsize=4)
-def load_embedding_model(model_name: str) -> SentenceTransformer:
-    try:
-        return SentenceTransformer(model_name)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"failed to load embedding model: {exc}") from exc
-
-
 @app.post("/embed", response_model=EmbedResponse)
 def embed(request: EmbedRequest) -> EmbedResponse:
-    model_name = (request.model or DEFAULT_EMBEDDING_MODEL).strip()
-    if not model_name:
-        raise HTTPException(status_code=400, detail="model must not be blank")
     texts = normalize_texts(request.texts)
-    model = load_embedding_model(model_name)
     try:
-        vectors = model.encode(texts, convert_to_numpy=False)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"failed to create embeddings: {exc}") from exc
-
-    normalized = []
-    dimension = 0
-    for vector in vectors:
-        embedding = [float(value) for value in vector]
-        if not embedding:
-            raise HTTPException(status_code=500, detail="embedding vector must not be empty")
-        dimension = len(embedding)
-        normalized.append(embedding)
+        vectors, model, dimension, latency_ms = embed_texts(texts, request.model)
+    except OllamaClientError as exc:
+        raise to_http_exception(exc) from exc
 
     return EmbedResponse(
         provider=PROVIDER,
-        model=model_name,
+        model=model,
         dimension=dimension,
-        vectors=normalized,
+        vectors=vectors,
+        latencyMs=latency_ms,
     )
 
 
 @app.post("/embeddings", response_model=EmbeddingCompatResponse)
 def embeddings_compat(request: EmbeddingCompatRequest) -> EmbeddingCompatResponse:
     texts = normalize_compat_input(request.input)
-    embed_response = embed(EmbedRequest(texts=texts, model=request.model))
-    data = [
-        EmbeddingCompatData(index=index, embedding=vector)
-        for index, vector in enumerate(embed_response.vectors)
-    ]
+    try:
+        vectors, model, dimension, _latency_ms = embed_texts(texts, request.model)
+    except OllamaClientError as exc:
+        raise to_http_exception(exc) from exc
+
+    data = [EmbeddingCompatData(index=index, embedding=vector) for index, vector in enumerate(vectors)]
     return EmbeddingCompatResponse(
-        provider=embed_response.provider,
-        model=embed_response.model,
-        dimension=embed_response.dimension,
+        provider=PROVIDER,
+        model=model,
+        dimension=dimension,
         data=data,
     )
 
 
 @app.post("/generate", response_model=GenerateResponse)
 def generate(request: GenerateRequest) -> GenerateResponse:
-    import time
+    try:
+        content, model, usage, latency_ms, finish_reason = generate_text(
+            request.systemPrompt,
+            request.userPrompt,
+            request.model,
+            request.temperature,
+            request.maxTokens,
+        )
+    except OllamaClientError as exc:
+        raise to_http_exception(exc) from exc
 
-    started = time.perf_counter()
-    user_prompt = request.userPrompt.strip() if request.userPrompt else ""
-    if not user_prompt:
-        raise HTTPException(status_code=400, detail="userPrompt must not be blank")
-
-    model_name = (request.model or DEFAULT_LLM_MODEL).strip()
-    system_prompt = request.systemPrompt.strip() if request.systemPrompt else ""
-
-    if "fail" in user_prompt.lower() or "失败" in user_prompt:
-        raise HTTPException(status_code=500, detail="mock llm generation failed")
-
-    content = build_mock_llm_content(system_prompt, user_prompt)
-    input_tokens = estimate_tokens(system_prompt + user_prompt)
-    output_tokens = estimate_tokens(content)
-    latency_ms = int((time.perf_counter() - started) * 1000)
+    generate_usage = None
+    if usage is not None:
+        generate_usage = GenerateUsage(
+            inputTokens=usage.get("inputTokens"),
+            outputTokens=usage.get("outputTokens"),
+        )
 
     return GenerateResponse(
         provider=PROVIDER,
-        model=model_name,
+        model=model,
         content=content,
-        usage=GenerateUsage(inputTokens=input_tokens, outputTokens=output_tokens),
+        usage=generate_usage,
         latencyMs=latency_ms,
-        finishReason="stop",
+        finishReason=finish_reason,
     )
 
 
-def build_mock_llm_content(system_prompt: str, user_prompt: str) -> str:
-    lines = [
-        "## 任务结论",
-        "基于提供的知识库上下文，已完成任务分析（本地 CPU 模板生成，非真实大模型）。",
-        "",
-        "## 关键依据",
-        "- 已参考检索到的文档片段与引用编号。",
-        "",
-        "## 风险 / 不确定性",
-        "- 若上下文不足，结论可能不完整，请结合原始文档复核。",
-        "",
-        "## 下一步建议",
-        "- 补充更多相关文档到知识库分组后重新执行任务。",
-        "",
-        "## 引用来源",
-        "- 请查看任务详情中的引用来源列表。",
-    ]
-    if system_prompt:
-        lines.insert(1, "（已应用系统指令）")
-    if "任务目标" in user_prompt or "objective" in user_prompt.lower():
-        lines.insert(2, "任务目标已在提示词中提供。")
-    return "\n".join(lines)
+def to_http_exception(exc: OllamaClientError) -> HTTPException:
+    return HTTPException(
+        status_code=exc.status_code,
+        detail={
+            "code": exc.code,
+            "message": exc.message,
+            "detail": exc.detail,
+        },
+    )
 
 
 def normalize_texts(texts: List[str]) -> List[str]:
     if not texts:
-        raise HTTPException(status_code=400, detail="texts must not be empty")
-    normalized = []
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_REQUEST", "message": "texts must not be empty", "detail": None},
+        )
+    normalized: List[str] = []
     for text in texts:
         if text is None or not str(text).strip():
-            raise HTTPException(status_code=400, detail="text items must be non-blank strings")
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "INVALID_REQUEST",
+                    "message": "text items must be non-blank strings",
+                    "detail": None,
+                },
+            )
         normalized.append(str(text).strip())
     return normalized
 
@@ -199,10 +443,11 @@ def normalize_compat_input(raw_input: Union[str, List[str]]) -> List[str]:
         return normalize_texts([raw_input])
     if isinstance(raw_input, list):
         return normalize_texts(raw_input)
-    raise HTTPException(status_code=400, detail="input must be a string or list of strings")
-
-
-def estimate_tokens(text: str) -> int:
-    if not text:
-        return 0
-    return max(1, len(text) // 4)
+    raise HTTPException(
+        status_code=400,
+        detail={
+            "code": "INVALID_REQUEST",
+            "message": "input must be a string or list of strings",
+            "detail": None,
+        },
+    )

@@ -7,7 +7,7 @@
 | | |
 |---|---|
 | **适用场景** | 内部知识库问答、RAG 方案验证、检索策略对比（dense / rerank / hybrid）、演示与面试展示 |
-| **核心能力** | **V7.0 Tool-Using Agent Workflow** · **V6.0 AI 任务编排** · **V5.0 知识库分组** · **V4.0 知识库生命周期**（软删除 / 重新索引）· 带 Citations 的 RAG 问答 · 检索质量评估 · Rerank · Hybrid |
+| **核心能力** | **V8.0 真实本地 AI Runtime（Ollama）** · **V7.0 Tool-Using Agent Workflow** · **V6.0 AI 任务编排** · **V5.0 知识库分组** · **V4.0 知识库生命周期** · RAG / Rerank / Hybrid |
 | **5 分钟体验** | 启动服务 → Documents 上传 → （可选）Collections 分组 → Ask 提问 / **Agent Tasks 提交任务** → 查看执行步骤与结果 |
 | **主要入口** | Web：`/` · `/documents.html` · `/collections.html` · `/ask.html` · **`/agent-tasks.html`** · **`/agent-tools.html`** · API：`GET /agent/tools` · `POST /agent/tasks` · `POST /rag/answers` |
 
@@ -90,7 +90,7 @@ AI Task Orchestrator 是一个基于 Java / Spring Boot 的 AI 任务编排与 R
 - 文档生命周期状态：已启用（ACTIVE）/ 已删除（DELETED）
 - 文档软删除：`DELETE /documents/{documentId}`，不物理清理 document / chunks / vectors
 - 已删除文档与旧版本片段不再进入 Ask / RAG（应用层过滤，含 hybrid / rerank）
-- 文档重新建立索引：`POST /documents/{documentId}/reindex`，复用 `source_text` 异步重建索引
+- 文档重新建立索引（重新索引）：`POST /documents/{documentId}/reindex`，复用 `source_text` 异步重建索引
 - 当前索引版本（`current_generation`）与 chunk 代际过滤
 - 中文文档管理页面、生命周期事件时间线、文档处理分析入口
 - 说明文档：[docs/manual/knowledge-base-lifecycle-management.md](docs/manual/knowledge-base-lifecycle-management.md)
@@ -119,6 +119,13 @@ AI Task Orchestrator 是一个基于 Java / Spring Boot 的 AI 任务编排与 R
 - 任务详情含执行步骤、工具输入/输出、引用来源与事件时间线
 - 页面：`/agent-tasks.html` · `/agent-tools.html`
 - 说明文档：[docs/manual/tool-using-agent-workflow.md](docs/manual/tool-using-agent-workflow.md)
+
+**Real Local AI Runtime（V8.0）**
+
+- 免费本地体验：**Ollama** + `qwen3-embedding:0.6b` + `qwen2.5:7b`（或 `qwen2.5:3b` 备用）
+- 链路：Java → Python Worker → Ollama；**默认 profile 仍为 mock**
+- 启用方式：`local-ai` profile + 手工启动 Python Worker 与 Ollama
+- 说明文档：[docs/manual/real-local-ai-runtime-with-ollama.md](docs/manual/real-local-ai-runtime-with-ollama.md)
 
 **工程化**
 
