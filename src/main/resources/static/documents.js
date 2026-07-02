@@ -1,32 +1,46 @@
 (function () {
+    const POLL_INTERVAL_MS = 3000;
+
     const fileInput = document.getElementById("file-input");
     const uploadButton = document.getElementById("upload-button");
+    const refreshTasksButton = document.getElementById("refresh-tasks-button");
     const uploadLoading = document.getElementById("upload-loading");
     const uploadSuccess = document.getElementById("upload-success");
+    const uploadSuccessMessage = document.getElementById("upload-success-message");
+    const summaryTaskId = document.getElementById("summary-task-id");
     const summaryDocumentId = document.getElementById("summary-document-id");
-    const summaryTitle = document.getElementById("summary-title");
+    const summaryFilename = document.getElementById("summary-filename");
     const summaryStatus = document.getElementById("summary-status");
-    const summaryChunkCount = document.getElementById("summary-chunk-count");
-    const summaryEmbeddingCount = document.getElementById("summary-embedding-count");
-    const summaryVectorCount = document.getElementById("summary-vector-count");
 
     const loadingStatus = document.getElementById("loading-status");
     const errorStatus = document.getElementById("error-status");
     const errorCode = document.getElementById("error-code");
     const errorMessage = document.getElementById("error-message");
     const errorTraceId = document.getElementById("error-trace-id");
-    const emptyState = document.getElementById("documents-empty");
-    const documentsPanel = document.getElementById("documents-panel");
-    const documentsBody = document.getElementById("documents-body");
+    const tasksEmpty = document.getElementById("tasks-empty");
+    const tasksPanel = document.getElementById("tasks-panel");
+    const tasksBody = document.getElementById("tasks-body");
     const chunksPanel = document.getElementById("chunks-panel");
     const chunksTitle = document.getElementById("chunks-title");
     const chunksEmpty = document.getElementById("chunks-empty");
     const chunksList = document.getElementById("chunks-list");
 
     const SNIPPET_MAX = 300;
+    let pollTimer = null;
 
     uploadButton.addEventListener("click", uploadDocument);
-    loadDocuments();
+    refreshTasksButton.addEventListener("click", loadIngestionTasks);
+    loadIngestionTasks();
+    startPolling();
+
+    function startPolling() {
+        if (pollTimer) {
+            clearInterval(pollTimer);
+        }
+        pollTimer = setInterval(function () {
+            loadIngestionTasks(true);
+        }, POLL_INTERVAL_MS);
+    }
 
     async function uploadDocument() {
         clearError();
@@ -51,23 +65,15 @@
                 method: "POST",
                 body: formData
             });
-            const responseText = await response.text();
-            let payload = null;
-            if (responseText) {
-                try {
-                    payload = JSON.parse(responseText);
-                } catch (parseError) {
-                    payload = null;
-                }
-            }
+            const payload = await parseJsonResponse(response);
 
             if (!response.ok) {
-                showError(extractError(payload, response.status, responseText));
+                showError(extractError(payload, response.status));
                 return;
             }
 
             renderUploadSuccess(payload || {});
-            await loadDocuments();
+            await loadIngestionTasks();
         } catch (networkError) {
             showError({
                 code: "NETWORK_ERROR",
@@ -82,101 +88,158 @@
     }
 
     function renderUploadSuccess(summary) {
+        summaryTaskId.textContent = safeValue(summary.taskId);
         summaryDocumentId.textContent = safeValue(summary.documentId);
-        summaryTitle.textContent = safeValue(summary.title);
-        summaryStatus.textContent = safeValue(summary.status);
-        summaryChunkCount.textContent = safeValue(summary.chunkCount);
-        summaryEmbeddingCount.textContent = safeValue(summary.embeddingCount);
-        summaryVectorCount.textContent = safeValue(summary.vectorWriteCount);
+        summaryFilename.textContent = safeValue(summary.filename);
+        summaryStatus.textContent = safeValue(summary.displayStatus || summary.status);
+        uploadSuccessMessage.textContent = summary.displayMessage
+            || "文档已提交，正在排队处理。";
         uploadSuccess.classList.remove("hidden");
     }
 
-    async function loadDocuments() {
-        setListLoading(true);
-        clearError();
-        hideChunks();
+    async function loadIngestionTasks(silent) {
+        if (!silent) {
+            setListLoading(true);
+            clearError();
+        }
 
         try {
-            const response = await fetch("/documents");
-            const responseText = await response.text();
-            let payload = null;
-            if (responseText) {
-                try {
-                    payload = JSON.parse(responseText);
-                } catch (parseError) {
-                    payload = null;
-                }
-            }
+            const response = await fetch("/documents/ingestions");
+            const payload = await parseJsonResponse(response);
 
             if (!response.ok) {
-                showError(extractError(payload, response.status, responseText));
-                documentsPanel.classList.add("hidden");
-                emptyState.classList.add("hidden");
+                if (!silent) {
+                    showError(extractError(payload, response.status));
+                    tasksPanel.classList.add("hidden");
+                    tasksEmpty.classList.add("hidden");
+                }
                 return;
             }
 
-            const documents = Array.isArray(payload) ? payload : [];
-            renderDocuments(documents);
+            const tasks = Array.isArray(payload) ? payload : [];
+            renderTasks(tasks);
+        } catch (networkError) {
+            if (!silent) {
+                showError({
+                    code: "NETWORK_ERROR",
+                    message: networkError && networkError.message
+                        ? networkError.message
+                        : "无法加载摄入任务列表，请确认服务已启动。",
+                    traceId: "-"
+                });
+                tasksPanel.classList.add("hidden");
+                tasksEmpty.classList.add("hidden");
+            }
+        } finally {
+            if (!silent) {
+                setListLoading(false);
+            }
+        }
+    }
+
+    function renderTasks(tasks) {
+        tasksBody.innerHTML = "";
+        if (tasks.length === 0) {
+            tasksPanel.classList.add("hidden");
+            tasksEmpty.classList.remove("hidden");
+            return;
+        }
+
+        tasksEmpty.classList.add("hidden");
+        tasksPanel.classList.remove("hidden");
+
+        tasks.forEach(function (task) {
+            const row = document.createElement("tr");
+            row.className = "task-row";
+
+            const statusClass = task.status === "COMPLETED"
+                ? "ready"
+                : (task.status === "FAILED" ? "failed" : "pending");
+
+            const failureHint = task.status === "FAILED" && task.errorMessage
+                ? '<p class="task-error muted">处理失败：' + escapeHtml(task.errorMessage) + "</p>"
+                : "";
+
+            const techInfo = task.status === "FAILED"
+                ? '<p class="task-tech muted">错误码：' + escapeHtml(task.errorCode || "-")
+                + " · 任务 ID：" + escapeHtml(task.taskId) + "</p>"
+                : "";
+
+            const actions = [];
+            actions.push(
+                '<button type="button" class="link-button view-chunks-button" data-document-id="'
+                + escapeHtml(task.documentId) + '" data-filename="' + escapeHtml(task.filename) + '">查看文档片段</button>'
+            );
+            if (task.status === "FAILED") {
+                actions.push(
+                    '<button type="button" class="retry-button" data-task-id="'
+                    + escapeHtml(task.taskId) + '">重新处理</button>'
+                );
+            }
+            if (task.status === "COMPLETED") {
+                actions.push('<a class="ask-link" href="/ask.html">去提问</a>');
+            }
+
+            row.innerHTML =
+                "<td>" + escapeHtml(task.filename || "-") + failureHint + techInfo + "</td>" +
+                '<td><span class="status-badge ' + statusClass + '">' + escapeHtml(task.displayStatus || task.status) + "</span></td>" +
+                "<td>" + escapeHtml(task.displayStep || task.step || "-") + "</td>" +
+                "<td>" + escapeHtml(task.chunkCount) + "</td>" +
+                "<td>" + escapeHtml(task.embeddingCount) + "</td>" +
+                "<td>" + escapeHtml(task.vectorWriteCount) + "</td>" +
+                "<td>" + escapeHtml(formatDate(task.updatedAt)) + "</td>" +
+                '<td class="task-actions">' + actions.join(" ") + "</td>";
+
+            const retryButton = row.querySelector(".retry-button");
+            if (retryButton) {
+                retryButton.addEventListener("click", function (event) {
+                    event.stopPropagation();
+                    retryTask(task.taskId);
+                });
+            }
+
+            const viewChunksButton = row.querySelector(".view-chunks-button");
+            if (viewChunksButton) {
+                viewChunksButton.addEventListener("click", function (event) {
+                    event.stopPropagation();
+                    selectDocument(task.documentId, task.filename, row);
+                });
+            }
+
+            tasksBody.appendChild(row);
+        });
+    }
+
+    async function retryTask(taskId) {
+        clearError();
+        setListLoading(true);
+        try {
+            const response = await fetch("/documents/ingestions/" + taskId + "/retry", {
+                method: "POST"
+            });
+            const payload = await parseJsonResponse(response);
+            if (!response.ok) {
+                showError(extractError(payload, response.status));
+                return;
+            }
+            await loadIngestionTasks();
         } catch (networkError) {
             showError({
                 code: "NETWORK_ERROR",
-                message: networkError && networkError.message
-                    ? networkError.message
-                    : "无法加载文档列表，请确认服务已启动。",
+                message: "重新处理失败，请稍后重试。",
                 traceId: "-"
             });
-            documentsPanel.classList.add("hidden");
-            emptyState.classList.add("hidden");
         } finally {
             setListLoading(false);
         }
     }
 
-    function renderDocuments(documents) {
-        documentsBody.innerHTML = "";
-        if (documents.length === 0) {
-            documentsPanel.classList.add("hidden");
-            emptyState.classList.remove("hidden");
-            return;
-        }
-
-        emptyState.classList.add("hidden");
-        documentsPanel.classList.remove("hidden");
-
-        documents.forEach(function (doc) {
-            const row = document.createElement("tr");
-            row.className = "doc-row";
-            row.dataset.documentId = String(doc.documentId);
-            const statusLabel = formatStatus(doc.status);
-            row.innerHTML =
-                "<td>" + escapeHtml(doc.documentId) + "</td>" +
-                "<td>" + escapeHtml(doc.title || "-") + "</td>" +
-                "<td>" + escapeHtml(doc.chunkCount) + "</td>" +
-                "<td>" + statusLabel + "</td>" +
-                "<td>" + escapeHtml(formatDate(doc.createdAt)) + "</td>";
-            row.addEventListener("click", function () {
-                selectDocument(doc.documentId, doc.title, row);
-            });
-            documentsBody.appendChild(row);
-        });
-    }
-
-    function formatStatus(status) {
-        if (!status) {
-            return "-";
-        }
-        if (status === "READY") {
-            return '<span class="status-badge ready">READY</span>';
-        }
-        return escapeHtml(status);
-    }
-
     async function selectDocument(documentId, title, row) {
-        Array.from(documentsBody.querySelectorAll(".doc-row")).forEach(function (item) {
+        Array.from(tasksBody.querySelectorAll(".task-row")).forEach(function (item) {
             item.classList.toggle("selected", item === row);
         });
 
-        chunksTitle.textContent = "Chunks · " + (title || "Document " + documentId);
+        chunksTitle.textContent = "文档片段（Chunk）· " + (title || "文档 " + documentId);
         chunksPanel.classList.remove("hidden");
         chunksList.innerHTML = "";
         chunksEmpty.classList.add("hidden");
@@ -185,21 +248,13 @@
 
         try {
             const response = await fetch("/documents/" + documentId + "/chunks");
-            const responseText = await response.text();
-            let payload = null;
-            if (responseText) {
-                try {
-                    payload = JSON.parse(responseText);
-                } catch (parseError) {
-                    payload = null;
-                }
-            }
+            const payload = await parseJsonResponse(response);
 
             if (!response.ok) {
-                showError(extractError(payload, response.status, responseText));
+                showError(extractError(payload, response.status));
                 chunksList.innerHTML = "";
                 chunksEmpty.classList.remove("hidden");
-                chunksEmpty.textContent = "无法加载 chunks。";
+                chunksEmpty.textContent = "无法加载文档片段。";
                 return;
             }
 
@@ -208,13 +263,11 @@
         } catch (networkError) {
             showError({
                 code: "NETWORK_ERROR",
-                message: networkError && networkError.message
-                    ? networkError.message
-                    : "无法加载 chunks。",
+                message: "无法加载文档片段。",
                 traceId: "-"
             });
             chunksEmpty.classList.remove("hidden");
-            chunksEmpty.textContent = "无法加载 chunks。";
+            chunksEmpty.textContent = "无法加载文档片段。";
         } finally {
             setListLoading(false);
         }
@@ -224,7 +277,7 @@
         chunksList.innerHTML = "";
         if (chunks.length === 0) {
             chunksEmpty.classList.remove("hidden");
-            chunksEmpty.textContent = "该文档暂无 chunks。";
+            chunksEmpty.textContent = "该文档暂无文档片段，可能仍在处理中。";
             return;
         }
 
@@ -235,8 +288,8 @@
 
             const meta = document.createElement("div");
             meta.className = "chunk-meta";
-            meta.textContent = "chunkId: " + safeValue(chunk.id) +
-                " · index: " + safeValue(chunk.chunkIndex) +
+            meta.textContent = "片段 ID: " + safeValue(chunk.id) +
+                " · 序号: " + safeValue(chunk.chunkIndex) +
                 (chunk.headingPath ? " · " + chunk.headingPath : "");
             item.appendChild(meta);
 
@@ -249,18 +302,10 @@
         });
     }
 
-    function hideChunks() {
-        chunksPanel.classList.add("hidden");
-    }
-
     function setUploadLoading(isLoading) {
         uploadButton.disabled = isLoading;
         uploadLoading.classList.toggle("hidden", !isLoading);
-        if (isLoading) {
-            uploadLoading.classList.add("visible");
-        } else {
-            uploadLoading.classList.remove("visible");
-        }
+        uploadLoading.classList.toggle("visible", isLoading);
     }
 
     function setListLoading(isLoading) {
@@ -276,13 +321,13 @@
     }
 
     function showError(error) {
-        errorCode.textContent = "code: " + (error.code || "UNKNOWN");
-        errorMessage.textContent = "message: " + (error.message || "未知错误");
+        errorCode.textContent = "错误码: " + (error.code || "UNKNOWN");
+        errorMessage.textContent = error.message || "未知错误";
         errorTraceId.textContent = "traceId: " + (error.traceId || "-");
         errorStatus.classList.add("visible");
     }
 
-    function extractError(payload, status, responseText) {
+    function extractError(payload, status) {
         if (payload && payload.code && payload.message) {
             return {
                 code: payload.code,
@@ -292,9 +337,21 @@
         }
         return {
             code: "HTTP_" + status,
-            message: responseText || "请求失败。",
+            message: "请求失败。",
             traceId: "-"
         };
+    }
+
+    async function parseJsonResponse(response) {
+        const responseText = await response.text();
+        if (!responseText) {
+            return null;
+        }
+        try {
+            return JSON.parse(responseText);
+        } catch (parseError) {
+            return null;
+        }
     }
 
     function toSnippet(content) {

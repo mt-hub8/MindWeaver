@@ -84,6 +84,16 @@ public class DocumentService {
         return chunkEntities.size();
     }
 
+    @Transactional
+    public void clearChunksForRetry(Long documentId) {
+        DocumentEntity document = findDocumentOrThrow(documentId);
+        documentChunkRepository.deleteByDocumentId(documentId);
+        document.setStatus(DocumentStatus.UPLOADED);
+        document.setChunkCount(0);
+        document.setErrorMessage(null);
+        documentRepository.save(document);
+    }
+
     @Transactional(readOnly = true)
     public List<DocumentSummaryResponse> listDocuments() {
         return documentRepository.findAllByOrderByCreatedAtDesc()

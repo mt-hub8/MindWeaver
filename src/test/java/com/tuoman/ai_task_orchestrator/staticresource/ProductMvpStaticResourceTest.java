@@ -5,10 +5,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
-import static org.hamcrest.Matchers.containsString;
+import java.nio.charset.StandardCharsets;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.forwardedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -27,66 +29,69 @@ class ProductMvpStaticResourceTest {
     }
 
     @Test
-    void shouldServeIndexHtmlDirectly() throws Exception {
-        mockMvc.perform(get("/index.html"))
-                .andExpect(status().isOk())
-                .andExpect(content().string(containsString("AI Knowledge Assistant")))
-                .andExpect(content().string(containsString("Ask Knowledge Base")))
-                .andExpect(content().string(containsString("System Capabilities")));
+    void shouldServeIndexHtmlWithChineseProductPath() throws Exception {
+        String content = fetchUtf8("/index.html");
+        assertThat(content).contains("知识库问答");
+        assertThat(content).contains("文档管理");
+        assertThat(content).contains("检索质量评估");
     }
 
     @Test
-    void shouldServeAskHtml() throws Exception {
-        mockMvc.perform(get("/ask.html"))
-                .andExpect(status().isOk())
-                .andExpect(content().string(containsString("Ask Knowledge Base")))
-                .andExpect(content().string(containsString("Upload-to-Ask")))
-                .andExpect(content().string(containsString("/ask.js")));
+    void shouldServeAskHtmlWithChineseUploadToAskFlow() throws Exception {
+        String content = fetchUtf8("/ask.html");
+        assertThat(content).contains("知识库问答");
+        assertThat(content).contains("去上传文档");
+        assertThat(content).contains("检索引用（Citation）");
+        assertThat(content).contains("/ask.js");
     }
 
     @Test
-    void shouldServeDocumentsHtmlWithUploadSection() throws Exception {
-        mockMvc.perform(get("/documents.html"))
-                .andExpect(status().isOk())
-                .andExpect(content().string(containsString("Upload Document")))
-                .andExpect(content().string(containsString(".pdf")));
+    void shouldServeDocumentsHtmlWithChineseUploadSection() throws Exception {
+        String content = fetchUtf8("/documents.html");
+        assertThat(content).contains("文档管理");
+        assertThat(content).contains("上传文档");
+        assertThat(content).contains(".pdf");
     }
 
     @Test
-    void shouldServeDocumentsJsWithUploadEndpoint() throws Exception {
-        mockMvc.perform(get("/documents.js"))
-                .andExpect(status().isOk())
-                .andExpect(content().string(containsString("/documents/upload")));
+    void shouldServeDocumentsJsWithIngestionEndpoints() throws Exception {
+        String content = fetchUtf8("/documents.js");
+        assertThat(content).contains("/documents/upload");
+        assertThat(content).contains("/documents/ingestions");
+        assertThat(content).contains("重新处理");
     }
 
     @Test
-    void shouldServeDocumentsHtml() throws Exception {
-        mockMvc.perform(get("/documents.html"))
-                .andExpect(status().isOk())
-                .andExpect(content().string(containsString("No documents have been ingested yet")))
-                .andExpect(content().string(containsString("/documents.js")));
+    void shouldServeDocumentsHtmlWithChineseEmptyState() throws Exception {
+        String content = fetchUtf8("/documents.html");
+        assertThat(content).contains("还没有上传任何文档");
+        assertThat(content).contains("/documents.js");
     }
 
     @Test
     void shouldServeEvaluationHtml() throws Exception {
-        mockMvc.perform(get("/evaluation.html"))
-                .andExpect(status().isOk())
-                .andExpect(content().string(containsString("HitRate@K")))
-                .andExpect(content().string(containsString("docs/evaluation/reports/")));
+        String content = fetchUtf8("/evaluation.html");
+        assertThat(content).contains("HitRate@K");
+        assertThat(content).contains("docs/evaluation/reports/");
     }
 
     @Test
     void shouldServeRagDemoHtmlAsCompatibilityEntry() throws Exception {
-        mockMvc.perform(get("/rag-demo.html"))
-                .andExpect(status().isOk())
-                .andExpect(content().string(containsString("Ask Knowledge Base")))
-                .andExpect(content().string(containsString("/ask.js")));
+        String content = fetchUtf8("/rag-demo.html");
+        assertThat(content).contains("知识库问答");
+        assertThat(content).contains("/ask.js");
     }
 
     @Test
     void shouldServeSharedAppCss() throws Exception {
-        mockMvc.perform(get("/app.css"))
+        String content = fetchUtf8("/app.css");
+        assertThat(content).contains(".app-nav");
+    }
+
+    private String fetchUtf8(String path) throws Exception {
+        MvcResult result = mockMvc.perform(get(path))
                 .andExpect(status().isOk())
-                .andExpect(content().string(containsString(".app-nav")));
+                .andReturn();
+        return result.getResponse().getContentAsString(StandardCharsets.UTF_8);
     }
 }

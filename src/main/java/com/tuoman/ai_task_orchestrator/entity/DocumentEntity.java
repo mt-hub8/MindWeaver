@@ -36,6 +36,9 @@ public class DocumentEntity {
     @Column(name = "error_message", columnDefinition = "TEXT")
     private String errorMessage;
 
+    @Column(name = "source_text", columnDefinition = "MEDIUMTEXT")
+    private String sourceText;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 

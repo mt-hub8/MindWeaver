@@ -52,6 +52,22 @@ public class BusinessException extends RuntimeException {
         return new BusinessException(ErrorCode.RETRIEVAL_EVALUATION_ERROR, HttpStatus.BAD_REQUEST, message);
     }
 
+    public static BusinessException ingestionTaskNotFound() {
+        return new BusinessException(ErrorCode.INGESTION_TASK_NOT_FOUND, HttpStatus.NOT_FOUND, "文档摄入任务不存在");
+    }
+
+    public static BusinessException ingestionRetryNotAllowed(String message) {
+        return new BusinessException(ErrorCode.INGESTION_RETRY_NOT_ALLOWED, HttpStatus.CONFLICT, message);
+    }
+
+    public static BusinessException ingestionMaxRetryExceeded() {
+        return new BusinessException(
+                ErrorCode.INGESTION_MAX_RETRY_EXCEEDED,
+                HttpStatus.CONFLICT,
+                "已达到最大重试次数，请检查失败原因后重新上传文档"
+        );
+    }
+
     public static BusinessException internalError(String message) {
         return new BusinessException(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR, message);
     }

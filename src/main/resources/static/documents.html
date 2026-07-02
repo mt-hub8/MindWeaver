@@ -3,51 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Documents</title>
+    <title>文档管理</title>
     <link rel="stylesheet" href="/app.css">
 </head>
 <body>
 <div class="page">
-    <nav class="app-nav" aria-label="Main navigation">
-        <a class="brand" href="/">AI Knowledge Assistant</a>
-        <a class="nav-link" href="/">Home</a>
-        <a class="nav-link" href="/ask.html">Ask</a>
-        <a class="nav-link active" href="/documents.html" aria-current="page">Documents</a>
-        <a class="nav-link" href="/evaluation.html">Evaluation</a>
+    <nav class="app-nav" aria-label="主导航">
+        <a class="brand" href="/">AI 知识库助手</a>
+        <a class="nav-link" href="/">首页</a>
+        <a class="nav-link" href="/ask.html">知识库问答</a>
+        <a class="nav-link active" href="/documents.html" aria-current="page">文档管理</a>
+        <a class="nav-link" href="/evaluation.html">检索质量评估</a>
     </nav>
 
     <header class="hero">
-        <h1>Documents</h1>
-        <p class="lead">上传 <code>.txt</code> / <code>.md</code> / 文本型 <code>.pdf</code>，同步完成切块与 embedding，然后到 Ask 页面提问。</p>
+        <h1>文档管理</h1>
+        <p class="lead">上传 <code>.txt</code>、<code>.md</code> 或文本型 <code>.pdf</code>，系统会在后台异步建立知识库索引（向量索引）。处理完成后，可前往「知识库问答」页面提问。</p>
     </header>
 
     <section class="panel upload-panel" aria-labelledby="upload-title">
-        <h2 id="upload-title">Upload Document</h2>
+        <h2 id="upload-title">上传文档</h2>
         <p class="upload-hint">
-            支持 <strong>.txt</strong>、<strong>.md</strong>、<strong>.pdf</strong>（文本型 PDF，最大 2MB）。
-            不支持扫描版 PDF / OCR、加密 PDF、Word / Excel。
+            支持 <strong>.txt</strong>、<strong>.md</strong>、<strong>文本型 .pdf</strong>（最大 2MB）。
+            当前暂不支持扫描版 PDF / 图片 OCR、加密 PDF、Word / Excel。
         </p>
         <label for="file-input">选择文件</label>
         <input id="file-input" type="file" accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf">
         <div class="upload-actions">
-            <button id="upload-button" type="button">Upload</button>
-            <span id="upload-loading" class="status loading hidden" role="status">正在上传并生成 embedding…</span>
+            <button id="upload-button" type="button">上传文档</button>
+            <button id="refresh-tasks-button" type="button">刷新任务状态</button>
+            <span id="upload-loading" class="status loading hidden" role="status">正在提交文档…</span>
         </div>
         <div id="upload-success" class="success-box hidden" aria-live="polite">
-            <h3>Upload successful</h3>
+            <h3>文档已提交</h3>
+            <p id="upload-success-message" class="muted"></p>
             <dl>
-                <dt>documentId</dt><dd id="summary-document-id"></dd>
-                <dt>title</dt><dd id="summary-title"></dd>
-                <dt>status</dt><dd id="summary-status"></dd>
-                <dt>chunkCount</dt><dd id="summary-chunk-count"></dd>
-                <dt>embeddingCount</dt><dd id="summary-embedding-count"></dd>
-                <dt>vectorWriteCount</dt><dd id="summary-vector-count"></dd>
+                <dt>任务 ID</dt><dd id="summary-task-id"></dd>
+                <dt>文档 ID</dt><dd id="summary-document-id"></dd>
+                <dt>文件名</dt><dd id="summary-filename"></dd>
+                <dt>处理状态</dt><dd id="summary-status"></dd>
             </dl>
         </div>
     </section>
 
     <div id="loading-status" class="status loading hidden" role="status" aria-live="polite">
-        正在加载文档列表…
+        正在加载摄入任务列表…
     </div>
 
     <div id="error-status" class="status error" role="alert" aria-live="assertive">
@@ -59,28 +59,31 @@
         </dl>
     </div>
 
-    <p id="documents-empty" class="empty-state hidden">No documents have been ingested yet. Upload a document above to get started.</p>
+    <p id="tasks-empty" class="empty-state hidden">还没有上传任何文档。请上传 .txt、.md 或文本型 PDF，系统会自动建立知识库索引。处理完成后，你可以前往「知识库问答」页面提问。</p>
 
-    <section id="documents-panel" class="panel hidden" aria-labelledby="documents-title">
-        <h2 id="documents-title">Document List</h2>
-        <table class="doc-table">
+    <section id="tasks-panel" class="panel hidden" aria-labelledby="tasks-title">
+        <h2 id="tasks-title">最近上传任务</h2>
+        <p class="muted">页面每 3 秒自动刷新处理状态。失败任务可点击「重新处理」；已完成任务可前往问答。</p>
+        <table class="doc-table ingestion-table">
             <thead>
             <tr>
-                <th>ID</th>
-                <th>Title</th>
-                <th>Chunks</th>
-                <th>Status</th>
-                <th>Created</th>
+                <th>文件名</th>
+                <th>处理状态</th>
+                <th>当前步骤</th>
+                <th>文档片段数</th>
+                <th>向量数</th>
+                <th>索引写入数</th>
+                <th>更新时间</th>
+                <th>操作</th>
             </tr>
             </thead>
-            <tbody id="documents-body"></tbody>
+            <tbody id="tasks-body"></tbody>
         </table>
-        <p class="muted">点击一行查看该文档的 chunks。</p>
     </section>
 
     <section id="chunks-panel" class="panel hidden" aria-labelledby="chunks-title">
-        <h2 id="chunks-title">Chunks</h2>
-        <p id="chunks-empty" class="empty-state hidden">该文档暂无 chunks。</p>
+        <h2 id="chunks-title">文档片段（Chunk）</h2>
+        <p id="chunks-empty" class="empty-state hidden">该文档暂无文档片段。</p>
         <ul id="chunks-list" class="chunk-list"></ul>
     </section>
 </div>

@@ -12,4 +12,8 @@ import org.springframework.stereotype.Component;
 public class DocumentIngestionProperties {
 
     private long maxFileSizeBytes = 2 * 1024 * 1024;
+
+    private int maxRetryCount = 3;
+
+    private int recentTaskLimit = 20;
 }

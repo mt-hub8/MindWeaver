@@ -399,3 +399,58 @@ pre.path-box {
 .status-badge.ready {
     color: var(--accent);
 }
+
+.status-badge.pending {
+    background: #fef9c3;
+    color: #854d0e;
+}
+
+.status-badge.failed {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.task-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.task-error {
+    margin: 0.25rem 0 0;
+}
+
+.task-tech {
+    margin: 0.15rem 0 0;
+    font-size: 0.85rem;
+}
+
+.button-link {
+    display: inline-block;
+    margin-right: 0.75rem;
+    padding: 0.45rem 0.9rem;
+    border-radius: 0.375rem;
+    background: #2563eb;
+    color: #fff;
+    text-decoration: none;
+}
+
+.button-link.secondary {
+    background: #e5e7eb;
+    color: #111827;
+}
+
+.retry-button,
+.link-button {
+    border: none;
+    background: none;
+    color: #2563eb;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+}
+
+.ask-link {
+    color: #2563eb;
+}

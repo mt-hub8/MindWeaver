@@ -2,7 +2,7 @@ package com.tuoman.ai_task_orchestrator.controller;
 
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
 import com.tuoman.ai_task_orchestrator.common.error.GlobalExceptionHandler;
-import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionResponse;
+import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionSubmitResponse;
 import com.tuoman.ai_task_orchestrator.service.DocumentEmbeddingService;
 import com.tuoman.ai_task_orchestrator.service.DocumentIngestionService;
 import com.tuoman.ai_task_orchestrator.service.DocumentService;
@@ -38,14 +38,14 @@ class DocumentUploadApiTest {
     private DocumentIngestionService documentIngestionService;
 
     @Test
-    void uploadShouldReturnIngestionSummary() throws Exception {
-        when(documentIngestionService.ingest(any())).thenReturn(new DocumentIngestionResponse(
+    void uploadShouldReturnAcceptedIngestionTask() throws Exception {
+        when(documentIngestionService.submitUpload(any())).thenReturn(new DocumentIngestionSubmitResponse(
+                1001L,
                 42L,
                 "demo.txt",
-                "READY",
-                3,
-                3,
-                3
+                "PENDING",
+                "待处理",
+                "文档已提交，正在排队处理。"
         ));
 
         mockMvc.perform(multipart("/documents/upload")
@@ -55,25 +55,25 @@ class DocumentUploadApiTest {
                                 "text/plain",
                                 "cache key content".getBytes()
                         )))
-                .andExpect(status().isOk())
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.taskId").value(1001))
                 .andExpect(jsonPath("$.documentId").value(42))
-                .andExpect(jsonPath("$.title").value("demo.txt"))
-                .andExpect(jsonPath("$.status").value("READY"))
-                .andExpect(jsonPath("$.chunkCount").value(3))
-                .andExpect(jsonPath("$.embeddingCount").value(3))
-                .andExpect(jsonPath("$.vectorWriteCount").value(3));
+                .andExpect(jsonPath("$.filename").value("demo.txt"))
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.displayStatus").value("待处理"))
+                .andExpect(jsonPath("$.displayMessage").value("文档已提交，正在排队处理。"));
     }
 
     @Test
     void uploadShouldReturnValidationError() throws Exception {
-        when(documentIngestionService.ingest(any()))
-                .thenThrow(BusinessException.validationError("File must not be empty"));
+        when(documentIngestionService.submitUpload(any()))
+                .thenThrow(BusinessException.validationError("提取的文档文本不能为空"));
 
         mockMvc.perform(multipart("/documents/upload")
                         .file(new MockMultipartFile("file", "demo.txt", "text/plain", new byte[0]))
                         .contentType(MediaType.MULTIPART_FORM_DATA))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
-                .andExpect(jsonPath("$.message").value("File must not be empty"));
+                .andExpect(jsonPath("$.message").value("提取的文档文本不能为空"));
     }
 }

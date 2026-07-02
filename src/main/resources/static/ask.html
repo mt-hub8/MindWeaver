@@ -3,47 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ask Knowledge Base</title>
+    <title>知识库问答</title>
     <link rel="stylesheet" href="/app.css">
     <link rel="stylesheet" href="/ask.css">
 </head>
 <body>
 <div class="page">
-    <nav class="app-nav" aria-label="Main navigation">
-        <a class="brand" href="/">AI Knowledge Assistant</a>
-        <a class="nav-link" href="/">Home</a>
-        <a class="nav-link active" href="/ask.html" aria-current="page">Ask</a>
-        <a class="nav-link" href="/documents.html">Documents</a>
-        <a class="nav-link" href="/evaluation.html">Evaluation</a>
+    <nav class="app-nav" aria-label="主导航">
+        <a class="brand" href="/">AI 知识库助手</a>
+        <a class="nav-link" href="/">首页</a>
+        <a class="nav-link active" href="/ask.html" aria-current="page">知识库问答</a>
+        <a class="nav-link" href="/documents.html">文档管理</a>
+        <a class="nav-link" href="/evaluation.html">检索质量评估</a>
     </nav>
 
     <header class="hero">
-        <h1>Ask Knowledge Base</h1>
-        <p class="lead">基于已摄入文档提问，系统返回带引用的回答。Citations 用于追踪答案来源，降低幻觉风险。</p>
+        <h1>知识库问答</h1>
+        <p class="lead">基于已摄入文档提问，系统返回带检索引用（Citation）的回答，帮助核对来源、降低幻觉风险。</p>
     </header>
 
     <section class="panel quick-start" aria-labelledby="upload-to-ask-title">
-        <h2 id="upload-to-ask-title">Upload-to-Ask 流程</h2>
+        <h2 id="upload-to-ask-title">上传文档后提问（Upload-to-Ask）</h2>
         <ol>
-            <li>打开 <a href="/documents.html">Documents</a> 页面。</li>
-            <li>上传 <code>.txt</code>、<code>.md</code> 或文本型 <code>.pdf</code>（不支持扫描版 OCR）。</li>
-            <li>等待上传成功 summary（chunk / embedding / vector 写入完成）。</li>
-            <li>返回本页 Ask，输入与文档相关的问题。</li>
-            <li>查看 Answer 与 Citations，核对 retrieval metadata。</li>
+            <li>前往 <a href="/documents.html">文档管理</a> 页面上传文档。</li>
+            <li>等待处理状态变为「已完成」（系统会异步完成切块、向量生成与知识库索引写入）。</li>
+            <li>回到本页「知识库问答」，输入与文档相关的问题。</li>
+            <li>查看答案与检索引用（Citation），核对检索 metadata。</li>
         </ol>
+        <p>
+            <a class="button-link" href="/documents.html">去上传文档</a>
+            <a class="button-link secondary" href="/documents.html">查看文档管理</a>
+        </p>
     </section>
 
     <section class="panel" aria-labelledby="query-section-title">
-        <h2 id="query-section-title">提问</h2>
+        <h2 id="query-section-title">开始提问</h2>
         <label for="query-input">您的问题</label>
         <textarea id="query-input" placeholder="例如：Embedding Cache 的 cache key 由哪些字段组成？"></textarea>
 
         <div class="form-row">
             <div>
-                <label for="topk-input">Top K（检索条数）</label>
+                <label for="topk-input">检索条数（Top K）</label>
                 <input id="topk-input" type="number" min="1" max="10" value="5">
             </div>
-            <button id="ask-button" type="button">Ask</button>
+            <button id="ask-button" type="button">开始提问</button>
         </div>
 
         <div class="suggested-questions">
@@ -66,23 +69,24 @@
     </section>
 
     <section id="answer-section" class="panel hidden" aria-labelledby="answer-section-title">
-        <h2 id="answer-section-title">Answer</h2>
+        <h2 id="answer-section-title">回答</h2>
         <div id="answer-content" class="answer-box"></div>
     </section>
 
     <section id="citations-section" class="panel hidden" aria-labelledby="citations-section-title">
-        <h2 id="citations-section-title">Citations</h2>
+        <h2 id="citations-section-title">检索引用（Citation）</h2>
         <p id="citations-empty" class="empty-state hidden">暂无引用来源。</p>
         <ul id="citations-list" class="citation-list"></ul>
+        <p class="muted">点击引用可查看答案依据的文档片段来源。</p>
     </section>
 
     <section id="retrieval-section" class="panel hidden metadata" aria-labelledby="retrieval-section-title">
-        <h2 id="retrieval-section-title">Retrieval Metadata</h2>
+        <h2 id="retrieval-section-title">检索 Metadata</h2>
         <pre id="retrieval-metadata"></pre>
     </section>
 
     <section id="generation-section" class="panel hidden metadata" aria-labelledby="generation-section-title">
-        <h2 id="generation-section-title">Generation Metadata</h2>
+        <h2 id="generation-section-title">生成 Metadata</h2>
         <pre id="generation-metadata"></pre>
     </section>
 </div>
