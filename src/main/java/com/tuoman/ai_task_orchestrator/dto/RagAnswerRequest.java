@@ -18,4 +18,6 @@ public class RagAnswerRequest {
     @Min(value = 1, message = "topK must be greater than or equal to 1")
     @Max(value = 10, message = "topK must be less than or equal to 10")
     private Integer topK;
+
+    private Long collectionId;
 }

@@ -40,7 +40,7 @@ public class SimpleLexicalRetriever implements LexicalRetriever {
         }
 
         Set<String> queryTokens = LexicalTokenUtils.tokenizeToSet(request.query());
-        List<DocumentChunkEntity> chunks = loadChunks(request.documentId());
+        List<DocumentChunkEntity> chunks = loadChunks(request.documentId(), request.scopedDocumentIds());
 
         List<ScoredChunk> scoredChunks = new ArrayList<>();
         for (DocumentChunkEntity chunk : chunks) {
@@ -79,10 +79,17 @@ public class SimpleLexicalRetriever implements LexicalRetriever {
         return PROVIDER;
     }
 
-    private List<DocumentChunkEntity> loadChunks(Long documentId) {
+    private List<DocumentChunkEntity> loadChunks(Long documentId, List<Long> scopedDocumentIds) {
         Set<Long> retrievableChunkIds = documentLifecycleFilterService.findRetrievableChunkIds();
         List<DocumentChunkEntity> chunks;
-        if (documentId == null) {
+        if (scopedDocumentIds != null) {
+            if (scopedDocumentIds.isEmpty()) {
+                return List.of();
+            }
+            chunks = scopedDocumentIds.stream()
+                    .flatMap(id -> documentChunkRepository.findByDocumentIdOrderByChunkIndexAsc(id).stream())
+                    .toList();
+        } else if (documentId == null) {
             chunks = documentChunkRepository.findAll();
         } else {
             chunks = documentChunkRepository.findByDocumentIdOrderByChunkIndexAsc(documentId);

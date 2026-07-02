@@ -2,6 +2,7 @@ package com.tuoman.ai_task_orchestrator.service;
 
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
 import com.tuoman.ai_task_orchestrator.document.lifecycle.DocumentLifecycleDisplayTexts;
+import com.tuoman.ai_task_orchestrator.dto.CollectionMembershipResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentChunkResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentDeleteResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentDetailResponse;
@@ -37,6 +38,8 @@ public class DocumentService {
     private final DocumentChunkRepository documentChunkRepository;
 
     private final DocumentChunker documentChunker;
+
+    private final CollectionService collectionService;
 
     @Transactional(noRollbackFor = BusinessException.class)
     public DocumentUploadResponse uploadDocument(MultipartFile file) {
@@ -247,6 +250,9 @@ public class DocumentService {
         }
         int currentGeneration = document.getCurrentGeneration() == null ? 1 : document.getCurrentGeneration();
         boolean canAsk = active && document.getStatus() == DocumentStatus.READY;
+        List<CollectionMembershipResponse> memberships = collectionService.findMembershipsByDocumentId(document.getId());
+        List<Long> collectionIds = memberships.stream().map(CollectionMembershipResponse::getCollectionId).toList();
+        List<String> collectionNames = memberships.stream().map(CollectionMembershipResponse::getName).toList();
         return new DocumentSummaryResponse(
                 document.getId(),
                 document.getOriginalFilename(),
@@ -264,6 +270,11 @@ public class DocumentService {
                 document.getLastReindexedAt(),
                 canReindex,
                 reindexDisabledReason,
+                memberships,
+                collectionIds,
+                collectionNames,
+                true,
+                !memberships.isEmpty(),
                 document.getCreatedAt(),
                 document.getUpdatedAt()
         );

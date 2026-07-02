@@ -13,6 +13,7 @@
         <a class="nav-link active" href="/" aria-current="page">首页</a>
         <a class="nav-link" href="/ask.html">知识库问答</a>
         <a class="nav-link" href="/documents.html">文档管理</a>
+        <a class="nav-link" href="/collections.html">知识库分组</a>
         <a class="nav-link" href="/evaluation.html">检索质量评估</a>
         <a class="nav-link" href="/ingestion-analytics.html">文档处理分析</a>
     </nav>
@@ -31,6 +32,10 @@
         <a class="entry-card" href="/documents.html">
             <h2>文档管理</h2>
             <p>上传 .txt / .md / 文本型 PDF，管理文档生命周期（删除、重新索引），查看异步摄入任务与文档片段预览。</p>
+        </a>
+        <a class="entry-card" href="/collections.html">
+            <h2>知识库分组</h2>
+            <p>管理文档分组，并在问答时选择检索范围：全部文档，或仅在该分组中提问。</p>
         </a>
         <a class="entry-card" href="/ask.html">
             <h2>知识库问答</h2>
@@ -89,6 +94,10 @@
                 兼顾语义相似（dense）与关键词匹配（lexical），经 RRF 融合。
             </li>
             <li>
+                <strong>知识库分组与范围检索（V5.0）</strong>
+                创建知识库分组、管理文档归属，在问答时选择全部文档或指定分组；与 V4.0 生命周期过滤共同生效。
+            </li>
+            <li>
                 <strong>知识库生命周期管理（V4.0）</strong>
                 文档软删除、重新建立索引、当前有效片段过滤；已删除文档与旧版本片段不会进入问答。
             </li>
@@ -104,6 +113,7 @@
         <p class="muted">Web UI（本页及子页面）+ REST API（RAG、Documents、Evaluation）。技术细节见项目 README。</p>
         <ul>
             <li>产品首页：<code>/</code> 或 <code>/index.html</code></li>
+            <li>知识库分组：<code>/collections.html</code></li>
             <li>知识库问答：<code>/ask.html</code>（兼容 <code>/rag-demo.html</code>）</li>
             <li>文档管理：<code>/documents.html</code> · API：<code>POST /documents/upload</code>（异步）</li>
             <li>RAG API：<code>POST /rag/answers</code></li>

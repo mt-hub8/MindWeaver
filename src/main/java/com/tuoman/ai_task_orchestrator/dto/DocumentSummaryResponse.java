@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Getter
 @AllArgsConstructor
@@ -40,6 +41,16 @@ public class DocumentSummaryResponse {
     private Boolean canReindex;
 
     private String reindexDisabledReason;
+
+    private List<CollectionMembershipResponse> collections;
+
+    private List<Long> collectionIds;
+
+    private List<String> collectionNames;
+
+    private Boolean canAssignToCollection;
+
+    private Boolean canRemoveFromCollection;
 
     private LocalDateTime createdAt;
 

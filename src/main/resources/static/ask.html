@@ -12,8 +12,9 @@
     <nav class="app-nav" aria-label="主导航">
         <a class="brand" href="/">AI 知识库助手</a>
         <a class="nav-link" href="/">首页</a>
-        <a class="nav-link active" href="/ask.html" aria-current="page">知识库问答</a>
         <a class="nav-link" href="/documents.html">文档管理</a>
+        <a class="nav-link" href="/collections.html">知识库分组</a>
+        <a class="nav-link active" href="/ask.html" aria-current="page">知识库问答</a>
         <a class="nav-link" href="/evaluation.html">检索质量评估</a>
         <a class="nav-link" href="/ingestion-analytics.html">文档处理分析</a>
     </nav>
@@ -49,6 +50,17 @@
 
     <section class="panel" aria-labelledby="query-section-title">
         <h2 id="query-section-title">开始提问</h2>
+
+        <div class="form-row scope-row">
+            <div class="scope-field">
+                <label for="scope-select">问答范围</label>
+                <select id="scope-select">
+                    <option value="">全部文档</option>
+                </select>
+                <p id="scope-hint" class="muted scope-hint">当前回答只基于所选分组中的文档。已删除文档不会进入回答引用；旧版本片段不会进入回答引用。</p>
+            </div>
+        </div>
+
         <label for="query-input">您的问题</label>
         <textarea id="query-input" placeholder="例如：Embedding Cache 的 cache key 由哪些字段组成？"></textarea>
 
@@ -81,6 +93,7 @@
 
     <section id="answer-section" class="panel hidden" aria-labelledby="answer-section-title">
         <h2 id="answer-section-title">回答</h2>
+        <p id="answer-scope-label" class="muted hidden"></p>
         <div id="answer-content" class="answer-box"></div>
     </section>
 

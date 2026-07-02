@@ -16,6 +16,7 @@ import com.tuoman.ai_task_orchestrator.hybrid.LexicalRetrievalResponse;
 import com.tuoman.ai_task_orchestrator.hybrid.LexicalRetriever;
 import com.tuoman.ai_task_orchestrator.hybrid.RagHybridProperties;
 import com.tuoman.ai_task_orchestrator.hybrid.RrfFusionRanker;
+import com.tuoman.ai_task_orchestrator.retrieval.RetrievalScope;
 import com.tuoman.ai_task_orchestrator.service.DocumentLifecycleFilterService;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorSearchFilter;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorSearchRequest;
@@ -50,19 +51,30 @@ public class RagTwoStageRetrievalService {
     private final DocumentLifecycleFilterService documentLifecycleFilterService;
 
     public RagRetrievalOutcome retrieve(String query, int finalTopK) {
-        return retrieve(query, finalTopK, rerankProperties.isEnabled());
+        return retrieve(query, finalTopK, RetrievalScope.allDocuments());
+    }
+
+    public RagRetrievalOutcome retrieve(String query, int finalTopK, RetrievalScope scope) {
+        return retrieve(query, finalTopK, rerankProperties.isEnabled(), scope);
     }
 
     public RagRetrievalOutcome retrieve(String query, int finalTopK, boolean rerankEnabled) {
-        if (hybridProperties.isEnabled()) {
-            return retrieveHybrid(query, finalTopK, rerankEnabled);
-        }
-        return retrieveDenseOnly(query, finalTopK, rerankEnabled);
+        return retrieve(query, finalTopK, rerankEnabled, RetrievalScope.allDocuments());
     }
 
-    private RagRetrievalOutcome retrieveDenseOnly(String query, int finalTopK, boolean rerankEnabled) {
+    public RagRetrievalOutcome retrieve(String query, int finalTopK, boolean rerankEnabled, RetrievalScope scope) {
+        if (scope == null) {
+            scope = RetrievalScope.allDocuments();
+        }
+        if (hybridProperties.isEnabled()) {
+            return retrieveHybrid(query, finalTopK, rerankEnabled, scope);
+        }
+        return retrieveDenseOnly(query, finalTopK, rerankEnabled, scope);
+    }
+
+    private RagRetrievalOutcome retrieveDenseOnly(String query, int finalTopK, boolean rerankEnabled, RetrievalScope scope) {
         int searchTopK = rerankEnabled ? resolveCandidateTopK(finalTopK) : finalTopK;
-        List<DocumentSearchResultResponse> vectorResults = search(query, searchTopK);
+        List<DocumentSearchResultResponse> vectorResults = search(query, searchTopK, scope);
 
         if (!rerankEnabled) {
             List<RagRetrievedChunk> chunks = new ArrayList<>();
@@ -87,8 +99,8 @@ public class RagTwoStageRetrievalService {
                         null
                 ));
             }
-            return new RagRetrievalOutcome(
-                    chunks,
+            return buildOutcome(
+                    filterChunksByScope(chunks, scope),
                     finalTopK,
                     finalTopK,
                     false,
@@ -139,8 +151,8 @@ public class RagTwoStageRetrievalService {
                 ))
                 .toList();
 
-        return new RagRetrievalOutcome(
-                chunks,
+        return buildOutcome(
+                filterChunksByScope(chunks, scope),
                 finalTopK,
                 searchTopK,
                 true,
@@ -157,21 +169,25 @@ public class RagTwoStageRetrievalService {
         );
     }
 
-    private RagRetrievalOutcome retrieveHybrid(String query, int finalTopK, boolean rerankEnabled) {
+    private RagRetrievalOutcome retrieveHybrid(String query, int finalTopK, boolean rerankEnabled, RetrievalScope scope) {
         validateHybridFusionStrategy();
         int denseTopK = resolveHybridDenseTopK(finalTopK);
         int lexicalTopK = resolveHybridLexicalTopK();
+        Set<Long> allowedDocumentIds = scope.isCollectionScoped() ? scope.allowedDocumentIdsOrEmpty() : null;
 
         long hybridStartedAt = System.nanoTime();
 
-        List<DocumentSearchResultResponse> vectorResults = search(query, denseTopK);
+        List<DocumentSearchResultResponse> vectorResults = search(query, denseTopK, scope);
         List<DenseCandidate> denseCandidates = toDenseCandidates(vectorResults);
 
         LexicalRetrievalResponse lexicalResponse = lexicalRetriever.retrieve(
-                new LexicalRetrievalRequest(query, lexicalTopK, null)
+                scope.isCollectionScoped()
+                        ? LexicalRetrievalRequest.forScope(query, lexicalTopK, scope.allowedDocumentIdsOrEmpty())
+                        : new LexicalRetrievalRequest(query, lexicalTopK, null)
         );
         List<LexicalCandidate> lexicalCandidates = documentLifecycleFilterService.filterLexicalCandidates(
-                lexicalResponse.candidates()
+                lexicalResponse.candidates(),
+                allowedDocumentIds
         );
 
         FusionResponse fusionResponse = fusionRanker.fuse(
@@ -189,8 +205,8 @@ public class RagTwoStageRetrievalService {
                 FusedCandidate fused = fusedCandidates.get(i);
                 chunks.add(toHybridChunk(fused, fused.fusionRank(), fused.fusionScore(), null));
             }
-            return new RagRetrievalOutcome(
-                    chunks,
+            return buildOutcome(
+                    filterChunksByScope(chunks, scope),
                     finalTopK,
                     denseTopK,
                     false,
@@ -243,8 +259,8 @@ public class RagTwoStageRetrievalService {
                 })
                 .toList();
 
-        return new RagRetrievalOutcome(
-                chunks,
+        return buildOutcome(
+                filterChunksByScope(chunks, scope),
                 finalTopK,
                 denseTopK,
                 true,
@@ -345,11 +361,16 @@ public class RagTwoStageRetrievalService {
         return lexicalTopK;
     }
 
-    private List<DocumentSearchResultResponse> search(String query, int topK) {
+    private List<DocumentSearchResultResponse> search(String query, int topK, RetrievalScope scope) {
         EmbeddingRequest embeddingRequest = new EmbeddingRequest();
         embeddingRequest.setText(query);
         embeddingRequest.setModel(embeddingProvider.model());
         EmbeddingResponse queryEmbedding = embeddingProvider.embed(embeddingRequest);
+
+        VectorSearchFilter filter = buildVectorSearchFilter(scope);
+        Set<Long> allowedDocumentIds = scope != null && scope.isCollectionScoped()
+                ? scope.allowedDocumentIdsOrEmpty()
+                : null;
 
         try {
             List<DocumentSearchResultResponse> results = vectorStore.search(new VectorSearchRequest(
@@ -358,12 +379,12 @@ public class RagTwoStageRetrievalService {
                             embeddingProvider.provider(),
                             embeddingProvider.model(),
                             queryEmbedding.getDimension(),
-                            VectorSearchFilter.empty()
+                            filter
                     ))
                     .stream()
                     .map(this::toSearchResponse)
                     .toList();
-            return documentLifecycleFilterService.filterSearchResults(results);
+            return documentLifecycleFilterService.filterSearchResults(results, allowedDocumentIds);
         } catch (QdrantVectorStoreException exception) {
             throw exception;
         } catch (RuntimeException exception) {
@@ -371,6 +392,65 @@ public class RagTwoStageRetrievalService {
                     exception.getMessage() == null ? "Vector store search failed" : exception.getMessage()
             );
         }
+    }
+
+    private VectorSearchFilter buildVectorSearchFilter(RetrievalScope scope) {
+        if (scope == null || !scope.isCollectionScoped() || scope.allowedDocumentIdsOrEmpty().isEmpty()) {
+            return VectorSearchFilter.empty();
+        }
+        return new VectorSearchFilter(new ArrayList<>(scope.allowedDocumentIdsOrEmpty()), java.util.Map.of());
+    }
+
+    private List<RagRetrievedChunk> filterChunksByScope(List<RagRetrievedChunk> chunks, RetrievalScope scope) {
+        if (chunks == null || chunks.isEmpty() || scope == null || !scope.isCollectionScoped()) {
+            return chunks == null ? List.of() : chunks;
+        }
+        Set<Long> allowed = scope.allowedDocumentIdsOrEmpty();
+        Set<Long> deletedDocumentIds = documentLifecycleFilterService.findDeletedDocumentIds();
+        Set<Long> retrievableChunkIds = documentLifecycleFilterService.findRetrievableChunkIds();
+        return chunks.stream()
+                .filter(chunk -> documentLifecycleFilterService.isAllowedDocument(chunk.documentId(), allowed))
+                .filter(chunk -> !documentLifecycleFilterService.isDeleted(chunk.documentId(), deletedDocumentIds))
+                .filter(chunk -> documentLifecycleFilterService.isRetrievableChunk(chunk.chunkId(), retrievableChunkIds))
+                .toList();
+    }
+
+    private RagRetrievalOutcome buildOutcome(
+            List<RagRetrievedChunk> chunks,
+            int finalTopK,
+            int candidateTopK,
+            boolean rerankEnabled,
+            String rerankerName,
+            long rerankLatencyMs,
+            boolean hybridEnabled,
+            Integer denseTopK,
+            Integer lexicalTopK,
+            String fusionStrategy,
+            Integer denseCandidateCount,
+            Integer lexicalCandidateCount,
+            Integer fusedCandidateCount,
+            Long hybridLatencyMs
+    ) {
+        return new RagRetrievalOutcome(
+                chunks,
+                finalTopK,
+                candidateTopK,
+                rerankEnabled,
+                rerankerName,
+                rerankLatencyMs,
+                hybridEnabled,
+                denseTopK,
+                lexicalTopK,
+                fusionStrategy,
+                denseCandidateCount,
+                lexicalCandidateCount,
+                fusedCandidateCount,
+                hybridLatencyMs
+        );
+    }
+
+    private List<DocumentSearchResultResponse> search(String query, int topK) {
+        return search(query, topK, RetrievalScope.allDocuments());
     }
 
     private DocumentSearchResultResponse toSearchResponse(VectorSearchResult result) {

@@ -40,51 +40,68 @@ public class DocumentLifecycleFilterService {
     }
 
     public List<DocumentSearchResultResponse> filterSearchResults(List<DocumentSearchResultResponse> results) {
+        return filterSearchResults(results, null);
+    }
+
+    public List<DocumentSearchResultResponse> filterSearchResults(
+            List<DocumentSearchResultResponse> results,
+            Set<Long> allowedDocumentIds
+    ) {
         if (results == null || results.isEmpty()) {
             return List.of();
         }
         Set<Long> deletedDocumentIds = findDeletedDocumentIds();
         Set<Long> retrievableChunkIds = findRetrievableChunkIds();
-        return filterSearchResults(results, deletedDocumentIds, retrievableChunkIds);
-    }
-
-    public List<DocumentSearchResultResponse> filterSearchResults(
-            List<DocumentSearchResultResponse> results,
-            Set<Long> deletedDocumentIds
-    ) {
-        Set<Long> retrievableChunkIds = findRetrievableChunkIds();
-        return filterSearchResults(results, deletedDocumentIds, retrievableChunkIds);
+        return filterSearchResults(results, deletedDocumentIds, retrievableChunkIds, allowedDocumentIds);
     }
 
     public List<DocumentSearchResultResponse> filterSearchResults(
             List<DocumentSearchResultResponse> results,
             Set<Long> deletedDocumentIds,
             Set<Long> retrievableChunkIds
+    ) {
+        return filterSearchResults(results, deletedDocumentIds, retrievableChunkIds, null);
+    }
+
+    public List<DocumentSearchResultResponse> filterSearchResults(
+            List<DocumentSearchResultResponse> results,
+            Set<Long> deletedDocumentIds,
+            Set<Long> retrievableChunkIds,
+            Set<Long> allowedDocumentIds
     ) {
         if (results == null || results.isEmpty()) {
             return List.of();
         }
         return results.stream()
+                .filter(result -> isAllowedDocument(result.getDocumentId(), allowedDocumentIds))
                 .filter(result -> !isDeleted(result.getDocumentId(), deletedDocumentIds))
                 .filter(result -> isRetrievableChunk(result.getChunkId(), retrievableChunkIds))
                 .toList();
     }
 
+    @Deprecated
+    public List<DocumentSearchResultResponse> filterSearchResultsLegacy(
+            List<DocumentSearchResultResponse> results,
+            Set<Long> deletedDocumentIds
+    ) {
+        Set<Long> retrievableChunkIds = findRetrievableChunkIds();
+        return filterSearchResults(results, deletedDocumentIds, retrievableChunkIds, null);
+    }
+
     public List<LexicalCandidate> filterLexicalCandidates(List<LexicalCandidate> candidates) {
+        return filterLexicalCandidates(candidates, null);
+    }
+
+    public List<LexicalCandidate> filterLexicalCandidates(
+            List<LexicalCandidate> candidates,
+            Set<Long> allowedDocumentIds
+    ) {
         if (candidates == null || candidates.isEmpty()) {
             return List.of();
         }
         Set<Long> deletedDocumentIds = findDeletedDocumentIds();
         Set<Long> retrievableChunkIds = findRetrievableChunkIds();
-        return filterLexicalCandidates(candidates, deletedDocumentIds, retrievableChunkIds);
-    }
-
-    public List<LexicalCandidate> filterLexicalCandidates(
-            List<LexicalCandidate> candidates,
-            Set<Long> deletedDocumentIds
-    ) {
-        Set<Long> retrievableChunkIds = findRetrievableChunkIds();
-        return filterLexicalCandidates(candidates, deletedDocumentIds, retrievableChunkIds);
+        return filterLexicalCandidates(candidates, deletedDocumentIds, retrievableChunkIds, allowedDocumentIds);
     }
 
     public List<LexicalCandidate> filterLexicalCandidates(
@@ -92,13 +109,30 @@ public class DocumentLifecycleFilterService {
             Set<Long> deletedDocumentIds,
             Set<Long> retrievableChunkIds
     ) {
+        return filterLexicalCandidates(candidates, deletedDocumentIds, retrievableChunkIds, null);
+    }
+
+    public List<LexicalCandidate> filterLexicalCandidates(
+            List<LexicalCandidate> candidates,
+            Set<Long> deletedDocumentIds,
+            Set<Long> retrievableChunkIds,
+            Set<Long> allowedDocumentIds
+    ) {
         if (candidates == null || candidates.isEmpty()) {
             return List.of();
         }
         return candidates.stream()
+                .filter(candidate -> isAllowedDocument(candidate.documentId(), allowedDocumentIds))
                 .filter(candidate -> !isDeleted(candidate.documentId(), deletedDocumentIds))
                 .filter(candidate -> isRetrievableChunk(candidate.chunkId(), retrievableChunkIds))
                 .toList();
+    }
+
+    public boolean isAllowedDocument(Long documentId, Set<Long> allowedDocumentIds) {
+        if (allowedDocumentIds == null || allowedDocumentIds.isEmpty()) {
+            return true;
+        }
+        return documentId != null && allowedDocumentIds.contains(documentId);
     }
 
     public Set<Long> collectDocumentIds(List<DocumentSearchResultResponse> results) {

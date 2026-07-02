@@ -95,4 +95,32 @@ public class BusinessException extends RuntimeException {
     public static BusinessException internalError(String message) {
         return new BusinessException(ErrorCode.INTERNAL_ERROR, HttpStatus.INTERNAL_SERVER_ERROR, message);
     }
+
+    public static BusinessException collectionNotFound() {
+        return new BusinessException(ErrorCode.COLLECTION_NOT_FOUND, HttpStatus.NOT_FOUND, "知识库分组不存在");
+    }
+
+    public static BusinessException collectionNameRequired() {
+        return new BusinessException(ErrorCode.COLLECTION_NAME_REQUIRED, HttpStatus.BAD_REQUEST, "分组名称不能为空");
+    }
+
+    public static BusinessException collectionNameDuplicated() {
+        return new BusinessException(ErrorCode.COLLECTION_NAME_DUPLICATED, HttpStatus.CONFLICT, "分组名称已存在");
+    }
+
+    public static BusinessException documentAlreadyInCollection() {
+        return new BusinessException(
+                ErrorCode.DOCUMENT_ALREADY_IN_COLLECTION,
+                HttpStatus.CONFLICT,
+                "该文档已加入此分组"
+        );
+    }
+
+    public static BusinessException documentNotInCollection() {
+        return new BusinessException(
+                ErrorCode.DOCUMENT_NOT_IN_COLLECTION,
+                HttpStatus.NOT_FOUND,
+                "该文档未加入此分组"
+        );
+    }
 }

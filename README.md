@@ -7,9 +7,9 @@
 | | |
 |---|---|
 | **适用场景** | 内部知识库问答、RAG 方案验证、检索策略对比（dense / rerank / hybrid）、演示与面试展示 |
-| **核心能力** | 文档切块与向量化 · 带 Citations 的 RAG 问答 · **V4.0 知识库生命周期**（软删除 / 重新索引）· 检索质量评估 · Rerank · Hybrid |
-| **5 分钟体验** | 启动服务 → **Documents 上传** txt/md/pdf → **Ask 提问** → 查看 citations → （可选）Evaluation |
-| **主要入口** | Web：`/` · `/documents.html`（上传）· `/ask.html` · API：`POST /documents/upload` · `POST /rag/answers` |
+| **核心能力** | 文档切块与向量化 · 带 Citations 的 RAG 问答 · **V5.0 知识库分组与范围检索** · **V4.0 知识库生命周期**（软删除 / 重新索引）· 检索质量评估 · Rerank · Hybrid |
+| **5 分钟体验** | 启动服务 → **Documents 上传** txt/md/pdf → （可选）**Collections 分组** → **Ask 提问** → 查看 citations → （可选）Evaluation |
+| **主要入口** | Web：`/` · `/documents.html`（上传）· `/collections.html`（分组）· `/ask.html` · API：`POST /documents/upload` · `POST /rag/answers`（可选 `collectionId`） |
 
 > 技术栈：Java 17 · Spring Boot · MySQL · RabbitMQ · JPA/Flyway · 可选 Qdrant / Local Embedding Worker。下文保留完整能力与架构说明。
 
@@ -94,6 +94,15 @@ AI Task Orchestrator 是一个基于 Java / Spring Boot 的 AI 任务编排与 R
 - 当前索引版本（`current_generation`）与 chunk 代际过滤
 - 中文文档管理页面、生命周期事件时间线、文档处理分析入口
 - 说明文档：[docs/manual/knowledge-base-lifecycle-management.md](docs/manual/knowledge-base-lifecycle-management.md)
+
+**Scoped Retrieval & Collections（V5.0）**
+
+- 知识库分组（Collection）：`POST /collections`、`GET /collections`、`GET /collections/{id}`
+- 文档加入 / 移出分组：`POST|DELETE /collections/{collectionId}/documents/{documentId}`
+- Ask 范围检索：`POST /rag/answers` 可选 `collectionId`；不传时保持全库检索
+- 应用层同时过滤：分组范围 + V4.0 生命周期（已删除文档、旧版本片段）
+- 页面：`/collections.html` · Ask / Documents 页面支持分组管理与范围选择
+- 说明文档：[docs/manual/scoped-retrieval-and-collections.md](docs/manual/scoped-retrieval-and-collections.md)
 
 **工程化**
 

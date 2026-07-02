@@ -39,6 +39,7 @@
     const SNIPPET_MAX = 300;
     let pollTimer = null;
     let cachedTasks = [];
+    let cachedCollections = [];
 
     uploadButton.addEventListener("click", uploadDocument);
     refreshButton.addEventListener("click", function () {
@@ -63,12 +64,14 @@
         }
 
         try {
-            const [documentsResponse, tasksResponse] = await Promise.all([
+            const [documentsResponse, tasksResponse, collectionsResponse] = await Promise.all([
                 fetch("/documents"),
-                fetch("/documents/ingestions")
+                fetch("/documents/ingestions"),
+                fetch("/collections")
             ]);
             const documentsPayload = await parseJsonResponse(documentsResponse);
             const tasksPayload = await parseJsonResponse(tasksResponse);
+            const collectionsPayload = await parseJsonResponse(collectionsResponse);
 
             if (!documentsResponse.ok && !silent) {
                 showError(extractError(documentsPayload, documentsResponse.status));
@@ -84,6 +87,10 @@
             } else {
                 cachedTasks = Array.isArray(tasksPayload) ? tasksPayload : [];
                 renderTasks(cachedTasks);
+            }
+
+            if (collectionsResponse.ok) {
+                cachedCollections = Array.isArray(collectionsPayload) ? collectionsPayload : [];
             }
         } catch (networkError) {
             if (!silent) {
@@ -181,12 +188,17 @@
             const hint = doc.lifecycleHint || lifecycleHintFallback(doc);
 
             const actions = buildDocumentActions(doc);
+            const collectionLabel = formatCollectionNames(doc);
 
             row.innerHTML =
                 "<td>" +
                 "<strong>" + escapeHtml(doc.title || "-") + "</strong>" +
                 '<p class="muted doc-hint">' + escapeHtml(hint) + "</p>" +
+                (doc.status === "DELETED"
+                    ? '<p class="muted">已删除文档可以保留分组归属，但不会参与问答。</p>'
+                    : "") +
                 "</td>" +
+                "<td>" + collectionLabel + "</td>" +
                 '<td><span class="status-badge ' + lifecycleClass + '">' + escapeHtml(lifecycleDisplay) + "</span></td>" +
                 "<td>" + escapeHtml(doc.displayProcessingStatus || doc.processingStatus || "-") + "</td>" +
                 "<td>" + escapeHtml(doc.currentGeneration != null ? doc.currentGeneration : 1) + "</td>" +
@@ -253,7 +265,30 @@
             );
         }
 
+        if (doc.canAssignToCollection !== false) {
+            actions.push(
+                '<button type="button" class="link-button assign-collection-button" data-document-id="'
+                + escapeHtml(doc.documentId) + '" data-filename="' + escapeHtml(doc.title) + '">加入分组</button>'
+            );
+        }
+        if (doc.canRemoveFromCollection === true) {
+            actions.push(
+                '<button type="button" class="link-button remove-collection-button" data-document-id="'
+                + escapeHtml(doc.documentId) + '" data-filename="' + escapeHtml(doc.title) + '">移出分组</button>'
+            );
+        }
+
         return actions;
+    }
+
+    function formatCollectionNames(doc) {
+        const names = Array.isArray(doc.collectionNames) ? doc.collectionNames : [];
+        if (names.length === 0) {
+            return '<span class="muted">未加入任何分组</span>';
+        }
+        return names.map(function (name) {
+            return '<span class="status-badge ready">' + escapeHtml(name) + "</span>";
+        }).join(" ");
     }
 
     function bindDocumentRowActions(row, doc) {
@@ -287,6 +322,147 @@
             reindexButton.addEventListener("click", function (event) {
                 event.stopPropagation();
                 confirmReindexDocument(doc.documentId, doc.title);
+            });
+        }
+
+        const assignButton = row.querySelector(".assign-collection-button");
+        if (assignButton) {
+            assignButton.addEventListener("click", function (event) {
+                event.stopPropagation();
+                promptAssignToCollection(doc);
+            });
+        }
+
+        const removeButton = row.querySelector(".remove-collection-button");
+        if (removeButton) {
+            removeButton.addEventListener("click", function (event) {
+                event.stopPropagation();
+                promptRemoveFromCollection(doc);
+            });
+        }
+    }
+
+    async function promptAssignToCollection(doc) {
+        if (!cachedCollections || cachedCollections.length === 0) {
+            window.alert("还没有可用的知识库分组。请先在「知识库分组」页面新建分组。");
+            return;
+        }
+        const memberIds = Array.isArray(doc.collectionIds) ? doc.collectionIds.map(String) : [];
+        const options = cachedCollections
+            .filter(function (collection) {
+                return memberIds.indexOf(String(collection.collectionId)) < 0;
+            })
+            .map(function (collection, index) {
+                return (index + 1) + ". " + collection.name + " (ID: " + collection.collectionId + ")";
+            });
+        if (options.length === 0) {
+            window.alert("该文档已加入所有可用分组。");
+            return;
+        }
+        const input = window.prompt(
+            "选择知识库分组（输入序号）：\n" + options.join("\n") + "\n\n已删除文档可以保留分组归属，但不会参与问答。"
+        );
+        if (!input) {
+            return;
+        }
+        const index = Number.parseInt(input, 10) - 1;
+        const available = cachedCollections.filter(function (collection) {
+            return memberIds.indexOf(String(collection.collectionId)) < 0;
+        });
+        if (!Number.isInteger(index) || index < 0 || index >= available.length) {
+            window.alert("无效的选择。");
+            return;
+        }
+        const collection = available[index];
+        const confirmed = window.confirm(
+            "确认将文档「" + (doc.title || doc.documentId) + "」加入分组「" + collection.name + "」？"
+        );
+        if (!confirmed) {
+            return;
+        }
+        await assignDocumentToCollection(collection.collectionId, doc.documentId, doc.title);
+    }
+
+    async function promptRemoveFromCollection(doc) {
+        const memberships = Array.isArray(doc.collections) ? doc.collections : [];
+        if (memberships.length === 0) {
+            window.alert("该文档未加入任何分组。");
+            return;
+        }
+        const options = memberships.map(function (membership, index) {
+            return (index + 1) + ". " + (membership.name || membership.collectionId);
+        });
+        const input = window.prompt("选择要移出的分组（输入序号）：\n" + options.join("\n"));
+        if (!input) {
+            return;
+        }
+        const index = Number.parseInt(input, 10) - 1;
+        if (!Number.isInteger(index) || index < 0 || index >= memberships.length) {
+            window.alert("无效的选择。");
+            return;
+        }
+        const membership = memberships[index];
+        const confirmed = window.confirm(
+            "确认将文档「" + (doc.title || doc.documentId) + "」从分组「" + membership.name + "」移出？"
+        );
+        if (!confirmed) {
+            return;
+        }
+        await removeDocumentFromCollection(membership.collectionId, doc.documentId, doc.title);
+    }
+
+    async function assignDocumentToCollection(collectionId, documentId, filename) {
+        clearError();
+        try {
+            const response = await fetch(
+                "/collections/" + encodeURIComponent(collectionId) + "/documents/" + encodeURIComponent(documentId),
+                { method: "POST" }
+            );
+            const payload = await parseJsonResponse(response);
+            if (!response.ok) {
+                showError(extractError(payload, response.status, documentId));
+                return;
+            }
+            renderActionSuccess(
+                "加入分组",
+                payload.message || "该文档已加入此分组",
+                { documentId: documentId, filename: filename }
+            );
+            loadPageData(true);
+        } catch (networkError) {
+            showError({
+                code: "NETWORK_ERROR",
+                message: networkError && networkError.message ? networkError.message : "加入分组失败。",
+                traceId: "-",
+                documentId: documentId
+            });
+        }
+    }
+
+    async function removeDocumentFromCollection(collectionId, documentId, filename) {
+        clearError();
+        try {
+            const response = await fetch(
+                "/collections/" + encodeURIComponent(collectionId) + "/documents/" + encodeURIComponent(documentId),
+                { method: "DELETE" }
+            );
+            const payload = await parseJsonResponse(response);
+            if (!response.ok) {
+                showError(extractError(payload, response.status, documentId));
+                return;
+            }
+            renderActionSuccess(
+                "移出分组",
+                payload.message || "该文档已从分组移出",
+                { documentId: documentId, filename: filename }
+            );
+            loadPageData(true);
+        } catch (networkError) {
+            showError({
+                code: "NETWORK_ERROR",
+                message: networkError && networkError.message ? networkError.message : "移出分组失败。",
+                traceId: "-",
+                documentId: documentId
             });
         }
     }

@@ -6,10 +6,13 @@ import com.tuoman.ai_task_orchestrator.dto.RagAnswerResponse;
 import com.tuoman.ai_task_orchestrator.dto.RagCitationResponse;
 import com.tuoman.ai_task_orchestrator.dto.RagGenerationMetadataResponse;
 import com.tuoman.ai_task_orchestrator.dto.RagRetrievalMetadataResponse;
+import com.tuoman.ai_task_orchestrator.embedding.EmbeddingProvider;
+import com.tuoman.ai_task_orchestrator.enums.RetrievalScopeType;
 import com.tuoman.ai_task_orchestrator.llm.LlmClient;
 import com.tuoman.ai_task_orchestrator.llm.LlmRequest;
 import com.tuoman.ai_task_orchestrator.llm.LlmResponse;
-import com.tuoman.ai_task_orchestrator.embedding.EmbeddingProvider;
+import com.tuoman.ai_task_orchestrator.retrieval.CollectionAskScope;
+import com.tuoman.ai_task_orchestrator.retrieval.RetrievalScope;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService.RagRetrievalOutcome;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService.RagRetrievedChunk;
@@ -40,6 +43,8 @@ public class RagAnswerService {
 
     private final RagTwoStageRetrievalService ragTwoStageRetrievalService;
 
+    private final CollectionScopeService collectionScopeService;
+
     private final EmbeddingProvider embeddingProvider;
 
     private final VectorStore vectorStore;
@@ -56,21 +61,29 @@ public class RagAnswerService {
         }
 
         int topK = normalizeTopK(request.getTopK());
-        RagRetrievalOutcome retrievalOutcome = ragTwoStageRetrievalService.retrieve(request.getQuery(), topK);
+        CollectionAskScope askScope = resolveAskScope(request.getCollectionId());
+        if (askScope.shouldSkipRetrieval()) {
+            return buildNoContextResponse(askScope.noContextMessage(), topK, askScope);
+        }
+
+        RetrievalScope retrievalScope = toRetrievalScope(request.getCollectionId(), askScope);
+        RagRetrievalOutcome retrievalOutcome = ragTwoStageRetrievalService.retrieve(
+                request.getQuery(),
+                topK,
+                retrievalScope
+        );
         List<RagCitationResponse> citations = toCitations(
                 retrievalOutcome,
                 retrievalOutcome.rerankEnabled(),
                 retrievalOutcome.hybridEnabled()
         );
-        RagRetrievalMetadataResponse retrieval = toRetrievalMetadata(retrievalOutcome);
+        RagRetrievalMetadataResponse retrieval = toRetrievalMetadata(retrievalOutcome, askScope);
 
         if (citations.isEmpty()) {
-            return new RagAnswerResponse(
-                    NO_CONTEXT_ANSWER,
-                    List.of(),
-                    retrieval,
-                    new RagGenerationMetadataResponse(null, null, true, NO_CONTEXT_REASON)
-            );
+            String answer = askScope.collectionId() != null
+                    ? "当前所选分组下未检索到可用于回答的文档片段。"
+                    : NO_CONTEXT_ANSWER;
+            return buildNoContextResponse(answer, topK, askScope, retrieval);
         }
 
         String prompt = ragPromptBuilder.buildPrompt(request.getQuery(), citations);
@@ -97,6 +110,42 @@ public class RagAnswerService {
                         null,
                         null
                 )
+        );
+    }
+
+    private CollectionAskScope resolveAskScope(Long collectionId) {
+        if (collectionId == null) {
+            return CollectionAskScope.notApplicable();
+        }
+        return collectionScopeService.resolveForAsk(collectionId);
+    }
+
+    private RetrievalScope toRetrievalScope(Long collectionId, CollectionAskScope askScope) {
+        if (collectionId == null) {
+            return RetrievalScope.allDocuments();
+        }
+        return RetrievalScope.collection(
+                askScope.collectionId(),
+                askScope.collectionName(),
+                askScope.askableDocumentIds()
+        );
+    }
+
+    private RagAnswerResponse buildNoContextResponse(String answer, int topK, CollectionAskScope askScope) {
+        return buildNoContextResponse(answer, topK, askScope, toRetrievalMetadataEmpty(topK, askScope));
+    }
+
+    private RagAnswerResponse buildNoContextResponse(
+            String answer,
+            int topK,
+            CollectionAskScope askScope,
+            RagRetrievalMetadataResponse retrieval
+    ) {
+        return new RagAnswerResponse(
+                answer,
+                List.of(),
+                retrieval,
+                new RagGenerationMetadataResponse(null, null, true, NO_CONTEXT_REASON)
         );
     }
 
@@ -139,7 +188,10 @@ public class RagAnswerService {
         );
     }
 
-    private RagRetrievalMetadataResponse toRetrievalMetadata(RagRetrievalOutcome outcome) {
+    private RagRetrievalMetadataResponse toRetrievalMetadata(
+            RagRetrievalOutcome outcome,
+            CollectionAskScope askScope
+    ) {
         return new RagRetrievalMetadataResponse(
                 outcome.finalTopK(),
                 outcome.chunks().size(),
@@ -159,7 +211,47 @@ public class RagAnswerService {
                 outcome.hybridEnabled() ? outcome.denseCandidateCount() : null,
                 outcome.hybridEnabled() ? outcome.lexicalCandidateCount() : null,
                 outcome.hybridEnabled() ? outcome.fusedCandidateCount() : null,
-                outcome.hybridEnabled() ? outcome.hybridLatencyMs() : null
+                outcome.hybridEnabled() ? outcome.hybridLatencyMs() : null,
+                askScope.collectionId() == null
+                        ? RetrievalScopeType.ALL_DOCUMENTS.name()
+                        : RetrievalScopeType.COLLECTION.name(),
+                askScope.collectionId(),
+                askScope.collectionName(),
+                null,
+                null,
+                outcome.chunks().size()
+        );
+    }
+
+    private RagRetrievalMetadataResponse toRetrievalMetadataEmpty(int topK, CollectionAskScope askScope) {
+        return new RagRetrievalMetadataResponse(
+                topK,
+                0,
+                embeddingProvider.provider(),
+                embeddingProvider.model(),
+                embeddingProvider.dimension(),
+                resolveVectorStoreName(),
+                null,
+                null,
+                null,
+                topK,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                askScope.collectionId() == null
+                        ? RetrievalScopeType.ALL_DOCUMENTS.name()
+                        : RetrievalScopeType.COLLECTION.name(),
+                askScope.collectionId(),
+                askScope.collectionName(),
+                null,
+                null,
+                0
         );
     }
 

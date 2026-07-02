@@ -47,6 +47,18 @@ public class RagRetrievalMetadataResponse {
 
     private Long hybridLatencyMs;
 
+    private String scopeType;
+
+    private Long collectionId;
+
+    private String collectionName;
+
+    private Integer filteredByCollectionCount;
+
+    private Integer filteredByLifecycleCount;
+
+    private Integer finalContextCount;
+
     public RagRetrievalMetadataResponse(
             Integer topK,
             Integer returned,
@@ -62,6 +74,12 @@ public class RagRetrievalMetadataResponse {
                 model,
                 dimension,
                 vectorStore,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null,
                 null,

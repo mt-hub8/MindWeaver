@@ -14,6 +14,9 @@ import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService.RagRet
 import com.tuoman.ai_task_orchestrator.vectorstore.ExactCosineVectorStore;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorStore;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorStoreProperties;
+import com.tuoman.ai_task_orchestrator.retrieval.CollectionAskEmptyReason;
+import com.tuoman.ai_task_orchestrator.retrieval.CollectionAskScope;
+import com.tuoman.ai_task_orchestrator.retrieval.RetrievalScope;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,6 +25,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -55,6 +59,9 @@ class RagAnswerServiceTest {
     @Mock
     private LlmClient llmClient;
 
+    @Mock
+    private CollectionScopeService collectionScopeService;
+
     @InjectMocks
     private RagAnswerService ragAnswerService;
 
@@ -80,7 +87,7 @@ class RagAnswerServiceTest {
                 null,
                 0L
         );
-        when(ragTwoStageRetrievalService.retrieve("Why use outbox?", 3)).thenReturn(outcome);
+        when(ragTwoStageRetrievalService.retrieve(eq("Why use outbox?"), eq(3), any(RetrievalScope.class))).thenReturn(outcome);
         when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("rag prompt");
         when(llmClient.generate(any(LlmRequest.class))).thenReturn(successResponse("Answer with [1] and [2]."));
 
@@ -108,7 +115,7 @@ class RagAnswerServiceTest {
                 "lexical",
                 3L
         );
-        when(ragTwoStageRetrievalService.retrieve("cache key", 1)).thenReturn(outcome);
+        when(ragTwoStageRetrievalService.retrieve(eq("cache key"), eq(1), any(RetrievalScope.class))).thenReturn(outcome);
         when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("prompt");
         when(llmClient.generate(any())).thenReturn(successResponse("answer"));
 
@@ -126,7 +133,7 @@ class RagAnswerServiceTest {
 
     @Test
     void answerShouldUseDefaultTopKWhenMissing() {
-        when(ragTwoStageRetrievalService.retrieve(eq("query"), eq(5)))
+        when(ragTwoStageRetrievalService.retrieve(eq("query"), eq(5), any(RetrievalScope.class)))
                 .thenReturn(new RagRetrievalOutcome(List.of(), 5, 5, false, null, 0L));
 
         RagAnswerResponse response = ragAnswerService.answer(request("query", null));
@@ -153,7 +160,7 @@ class RagAnswerServiceTest {
 
     @Test
     void answerShouldReturnNoContextResponseWithoutCallingLlm() {
-        when(ragTwoStageRetrievalService.retrieve(anyString(), anyInt()))
+        when(ragTwoStageRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class)))
                 .thenReturn(new RagRetrievalOutcome(List.of(), 5, 5, false, null, 0L));
 
         RagAnswerResponse response = ragAnswerService.answer(request("No context question", 5));
@@ -167,7 +174,7 @@ class RagAnswerServiceTest {
     @Test
     void answerShouldLimitCitationSnippetLength() {
         String longContent = "a".repeat(500);
-        when(ragTwoStageRetrievalService.retrieve(anyString(), anyInt())).thenReturn(new RagRetrievalOutcome(
+        when(ragTwoStageRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class))).thenReturn(new RagRetrievalOutcome(
                 List.of(chunk(1, 1, 10L, 0.9, null, longContent)),
                 1,
                 1,
@@ -185,7 +192,7 @@ class RagAnswerServiceTest {
 
     @Test
     void answerShouldConvertLlmFailureToBusinessException() {
-        when(ragTwoStageRetrievalService.retrieve(anyString(), anyInt())).thenReturn(new RagRetrievalOutcome(
+        when(ragTwoStageRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class))).thenReturn(new RagRetrievalOutcome(
                 List.of(chunk(1, 1, 10L, 0.9, null, "content")),
                 1,
                 1,
@@ -204,6 +211,61 @@ class RagAnswerServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .extracting("errorCode")
                 .isEqualTo(com.tuoman.ai_task_orchestrator.common.error.ErrorCode.LLM_PROVIDER_ERROR);
+    }
+
+    @Test
+    void answerShouldReturnCollectionEmptyMessageWithoutCallingLlm() {
+        when(collectionScopeService.resolveForAsk(9L)).thenReturn(new CollectionAskScope(
+                9L,
+                "项目 A",
+                CollectionAskEmptyReason.NO_DOCUMENTS,
+                Set.of(),
+                Set.of(),
+                "当前分组下没有可用于问答的文档，请先添加已启用文档。"
+        ));
+
+        RagAnswerRequest request = request("scoped question", 5);
+        request.setCollectionId(9L);
+
+        RagAnswerResponse response = ragAnswerService.answer(request);
+
+        assertThat(response.getAnswer()).contains("当前分组下没有可用于问答的文档");
+        assertThat(response.getCitations()).isEmpty();
+        assertThat(response.getRetrieval().getScopeType()).isEqualTo("COLLECTION");
+        assertThat(response.getRetrieval().getCollectionId()).isEqualTo(9L);
+        assertThat(response.getGeneration().getSkipped()).isTrue();
+        verify(ragTwoStageRetrievalService, never()).retrieve(anyString(), anyInt(), any(RetrievalScope.class));
+        verify(llmClient, never()).generate(any());
+    }
+
+    @Test
+    void answerShouldPassCollectionScopeToRetrieval() {
+        when(collectionScopeService.resolveForAsk(2L)).thenReturn(new CollectionAskScope(
+                2L,
+                "项目 B",
+                CollectionAskEmptyReason.NONE,
+                Set.of(10L),
+                Set.of(10L),
+                null
+        ));
+        RagRetrievalOutcome outcome = new RagRetrievalOutcome(
+                List.of(chunk(1, 1, 30L, 0.9, null, "scoped content")),
+                5,
+                5,
+                false,
+                null,
+                0L
+        );
+        when(ragTwoStageRetrievalService.retrieve(eq("scoped"), eq(5), any(RetrievalScope.class))).thenReturn(outcome);
+        when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("prompt");
+        when(llmClient.generate(any())).thenReturn(successResponse("scoped answer"));
+
+        RagAnswerRequest request = request("scoped", 5);
+        request.setCollectionId(2L);
+        RagAnswerResponse response = ragAnswerService.answer(request);
+
+        assertThat(response.getAnswer()).isEqualTo("scoped answer");
+        assertThat(response.getRetrieval().getCollectionName()).isEqualTo("项目 B");
     }
 
     private RagAnswerRequest request(String query, Integer topK) {

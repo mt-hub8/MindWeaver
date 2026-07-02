@@ -1,9 +1,10 @@
 package com.tuoman.ai_task_orchestrator.controller;
 
 import com.tuoman.ai_task_orchestrator.common.error.GlobalExceptionHandler;
-import com.tuoman.ai_task_orchestrator.dto.DocumentReindexSubmitResponse;
+import com.tuoman.ai_task_orchestrator.dto.CollectionMembershipResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentDeleteResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentChunkResponse;
+import com.tuoman.ai_task_orchestrator.dto.DocumentReindexSubmitResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentSummaryResponse;
 import com.tuoman.ai_task_orchestrator.service.DocumentEmbeddingService;
 import com.tuoman.ai_task_orchestrator.service.DocumentIngestionService;
@@ -75,6 +76,11 @@ class DocumentReadApiTest {
                         null,
                         true,
                         null,
+                        List.of(new CollectionMembershipResponse(1L, "项目 A")),
+                        List.of(1L),
+                        List.of("项目 A"),
+                        true,
+                        true,
                         createdAt,
                         createdAt
                 )
@@ -93,7 +99,10 @@ class DocumentReadApiTest {
                 .andExpect(jsonPath("$[0].canDelete").value(true))
                 .andExpect(jsonPath("$[0].canAsk").value(true))
                 .andExpect(jsonPath("$[0].currentGeneration").value(1))
-                .andExpect(jsonPath("$[0].canReindex").value(true));
+                .andExpect(jsonPath("$[0].canReindex").value(true))
+                .andExpect(jsonPath("$[0].collectionNames[0]").value("项目 A"))
+                .andExpect(jsonPath("$[0].canAssignToCollection").value(true))
+                .andExpect(jsonPath("$[0].canRemoveFromCollection").value(true));
     }
 
     @Test

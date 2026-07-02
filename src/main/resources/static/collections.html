@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库分组</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="page">
+    <nav class="app-nav" aria-label="主导航">
+        <a class="brand" href="/">AI 知识库助手</a>
+        <a class="nav-link" href="/">首页</a>
+        <a class="nav-link" href="/ask.html">知识库问答</a>
+        <a class="nav-link" href="/documents.html">文档管理</a>
+        <a class="nav-link active" href="/collections.html" aria-current="page">知识库分组</a>
+        <a class="nav-link" href="/evaluation.html">检索质量评估</a>
+        <a class="nav-link" href="/ingestion-analytics.html">文档处理分析</a>
+    </nav>
+
+    <header class="hero">
+        <h1>知识库分组</h1>
+        <p class="lead">将文档归入不同分组，在知识库问答时选择「全部文档」或「仅在该分组中提问」。</p>
+        <p class="muted">已删除文档不会进入问答；旧版本片段不会进入回答引用。</p>
+    </header>
+
+    <section class="panel" aria-labelledby="create-collection-title">
+        <h2 id="create-collection-title">新建分组</h2>
+        <label for="collection-name-input">分组名称</label>
+        <input id="collection-name-input" type="text" maxlength="128" placeholder="例如：项目 A 文档">
+
+        <label for="collection-description-input">分组说明（可选）</label>
+        <textarea id="collection-description-input" rows="3" placeholder="例如：项目 A 的需求、设计和接口说明"></textarea>
+
+        <div class="upload-actions">
+            <button id="create-collection-button" type="button">新建分组</button>
+            <button id="refresh-collections-button" type="button">刷新列表</button>
+            <span id="create-loading" class="status loading hidden" role="status">正在创建分组…</span>
+        </div>
+        <div id="create-success" class="success-box hidden" aria-live="polite">
+            <h3>创建成功</h3>
+            <p id="create-success-message" class="muted"></p>
+        </div>
+    </section>
+
+    <div id="loading-status" class="status loading hidden" role="status">正在加载知识库分组…</div>
+
+    <div id="error-status" class="status error" role="alert" aria-live="assertive">
+        <p><strong>操作失败</strong></p>
+        <dl>
+            <dt>错误码</dt><dd id="error-code"></dd>
+            <dt>说明</dt><dd id="error-message"></dd>
+            <dt>追踪 ID</dt><dd id="error-trace-id"></dd>
+        </dl>
+        <p class="muted">可查看技术详情或稍后重试。</p>
+    </div>
+
+    <p id="collections-empty" class="empty-state hidden">还没有创建任何知识库分组。点击「新建分组」开始组织文档。</p>
+
+    <section id="collections-panel" class="panel hidden" aria-labelledby="collections-list-title">
+        <h2 id="collections-list-title">分组列表</h2>
+        <table class="doc-table">
+            <thead>
+            <tr>
+                <th>分组名称</th>
+                <th>分组说明</th>
+                <th>文档数量</th>
+                <th>可用于问答的文档</th>
+                <th>操作</th>
+            </tr>
+            </thead>
+            <tbody id="collections-body"></tbody>
+        </table>
+    </section>
+
+    <section id="detail-panel" class="panel hidden" aria-labelledby="detail-title">
+        <div class="section-header-row">
+            <h2 id="detail-title">分组详情</h2>
+            <button id="close-detail-button" type="button" class="link-button">返回列表</button>
+        </div>
+        <p id="detail-description" class="muted"></p>
+        <dl class="detail-stats">
+            <dt>文档数量</dt><dd id="detail-document-count">-</dd>
+            <dt>可用于问答的文档</dt><dd id="detail-active-count">-</dd>
+        </dl>
+        <p id="detail-empty-hint" class="empty-state hidden">该分组暂无文档。请前往文档管理将文档加入此分组。</p>
+        <p id="detail-no-askable-hint" class="muted hidden">当前分组暂无可用于问答的文档。已删除文档不会参与问答。</p>
+        <p>
+            <a id="ask-in-collection-link" class="button-link" href="/ask.html">前往该分组问答</a>
+            <a class="button-link secondary" href="/documents.html">前往文档管理</a>
+        </p>
+        <h3>分组中的文档</h3>
+        <table class="doc-table">
+            <thead>
+            <tr>
+                <th>文件名</th>
+                <th>文档状态</th>
+                <th>可用于问答</th>
+                <th>操作</th>
+            </tr>
+            </thead>
+            <tbody id="detail-documents-body"></tbody>
+        </table>
+        <details class="tech-details">
+            <summary>查看技术详情</summary>
+            <pre id="detail-tech-json"></pre>
+        </details>
+    </section>
+</div>
+
+<script src="/collections.js"></script>
+</body>
+</html>

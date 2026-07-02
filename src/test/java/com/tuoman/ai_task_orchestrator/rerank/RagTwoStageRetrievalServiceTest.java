@@ -9,6 +9,7 @@ import com.tuoman.ai_task_orchestrator.embedding.MockEmbeddingClient;
 import com.tuoman.ai_task_orchestrator.hybrid.FusionRanker;
 import com.tuoman.ai_task_orchestrator.hybrid.LexicalRetriever;
 import com.tuoman.ai_task_orchestrator.hybrid.RagHybridProperties;
+import com.tuoman.ai_task_orchestrator.retrieval.RetrievalScope;
 import com.tuoman.ai_task_orchestrator.service.DocumentLifecycleFilterService;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorSearchRequest;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorSearchResult;
@@ -73,8 +74,30 @@ class RagTwoStageRetrievalServiceTest {
         );
         lenient().when(documentLifecycleFilterService.filterSearchResults(any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(documentLifecycleFilterService.filterSearchResults(any(), any()))
+                .thenAnswer(invocation -> {
+                    List<DocumentSearchResultResponse> results = invocation.getArgument(0);
+                    Set<Long> allowed = invocation.getArgument(1);
+                    if (allowed == null) {
+                        return results;
+                    }
+                    return results.stream()
+                            .filter(result -> allowed.contains(result.getDocumentId()))
+                            .toList();
+                });
         lenient().when(documentLifecycleFilterService.filterLexicalCandidates(any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(documentLifecycleFilterService.filterLexicalCandidates(any(), any()))
+                .thenAnswer(invocation -> {
+                    List<com.tuoman.ai_task_orchestrator.hybrid.LexicalCandidate> candidates = invocation.getArgument(0);
+                    Set<Long> allowed = invocation.getArgument(1);
+                    if (allowed == null) {
+                        return candidates;
+                    }
+                    return candidates.stream()
+                            .filter(candidate -> allowed.contains(candidate.documentId()))
+                            .toList();
+                });
         lenient().when(embeddingProvider.provider()).thenReturn(MockEmbeddingClient.PROVIDER);
         lenient().when(embeddingProvider.model()).thenReturn(MockEmbeddingClient.DEFAULT_MODEL);
         lenient().when(embeddingProvider.dimension()).thenReturn(MockEmbeddingClient.DIMENSION);
@@ -218,7 +241,7 @@ class RagTwoStageRetrievalServiceTest {
                 deletedSearchResult(20L, 2L, 0.99, "deleted doc"),
                 searchResult(10L, 0.8, "active doc")
         ));
-        when(documentLifecycleFilterService.filterSearchResults(any())).thenAnswer(invocation -> {
+        when(documentLifecycleFilterService.filterSearchResults(any(), any())).thenAnswer(invocation -> {
             List<DocumentSearchResultResponse> results = invocation.getArgument(0);
             return results.stream()
                     .filter(result -> !Long.valueOf(2L).equals(result.getDocumentId()))
@@ -241,7 +264,7 @@ class RagTwoStageRetrievalServiceTest {
         when(vectorStore.search(any(VectorSearchRequest.class))).thenReturn(List.of(
                 deletedSearchResult(20L, 2L, 0.99, "deleted dense")
         ));
-        when(documentLifecycleFilterService.filterSearchResults(any())).thenReturn(List.of());
+        when(documentLifecycleFilterService.filterSearchResults(any(), any())).thenReturn(List.of());
         when(lexicalRetriever.retrieve(any())).thenReturn(new com.tuoman.ai_task_orchestrator.hybrid.LexicalRetrievalResponse(
                 List.of(
                         new com.tuoman.ai_task_orchestrator.hybrid.LexicalCandidate(
@@ -253,7 +276,7 @@ class RagTwoStageRetrievalServiceTest {
                 ),
                 1L
         ));
-        when(documentLifecycleFilterService.filterLexicalCandidates(any())).thenAnswer(invocation -> {
+        when(documentLifecycleFilterService.filterLexicalCandidates(any(), any())).thenAnswer(invocation -> {
             List<com.tuoman.ai_task_orchestrator.hybrid.LexicalCandidate> candidates = invocation.getArgument(0);
             return candidates.stream()
                     .filter(candidate -> candidate.documentId() == 1L)
@@ -280,7 +303,7 @@ class RagTwoStageRetrievalServiceTest {
                 searchResult(20L, 0.99, "old chunk"),
                 searchResult(10L, 0.8, "current chunk")
         ));
-        when(documentLifecycleFilterService.filterSearchResults(any())).thenAnswer(invocation -> {
+        when(documentLifecycleFilterService.filterSearchResults(any(), any())).thenAnswer(invocation -> {
             List<DocumentSearchResultResponse> results = invocation.getArgument(0);
             return results.stream()
                     .filter(result -> Long.valueOf(10L).equals(result.getChunkId()))
@@ -314,10 +337,39 @@ class RagTwoStageRetrievalServiceTest {
         );
     }
 
+    @Test
+    void retrieveShouldFilterOutOfCollectionCandidates() {
+        when(vectorStore.search(any(VectorSearchRequest.class))).thenReturn(List.of(
+                searchResultForDocument(10L, 1L, 0.9, "in collection"),
+                searchResultForDocument(11L, 2L, 0.8, "out of collection")
+        ));
+        when(documentLifecycleFilterService.findDeletedDocumentIds()).thenReturn(Set.of());
+        when(documentLifecycleFilterService.findRetrievableChunkIds()).thenReturn(Set.of(10L, 11L));
+        when(documentLifecycleFilterService.isAllowedDocument(any(), any())).thenAnswer(invocation -> {
+            Long documentId = invocation.getArgument(0);
+            Set<Long> allowed = invocation.getArgument(1);
+            return allowed != null && allowed.contains(documentId);
+        });
+        when(documentLifecycleFilterService.isDeleted(any(), any())).thenReturn(false);
+        when(documentLifecycleFilterService.isRetrievableChunk(any(), any())).thenReturn(true);
+
+        RetrievalScope scope = RetrievalScope.collection(1L, "项目 A", Set.of(1L));
+        RagTwoStageRetrievalService.RagRetrievalOutcome outcome = retrievalService.retrieve("query", 2, false, scope);
+
+        assertThat(outcome.chunks()).extracting(RagTwoStageRetrievalService.RagRetrievedChunk::documentId)
+                .containsExactly(1L);
+        assertThat(outcome.chunks()).extracting(RagTwoStageRetrievalService.RagRetrievedChunk::chunkId)
+                .containsExactly(10L);
+    }
+
     private VectorSearchResult searchResult(Long chunkId, double score, String content) {
+        return searchResultForDocument(chunkId, 1L, score, content);
+    }
+
+    private VectorSearchResult searchResultForDocument(Long chunkId, Long documentId, double score, String content) {
         return new VectorSearchResult(
                 chunkId,
-                1L,
+                documentId,
                 0,
                 content,
                 content.length(),

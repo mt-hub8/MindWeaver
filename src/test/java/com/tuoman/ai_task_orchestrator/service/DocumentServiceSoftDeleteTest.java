@@ -36,11 +36,19 @@ class DocumentServiceSoftDeleteTest {
     @Mock
     private DocumentChunker documentChunker;
 
+    @Mock
+    private CollectionService collectionService;
+
     private DocumentService documentService;
 
     @BeforeEach
     void setUp() {
-        documentService = new DocumentService(documentRepository, documentChunkRepository, documentChunker);
+        documentService = new DocumentService(
+                documentRepository,
+                documentChunkRepository,
+                documentChunker,
+                collectionService
+        );
     }
 
     @Test
