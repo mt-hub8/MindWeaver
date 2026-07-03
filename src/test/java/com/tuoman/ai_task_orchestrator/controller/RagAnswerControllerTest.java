@@ -43,7 +43,14 @@ class RagAnswerControllerTest {
                 "根据检索到的上下文，问题与以下来源相关：[1]",
                 List.of(new RagCitationResponse(1, 10L, 101L, 0.91, "cache key chunk hash")),
                 new RagRetrievalMetadataResponse(5, 1, "mock", "mock-embedding-v1", 128, "ExactCosineVectorStore"),
-                new RagGenerationMetadataResponse("mock", "mock-llm", null, null)
+                new RagGenerationMetadataResponse(
+                        "local-ollama",
+                        "qwen2.5:7b",
+                        "local-ollama",
+                        "qwen2.5:7b",
+                        null,
+                        null
+                )
         ));
 
         mockMvc.perform(post("/rag/answers")
@@ -67,8 +74,10 @@ class RagAnswerControllerTest {
                 .andExpect(jsonPath("$.retrieval.model").value("mock-embedding-v1"))
                 .andExpect(jsonPath("$.retrieval.dimension").value(128))
                 .andExpect(jsonPath("$.retrieval.vectorStore").value("ExactCosineVectorStore"))
-                .andExpect(jsonPath("$.generation.provider").value("mock"))
-                .andExpect(jsonPath("$.generation.model").value("mock-llm"));
+                .andExpect(jsonPath("$.generation.provider").value("local-ollama"))
+                .andExpect(jsonPath("$.generation.model").value("qwen2.5:7b"))
+                .andExpect(jsonPath("$.generation.llmProvider").value("local-ollama"))
+                .andExpect(jsonPath("$.generation.llmModel").value("qwen2.5:7b"));
     }
 
     @Test
@@ -114,7 +123,7 @@ class RagAnswerControllerTest {
                 "根据当前检索到的文档内容，无法确定。",
                 List.of(),
                 new RagRetrievalMetadataResponse(5, 0, "mock", "mock-embedding-v1", 128, "ExactCosineVectorStore"),
-                new RagGenerationMetadataResponse(null, null, true, "NO_RETRIEVED_CONTEXT")
+                new RagGenerationMetadataResponse(null, null, null, null, true, "NO_RETRIEVED_CONTEXT")
         ));
 
         mockMvc.perform(post("/rag/answers")

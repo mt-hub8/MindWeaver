@@ -13,6 +13,10 @@ public class RagGenerationMetadataResponse {
 
     private String model;
 
+    private String llmProvider;
+
+    private String llmModel;
+
     private Boolean skipped;
 
     private String reason;

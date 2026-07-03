@@ -160,6 +160,13 @@ cd E:\code\ai-task-orchestrator
 
 ## 10. 常见问题
 
+### 为什么 Java 配置是 local-worker，但 Python Worker 返回 local-ollama？
+
+- `local-worker` 是 **Java 侧 provider route**，表示 Java 通过本地 Python Worker 生成 embedding
+- `local-ollama` 是 **Python Worker 的 runtime provider**，表示 Worker 内部实际调用 Ollama
+- 二者**不是错误**，**不应该强制相等**
+- Java 缓存键、向量库索引仍使用 route provider = `local-worker`；`EmbeddingResponse` / 事件 metadata 可记录 runtime provider = `local-ollama`
+
 ### Ollama 未启动
 
 - 症状：Python `/health` 显示 `ollamaReachable: false`；调用失败

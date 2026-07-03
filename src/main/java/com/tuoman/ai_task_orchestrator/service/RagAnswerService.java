@@ -39,8 +39,6 @@ public class RagAnswerService {
 
     private static final String NO_CONTEXT_REASON = "NO_RETRIEVED_CONTEXT";
 
-    private static final String DEFAULT_LLM_MODEL = "mock-llm";
-
     private final RagTwoStageRetrievalService ragTwoStageRetrievalService;
 
     private final CollectionScopeService collectionScopeService;
@@ -90,7 +88,6 @@ public class RagAnswerService {
 
         LlmRequest llmRequest = new LlmRequest();
         llmRequest.setPrompt(prompt);
-        llmRequest.setModel(DEFAULT_LLM_MODEL);
 
         LlmResponse llmResponse = llmClient.generate(llmRequest);
         if (llmResponse == null || !llmResponse.isSuccess() || llmResponse.getContent() == null || llmResponse.getContent().isBlank()) {
@@ -105,6 +102,8 @@ public class RagAnswerService {
                 citations,
                 retrieval,
                 new RagGenerationMetadataResponse(
+                        llmResponse.getProvider(),
+                        llmResponse.getModel(),
                         llmResponse.getProvider(),
                         llmResponse.getModel(),
                         null,
@@ -145,7 +144,7 @@ public class RagAnswerService {
                 answer,
                 List.of(),
                 retrieval,
-                new RagGenerationMetadataResponse(null, null, true, NO_CONTEXT_REASON)
+                new RagGenerationMetadataResponse(null, null, null, null, true, NO_CONTEXT_REASON)
         );
     }
 
@@ -195,7 +194,7 @@ public class RagAnswerService {
         return new RagRetrievalMetadataResponse(
                 outcome.finalTopK(),
                 outcome.chunks().size(),
-                embeddingProvider.provider(),
+                embeddingProvider.runtimeProvider(),
                 embeddingProvider.model(),
                 embeddingProvider.dimension(),
                 resolveVectorStoreName(),
@@ -227,7 +226,7 @@ public class RagAnswerService {
         return new RagRetrievalMetadataResponse(
                 topK,
                 0,
-                embeddingProvider.provider(),
+                embeddingProvider.runtimeProvider(),
                 embeddingProvider.model(),
                 embeddingProvider.dimension(),
                 resolveVectorStoreName(),

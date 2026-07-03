@@ -11,6 +11,72 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class LocalEmbeddingWorkerProviderTest {
 
     @Test
+    void runtimeProviderShouldExposeOllamaRouteForMetadata() {
+        LocalEmbeddingWorkerProvider provider = provider(new FakeLocalEmbeddingWorkerClient(
+                responseWithProvider("local-ollama", List.of(data(0, List.of(0.1, 0.2, 0.3))))
+        ), 3);
+
+        assertThat(provider.provider()).isEqualTo("local-worker");
+        assertThat(provider.runtimeProvider()).isEqualTo("local-ollama");
+        assertThat(provider.model()).isEqualTo("sentence-transformers/test-model");
+        assertThat(provider.dimension()).isEqualTo(3);
+    }
+
+    @Test
+    void embedShouldAcceptLocalOllamaRuntimeProvider() {
+        FakeLocalEmbeddingWorkerClient client = new FakeLocalEmbeddingWorkerClient(
+                responseWithProvider("local-ollama", List.of(data(0, List.of(0.1, 0.2, 0.3))))
+        );
+        LocalEmbeddingWorkerProvider provider = provider(client, 3);
+
+        EmbeddingResponse response = provider.embed(request("hello ollama"));
+
+        assertThat(response.getProvider()).isEqualTo("local-ollama");
+        assertThat(response.getModel()).isEqualTo("sentence-transformers/test-model");
+        assertThat(response.getDimension()).isEqualTo(3);
+    }
+
+    @Test
+    void embedShouldAcceptLocalPythonRuntimeProvider() {
+        FakeLocalEmbeddingWorkerClient client = new FakeLocalEmbeddingWorkerClient(
+                responseWithProvider("local-python", List.of(data(0, List.of(0.1, 0.2))))
+        );
+        LocalEmbeddingWorkerProvider provider = provider(client, 2);
+
+        EmbeddingResponse response = provider.embed(request("hello python worker"));
+
+        assertThat(response.getProvider()).isEqualTo("local-python");
+    }
+
+    @Test
+    void embedShouldFailWhenRuntimeProviderIsBlank() {
+        LocalEmbeddingWorkerResponse workerResponse = responseWithProvider("", List.of(data(0, List.of(0.1, 0.2))));
+        workerResponse.setProvider("   ");
+        LocalEmbeddingWorkerProvider provider = provider(
+                new FakeLocalEmbeddingWorkerClient(workerResponse),
+                2
+        );
+
+        assertThatThrownBy(() -> provider.embed(request("hello")))
+                .isInstanceOf(EmbeddingProviderException.class)
+                .hasMessageContaining("provider must not be blank");
+    }
+
+    @Test
+    void embedShouldFailWhenRuntimeProviderIsUnsupported() {
+        LocalEmbeddingWorkerProvider provider = provider(
+                new FakeLocalEmbeddingWorkerClient(
+                        responseWithProvider("openai", List.of(data(0, List.of(0.1, 0.2))))
+                ),
+                2
+        );
+
+        assertThatThrownBy(() -> provider.embed(request("hello")))
+                .isInstanceOf(EmbeddingProviderException.class)
+                .hasMessageContaining("not supported");
+    }
+
+    @Test
     void embedShouldCreateRequestAndParseSingleEmbeddingResponse() {
         FakeLocalEmbeddingWorkerClient client = new FakeLocalEmbeddingWorkerClient(response(List.of(
                 data(0, List.of(0.1, 0.2, 0.3))
@@ -159,8 +225,15 @@ class LocalEmbeddingWorkerProviderTest {
     }
 
     private LocalEmbeddingWorkerResponse response(List<LocalEmbeddingWorkerResponse.EmbeddingData> data) {
+        return responseWithProvider("local-worker", data);
+    }
+
+    private LocalEmbeddingWorkerResponse responseWithProvider(
+            String provider,
+            List<LocalEmbeddingWorkerResponse.EmbeddingData> data
+    ) {
         LocalEmbeddingWorkerResponse response = new LocalEmbeddingWorkerResponse();
-        response.setProvider("local-worker");
+        response.setProvider(provider);
         response.setModel("sentence-transformers/test-model");
         response.setDimension(data.isEmpty() ? 0 : data.getFirst().getEmbedding().size());
         response.setData(data);

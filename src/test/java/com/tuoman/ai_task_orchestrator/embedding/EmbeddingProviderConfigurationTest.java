@@ -9,8 +9,29 @@ class EmbeddingProviderConfigurationTest {
     private final EmbeddingProviderConfiguration configuration = new EmbeddingProviderConfiguration();
 
     @Test
-    void activeEmbeddingProviderShouldDefaultToMock() {
+    void activeEmbeddingProviderShouldDefaultToLocalWorker() {
         EmbeddingProperties properties = new EmbeddingProperties();
+        MockEmbeddingClient mock = new MockEmbeddingClient();
+        OpenAiCompatibleEmbeddingProvider openAi = new OpenAiCompatibleEmbeddingProvider(
+                properties.getOpenai(),
+                (request, openAiProperties) -> new OpenAiEmbeddingResponse()
+        );
+        LocalEmbeddingWorkerProvider localWorker = new LocalEmbeddingWorkerProvider(
+                properties.getLocalWorker(),
+                (request, localWorkerProperties) -> new LocalEmbeddingWorkerResponse()
+        );
+
+        EmbeddingProvider provider = configuration.activeEmbeddingProvider(properties, mock, openAi, localWorker);
+
+        assertThat(provider).isSameAs(localWorker);
+        assertThat(provider.provider()).isEqualTo("local-worker");
+        assertThat(provider.runtimeProvider()).isEqualTo("local-ollama");
+    }
+
+    @Test
+    void activeEmbeddingProviderShouldUseMockOnlyWhenExplicitlyConfigured() {
+        EmbeddingProperties properties = new EmbeddingProperties();
+        properties.setProvider("mock");
         MockEmbeddingClient mock = new MockEmbeddingClient();
         OpenAiCompatibleEmbeddingProvider openAi = new OpenAiCompatibleEmbeddingProvider(
                 properties.getOpenai(),

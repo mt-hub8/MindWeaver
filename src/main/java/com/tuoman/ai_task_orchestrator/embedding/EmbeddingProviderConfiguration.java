@@ -34,12 +34,18 @@ public class EmbeddingProviderConfiguration {
             LocalEmbeddingWorkerProvider localEmbeddingWorkerProvider
     ) {
         String provider = properties.getProvider();
+        if (provider == null || provider.isBlank()) {
+            return localEmbeddingWorkerProvider;
+        }
+        if (MockEmbeddingClient.PROVIDER.equalsIgnoreCase(provider)) {
+            return mockEmbeddingClient;
+        }
         if (OpenAiCompatibleEmbeddingProvider.PROVIDER.equalsIgnoreCase(provider)) {
             return openAiCompatibleEmbeddingProvider;
         }
         if (LocalEmbeddingWorkerProvider.PROVIDER.equalsIgnoreCase(provider)) {
             return localEmbeddingWorkerProvider;
         }
-        return mockEmbeddingClient;
+        return localEmbeddingWorkerProvider;
     }
 }

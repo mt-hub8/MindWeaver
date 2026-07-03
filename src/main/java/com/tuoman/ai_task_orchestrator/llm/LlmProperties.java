@@ -9,11 +9,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app.llm")
 public class LlmProperties {
 
-    private String provider = "mock";
+    private String provider = LocalPythonLlmProvider.PROVIDER;
 
     private String baseUrl = "http://127.0.0.1:8001";
 
-    private String model = "mock-llm";
+    private String model = "qwen2.5:7b";
 
     private double temperature = 0.2;
 

@@ -143,7 +143,7 @@ public class EmbeddingCacheService {
         if (response.getVector() == null || response.getVector().isEmpty()) {
             throw new EmbeddingProviderException("embedding provider returned empty vector");
         }
-        if (response.getProvider() == null || !response.getProvider().equals(expectedProvider)) {
+        if (!LocalEmbeddingWorkerProvider.isProviderCompatible(expectedProvider, response.getProvider())) {
             throw new EmbeddingProviderException("embedding provider returned unexpected provider");
         }
         if (response.getModel() == null || !response.getModel().equals(expectedModel)) {

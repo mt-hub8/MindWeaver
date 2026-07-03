@@ -16,10 +16,17 @@ public class LlmProviderConfiguration {
             MockLlmProvider mockLlmProvider,
             LocalPythonLlmProvider localPythonLlmProvider
     ) {
-        if (LocalPythonLlmProvider.PROVIDER.equalsIgnoreCase(properties.getProvider())) {
+        String provider = properties.getProvider();
+        if (provider == null || provider.isBlank()) {
             return localPythonLlmProvider;
         }
-        return mockLlmProvider;
+        if (MockLlmProvider.PROVIDER.equalsIgnoreCase(provider)) {
+            return mockLlmProvider;
+        }
+        if (LocalPythonLlmProvider.PROVIDER.equalsIgnoreCase(provider)) {
+            return localPythonLlmProvider;
+        }
+        return localPythonLlmProvider;
     }
 
     @Bean

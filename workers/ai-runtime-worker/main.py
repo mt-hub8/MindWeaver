@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from datetime import datetime, timezone
@@ -9,6 +10,7 @@ from typing import Any, List, Optional, Tuple, Union
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 PROVIDER = "local-ollama"
@@ -17,8 +19,22 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip(
 OLLAMA_EMBEDDING_MODEL = os.getenv("OLLAMA_EMBEDDING_MODEL", "qwen3-embedding:0.6b")
 OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "qwen2.5:7b")
 OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "120"))
+OLLAMA_HEALTH_TIMEOUT_SECONDS = 3.0
 
 app = FastAPI(title="AI Task Orchestrator AI Runtime Worker (Ollama)")
+
+
+class UTF8JSONResponse(JSONResponse):
+    """Return JSON as UTF-8 bytes with an explicit charset for clients."""
+
+    media_type = "application/json; charset=utf-8"
+
+    def render(self, content: Any) -> bytes:
+        return json.dumps(
+            content,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
 
 
 class OllamaClientError(Exception):
@@ -27,22 +43,38 @@ class OllamaClientError(Exception):
         message: str,
         code: str = "OLLAMA_ERROR",
         status_code: int = 502,
-        detail: Optional[str] = None,
+        detail: Optional[Any] = None,
     ) -> None:
         super().__init__(message)
         self.message = message
         self.code = code
         self.status_code = status_code
-        self.detail = detail or message
+        self.detail = detail if detail is not None else message
+
+
+def ollama_embed_url() -> str:
+    return f"{OLLAMA_BASE_URL}/api/embed"
+
+
+def ollama_tags_url() -> str:
+    return f"{OLLAMA_BASE_URL}/api/tags"
+
+
+def check_ollama_reachable() -> Tuple[bool, Optional[str]]:
+    tags_url = ollama_tags_url()
+    try:
+        with httpx.Client(timeout=OLLAMA_HEALTH_TIMEOUT_SECONDS, trust_env=False) as client:
+            response = client.get(tags_url)
+        if 200 <= response.status_code < 300:
+            return True, None
+        return False, f"HTTPStatusError: HTTP {response.status_code}"
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
 
 
 def is_ollama_reachable() -> bool:
-    try:
-        with httpx.Client(timeout=5.0) as client:
-            response = client.get(f"{OLLAMA_BASE_URL}/api/version")
-            return response.status_code == 200
-    except Exception:
-        return False
+    reachable, _error = check_ollama_reachable()
+    return reachable
 
 
 def embed_texts(texts: List[str], model: Optional[str] = None) -> Tuple[List[List[float]], str, int, int]:
@@ -53,16 +85,17 @@ def embed_texts(texts: List[str], model: Optional[str] = None) -> Tuple[List[Lis
     if not model_name:
         raise OllamaClientError("model must not be blank", code="INVALID_REQUEST", status_code=400)
 
-    # Ollama /api/embed expects "input" as an array, even for a single text.
-    payload = {
-        "model": model_name,
-        "input": texts,
-    }
-
     started = time.perf_counter()
+    vectors: List[List[float]] = []
+    resolved_model = model_name
+
     try:
-        with httpx.Client(timeout=OLLAMA_TIMEOUT_SECONDS) as client:
-            response = client.post(f"{OLLAMA_BASE_URL}/api/embed", json=payload)
+        with httpx.Client(timeout=OLLAMA_TIMEOUT_SECONDS, trust_env=False) as client:
+            for text in texts:
+                vector, resolved_model = embed_single_text(client, text, model_name)
+                vectors.append(vector)
+    except OllamaClientError:
+        raise
     except httpx.TimeoutException as exc:
         raise OllamaClientError(
             f"Ollama embed timeout after {OLLAMA_TIMEOUT_SECONDS}s",
@@ -78,13 +111,35 @@ def embed_texts(texts: List[str], model: Optional[str] = None) -> Tuple[List[Lis
         ) from exc
 
     latency_ms = int((time.perf_counter() - started) * 1000)
+    dimension = len(vectors[0])
+    return vectors, resolved_model, dimension, latency_ms
+
+
+def embed_single_text(
+    client: httpx.Client,
+    text: str,
+    model_name: str,
+) -> Tuple[List[float], str]:
+    ollama_url = ollama_embed_url()
+    payload = {
+        "model": model_name,
+        "input": text,
+    }
+
+    response = client.post(ollama_url, json=payload)
 
     if response.status_code >= 400:
         raise OllamaClientError(
             f"Ollama embed HTTP {response.status_code}",
             code="OLLAMA_BAD_RESPONSE",
             status_code=502,
-            detail=response.text,
+            detail={
+                "ollamaUrl": ollama_url,
+                "model": model_name,
+                "inputLength": len(text),
+                "statusCode": response.status_code,
+                "responseBody": response.text,
+            },
         )
 
     try:
@@ -94,13 +149,99 @@ def embed_texts(texts: List[str], model: Optional[str] = None) -> Tuple[List[Lis
             "Ollama embed returned non-JSON response",
             code="OLLAMA_BAD_RESPONSE",
             status_code=502,
-            detail=response.text,
+            detail={
+                "ollamaUrl": ollama_url,
+                "model": model_name,
+                "inputLength": len(text),
+                "statusCode": response.status_code,
+                "responseBody": response.text,
+            },
         ) from exc
 
-    vectors = extract_embeddings(body, len(texts))
-    dimension = len(vectors[0])
+    vector = extract_single_embedding(body)
     resolved_model = str(body.get("model") or model_name)
-    return vectors, resolved_model, dimension, latency_ms
+    return vector, resolved_model
+
+
+def extract_single_embedding(body: dict[str, Any]) -> List[float]:
+    if isinstance(body.get("embeddings"), list) and body["embeddings"]:
+        vector = normalize_vector(body["embeddings"][0])
+    elif isinstance(body.get("embedding"), list):
+        vector = normalize_vector(body["embedding"])
+    else:
+        raise OllamaClientError(
+            "Ollama embed response missing embeddings/embedding field",
+            code="OLLAMA_BAD_RESPONSE",
+            status_code=502,
+            detail={
+                "responseBody": str(body),
+            },
+        )
+
+    if not vector:
+        raise OllamaClientError(
+            "Ollama embed returned an empty embedding vector",
+            code="OLLAMA_BAD_RESPONSE",
+            status_code=502,
+        )
+    return vector
+
+
+def decode_response_body(response: httpx.Response, errors: str = "replace") -> str:
+    return response.content.decode("utf-8", errors=errors)
+
+
+def parse_generate_response_json(response: httpx.Response) -> dict[str, Any]:
+    # Parse raw response bytes only. Never use response.text: charset detection can
+    # pick latin-1/cp1252 on Windows and corrupt Chinese in the JSON "response" field.
+    raw = response.content
+    if not raw:
+        raise OllamaClientError(
+            "Ollama generate returned empty body",
+            code="OLLAMA_BAD_RESPONSE",
+            status_code=502,
+        )
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except UnicodeDecodeError as exc:
+            raise OllamaClientError(
+                "Ollama generate returned non-UTF-8 response",
+                code="OLLAMA_BAD_RESPONSE",
+                status_code=502,
+                detail=decode_response_body(response),
+            ) from exc
+        except json.JSONDecodeError as exc:
+            raise OllamaClientError(
+                "Ollama generate returned non-JSON response",
+                code="OLLAMA_BAD_RESPONSE",
+                status_code=502,
+                detail=decode_response_body(response),
+            ) from exc
+
+
+def extract_generate_content(body: dict[str, Any]) -> str:
+    content = body.get("response", "")
+    if not isinstance(content, str):
+        if isinstance(content, bytes):
+            content = content.decode("utf-8")
+        else:
+            raise OllamaClientError(
+                "Ollama generate response field is not text",
+                code="OLLAMA_BAD_RESPONSE",
+                status_code=502,
+                detail=str(type(content)),
+            )
+    if not content.strip():
+        raise OllamaClientError(
+            "Ollama generate returned empty content",
+            code="OLLAMA_BAD_RESPONSE",
+            status_code=502,
+            detail=str(body),
+        )
+    return content
 
 
 def generate_text(
@@ -136,7 +277,7 @@ def generate_text(
 
     started = time.perf_counter()
     try:
-        with httpx.Client(timeout=OLLAMA_TIMEOUT_SECONDS) as client:
+        with httpx.Client(timeout=OLLAMA_TIMEOUT_SECONDS, trust_env=False) as client:
             response = client.post(f"{OLLAMA_BASE_URL}/api/generate", json=payload)
     except httpx.TimeoutException as exc:
         raise OllamaClientError(
@@ -159,32 +300,16 @@ def generate_text(
             f"Ollama generate HTTP {response.status_code}",
             code="OLLAMA_BAD_RESPONSE",
             status_code=502,
-            detail=response.text,
+            detail=decode_response_body(response),
         )
 
-    try:
-        body = response.json()
-    except ValueError as exc:
-        raise OllamaClientError(
-            "Ollama generate returned non-JSON response",
-            code="OLLAMA_BAD_RESPONSE",
-            status_code=502,
-            detail=response.text,
-        ) from exc
-
-    content = body.get("response")
-    if content is None or not str(content).strip():
-        raise OllamaClientError(
-            "Ollama generate returned empty content",
-            code="OLLAMA_BAD_RESPONSE",
-            status_code=502,
-            detail=str(body),
-        )
+    body = parse_generate_response_json(response)
+    content = extract_generate_content(body)
 
     usage = extract_usage(body)
     resolved_model = str(body.get("model") or model_name)
     finish_reason = str(body.get("done_reason") or "stop")
-    return str(content), resolved_model, usage, latency_ms, finish_reason
+    return content, resolved_model, usage, latency_ms, finish_reason
 
 
 def extract_embeddings(body: dict[str, Any], expected_count: int) -> List[List[float]]:
@@ -261,19 +386,22 @@ def extract_usage(body: dict[str, Any]) -> Optional[dict[str, int]]:
 
 @app.get("/health")
 def health() -> dict:
-    reachable = is_ollama_reachable()
+    tags_url = ollama_tags_url()
+    reachable, ollama_error = check_ollama_reachable()
     payload = {
         "status": "ok" if reachable else "degraded",
         "provider": PROVIDER,
         "ollamaBaseUrl": OLLAMA_BASE_URL,
+        "ollamaTagsUrl": tags_url,
+        "ollamaReachable": reachable,
+        "ollamaError": ollama_error,
         "embeddingModel": OLLAMA_EMBEDDING_MODEL,
         "llmModel": OLLAMA_LLM_MODEL,
-        "ollamaReachable": reachable,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     if not reachable:
         payload["warning"] = (
-            "Ollama is not reachable at /api/version; "
+            "Ollama is not reachable at /api/tags; "
             "worker is up but real model calls will fail until Ollama starts."
         )
     return payload
@@ -376,8 +504,8 @@ def embeddings_compat(request: EmbeddingCompatRequest) -> EmbeddingCompatRespons
     )
 
 
-@app.post("/generate", response_model=GenerateResponse)
-def generate(request: GenerateRequest) -> GenerateResponse:
+@app.post("/generate")
+def generate(request: GenerateRequest) -> UTF8JSONResponse:
     try:
         content, model, usage, latency_ms, finish_reason = generate_text(
             request.systemPrompt,
@@ -391,18 +519,20 @@ def generate(request: GenerateRequest) -> GenerateResponse:
 
     generate_usage = None
     if usage is not None:
-        generate_usage = GenerateUsage(
-            inputTokens=usage.get("inputTokens"),
-            outputTokens=usage.get("outputTokens"),
-        )
+        generate_usage = {
+            "inputTokens": usage.get("inputTokens"),
+            "outputTokens": usage.get("outputTokens"),
+        }
 
-    return GenerateResponse(
-        provider=PROVIDER,
-        model=model,
-        content=content,
-        usage=generate_usage,
-        latencyMs=latency_ms,
-        finishReason=finish_reason,
+    return UTF8JSONResponse(
+        {
+            "provider": PROVIDER,
+            "model": model,
+            "content": content,
+            "usage": generate_usage,
+            "latencyMs": latency_ms,
+            "finishReason": finish_reason,
+        }
     )
 
 

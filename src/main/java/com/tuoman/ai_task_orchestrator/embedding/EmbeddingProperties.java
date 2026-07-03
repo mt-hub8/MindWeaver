@@ -9,7 +9,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "app.embedding")
 public class EmbeddingProperties {
 
-    private String provider = MockEmbeddingClient.PROVIDER;
+    private String provider = LocalEmbeddingWorkerProvider.PROVIDER;
 
     private OpenAi openai = new OpenAi();
 
@@ -36,10 +36,10 @@ public class EmbeddingProperties {
 
         private String baseUrl = "http://127.0.0.1:8001";
 
-        private String model = "sentence-transformers/all-MiniLM-L6-v2";
+        private String model = "qwen3-embedding:0.6b";
 
-        private Integer dimension = 384;
+        private Integer dimension = 1024;
 
-        private int timeoutMs = 10000;
+        private int timeoutMs = 120000;
     }
 }

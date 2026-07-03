@@ -3,10 +3,10 @@ package com.tuoman.ai_task_orchestrator.llm;
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
 import com.tuoman.ai_task_orchestrator.common.error.ErrorCode;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
-import java.io.InputStream;
+import java.nio.file.Path;
+
 import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -18,15 +18,19 @@ import static org.mockito.Mockito.when;
 class LocalAiProfilePropertiesTest {
 
     @Test
-    void defaultApplicationPropertiesShouldUseMockProviders() throws IOException {
-        Properties properties = loadProperties("application.properties");
-        assertThat(properties.getProperty("app.embedding.provider")).isEqualTo("mock");
-        assertThat(properties.getProperty("app.llm.provider")).isEqualTo("mock");
+    void defaultApplicationPropertiesShouldUseLocalWorkerEmbedding() throws IOException {
+        Properties properties = loadProperties(Path.of("src/main/resources/application.properties"));
+        assertThat(properties.getProperty("app.embedding.provider")).isEqualTo("local-worker");
+        assertThat(properties.getProperty("app.embedding.local-worker.base-url")).isEqualTo("http://127.0.0.1:8001");
+        assertThat(properties.getProperty("app.embedding.local-worker.model")).isEqualTo("qwen3-embedding:0.6b");
+        assertThat(properties.getProperty("app.embedding.local-worker.dimension")).isEqualTo("1024");
+        assertThat(properties.getProperty("app.llm.provider")).isEqualTo("local-python");
+        assertThat(properties.getProperty("app.llm.model")).isEqualTo("qwen2.5:7b");
     }
 
     @Test
     void localAiProfileShouldConfigureOllamaModels() throws IOException {
-        Properties properties = loadProperties("application-local-ai.properties");
+        Properties properties = loadProperties(Path.of("src/main/resources/application-local-ai.properties"));
         assertThat(properties.getProperty("app.embedding.provider")).isEqualTo("local-worker");
         assertThat(properties.getProperty("app.embedding.local-worker.model")).isEqualTo("qwen3-embedding:0.6b");
         assertThat(properties.getProperty("app.embedding.local-worker.dimension")).isEqualTo("1024");
@@ -93,9 +97,9 @@ class LocalAiProfilePropertiesTest {
                 .isEqualTo(ErrorCode.AI_RUNTIME_BAD_RESPONSE);
     }
 
-    private Properties loadProperties(String classpathFile) throws IOException {
+    private Properties loadProperties(Path propertiesPath) throws IOException {
         Properties properties = new Properties();
-        try (InputStream inputStream = new ClassPathResource(classpathFile).getInputStream()) {
+        try (var inputStream = java.nio.file.Files.newInputStream(propertiesPath)) {
             properties.load(inputStream);
         }
         return properties;

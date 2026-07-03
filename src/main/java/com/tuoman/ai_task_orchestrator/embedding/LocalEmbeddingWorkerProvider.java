@@ -7,6 +7,16 @@ public class LocalEmbeddingWorkerProvider implements EmbeddingProvider {
 
     public static final String PROVIDER = "local-worker";
 
+    public static final String RUNTIME_PROVIDER_OLLAMA = "local-ollama";
+
+    public static final String RUNTIME_PROVIDER_PYTHON = "local-python";
+
+    public static final java.util.Set<String> ACCEPTED_RUNTIME_PROVIDERS = java.util.Set.of(
+            PROVIDER,
+            RUNTIME_PROVIDER_OLLAMA,
+            RUNTIME_PROVIDER_PYTHON
+    );
+
     public static final String DISTANCE_METRIC = "COSINE";
 
     private final EmbeddingProperties.LocalWorker properties;
@@ -61,6 +71,11 @@ public class LocalEmbeddingWorkerProvider implements EmbeddingProvider {
     }
 
     @Override
+    public String runtimeProvider() {
+        return RUNTIME_PROVIDER_OLLAMA;
+    }
+
+    @Override
     public String model() {
         return properties.getModel();
     }
@@ -88,6 +103,16 @@ public class LocalEmbeddingWorkerProvider implements EmbeddingProvider {
         if (response == null || response.getData() == null || response.getData().isEmpty()) {
             throw new EmbeddingProviderException("Local embedding worker response data must not be empty");
         }
+        if (response.getProvider() == null || response.getProvider().isBlank()) {
+            throw new EmbeddingProviderException("Local embedding worker response provider must not be blank");
+        }
+        if (!isAcceptedRuntimeProvider(response.getProvider())) {
+            throw new EmbeddingProviderException("Local embedding worker response provider is not supported: "
+                    + response.getProvider());
+        }
+        if (response.getModel() == null || response.getModel().isBlank()) {
+            throw new EmbeddingProviderException("Local embedding worker response model must not be blank");
+        }
         if (response.getData().size() != expectedCount) {
             throw new EmbeddingProviderException("Local embedding worker response size does not match input size");
         }
@@ -114,5 +139,19 @@ public class LocalEmbeddingWorkerProvider implements EmbeddingProvider {
 
     private String normalizeModel(String responseModel) {
         return responseModel == null || responseModel.isBlank() ? model() : responseModel;
+    }
+
+    static boolean isAcceptedRuntimeProvider(String runtimeProvider) {
+        return runtimeProvider != null && ACCEPTED_RUNTIME_PROVIDERS.contains(runtimeProvider);
+    }
+
+    static boolean isProviderCompatible(String routeProvider, String runtimeProvider) {
+        if (runtimeProvider == null || runtimeProvider.isBlank()) {
+            return false;
+        }
+        if (runtimeProvider.equals(routeProvider)) {
+            return true;
+        }
+        return PROVIDER.equals(routeProvider) && isAcceptedRuntimeProvider(runtimeProvider);
     }
 }

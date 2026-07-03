@@ -124,6 +124,7 @@ AI Task Orchestrator 是一个基于 Java / Spring Boot 的 AI 任务编排与 R
 
 - 免费本地体验：**Ollama** + `qwen3-embedding:0.6b` + `qwen2.5:7b`（或 `qwen2.5:3b` 备用）
 - 链路：Java → Python Worker → Ollama；**默认 profile 仍为 mock**
+- `local-worker`（Java route）与 `local-ollama`（Worker runtime）是两层概念，不要求相等
 - 启用方式：`local-ai` profile + 手工启动 Python Worker 与 Ollama
 - 说明文档：[docs/manual/real-local-ai-runtime-with-ollama.md](docs/manual/real-local-ai-runtime-with-ollama.md)
 

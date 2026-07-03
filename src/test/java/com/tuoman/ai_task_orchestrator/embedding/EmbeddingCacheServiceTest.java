@@ -51,6 +51,56 @@ class EmbeddingCacheServiceTest {
     private EmbeddingCacheService embeddingCacheService;
 
     @Test
+    void shouldAcceptLocalWorkerRouteWithLocalOllamaRuntimeProvider() {
+        String chunkHash = "hash-local-ollama";
+        List<Double> vector = List.of(0.1, 0.2, 0.3, 0.4);
+        int dimension = 4;
+        String routeProvider = LocalEmbeddingWorkerProvider.PROVIDER;
+        String model = "qwen3-embedding:0.6b";
+        EmbeddingResponse response = new EmbeddingResponse(
+                LocalEmbeddingWorkerProvider.RUNTIME_PROVIDER_OLLAMA,
+                model,
+                dimension,
+                "COSINE",
+                vector
+        );
+
+        when(chunkHashService.hash(CONTENT)).thenReturn(chunkHash);
+        when(embeddingCacheRepository.findByChunkHashAndProviderAndModelAndDimension(
+                chunkHash, routeProvider, model, dimension
+        )).thenReturn(Optional.empty());
+        when(embeddingProvider.embed(any(EmbeddingRequest.class))).thenReturn(response);
+        when(embeddingCacheJsonCodec.serialize(vector)).thenReturn("[0.1,0.2,0.3,0.4]");
+        when(embeddingCacheJsonCodec.deserialize("[0.1,0.2,0.3,0.4]")).thenReturn(vector);
+        when(embeddingCacheRepository.saveAndFlush(any(EmbeddingCacheEntity.class))).thenAnswer(invocation -> {
+            EmbeddingCacheEntity entity = invocation.getArgument(0);
+            entity.setId(2L);
+            return entity;
+        });
+
+        CachedEmbeddingResult result = embeddingCacheService.getOrCompute(CONTENT, routeProvider, model, dimension);
+
+        assertThat(result.provider()).isEqualTo(routeProvider);
+        assertThat(result.model()).isEqualTo(model);
+        assertThat(result.dimension()).isEqualTo(dimension);
+        assertThat(result.embedding()).isEqualTo(vector);
+    }
+
+    @Test
+    void shouldRejectBlankRuntimeProvider() {
+        when(chunkHashService.hash(CONTENT)).thenReturn("hash-blank-provider");
+        when(embeddingCacheRepository.findByChunkHashAndProviderAndModelAndDimension(
+                "hash-blank-provider", PROVIDER, MODEL, DIMENSION
+        )).thenReturn(Optional.empty());
+        when(embeddingProvider.embed(any(EmbeddingRequest.class)))
+                .thenReturn(new EmbeddingResponse("  ", MODEL, DIMENSION, "COSINE", List.of(0.1, 0.2)));
+
+        assertThatThrownBy(() -> embeddingCacheService.getOrCompute(CONTENT, PROVIDER, MODEL, DIMENSION))
+                .isInstanceOf(EmbeddingProviderException.class)
+                .hasMessageContaining("unexpected provider");
+    }
+
+    @Test
     void shouldCallProviderOnCacheMissAndPersistCache() {
         String chunkHash = "hash-miss";
         List<Double> vector = List.of(0.1, 0.2);

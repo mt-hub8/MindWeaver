@@ -20,6 +20,7 @@ import com.tuoman.ai_task_orchestrator.retrieval.RetrievalScope;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -68,6 +69,7 @@ class RagAnswerServiceTest {
     @BeforeEach
     void setUpProviderMetadata() {
         lenient().when(embeddingProvider.provider()).thenReturn(MockEmbeddingClient.PROVIDER);
+        lenient().when(embeddingProvider.runtimeProvider()).thenReturn(MockEmbeddingClient.PROVIDER);
         lenient().when(embeddingProvider.model()).thenReturn(MockEmbeddingClient.DEFAULT_MODEL);
         lenient().when(embeddingProvider.dimension()).thenReturn(MockEmbeddingClient.DIMENSION);
         lenient().when(vectorStoreProperties.getProvider()).thenReturn(ExactCosineVectorStore.PROVIDER);
@@ -103,6 +105,52 @@ class RagAnswerServiceTest {
         assertThat(response.getRetrieval().getRerankerName()).isNull();
         verify(ragPromptBuilder).buildPrompt(request.getQuery(), response.getCitations());
         verify(llmClient).generate(any(LlmRequest.class));
+    }
+
+    @Test
+    void answerShouldNotForceMockLlmModelOnRequest() {
+        RagRetrievalOutcome outcome = new RagRetrievalOutcome(
+                List.of(chunk(1, 1, 10L, 0.9, null, "context")),
+                1,
+                1,
+                false,
+                null,
+                0L
+        );
+        when(ragTwoStageRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class))).thenReturn(outcome);
+        when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("rag prompt");
+        when(llmClient.generate(any(LlmRequest.class))).thenReturn(successResponse("answer"));
+
+        ragAnswerService.answer(request("question", 1));
+
+        ArgumentCaptor<LlmRequest> captor = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(llmClient).generate(captor.capture());
+        assertThat(captor.getValue().getModel()).isNull();
+    }
+
+    @Test
+    void answerShouldExposeLlmMetadataFields() {
+        RagRetrievalOutcome outcome = new RagRetrievalOutcome(
+                List.of(chunk(1, 1, 10L, 0.9, null, "context")),
+                1,
+                1,
+                false,
+                null,
+                0L
+        );
+        when(ragTwoStageRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class))).thenReturn(outcome);
+        when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("rag prompt");
+        LlmResponse llmResponse = successResponse("answer with [1]");
+        llmResponse.setProvider("local-ollama");
+        llmResponse.setModel("qwen2.5:7b");
+        when(llmClient.generate(any(LlmRequest.class))).thenReturn(llmResponse);
+
+        RagAnswerResponse response = ragAnswerService.answer(request("question", 1));
+
+        assertThat(response.getGeneration().getLlmProvider()).isEqualTo("local-ollama");
+        assertThat(response.getGeneration().getLlmModel()).isEqualTo("qwen2.5:7b");
+        assertThat(response.getGeneration().getProvider()).isEqualTo("local-ollama");
+        assertThat(response.getGeneration().getModel()).isEqualTo("qwen2.5:7b");
     }
 
     @Test

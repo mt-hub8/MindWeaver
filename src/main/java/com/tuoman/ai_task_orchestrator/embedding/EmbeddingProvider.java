@@ -17,6 +17,10 @@ public interface EmbeddingProvider {
 
     String provider();
 
+    default String runtimeProvider() {
+        return provider();
+    }
+
     String model();
 
     int dimension();
