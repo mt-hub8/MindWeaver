@@ -16,4 +16,15 @@ public class RagAnswerResponse {
     private RagRetrievalMetadataResponse retrieval;
 
     private RagGenerationMetadataResponse generation;
+
+    private RagQualityScoreResponse qualityScore;
+
+    public RagAnswerResponse(
+            String answer,
+            List<RagCitationResponse> citations,
+            RagRetrievalMetadataResponse retrieval,
+            RagGenerationMetadataResponse generation
+    ) {
+        this(answer, citations, retrieval, generation, null);
+    }
 }

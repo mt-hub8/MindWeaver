@@ -8,6 +8,7 @@
 
     const queryInput = document.getElementById("query-input");
     const topKInput = document.getElementById("topk-input");
+    const qualityModeSelect = document.getElementById("quality-mode-select");
     const scopeSelect = document.getElementById("scope-select");
     const scopeHint = document.getElementById("scope-hint");
     const askButton = document.getElementById("ask-button");
@@ -31,6 +32,17 @@
     const generationSection = document.getElementById("generation-section");
     const generationSummary = document.getElementById("generation-summary");
     const generationMetadata = document.getElementById("generation-metadata");
+
+    const qualitySection = document.getElementById("quality-section");
+    const qualityOverallScore = document.getElementById("quality-overall-score");
+    const qualityOverallLevel = document.getElementById("quality-overall-level");
+    const qualityModeLabel = document.getElementById("quality-mode-label");
+    const qualityDimensions = document.getElementById("quality-dimensions");
+    const qualityIssues = document.getElementById("quality-issues");
+    const qualityIssuesEmpty = document.getElementById("quality-issues-empty");
+    const qualitySuggestions = document.getElementById("quality-suggestions");
+    const qualitySuggestionsEmpty = document.getElementById("quality-suggestions-empty");
+    const qualityMetricDetails = document.getElementById("quality-metric-details");
 
     renderSuggestedQuestions();
     askButton.addEventListener("click", submitQuestion);
@@ -125,6 +137,9 @@
         if (collectionId) {
             requestBody.collectionId = collectionId;
         }
+        if (qualityModeSelect && qualityModeSelect.value) {
+            requestBody.qualityMode = qualityModeSelect.value;
+        }
 
         try {
             const response = await fetch("/rag/answers", {
@@ -205,6 +220,7 @@
 
     function clearResults() {
         answerSection.classList.add("hidden");
+        qualitySection.classList.add("hidden");
         citationsSection.classList.add("hidden");
         retrievalSection.classList.add("hidden");
         generationSection.classList.add("hidden");
@@ -219,9 +235,23 @@
         retrievalMetadata.textContent = "";
         generationSummary.innerHTML = "";
         generationMetadata.textContent = "";
+        qualityOverallScore.textContent = "-";
+        qualityOverallLevel.textContent = "-";
+        qualityModeLabel.textContent = "平衡模式";
+        setDimensionScore("quality-retrieval-score", null);
+        setDimensionScore("quality-context-score", null);
+        setDimensionScore("quality-answer-score", null);
+        setDimensionScore("quality-citation-score", null);
+        qualityIssues.innerHTML = "";
+        qualitySuggestions.innerHTML = "";
+        qualityIssuesEmpty.classList.add("hidden");
+        qualitySuggestionsEmpty.classList.add("hidden");
+        qualityMetricDetails.textContent = "";
     }
 
     function renderSuccess(data, requestedCollectionId) {
+        renderQualityScore(data.qualityScore);
+
         answerSection.classList.remove("hidden");
         answerContent.textContent = data.answer || "（无 answer 字段）";
 
@@ -253,6 +283,80 @@
         generationSection.classList.remove("hidden");
         renderSummaryDl(generationSummary, buildGenerationSummary(generation));
         generationMetadata.textContent = prettyJson(data.generation);
+    }
+
+    function renderQualityScore(qualityScore) {
+        qualitySection.classList.remove("hidden");
+        if (!qualityScore) {
+            qualityOverallScore.textContent = "-";
+            qualityOverallLevel.textContent = "暂无评分";
+            qualityIssuesEmpty.classList.remove("hidden");
+            qualitySuggestionsEmpty.classList.remove("hidden");
+            return;
+        }
+
+        qualityOverallScore.textContent = qualityScore.overallScore != null ? String(qualityScore.overallScore) : "-";
+        qualityOverallLevel.textContent = qualityScore.displayLevel || qualityScore.overallLevel || "-";
+        qualityModeLabel.textContent = qualityScore.displayMode || "平衡模式";
+
+        setDimensionScore("quality-retrieval-score", qualityScore.retrievalScore);
+        setDimensionScore("quality-context-score", qualityScore.contextScore);
+        setDimensionScore("quality-answer-score", qualityScore.answerScore);
+        setDimensionScore("quality-citation-score", qualityScore.citationScore);
+
+        const issues = Array.isArray(qualityScore.diagnosis && qualityScore.diagnosis.issues)
+            ? qualityScore.diagnosis.issues
+            : [];
+        qualityIssues.innerHTML = "";
+        if (issues.length === 0) {
+            qualityIssuesEmpty.classList.remove("hidden");
+        } else {
+            qualityIssuesEmpty.classList.add("hidden");
+            issues.forEach(function (issue) {
+                const item = document.createElement("li");
+                item.textContent = (issue.title || issue.code || "问题") + "：" + (issue.description || "");
+                qualityIssues.appendChild(item);
+            });
+        }
+
+        const suggestions = Array.isArray(qualityScore.diagnosis && qualityScore.diagnosis.suggestions)
+            ? qualityScore.diagnosis.suggestions
+            : [];
+        qualitySuggestions.innerHTML = "";
+        if (suggestions.length === 0) {
+            qualitySuggestionsEmpty.classList.remove("hidden");
+        } else {
+            qualitySuggestionsEmpty.classList.add("hidden");
+            suggestions.forEach(function (suggestion) {
+                const item = document.createElement("li");
+                item.textContent = (suggestion.title || suggestion.code || "建议") + "：" + (suggestion.description || "");
+                qualitySuggestions.appendChild(item);
+            });
+        }
+
+        const technicalPayload = {
+            summary: qualityScore.diagnosis ? qualityScore.diagnosis.summary : null,
+            scoringNote: qualityScore.scoringNote,
+            weights: qualityScore.weights,
+            metricDetails: qualityScore.metricDetails,
+            mode: qualityScore.mode,
+            displayMode: qualityScore.displayMode
+        };
+        qualityMetricDetails.textContent = prettyJson(technicalPayload);
+    }
+
+    function formatScore(value) {
+        if (value === undefined || value === null) {
+            return "-";
+        }
+        return String(value) + " / 100";
+    }
+
+    function setDimensionScore(elementId, value) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.textContent = formatScore(value);
+        }
     }
 
     function renderAnswerSummary(generation, citationCount) {

@@ -20,4 +20,21 @@ public class RagGenerationMetadataResponse {
     private Boolean skipped;
 
     private String reason;
+
+    private Long latencyMs;
+
+    private Integer inputTokens;
+
+    private Integer outputTokens;
+
+    public RagGenerationMetadataResponse(
+            String provider,
+            String model,
+            String llmProvider,
+            String llmModel,
+            Boolean skipped,
+            String reason
+    ) {
+        this(provider, model, llmProvider, llmModel, skipped, reason, null, null, null);
+    }
 }

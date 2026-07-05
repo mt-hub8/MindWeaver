@@ -20,4 +20,6 @@ public class RagAnswerRequest {
     private Integer topK;
 
     private Long collectionId;
+
+    private String qualityMode;
 }

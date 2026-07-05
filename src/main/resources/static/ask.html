@@ -71,6 +71,14 @@
                 <label for="topk-input">检索条数（Top K）</label>
                 <input id="topk-input" type="number" min="1" max="10" value="5">
             </div>
+            <div>
+                <label for="quality-mode-select">评分模式</label>
+                <select id="quality-mode-select">
+                    <option value="BALANCED">平衡模式</option>
+                    <option value="PRECISE">精准模式</option>
+                    <option value="COMPREHENSIVE">全面模式</option>
+                </select>
+            </div>
             <button id="ask-button" type="button">开始提问</button>
         </div>
 
@@ -91,6 +99,40 @@
                 <dd id="error-trace-id"></dd>
             </dl>
         </div>
+    </section>
+
+    <section id="quality-section" class="panel hidden" aria-labelledby="quality-section-title">
+        <h2 id="quality-section-title">回答质量评分</h2>
+        <p class="muted">综合评分基于检索、上下文、回答与引用四个维度，帮助识别主要扣分原因与可执行优化建议。</p>
+        <div class="quality-score-card">
+            <div class="quality-overall">
+                <span class="quality-overall-label">综合评分</span>
+                <span id="quality-overall-score" class="quality-overall-value">-</span>
+                <span class="quality-overall-suffix">/ 100</span>
+            </div>
+            <div class="quality-overall-meta">
+                <span id="quality-overall-level" class="quality-level-badge">-</span>
+                <span id="quality-mode-label" class="quality-mode-label">平衡模式</span>
+            </div>
+        </div>
+        <dl id="quality-dimensions" class="summary-dl quality-dimensions">
+            <dt>检索质量</dt><dd id="quality-retrieval-score">-</dd>
+            <dt>上下文质量</dt><dd id="quality-context-score">-</dd>
+            <dt>回答质量</dt><dd id="quality-answer-score">-</dd>
+            <dt>引用质量</dt><dd id="quality-citation-score">-</dd>
+        </dl>
+        <div class="quality-diagnosis">
+            <h3>主要扣分原因</h3>
+            <ul id="quality-issues" class="quality-list"></ul>
+            <p id="quality-issues-empty" class="empty-state hidden">暂无显著扣分项。</p>
+            <h3>优化建议</h3>
+            <ul id="quality-suggestions" class="quality-list"></ul>
+            <p id="quality-suggestions-empty" class="empty-state hidden">暂无额外优化建议。</p>
+        </div>
+        <details class="tech-details">
+            <summary>查看技术详情 · 评分</summary>
+            <pre id="quality-metric-details"></pre>
+        </details>
     </section>
 
     <section id="answer-section" class="panel hidden" aria-labelledby="answer-section-title">

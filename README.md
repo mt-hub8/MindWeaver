@@ -46,6 +46,7 @@
 - **重新索引** — 基于原始文本重新切块与向量化，无需重新上传文件。
 - **本地 Ollama 模型** — `local-ai` 模式下使用 `qwen3-embedding` 与 `qwen2.5` 系列模型。
 - **模型供应商配置（V10.0）** — 在「模型设置」管理 Ollama / OpenAI-compatible 供应商，设置默认 LLM 与 Embedding；**API Key 不会明文展示**。
+- **RAG 质量评分与诊断（V11.0）** — Ask 页面展示**综合评分**、四维质量分、**主要扣分原因**与**优化建议**；支持平衡 / 精准 / 全面三种评分模式；技术详情可折叠查看原始指标与权重。
 - **AI 任务编排** — 提交目标后自动生成检索、总结与最终报告。
 - **工具执行过程** — 查看每一步工具输入、输出与事件时间线。
 - **模型设置** — 查看运行模式、Worker / Ollama 连接状态，支持连接测试。
@@ -62,7 +63,7 @@
 | 首页 | `/` | 产品入口与核心功能导航 |
 | 文档管理 | `/documents.html` | 上传文档、查看状态、重新索引、删除 |
 | 知识库分组 | `/collections.html` | 创建分组、管理文档归属 |
-| 知识库问答 | `/ask.html` | 选择范围提问，查看回答与引用来源 |
+| 知识库问答 | `/ask.html` | 选择范围提问，查看回答、引用来源与 **RAG 质量评分** |
 | AI 任务 | `/agent-tasks.html` | 提交任务，查看报告与执行过程 |
 | 模型设置 | `/model-settings.html` | 管理**模型供应商**、默认 LLM/Embedding、**测试连接**（V10.0） |
 | 系统设置 | `/settings.html` | 运行模式、本地数据目录规划等只读信息 |
@@ -240,7 +241,7 @@ cd E:\code\ai-task-orchestrator
 ```
 
 **为什么默认测试低依赖？**  
-为了保证任何开发者 clone 仓库后，无需安装 Ollama、无需 Docker 中的 Qdrant、无需真实 API Key，也能在 CI 与本地快速验证业务逻辑。测试通过 Maven Surefire 注入 `app.embedding.provider=mock` 与 `app.llm.provider=mock`，并关闭数据库模型覆盖（`app.model-provider.database-overrides-enabled=false`）。**默认测试不依赖真实外部 API。**
+为了保证任何开发者 clone 仓库后，无需安装 Ollama、无需 Docker 中的 Qdrant、无需真实 API Key，也能在 CI 与本地快速验证业务逻辑。测试通过 Maven Surefire 注入 `app.embedding.provider=mock` 与 `app.llm.provider=mock`，并关闭数据库模型覆盖（`app.model-provider.database-overrides-enabled=false`）。**默认测试不依赖真实外部 LLM**，**默认测试不依赖真实外部 API**。
 
 默认测试**不要求**：
 
@@ -284,7 +285,7 @@ Worker 测试使用 mock HTTP，**不调用真实 Ollama**。
 |------|------|
 | **V9.0** | 本地个人知识工作台产品化（当前）：中文 UI、模型设置、系统设置、Windows 脚本 |
 | **V10.0** | 模型 Provider 设置：Ollama / OpenAI-compatible 供应商、API Key 加密、默认模型 |
-| **V11.0** | RAG 质量评分与诊断 |
+| **V11.0** | RAG 质量评分与诊断（当前）：Ask 综合评分、扣分原因、优化建议、三种评分模式 |
 | **V12.0** | 垃圾箱与本地存储管理 |
 | **V13.0** | 批量上传与通知 |
 | **V14.0** | Skill System MVP |

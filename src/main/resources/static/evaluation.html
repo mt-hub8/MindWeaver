@@ -80,6 +80,16 @@ app.evaluation.retrieval.compare-hybrid=true   # 或 compare-rerank=true</pre>
     </section>
 
     <section class="panel">
+        <h2>Ask 页面质量评分（V11.0）</h2>
+        <p>
+            知识库问答（<code>/ask.html</code>）在每次回答后展示 <strong>RAG 质量评分</strong>：
+            综合评分、检索 / 上下文 / 回答 / 引用四维分数、主要扣分原因与优化建议。
+            支持平衡 / 精准 / 全面三种评分模式；原始指标与权重见「查看技术详情」折叠区。
+        </p>
+        <p class="muted">详见 <code>docs/manual/rag-quality-score-and-diagnostics.md</code>。本页离线评估指标与 Ask 实时评分为互补关系。</p>
+    </section>
+
+    <section class="panel">
         <h2>注意事项</h2>
         <ul>
             <li>默认 <code>.\mvnw.cmd test</code> 不运行真实 Qdrant / worker 评估。</li>

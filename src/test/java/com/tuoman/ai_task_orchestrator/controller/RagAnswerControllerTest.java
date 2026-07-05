@@ -49,8 +49,12 @@ class RagAnswerControllerTest {
                         "local-ollama",
                         "qwen2.5:7b",
                         null,
+                        null,
+                        null,
+                        null,
                         null
-                )
+                ),
+                null
         ));
 
         mockMvc.perform(post("/rag/answers")
@@ -123,7 +127,8 @@ class RagAnswerControllerTest {
                 "根据当前检索到的文档内容，无法确定。",
                 List.of(),
                 new RagRetrievalMetadataResponse(5, 0, "mock", "mock-embedding-v1", 128, "ExactCosineVectorStore"),
-                new RagGenerationMetadataResponse(null, null, null, null, true, "NO_RETRIEVED_CONTEXT")
+                new RagGenerationMetadataResponse(null, null, null, null, true, "NO_RETRIEVED_CONTEXT", null, null, null),
+                null
         ));
 
         mockMvc.perform(post("/rag/answers")

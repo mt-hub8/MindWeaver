@@ -28,10 +28,82 @@ textarea {
 
 .form-row {
     display: grid;
-    grid-template-columns: 1fr 120px;
+    grid-template-columns: 1fr 1fr 120px;
     gap: 16px;
     margin-top: 16px;
     align-items: end;
+}
+
+select {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+}
+
+.quality-score-card {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin: 12px 0 16px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--code-bg);
+}
+
+.quality-overall-label {
+    display: block;
+    font-size: 0.9rem;
+    color: var(--muted);
+    margin-bottom: 4px;
+}
+
+.quality-overall-value {
+    font-size: 2.4rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.quality-overall-suffix {
+    color: var(--muted);
+    font-size: 1rem;
+}
+
+.quality-level-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    font-weight: 600;
+}
+
+.quality-mode-label {
+    display: block;
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 0.92rem;
+}
+
+.quality-dimensions {
+    margin-bottom: 16px;
+}
+
+.quality-diagnosis h3 {
+    margin: 16px 0 8px;
+    font-size: 1rem;
+}
+
+.quality-list {
+    margin: 0;
+    padding-left: 1.2rem;
+}
+
+.quality-list li {
+    margin-bottom: 8px;
 }
 
 button {

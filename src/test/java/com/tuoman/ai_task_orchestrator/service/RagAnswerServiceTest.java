@@ -3,11 +3,15 @@ package com.tuoman.ai_task_orchestrator.service;
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
 import com.tuoman.ai_task_orchestrator.dto.RagAnswerRequest;
 import com.tuoman.ai_task_orchestrator.dto.RagAnswerResponse;
+import com.tuoman.ai_task_orchestrator.dto.RagQualityDiagnosisResponse;
+import com.tuoman.ai_task_orchestrator.dto.RagQualityScoreResponse;
 import com.tuoman.ai_task_orchestrator.embedding.EmbeddingProvider;
 import com.tuoman.ai_task_orchestrator.embedding.MockEmbeddingClient;
 import com.tuoman.ai_task_orchestrator.llm.LlmClient;
 import com.tuoman.ai_task_orchestrator.llm.LlmRequest;
 import com.tuoman.ai_task_orchestrator.llm.LlmResponse;
+import com.tuoman.ai_task_orchestrator.rag.quality.RagQualityMode;
+import com.tuoman.ai_task_orchestrator.rag.quality.RagQualityService;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService.RagRetrievalOutcome;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService.RagRetrievedChunk;
@@ -63,11 +67,30 @@ class RagAnswerServiceTest {
     @Mock
     private CollectionScopeService collectionScopeService;
 
+    @Mock
+    private RagQualityService ragQualityService;
+
     @InjectMocks
     private RagAnswerService ragAnswerService;
 
     @BeforeEach
     void setUpProviderMetadata() {
+        lenient().when(ragQualityService.evaluate(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new RagQualityScoreResponse(
+                        80,
+                        com.tuoman.ai_task_orchestrator.rag.quality.RagQualityLevel.GOOD,
+                        "良好",
+                        78,
+                        80,
+                        85,
+                        86,
+                        RagQualityMode.BALANCED,
+                        "平衡模式",
+                        java.util.Map.of("retrieval", 0.30, "context", 0.25, "answer", 0.25, "citation", 0.20),
+                        new RagQualityDiagnosisResponse("测试摘要", List.of(), List.of()),
+                        java.util.Map.of(),
+                        "测试"
+                ));
         lenient().when(embeddingProvider.provider()).thenReturn(MockEmbeddingClient.PROVIDER);
         lenient().when(embeddingProvider.runtimeProvider()).thenReturn(MockEmbeddingClient.PROVIDER);
         lenient().when(embeddingProvider.model()).thenReturn(MockEmbeddingClient.DEFAULT_MODEL);

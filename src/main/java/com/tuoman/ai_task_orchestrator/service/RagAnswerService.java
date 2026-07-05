@@ -13,6 +13,8 @@ import com.tuoman.ai_task_orchestrator.llm.LlmRequest;
 import com.tuoman.ai_task_orchestrator.llm.LlmResponse;
 import com.tuoman.ai_task_orchestrator.retrieval.CollectionAskScope;
 import com.tuoman.ai_task_orchestrator.retrieval.RetrievalScope;
+import com.tuoman.ai_task_orchestrator.rag.quality.RagQualityMode;
+import com.tuoman.ai_task_orchestrator.rag.quality.RagQualityService;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService.RagRetrievalOutcome;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService.RagRetrievedChunk;
@@ -53,6 +55,8 @@ public class RagAnswerService {
 
     private final LlmClient llmClient;
 
+    private final RagQualityService ragQualityService;
+
     public RagAnswerResponse answer(RagAnswerRequest request) {
         if (request == null) {
             throw BusinessException.validationError("request must not be null");
@@ -61,7 +65,7 @@ public class RagAnswerService {
         int topK = normalizeTopK(request.getTopK());
         CollectionAskScope askScope = resolveAskScope(request.getCollectionId());
         if (askScope.shouldSkipRetrieval()) {
-            return buildNoContextResponse(askScope.noContextMessage(), topK, askScope);
+            return withQualityScore(buildNoContextResponse(askScope.noContextMessage(), topK, askScope), request);
         }
 
         RetrievalScope retrievalScope = toRetrievalScope(request.getCollectionId(), askScope);
@@ -81,7 +85,7 @@ public class RagAnswerService {
             String answer = askScope.collectionId() != null
                     ? "当前所选分组下未检索到可用于回答的文档片段。"
                     : NO_CONTEXT_ANSWER;
-            return buildNoContextResponse(answer, topK, askScope, retrieval);
+            return withQualityScore(buildNoContextResponse(answer, topK, askScope, retrieval), request);
         }
 
         String prompt = ragPromptBuilder.buildPrompt(request.getQuery(), citations);
@@ -97,17 +101,39 @@ public class RagAnswerService {
             throw BusinessException.llmProviderError(message);
         }
 
-        return new RagAnswerResponse(
+        RagGenerationMetadataResponse generation = new RagGenerationMetadataResponse(
+                llmResponse.getProvider(),
+                llmResponse.getModel(),
+                llmResponse.getProvider(),
+                llmResponse.getModel(),
+                null,
+                null,
+                llmResponse.getLatencyMs(),
+                llmResponse.getPromptTokenCount(),
+                llmResponse.getCompletionTokenCount()
+        );
+        return withQualityScore(new RagAnswerResponse(
                 llmResponse.getContent(),
                 citations,
                 retrieval,
-                new RagGenerationMetadataResponse(
-                        llmResponse.getProvider(),
-                        llmResponse.getModel(),
-                        llmResponse.getProvider(),
-                        llmResponse.getModel(),
-                        null,
-                        null
+                generation
+        ), request);
+    }
+
+    private RagAnswerResponse withQualityScore(RagAnswerResponse response, RagAnswerRequest request) {
+        RagQualityMode mode = RagQualityMode.fromRequest(request.getQualityMode());
+        return new RagAnswerResponse(
+                response.getAnswer(),
+                response.getCitations(),
+                response.getRetrieval(),
+                response.getGeneration(),
+                ragQualityService.evaluate(
+                        request.getQuery(),
+                        response.getAnswer(),
+                        response.getCitations(),
+                        response.getRetrieval(),
+                        response.getGeneration(),
+                        mode
                 )
         );
     }
@@ -144,7 +170,7 @@ public class RagAnswerService {
                 answer,
                 List.of(),
                 retrieval,
-                new RagGenerationMetadataResponse(null, null, null, null, true, NO_CONTEXT_REASON)
+                new RagGenerationMetadataResponse(null, null, null, null, true, NO_CONTEXT_REASON, null, null, null)
         );
     }
 
