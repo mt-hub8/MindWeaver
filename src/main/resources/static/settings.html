@@ -53,11 +53,43 @@
     </section>
 
     <section class="panel">
-        <h2>日志与缓存</h2>
+        <h2>存储空间</h2>
+        <dl class="summary-dl" id="storage-summary">
+            <dt>原始文件占用</dt><dd id="storage-original">加载中…</dd>
+            <dt>解析文本占用</dt><dd id="storage-extracted">加载中…</dd>
+            <dt>文本片段记录数</dt><dd id="storage-chunks">加载中…</dd>
+            <dt>向量记录</dt><dd id="storage-vectors">加载中…</dd>
+            <dt>Embedding 缓存</dt><dd id="storage-embedding-cache">加载中…</dd>
+            <dt>总占用估算</dt><dd id="storage-total">加载中…</dd>
+        </dl>
+        <p class="muted">部分数据（如 Qdrant 向量）可能显示为「由 Qdrant 管理」或「暂无法完整统计」，不会伪造占用数值。</p>
+    </section>
+
+    <section class="panel">
+        <h2>缓存管理</h2>
+        <p class="muted">清理缓存不会删除原始文档和知识库记录，但可能导致下次处理变慢。缓存可以重新生成。</p>
+        <div class="settings-actions">
+            <button type="button" id="clear-embedding-cache-btn">清理 Embedding Cache</button>
+            <button type="button" id="clear-retrieval-cache-btn">清理 Retrieval Cache</button>
+            <button type="button" id="clear-all-cache-btn">清理全部可重建缓存</button>
+        </div>
+        <p id="cache-action-result" class="muted hidden"></p>
+    </section>
+
+    <section class="panel">
+        <h2>垃圾箱与数据生命周期</h2>
+        <ul class="lifecycle-list">
+            <li><strong>ACTIVE</strong> → <strong>TRASHED</strong> → <strong>PURGED</strong>：删除后进入垃圾箱，7 天内可恢复。</li>
+            <li>永久删除会清理原始文本、片段、向量与相关缓存。</li>
+            <li>前往 <a href="/trash.html">垃圾箱</a> 管理已删除文档。</li>
+        </ul>
+    </section>
+
+    <section class="panel">
+        <h2>日志与说明</h2>
         <ul class="lifecycle-list">
             <li><strong>日志</strong>：Spring Boot 默认输出到控制台；生产部署时可配置 logging.file.name。</li>
-            <li><strong>Embedding 缓存</strong>：相同文档片段不重复计算向量，可通过 API 查看缓存指标。</li>
-            <li><strong>垃圾箱规划</strong>：文档软删除后进入「已删除」状态，不会进入问答；本阶段不做自动物理清理。</li>
+            <li><strong>Embedding 缓存</strong>：相同文档片段不重复计算向量，可在上方清理缓存。</li>
         </ul>
     </section>
 

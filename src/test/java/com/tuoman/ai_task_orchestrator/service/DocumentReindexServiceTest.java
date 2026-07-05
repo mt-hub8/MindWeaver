@@ -100,7 +100,7 @@ class DocumentReindexServiceTest {
     @Test
     void submitReindexShouldRejectDeletedDocument() {
         DocumentEntity document = activeDocument(6L, "text");
-        document.setLifecycleStatus(DocumentLifecycleStatus.DELETED);
+        document.setLifecycleStatus(DocumentLifecycleStatus.TRASHED);
         when(documentRepository.findById(6L)).thenReturn(Optional.of(document));
 
         assertThatThrownBy(() -> documentReindexService.submitReindex(6L))

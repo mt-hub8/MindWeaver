@@ -14,7 +14,8 @@ public final class DocumentLifecycleDisplayTexts {
         }
         return switch (status) {
             case ACTIVE -> "已启用";
-            case DELETED -> "已删除";
+            case TRASHED -> "已放入垃圾箱";
+            case PURGED -> "已永久删除";
         };
     }
 
@@ -35,8 +36,11 @@ public final class DocumentLifecycleDisplayTexts {
             DocumentStatus processingStatus,
             boolean canAsk
     ) {
-        if (lifecycleStatus == DocumentLifecycleStatus.DELETED) {
-            return "该文档已删除，不会再用于知识库问答。";
+        if (lifecycleStatus == DocumentLifecycleStatus.TRASHED) {
+            return "该文档已在垃圾箱，不会再用于知识库问答。可在垃圾箱中恢复或永久删除。";
+        }
+        if (lifecycleStatus == DocumentLifecycleStatus.PURGED) {
+            return "该文档已永久删除，不可恢复。";
         }
         if (canAsk) {
             return "当前文档可以用于知识库问答。";
@@ -48,10 +52,31 @@ public final class DocumentLifecycleDisplayTexts {
     }
 
     public static String deleteSuccessMessage() {
-        return "删除成功：该文档不会再用于知识库问答。";
+        return "已放入垃圾箱：该文档不会再用于知识库问答，7 天内可恢复。";
     }
 
-    public static String deleteAlreadyDeletedMessage() {
-        return "该文档已删除，不会再用于知识库问答。";
+    public static String deleteAlreadyTrashedMessage() {
+        return "该文档已在垃圾箱中，不会再用于知识库问答。";
+    }
+
+    public static String restoreSuccessMessage() {
+        return "文档已恢复，可重新用于知识库问答与 AI 任务。";
+    }
+
+    public static String purgeSuccessMessage() {
+        return "文档已永久删除，相关数据已清理。";
+    }
+
+    public static String formatBytes(Long bytes) {
+        if (bytes == null || bytes < 0) {
+            return "未知";
+        }
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+        if (bytes < 1024 * 1024) {
+            return String.format("%.1f KB", bytes / 1024.0);
+        }
+        return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
     }
 }

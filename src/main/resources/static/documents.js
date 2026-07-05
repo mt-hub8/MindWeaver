@@ -182,8 +182,8 @@
             const row = document.createElement("tr");
             row.className = "document-row";
             const lifecycleStatus = doc.status || "ACTIVE";
-            const lifecycleClass = lifecycleStatus === "DELETED" ? "deleted" : "active";
-            const lifecycleDisplay = doc.displayStatus || (lifecycleStatus === "DELETED" ? "已删除" : "已启用");
+            const lifecycleClass = lifecycleStatus === "TRASHED" ? "deleted" : "active";
+            const lifecycleDisplay = doc.displayStatus || (lifecycleStatus === "TRASHED" ? "已放入垃圾箱" : "已启用");
             const canAsk = doc.canAsk === true;
             const hint = doc.lifecycleHint || lifecycleHintFallback(doc);
 
@@ -194,8 +194,8 @@
                 "<td>" +
                 "<strong>" + escapeHtml(doc.title || "-") + "</strong>" +
                 '<p class="muted doc-hint">' + escapeHtml(hint) + "</p>" +
-                (doc.status === "DELETED"
-                    ? '<p class="muted">已删除文档可以保留分组归属，但不会参与问答。</p>'
+                (doc.status === "TRASHED"
+                    ? '<p class="muted">垃圾箱中的文档可保留分组归属，但不会参与问答。可在垃圾箱恢复。</p>'
                     : "") +
                 "</td>" +
                 "<td>" + collectionLabel + "</td>" +
@@ -214,8 +214,8 @@
     }
 
     function lifecycleHintFallback(doc) {
-        if (doc.status === "DELETED") {
-            return "该文档已删除，不会再用于知识库问答。";
+        if (doc.status === "TRASHED") {
+            return "该文档已在垃圾箱，不会再用于知识库问答。可在垃圾箱中恢复。";
         }
         if (doc.canAsk) {
             return "当前文档可以用于知识库问答。";
@@ -249,8 +249,8 @@
                 '<button type="button" class="delete-button" data-document-id="'
                 + escapeHtml(doc.documentId) + '" data-filename="' + escapeHtml(doc.title) + '">删除文档</button>'
             );
-        } else if (lifecycleStatus === "DELETED") {
-            actions.push('<span class="muted deleted-label">已删除</span>');
+        } else if (lifecycleStatus === "TRASHED") {
+            actions.push('<span class="muted deleted-label">垃圾箱</span>');
         }
 
         if (doc.canReindex === true) {
@@ -360,7 +360,7 @@
             return;
         }
         const input = window.prompt(
-            "选择知识库分组（输入序号）：\n" + options.join("\n") + "\n\n已删除文档可以保留分组归属，但不会参与问答。"
+            "选择知识库分组（输入序号）：\n" + options.join("\n") + "\n\n垃圾箱中的文档可保留分组归属，但不会参与问答。"
         );
         if (!input) {
             return;
@@ -501,8 +501,8 @@
                 : (task.status === "FAILED" ? "failed" : "pending");
 
             const lifecycleStatus = task.documentLifecycleStatus || "ACTIVE";
-            const lifecycleDisplay = task.documentDisplayStatus || (lifecycleStatus === "DELETED" ? "已删除" : "已启用");
-            const lifecycleClass = lifecycleStatus === "DELETED" ? "deleted" : "active";
+            const lifecycleDisplay = task.documentDisplayStatus || (lifecycleStatus === "TRASHED" ? "已放入垃圾箱" : "已启用");
+            const lifecycleClass = lifecycleStatus === "TRASHED" ? "deleted" : "active";
             const taskTypeDisplay = task.displayTaskType || "文档摄入";
 
             let statusHint = "";
@@ -538,7 +538,7 @@
                     + escapeHtml(task.taskId) + '">重新处理</button>'
                 );
             }
-            if (task.status === "COMPLETED" && lifecycleStatus !== "DELETED" && task.documentLifecycleStatus !== "DELETED") {
+            if (task.status === "COMPLETED" && lifecycleStatus !== "TRASHED" && task.documentLifecycleStatus !== "TRASHED") {
                 actions.push('<a class="ask-link" href="/ask.html">去提问</a>');
             }
             if (task.canDelete === true || (task.canDelete !== false && lifecycleStatus === "ACTIVE")) {
@@ -546,8 +546,8 @@
                     '<button type="button" class="delete-button" data-document-id="'
                     + escapeHtml(task.documentId) + '" data-filename="' + escapeHtml(task.filename) + '">删除文档</button>'
                 );
-            } else if (lifecycleStatus === "DELETED") {
-                actions.push('<span class="muted deleted-label">已删除</span>');
+            } else if (lifecycleStatus === "TRASHED") {
+                actions.push('<span class="muted deleted-label">垃圾箱</span>');
             }
             if (task.canReindex === true) {
                 actions.push(
@@ -794,7 +794,7 @@
                 {
                     documentId: payload.documentId,
                     filename: filename,
-                    displayStatus: payload.displayStatus || "已删除",
+                    displayStatus: payload.displayStatus || "已放入垃圾箱",
                     status: payload.status
                 }
             );

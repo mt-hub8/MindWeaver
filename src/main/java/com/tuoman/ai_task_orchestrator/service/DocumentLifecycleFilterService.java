@@ -22,17 +22,26 @@ public class DocumentLifecycleFilterService {
     private final DocumentChunkRepository documentChunkRepository;
 
     @Transactional(readOnly = true)
+    public Set<Long> findNonRetrievableDocumentIds() {
+        return new HashSet<>(documentRepository.findNonRetrievableDocumentIds());
+    }
+
+    @Transactional(readOnly = true)
     public Set<Long> findDeletedDocumentIds() {
-        return new HashSet<>(documentRepository.findIdsByLifecycleStatus(DocumentLifecycleStatus.DELETED));
+        return findNonRetrievableDocumentIds();
+    }
+
+    public boolean isNonRetrievable(Long documentId, Set<Long> nonRetrievableDocumentIds) {
+        return documentId != null && nonRetrievableDocumentIds.contains(documentId);
+    }
+
+    public boolean isDeleted(Long documentId, Set<Long> deletedDocumentIds) {
+        return isNonRetrievable(documentId, deletedDocumentIds);
     }
 
     @Transactional(readOnly = true)
     public Set<Long> findRetrievableChunkIds() {
         return new HashSet<>(documentChunkRepository.findRetrievableChunkIds());
-    }
-
-    public boolean isDeleted(Long documentId, Set<Long> deletedDocumentIds) {
-        return documentId != null && deletedDocumentIds.contains(documentId);
     }
 
     public boolean isRetrievableChunk(Long chunkId, Set<Long> retrievableChunkIds) {

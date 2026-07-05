@@ -28,13 +28,13 @@ class RagAllDocumentsAskRetrievalIntegrationTest {
     private DocumentRepository documentRepository;
 
     @Test
-    void findDeletedDocumentIdsShouldNotFailWhenDocumentsExist() {
+    void findNonRetrievableDocumentIdsShouldIncludeTrashedDocuments() {
         saveDocument(DocumentLifecycleStatus.ACTIVE, "ask-active.txt");
-        DocumentEntity deleted = saveDocument(DocumentLifecycleStatus.DELETED, "ask-deleted.txt");
+        DocumentEntity trashed = saveDocument(DocumentLifecycleStatus.TRASHED, "ask-trashed.txt");
 
         assertThatCode(documentLifecycleFilterService::findDeletedDocumentIds)
                 .doesNotThrowAnyException();
-        assertThat(documentLifecycleFilterService.findDeletedDocumentIds()).contains(deleted.getId());
+        assertThat(documentLifecycleFilterService.findDeletedDocumentIds()).contains(trashed.getId());
     }
 
     @Test

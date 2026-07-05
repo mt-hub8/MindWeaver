@@ -85,7 +85,8 @@ public class DocumentIngestionTaskHandler {
         try {
             DocumentEntity document = documentRepository.findById(snapshot.documentId())
                     .orElseThrow(BusinessException::documentNotFound);
-            if (document.getLifecycleStatus() == DocumentLifecycleStatus.DELETED) {
+            if (document.getLifecycleStatus() != null
+                    && document.getLifecycleStatus() != DocumentLifecycleStatus.ACTIVE) {
                 throw BusinessException.documentDeletedCannotReindex();
             }
             if (!documentService.hasUsableSourceText(document)) {

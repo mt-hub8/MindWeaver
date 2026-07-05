@@ -43,7 +43,8 @@ public class DocumentReindexService {
         DocumentEntity document = documentRepository.findById(documentId)
                 .orElseThrow(BusinessException::documentNotFound);
 
-        if (document.getLifecycleStatus() == DocumentLifecycleStatus.DELETED) {
+        if (document.getLifecycleStatus() != null
+                && document.getLifecycleStatus() != DocumentLifecycleStatus.ACTIVE) {
             throw BusinessException.documentDeletedCannotReindex();
         }
 

@@ -17,16 +17,12 @@ class DocumentLifecycleDisplayTextsTest {
         )).isEqualTo("当前文档可以用于知识库问答。");
 
         assertThat(DocumentLifecycleDisplayTexts.lifecycleHint(
-                DocumentLifecycleStatus.DELETED,
+                DocumentLifecycleStatus.TRASHED,
                 DocumentStatus.READY,
                 false
-        )).isEqualTo("该文档已删除，不会再用于知识库问答。");
-    }
+        )).contains("垃圾箱");
 
-    @Test
-    void shouldProvideDeleteSuccessMessage() {
         assertThat(DocumentLifecycleDisplayTexts.deleteSuccessMessage())
-                .contains("删除成功")
-                .contains("不会再用于知识库问答");
+                .contains("垃圾箱");
     }
 }

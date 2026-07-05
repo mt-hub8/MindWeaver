@@ -127,8 +127,8 @@ class DocumentReadApiTest {
         LocalDateTime deletedAt = LocalDateTime.of(2026, 7, 2, 10, 30);
         when(documentService.softDeleteDocument(1L)).thenReturn(new DocumentDeleteResponse(
                 1L,
-                "DELETED",
-                "已删除",
+                "TRASHED",
+                "已放入垃圾箱",
                 "删除成功：该文档不会再用于知识库问答。",
                 deletedAt
         ));
@@ -136,8 +136,8 @@ class DocumentReadApiTest {
         mockMvc.perform(delete("/documents/1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.documentId").value(1))
-                .andExpect(jsonPath("$.status").value("DELETED"))
-                .andExpect(jsonPath("$.displayStatus").value("已删除"))
+                .andExpect(jsonPath("$.status").value("TRASHED"))
+                .andExpect(jsonPath("$.displayStatus").value("已放入垃圾箱"))
                 .andExpect(jsonPath("$.message").value("删除成功：该文档不会再用于知识库问答。"));
     }
 

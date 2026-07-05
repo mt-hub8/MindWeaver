@@ -41,6 +41,8 @@ public class DocumentService {
 
     private final CollectionService collectionService;
 
+    private final DocumentTrashService documentTrashService;
+
     @Transactional(noRollbackFor = BusinessException.class)
     public DocumentUploadResponse uploadDocument(MultipartFile file) {
         validateLegacyUploadFile(file);
@@ -157,7 +159,7 @@ public class DocumentService {
 
     @Transactional(readOnly = true)
     public List<DocumentSummaryResponse> listDocuments() {
-        return documentRepository.findAllByOrderByCreatedAtDesc()
+        return documentRepository.findAllByLifecycleStatusOrderByCreatedAtDesc(DocumentLifecycleStatus.ACTIVE)
                 .stream()
                 .map(this::toSummaryResponse)
                 .toList();
@@ -185,34 +187,7 @@ public class DocumentService {
 
     @Transactional
     public DocumentDeleteResponse softDeleteDocument(Long documentId) {
-        DocumentEntity document = findDocumentOrThrow(documentId);
-        LocalDateTime deletedAt = document.getDeletedAt();
-
-        if (document.getLifecycleStatus() == DocumentLifecycleStatus.DELETED) {
-            log.info("Document delete requested but already deleted, documentId={}", documentId);
-            return new DocumentDeleteResponse(
-                    document.getId(),
-                    DocumentLifecycleStatus.DELETED.name(),
-                    DocumentLifecycleDisplayTexts.displayStatus(DocumentLifecycleStatus.DELETED),
-                    DocumentLifecycleDisplayTexts.deleteAlreadyDeletedMessage(),
-                    deletedAt
-            );
-        }
-
-        log.info("Document soft delete requested, documentId={}, filename={}", documentId, document.getOriginalFilename());
-        LocalDateTime now = LocalDateTime.now();
-        document.setLifecycleStatus(DocumentLifecycleStatus.DELETED);
-        document.setDeletedAt(now);
-        documentRepository.save(document);
-        log.info("Document soft deleted, documentId={}, filename={}", documentId, document.getOriginalFilename());
-
-        return new DocumentDeleteResponse(
-                document.getId(),
-                DocumentLifecycleStatus.DELETED.name(),
-                DocumentLifecycleDisplayTexts.displayStatus(DocumentLifecycleStatus.DELETED),
-                DocumentLifecycleDisplayTexts.deleteSuccessMessage(),
-                now
-        );
+        return documentTrashService.moveToTrash(documentId);
     }
 
     private void validateLegacyUploadFile(MultipartFile file) {
@@ -244,7 +219,7 @@ public class DocumentService {
         boolean canReindex = active && hasUsableSourceText(document);
         String reindexDisabledReason = null;
         if (!active) {
-            reindexDisabledReason = "当前文档已删除，不能重新索引";
+            reindexDisabledReason = "当前文档已在垃圾箱中，不能重新索引";
         } else if (!hasUsableSourceText(document)) {
             reindexDisabledReason = "当前文档缺少原始文本，无法重新索引";
         }

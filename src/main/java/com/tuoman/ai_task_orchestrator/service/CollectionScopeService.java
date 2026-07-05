@@ -52,7 +52,7 @@ public class CollectionScopeService {
                 .map(documentRepository::findById)
                 .filter(java.util.Optional::isPresent)
                 .map(java.util.Optional::get)
-                .anyMatch(document -> document.getLifecycleStatus() != DocumentLifecycleStatus.DELETED);
+                .anyMatch(document -> document.getLifecycleStatus() == DocumentLifecycleStatus.ACTIVE);
 
         if (!anyActive) {
             return new CollectionAskScope(

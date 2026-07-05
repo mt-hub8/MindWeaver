@@ -98,8 +98,8 @@ public class CollectionService {
         membership.setDocumentId(document.getId());
         documentCollectionRepository.save(membership);
 
-        String message = document.getLifecycleStatus() == DocumentLifecycleStatus.DELETED
-                ? "文档已加入分组。已删除文档不会参与问答。"
+        String message = document.getLifecycleStatus() != DocumentLifecycleStatus.ACTIVE
+                ? "文档已加入分组。垃圾箱中的文档不会参与问答。"
                 : "文档已加入分组";
         return new CollectionAssignmentResponse(collectionId, documentId, message);
     }

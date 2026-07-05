@@ -72,8 +72,48 @@ public class BusinessException extends RuntimeException {
         return new BusinessException(
                 ErrorCode.DOCUMENT_DELETED_CANNOT_REINDEX,
                 HttpStatus.CONFLICT,
-                "当前文档已删除，不能重新索引"
+                "当前文档已在垃圾箱中，不能重新索引"
         );
+    }
+
+    public static BusinessException documentAlreadyTrashed() {
+        return new BusinessException(
+                ErrorCode.DOCUMENT_ALREADY_TRASHED,
+                HttpStatus.CONFLICT,
+                "该文档已在垃圾箱中"
+        );
+    }
+
+    public static BusinessException documentAlreadyPurged() {
+        return new BusinessException(
+                ErrorCode.DOCUMENT_ALREADY_PURGED,
+                HttpStatus.CONFLICT,
+                "该文档已永久删除，无法再次操作"
+        );
+    }
+
+    public static BusinessException documentNotTrashed() {
+        return new BusinessException(
+                ErrorCode.DOCUMENT_NOT_TRASHED,
+                HttpStatus.CONFLICT,
+                "该文档不在垃圾箱中"
+        );
+    }
+
+    public static BusinessException documentRestoreNotAllowed(String message) {
+        return new BusinessException(ErrorCode.DOCUMENT_RESTORE_NOT_ALLOWED, HttpStatus.CONFLICT, message);
+    }
+
+    public static BusinessException documentPurgeNotAllowed(String message) {
+        return new BusinessException(ErrorCode.DOCUMENT_PURGE_NOT_ALLOWED, HttpStatus.CONFLICT, message);
+    }
+
+    public static BusinessException documentPurgeFailed(String message) {
+        return new BusinessException(ErrorCode.DOCUMENT_PURGE_FAILED, HttpStatus.INTERNAL_SERVER_ERROR, message);
+    }
+
+    public static BusinessException documentStorageCleanupFailed(String message) {
+        return new BusinessException(ErrorCode.DOCUMENT_STORAGE_CLEANUP_FAILED, HttpStatus.INTERNAL_SERVER_ERROR, message);
     }
 
     public static BusinessException documentSourceTextMissing() {

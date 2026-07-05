@@ -65,7 +65,7 @@ class KnowledgeBaseScopedRetrievalRegressionTest {
         assertThat(js).contains("加入分组");
         assertThat(js).contains("移出分组");
         assertThat(js).contains("选择知识库分组");
-        assertThat(js).contains("已删除文档可以保留分组归属，但不会参与问答");
+        assertThat(js).contains("垃圾箱中的文档可保留分组归属，但不会参与问答");
     }
 
     @Test

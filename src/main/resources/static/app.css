@@ -663,6 +663,23 @@ pre.path-box {
     border-bottom: 1px solid #e2e8f0;
 }
 
+.settings-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 12px 0;
+}
+
+.settings-actions button {
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--accent);
+    color: #ffffff;
+}
+
 .lifecycle-list {
     margin: 0.5rem 0 0;
     padding-left: 1.25rem;

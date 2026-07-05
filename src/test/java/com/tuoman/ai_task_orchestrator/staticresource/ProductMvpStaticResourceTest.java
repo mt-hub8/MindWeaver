@@ -57,7 +57,7 @@ class ProductMvpStaticResourceTest {
     @Test
     void shouldServeAskHtmlWithDeletedDocumentHint() throws Exception {
         String content = fetchUtf8("/ask.html");
-        assertThat(content).contains("已删除文档不会再进入回答引用");
+        assertThat(content).contains("垃圾箱中的文档不会再进入回答引用");
         assertThat(content).contains("旧版本片段");
         assertThat(content).contains("知识库生命周期过滤说明");
     }
@@ -84,7 +84,7 @@ class ProductMvpStaticResourceTest {
         String content = fetchUtf8("/documents.js");
         assertThat(content).contains("删除文档");
         assertThat(content).contains("确认删除");
-        assertThat(content).contains("已删除");
+        assertThat(content).contains("垃圾箱");
         assertThat(content).contains("method: \"DELETE\"");
     }
 
@@ -110,7 +110,7 @@ class ProductMvpStaticResourceTest {
         assertThat(content).contains("文档列表");
         assertThat(content).contains("当前索引版本");
         assertThat(content).contains("已启用");
-        assertThat(content).contains("已删除");
+        assertThat(content).contains("垃圾箱");
         assertThat(content).contains("查看文档处理分析");
         assertThat(content).contains("知识库生命周期说明");
     }

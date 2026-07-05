@@ -13,14 +13,14 @@
 
     <header class="hero">
         <h1>文档管理</h1>
-        <p class="lead">管理知识库文档的完整生命周期：上传文档、建立索引、知识库问答、重新建立索引与删除文档。已删除文档和旧版本片段不会再用于问答。</p>
+        <p class="lead">管理知识库文档的完整生命周期：上传文档、建立索引、知识库问答、重新建立索引与放入垃圾箱。垃圾箱与已永久删除的文档不会再用于问答。</p>
     </header>
 
     <section class="panel lifecycle-hint" aria-labelledby="lifecycle-hint-title">
         <h2 id="lifecycle-hint-title">知识库生命周期说明</h2>
         <ul class="lifecycle-list">
             <li><strong>已启用</strong>：文档可用于知识库问答（索引就绪后）。</li>
-            <li><strong>已删除</strong>：软删除，该文档不会再用于问答；历史记录与底层索引数据不会立即物理清理。</li>
+            <li><strong>垃圾箱（TRASHED）</strong>：删除文档后进入垃圾箱，7 天内可恢复，暂不参与问答。</li>
             <li><strong>重新建立索引</strong>：复用原始文本重新切分并生成新索引；旧索引不会立即物理删除，但不会再用于后续问答。</li>
             <li><strong>当前索引版本</strong>：问答只使用最新有效版本的文档片段；旧版本片段视为旧版本，不会进入回答引用。</li>
         </ul>

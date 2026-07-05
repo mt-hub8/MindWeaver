@@ -22,14 +22,14 @@ class DocumentRepositoryLifecycleQueryTest {
     @Test
     void findIdsByLifecycleStatusShouldReturnDocumentIdsNotEntities() {
         DocumentEntity active = saveDocument(DocumentLifecycleStatus.ACTIVE, "active-doc.txt");
-        DocumentEntity deleted = saveDocument(DocumentLifecycleStatus.DELETED, "deleted-doc.txt");
+        DocumentEntity trashed = saveDocument(DocumentLifecycleStatus.TRASHED, "trashed-doc.txt");
 
-        List<Long> deletedIds = documentRepository.findIdsByLifecycleStatus(DocumentLifecycleStatus.DELETED);
+        List<Long> trashedIds = documentRepository.findIdsByLifecycleStatus(DocumentLifecycleStatus.TRASHED);
         List<Long> activeIds = documentRepository.findIdsByLifecycleStatus(DocumentLifecycleStatus.ACTIVE);
 
-        assertThat(deletedIds).contains(deleted.getId());
+        assertThat(trashedIds).contains(trashed.getId());
         assertThat(activeIds).contains(active.getId());
-        assertThat(deletedIds).doesNotContain(active.getId());
+        assertThat(trashedIds).doesNotContain(active.getId());
     }
 
     private DocumentEntity saveDocument(DocumentLifecycleStatus lifecycleStatus, String filename) {

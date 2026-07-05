@@ -1,6 +1,7 @@
 package com.tuoman.ai_task_orchestrator.entity;
 
 import com.tuoman.ai_task_orchestrator.enums.DocumentLifecycleStatus;
+import com.tuoman.ai_task_orchestrator.enums.DocumentPurgeStatus;
 import com.tuoman.ai_task_orchestrator.enums.DocumentStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -37,6 +38,19 @@ public class DocumentEntity {
 
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
+
+    @Column(name = "trashed_at")
+    private LocalDateTime trashedAt;
+
+    @Column(name = "purge_after")
+    private LocalDateTime purgeAfter;
+
+    @Column(name = "purged_at")
+    private LocalDateTime purgedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "purge_status", nullable = false, length = 50)
+    private DocumentPurgeStatus purgeStatus;
 
     @Column(name = "chunk_count", nullable = false)
     private Integer chunkCount;
@@ -75,6 +89,9 @@ public class DocumentEntity {
         }
         if (this.reindexCount == null) {
             this.reindexCount = 0;
+        }
+        if (this.purgeStatus == null) {
+            this.purgeStatus = DocumentPurgeStatus.NONE;
         }
     }
 

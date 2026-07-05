@@ -414,6 +414,99 @@ public class DocumentIngestionEventRecorder {
         documentIngestionEventRepository.save(event);
     }
 
+    public void recordDocumentTrashed(Long documentId, java.time.LocalDateTime purgeAfter) {
+        recordLifecycleEvent(
+                IngestionEventType.DOCUMENT_TRASHED,
+                "Document trashed",
+                "文档已放入垃圾箱",
+                metadata("documentId", documentId, "purgeAfter", purgeAfter)
+        );
+    }
+
+    public void recordDocumentRestored(Long documentId) {
+        recordLifecycleEvent(
+                IngestionEventType.DOCUMENT_RESTORED,
+                "Document restored",
+                "文档已恢复",
+                metadata("documentId", documentId)
+        );
+    }
+
+    public void recordDocumentPurging(Long documentId) {
+        recordLifecycleEvent(
+                IngestionEventType.DOCUMENT_PURGING,
+                "Document purging",
+                "正在永久删除文档",
+                metadata("documentId", documentId)
+        );
+    }
+
+    public void recordDocumentPurged(Long documentId, java.util.List<String> warnings) {
+        recordLifecycleEvent(
+                IngestionEventType.DOCUMENT_PURGED,
+                "Document purged",
+                "文档已永久删除",
+                metadata("documentId", documentId, "warnings", warnings)
+        );
+    }
+
+    public void recordDocumentPurgeFailed(Long documentId, String errorMessage) {
+        recordLifecycleEvent(
+                IngestionEventType.DOCUMENT_PURGE_FAILED,
+                "Document purge failed",
+                "文档永久删除失败",
+                metadata("documentId", documentId, "error", errorMessage)
+        );
+    }
+
+    public void recordTrashCleanupStarted(int count) {
+        recordLifecycleEvent(
+                IngestionEventType.TRASH_CLEANUP_STARTED,
+                "Trash cleanup started",
+                "自动清理垃圾箱已开始",
+                metadata("candidateCount", count)
+        );
+    }
+
+    public void recordTrashCleanupCompleted(int successCount, int failureCount) {
+        recordLifecycleEvent(
+                IngestionEventType.TRASH_CLEANUP_COMPLETED,
+                "Trash cleanup completed",
+                "自动清理垃圾箱完成",
+                metadata("successCount", successCount, "failureCount", failureCount)
+        );
+    }
+
+    public void recordCacheCleared(String cacheType, int clearedCount) {
+        recordLifecycleEvent(
+                IngestionEventType.CACHE_CLEARED,
+                "Cache cleared",
+                "缓存已清理",
+                metadata("cacheType", cacheType, "clearedCount", clearedCount)
+        );
+    }
+
+    private void recordLifecycleEvent(
+            IngestionEventType eventType,
+            String message,
+            String displayMessage,
+            Map<String, Object> metadata
+    ) {
+        record(
+                0L,
+                eventType,
+                null,
+                IngestionEventStatus.COMPLETED,
+                message,
+                displayMessage,
+                null,
+                metadata,
+                null,
+                null,
+                UUID.randomUUID().toString()
+        );
+    }
+
     private String buildFailedDisplayMessage(IngestionTaskStep failedStep, String errorMessage) {
         String stepHint = switch (failedStep == null ? IngestionTaskStep.FAILED : failedStep) {
             case CHUNKING -> "切分文档内容时";

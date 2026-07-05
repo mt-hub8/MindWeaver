@@ -28,7 +28,7 @@
     <section class="panel lifecycle-hint" aria-labelledby="ask-lifecycle-title">
         <h2 id="ask-lifecycle-title">知识库生命周期过滤说明</h2>
         <ul class="lifecycle-list">
-            <li>知识库问答<strong>只会使用「已启用」的文档</strong>；已删除文档不会再进入回答引用。</li>
+            <li>知识库问答<strong>只会使用「已启用」的文档</strong>；垃圾箱中的文档不会再进入回答引用。</li>
             <li>重新建立索引后，系统<strong>只会使用最新有效的文档片段</strong>（当前索引版本）。</li>
             <li><strong>旧版本片段</strong>（已被新索引替代）不会再进入回答引用，即使底层向量尚未物理删除。</li>
             <li>如需管理文档状态，请前往 <a href="/documents.html">文档管理</a> 进行删除或重新建立索引。</li>
@@ -59,7 +59,7 @@
                 <select id="scope-select">
                     <option value="">全部文档</option>
                 </select>
-                <p id="scope-hint" class="muted scope-hint">当前回答只基于所选分组中的文档。已删除文档不会进入回答引用；旧版本片段不会进入回答引用。</p>
+                <p id="scope-hint" class="muted scope-hint">当前回答只基于所选分组中的文档。垃圾箱中的文档不会进入回答引用；旧版本片段不会进入回答引用。</p>
             </div>
         </div>
 

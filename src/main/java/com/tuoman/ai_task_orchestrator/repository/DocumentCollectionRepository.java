@@ -16,6 +16,8 @@ public interface DocumentCollectionRepository extends JpaRepository<DocumentColl
 
     void deleteByCollectionIdAndDocumentId(Long collectionId, Long documentId);
 
+    void deleteByDocumentId(Long documentId);
+
     List<DocumentCollectionEntity> findByCollectionIdOrderByCreatedAtAsc(Long collectionId);
 
     List<DocumentCollectionEntity> findByDocumentIdOrderByCreatedAtAsc(Long documentId);

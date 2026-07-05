@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>垃圾箱</title>
+    <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/trash.css">
+</head>
+<body>
+<div class="page">
+    <nav id="app-nav-mount" data-active="trash"></nav>
+    <script src="/app-nav.js"></script>
+
+    <header class="hero">
+        <h1>垃圾箱</h1>
+        <p class="lead">已放入垃圾箱的文档不会参与知识库问答、检索与 AI 任务。7 天后将自动永久删除；恢复后可重新用于问答，无需重新索引。</p>
+    </header>
+
+    <section class="panel lifecycle-hint">
+        <ul class="lifecycle-list">
+            <li><strong>已放入垃圾箱</strong>：文档内容仍保留，可随时恢复。</li>
+            <li><strong>7 天后将自动永久删除</strong>：到期后系统清理原始文本、片段、向量与相关缓存。</li>
+            <li><strong>恢复后可重新用于知识库问答</strong>：无需重新 embedding 或重新索引。</li>
+            <li><strong>永久删除后不可恢复</strong>：请谨慎操作。</li>
+        </ul>
+    </section>
+
+    <section class="panel">
+        <h2>垃圾箱文档</h2>
+        <details class="tech-details">
+            <summary>查看技术详情</summary>
+            <p class="muted">操作列中每条记录可展开查看 documentId、status、trashedAt 等字段。</p>
+        </details>
+        <div class="table-wrap">
+            <table id="trash-table" class="data-table hidden">
+                <thead>
+                <tr>
+                    <th>文档名称</th>
+                    <th>删除时间</th>
+                    <th>预计永久删除</th>
+                    <th>剩余天数</th>
+                    <th>大小</th>
+                    <th>分组</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+                </thead>
+                <tbody id="trash-body"></tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<script src="/trash.js"></script>
+</body>
+</html>

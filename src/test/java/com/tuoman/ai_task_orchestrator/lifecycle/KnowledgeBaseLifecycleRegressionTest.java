@@ -43,7 +43,7 @@ class KnowledgeBaseLifecycleRegressionTest {
         assertThat(html).contains("文档列表");
         assertThat(html).contains("当前索引版本");
         assertThat(html).contains("已启用");
-        assertThat(html).contains("已删除");
+        assertThat(html).contains("垃圾箱");
         assertThat(html).contains("重新建立索引");
         assertThat(html).contains("删除文档");
         assertThat(html).contains("查看处理记录");
@@ -61,7 +61,7 @@ class KnowledgeBaseLifecycleRegressionTest {
         assertThat(js).contains("确认重新索引");
         assertThat(js).contains("旧索引不会立即物理删除");
         assertThat(js).contains("历史记录和底层索引数据");
-        assertThat(js).contains("删除成功");
+        assertThat(js).contains("已放入垃圾箱");
         assertThat(js).contains("已提交重新索引任务，请在处理记录中查看进度");
         assertThat(js).contains("重新索引完成，新的文档片段已可用于知识库问答");
         assertThat(js).contains("重新索引失败，系统会保留旧索引继续用于问答");
@@ -73,7 +73,7 @@ class KnowledgeBaseLifecycleRegressionTest {
     @Test
     void askPageShouldExplainLifecycleFiltering() throws Exception {
         String html = fetchUtf8("/ask.html");
-        assertThat(html).contains("已删除文档不会再进入回答引用");
+        assertThat(html).contains("垃圾箱中的文档不会再进入回答引用");
         assertThat(html).contains("最新有效的文档片段");
         assertThat(html).contains("旧版本片段");
         assertThat(html).contains("文档处理分析");

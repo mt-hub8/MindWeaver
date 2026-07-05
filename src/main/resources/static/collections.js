@@ -181,7 +181,7 @@
         detailDocumentsBody.innerHTML = "";
         documents.forEach(function (doc) {
             const row = document.createElement("tr");
-            const lifecycleClass = doc.status === "DELETED" ? "deleted" : "active";
+            const lifecycleClass = doc.status === "TRASHED" ? "deleted" : "active";
             row.innerHTML =
                 "<td>" + escapeHtml(doc.title || doc.filename || "-") + "</td>" +
                 '<td><span class="status-badge ' + lifecycleClass + '">' + escapeHtml(doc.displayStatus || doc.status) + "</span></td>" +

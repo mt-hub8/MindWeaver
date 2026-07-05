@@ -8,6 +8,7 @@
     var items = [
         { key: "home", href: "/", label: "首页" },
         { key: "documents", href: "/documents.html", label: "文档管理" },
+        { key: "trash", href: "/trash.html", label: "垃圾箱" },
         { key: "collections", href: "/collections.html", label: "知识库分组" },
         { key: "ask", href: "/ask.html", label: "知识库问答" },
         { key: "agent-tasks", href: "/agent-tasks.html", label: "AI 任务" },

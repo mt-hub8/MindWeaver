@@ -1,0 +1,23 @@
+.trash-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.trash-actions button {
+    border: none;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.trash-actions .restore-btn {
+    background: var(--accent-soft);
+    color: var(--text);
+}
+
+.trash-actions .purge-btn {
+    background: #fde8e8;
+    color: #8b1a1a;
+}
