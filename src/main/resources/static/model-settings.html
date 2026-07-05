@@ -13,65 +13,98 @@
 
     <header class="hero">
         <h1>模型设置</h1>
-        <p class="lead">查看当前运行模式、本地模型配置与连接状态。本阶段仅展示与连接测试，不保存 API Key。</p>
+        <p class="lead">管理模型供应商、设置默认问答与向量模型，并测试连接。API Key 不会明文展示。</p>
     </header>
 
-    <div id="loading-status" class="status loading visible" role="status">正在加载模型配置…</div>
+    <div id="loading-status" class="status loading visible" role="status">正在加载…</div>
+    <div id="error-status" class="status error hidden" role="alert"><p id="error-message"></p></div>
 
-    <div id="error-status" class="status error hidden" role="alert">
-        <p id="error-message"></p>
-    </div>
-
-    <section id="status-panel" class="panel hidden">
-        <h2>当前模型</h2>
-        <p id="status-message" class="status-banner muted"></p>
-
-        <dl class="summary-dl">
-            <dt>当前运行模式</dt>
-            <dd id="active-profile">-</dd>
-            <dt>Embedding 提供方</dt>
-            <dd id="embedding-provider">-</dd>
-            <dt>Embedding 模型</dt>
-            <dd id="embedding-model">-</dd>
-            <dt>Embedding 维度</dt>
-            <dd id="embedding-dimension">-</dd>
-            <dt>LLM 提供方</dt>
-            <dd id="llm-provider">-</dd>
-            <dt>LLM 模型</dt>
-            <dd id="llm-model">-</dd>
-            <dt>向量库模式</dt>
-            <dd id="vector-store-provider">-</dd>
-        </dl>
+    <section id="current-panel" class="panel hidden">
+        <h2>当前模型状态</h2>
+        <p id="runtime-mode" class="status-banner muted"></p>
+        <p id="dimension-warning" class="status error hidden"></p>
+        <dl class="summary-dl" id="current-summary"></dl>
     </section>
 
-    <section id="connection-panel" class="panel hidden">
-        <h2>本地模型连接</h2>
-        <dl class="summary-dl">
-            <dt>Python Worker 地址</dt>
-            <dd id="python-worker-url">-</dd>
-            <dt>Python Worker 状态</dt>
-            <dd id="python-worker-status">-</dd>
-            <dt>Ollama 地址</dt>
-            <dd id="ollama-url">-</dd>
-            <dt>Ollama 状态</dt>
-            <dd id="ollama-status">-</dd>
-        </dl>
+    <section id="providers-panel" class="panel hidden">
+        <div class="section-header-row">
+            <h2>模型供应商列表</h2>
+            <button id="add-provider-button" type="button">添加模型供应商</button>
+        </div>
+        <p class="muted">切换 Embedding 模型后，已有文档可能需要重新索引。</p>
+        <div id="providers-empty" class="empty-state hidden">还没有模型供应商，请点击「添加模型供应商」。</div>
+        <table class="doc-table" id="providers-table">
+            <thead>
+            <tr>
+                <th>显示名称</th>
+                <th>类型</th>
+                <th>Base URL</th>
+                <th>默认 LLM</th>
+                <th>默认 Embedding</th>
+                <th>状态</th>
+                <th>操作</th>
+            </tr>
+            </thead>
+            <tbody id="providers-body"></tbody>
+        </table>
+    </section>
+
+    <section id="form-panel" class="panel hidden">
+        <h2 id="form-title">添加模型供应商</h2>
+        <p class="muted">API Key 不会明文展示；编辑时留空表示保留原 Key。本地 Ollama 不需要 API Key。</p>
+
+        <label for="preset-select">从预设填充</label>
+        <select id="preset-select">
+            <option value="">手动填写</option>
+        </select>
+
+        <label for="provider-type">供应商类型</label>
+        <select id="provider-type">
+            <option value="OLLAMA">本地 Ollama</option>
+            <option value="CUSTOM_OPENAI_COMPATIBLE">自定义 OpenAI-compatible</option>
+            <option value="OPENAI_COMPATIBLE">OpenAI-compatible 预设</option>
+            <option value="MOCK">Mock（开发测试）</option>
+        </select>
+
+        <label for="display-name">显示名称</label>
+        <input id="display-name" type="text" maxlength="128">
+
+        <label for="base-url">Base URL</label>
+        <input id="base-url" type="text" maxlength="512" placeholder="例如 https://api.deepseek.com/v1">
+
+        <label for="api-key">API Key</label>
+        <input id="api-key" type="password" maxlength="512" placeholder="不会明文展示；编辑时留空保留原 Key" autocomplete="off">
+
+        <label for="default-llm-model">默认 LLM 模型</label>
+        <input id="default-llm-model" type="text" maxlength="128">
+
+        <label for="default-embedding-model">默认 Embedding 模型</label>
+        <input id="default-embedding-model" type="text" maxlength="128">
+
+        <label for="embedding-dimension">Embedding 维度</label>
+        <input id="embedding-dimension" type="number" min="1" max="8192">
+
+        <label><input id="enabled" type="checkbox" checked> 启用</label>
 
         <div class="upload-actions">
-            <button id="test-embedding-button" type="button">测试 Embedding</button>
-            <button id="test-llm-button" type="button">测试 LLM</button>
-            <button id="refresh-status-button" type="button" class="secondary-button">刷新状态</button>
+            <button id="save-provider-button" type="button">保存</button>
+            <button id="cancel-form-button" type="button" class="secondary-button">取消</button>
         </div>
-        <p class="muted">使用上方按钮进行<strong>测试连接</strong>，确认 Embedding 与 LLM 是否可用。</p>
-        <p id="test-result" class="muted hidden"></p>
+        <p id="form-result" class="muted hidden"></p>
+
+        <details class="tech-details hidden" id="form-tech-details">
+            <summary>查看技术详情</summary>
+            <pre id="form-tech-json"></pre>
+        </details>
     </section>
 
     <section class="panel">
         <h2>说明</h2>
         <ul class="lifecycle-list">
-            <li><strong>mock 模式</strong>：当前使用 mock 模型，仅用于开发测试。</li>
-            <li><strong>local-ai 模式</strong>：当前使用本地 Ollama 模型，需启动 Ollama 与 Python Worker。</li>
-            <li>详细配置见 <code>application-local-ai.properties</code> 与 <a href="/settings.html">系统设置</a>。</li>
+            <li><strong>设为默认问答模型</strong>：Ask 与 AI 任务使用的 LLM。</li>
+            <li><strong>设为默认向量模型</strong>：文档向量化与检索使用的 Embedding。</li>
+            <li><strong>当前使用默认 mock，仅用于开发测试</strong>：未设置数据库默认且 properties 为 mock 时。</li>
+            <li>详见 <a href="/settings.html">系统设置</a> 与手册 <code>docs/manual/model-provider-settings.md</code>。</li>
         </ul>
     </section>
 </div>

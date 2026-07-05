@@ -17,7 +17,7 @@ class LlmProviderConfigurationDefaultsTest {
                 (request, llmProperties) -> new LocalPythonLlmResponse()
         );
 
-        LlmProvider provider = configuration.activeLlmProvider(properties, mock, localPython);
+        LlmProvider provider = configuration.propertyBasedLlmProvider(properties, mock, localPython);
 
         assertThat(provider).isSameAs(localPython);
         assertThat(provider.provider()).isEqualTo("local-python");
@@ -34,7 +34,7 @@ class LlmProviderConfigurationDefaultsTest {
                 (request, llmProperties) -> new LocalPythonLlmResponse()
         );
 
-        LlmProvider provider = configuration.activeLlmProvider(properties, mock, localPython);
+        LlmProvider provider = configuration.propertyBasedLlmProvider(properties, mock, localPython);
 
         assertThat(provider).isSameAs(mock);
         assertThat(provider.provider()).isEqualTo("mock");

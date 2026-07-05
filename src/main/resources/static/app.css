@@ -246,8 +246,14 @@ a:hover {
     color: var(--text);
 }
 
-.answer-summary {
-    margin-bottom: 12px;
+.action-cell {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.action-cell .link-button {
+    font-size: 0.85rem;
 }
 
 .panel {

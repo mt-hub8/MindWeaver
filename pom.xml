@@ -145,6 +145,8 @@
 					<systemPropertyVariables>
 						<app.embedding.provider>mock</app.embedding.provider>
 						<app.llm.provider>mock</app.llm.provider>
+						<app.model-provider.database-overrides-enabled>false</app.model-provider.database-overrides-enabled>
+						<app.security.secret-key>test-only-model-provider-secret-key-32b</app.security.secret-key>
 					</systemPropertyVariables>
 				</configuration>
 			</plugin>

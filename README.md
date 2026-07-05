@@ -45,6 +45,7 @@
 - **文档生命周期** — 已启用 / 已删除等状态；已删除文档不会进入问答。
 - **重新索引** — 基于原始文本重新切块与向量化，无需重新上传文件。
 - **本地 Ollama 模型** — `local-ai` 模式下使用 `qwen3-embedding` 与 `qwen2.5` 系列模型。
+- **模型供应商配置（V10.0）** — 在「模型设置」管理 Ollama / OpenAI-compatible 供应商，设置默认 LLM 与 Embedding；**API Key 不会明文展示**。
 - **AI 任务编排** — 提交目标后自动生成检索、总结与最终报告。
 - **工具执行过程** — 查看每一步工具输入、输出与事件时间线。
 - **模型设置** — 查看运行模式、Worker / Ollama 连接状态，支持连接测试。
@@ -63,7 +64,7 @@
 | 知识库分组 | `/collections.html` | 创建分组、管理文档归属 |
 | 知识库问答 | `/ask.html` | 选择范围提问，查看回答与引用来源 |
 | AI 任务 | `/agent-tasks.html` | 提交任务，查看报告与执行过程 |
-| 模型设置 | `/model-settings.html` | 查看模型配置与连接状态，测试 Embedding / LLM |
+| 模型设置 | `/model-settings.html` | 管理**模型供应商**、默认 LLM/Embedding、**测试连接**（V10.0） |
 | 系统设置 | `/settings.html` | 运行模式、本地数据目录规划等只读信息 |
 | 文档处理分析 | `/ingestion-analytics.html` | 查看摄入成功率、耗时与失败原因（偏工程向） |
 
@@ -223,6 +224,10 @@ Ollama（本地模型）
 
 配置详见 `application.properties` 与 `application-local-ai.properties`。
 
+### 模型供应商（V10.0）
+
+在 **模型设置** 页面可添加 **Ollama** 与 **OpenAI-compatible** 模型供应商，设置默认问答 / 向量模型。**API Key 不会明文展示**，加密主密钥通过 `app.security.secret-key` 或环境变量 `MODEL_PROVIDER_SECRET_KEY` 配置（勿提交到 Git）。详见 [model-provider-settings.md](docs/manual/model-provider-settings.md)。
+
 ---
 
 ## 11. 测试
@@ -235,7 +240,7 @@ cd E:\code\ai-task-orchestrator
 ```
 
 **为什么默认测试低依赖？**  
-为了保证任何开发者 clone 仓库后，无需安装 Ollama、无需 Docker 中的 Qdrant、无需真实 API Key，也能在 CI 与本地快速验证业务逻辑。测试通过 Maven Surefire 注入 `app.embedding.provider=mock` 与 `app.llm.provider=mock`。
+为了保证任何开发者 clone 仓库后，无需安装 Ollama、无需 Docker 中的 Qdrant、无需真实 API Key，也能在 CI 与本地快速验证业务逻辑。测试通过 Maven Surefire 注入 `app.embedding.provider=mock` 与 `app.llm.provider=mock`，并关闭数据库模型覆盖（`app.model-provider.database-overrides-enabled=false`）。**默认测试不依赖真实外部 API。**
 
 默认测试**不要求**：
 
@@ -278,7 +283,7 @@ Worker 测试使用 mock HTTP，**不调用真实 Ollama**。
 | 版本 | 方向 |
 |------|------|
 | **V9.0** | 本地个人知识工作台产品化（当前）：中文 UI、模型设置、系统设置、Windows 脚本 |
-| **V10.0** | 模型 Provider 设置（API Key 管理、更多本地/外部模型预设） |
+| **V10.0** | 模型 Provider 设置：Ollama / OpenAI-compatible 供应商、API Key 加密、默认模型 |
 | **V11.0** | RAG 质量评分与诊断 |
 | **V12.0** | 垃圾箱与本地存储管理 |
 | **V13.0** | 批量上传与通知 |
@@ -354,6 +359,7 @@ Java（Spring Boot）擅长可靠的业务服务、事务、异步任务与 API 
 | 主题 | 文档 |
 |------|------|
 | V9.0 个人知识工作台 | [local-personal-knowledge-workspace.md](docs/manual/local-personal-knowledge-workspace.md) |
+| V10.0 模型供应商设置 | [model-provider-settings.md](docs/manual/model-provider-settings.md) |
 | 上传与问答 | [upload-to-ask.md](docs/manual/upload-to-ask.md) |
 | Knowledge Base Lifecycle（V4.0）· 软删除 · 重新索引 | [knowledge-base-lifecycle-management.md](docs/manual/knowledge-base-lifecycle-management.md) |
 | 知识库分组 · 范围检索（V5.0）· `collectionId` | [scoped-retrieval-and-collections.md](docs/manual/scoped-retrieval-and-collections.md) |

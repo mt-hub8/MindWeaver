@@ -191,4 +191,48 @@ public class BusinessException extends RuntimeException {
     public static BusinessException agentWorkflowFailed(String message) {
         return new BusinessException(ErrorCode.AGENT_WORKFLOW_FAILED, HttpStatus.INTERNAL_SERVER_ERROR, message);
     }
+
+    public static BusinessException modelProviderNotFound() {
+        return new BusinessException(ErrorCode.MODEL_PROVIDER_NOT_FOUND, HttpStatus.NOT_FOUND, "模型供应商不存在");
+    }
+
+    public static BusinessException modelProviderInvalid(String message) {
+        return new BusinessException(ErrorCode.MODEL_PROVIDER_INVALID, HttpStatus.BAD_REQUEST, message);
+    }
+
+    public static BusinessException modelProviderDisabled(String message) {
+        return new BusinessException(ErrorCode.MODEL_PROVIDER_DISABLED, HttpStatus.CONFLICT, message);
+    }
+
+    public static BusinessException modelProviderApiKeyRequired() {
+        return new BusinessException(
+                ErrorCode.MODEL_PROVIDER_API_KEY_REQUIRED,
+                HttpStatus.BAD_REQUEST,
+                "该模型供应商需要配置 API Key"
+        );
+    }
+
+    public static BusinessException modelProviderBaseUrlRequired() {
+        return new BusinessException(
+                ErrorCode.MODEL_PROVIDER_BASE_URL_REQUIRED,
+                HttpStatus.BAD_REQUEST,
+                "该模型供应商需要配置 Base URL"
+        );
+    }
+
+    public static BusinessException modelProviderTestFailed(String message) {
+        return new BusinessException(ErrorCode.MODEL_PROVIDER_TEST_FAILED, HttpStatus.BAD_GATEWAY, message);
+    }
+
+    public static BusinessException modelProviderSecretError(String message) {
+        return new BusinessException(ErrorCode.MODEL_PROVIDER_SECRET_ERROR, HttpStatus.INTERNAL_SERVER_ERROR, message);
+    }
+
+    public static BusinessException modelProviderUnsupportedType(String message) {
+        return new BusinessException(ErrorCode.MODEL_PROVIDER_UNSUPPORTED_TYPE, HttpStatus.BAD_REQUEST, message);
+    }
+
+    public static BusinessException modelProviderDefaultRequired(String message) {
+        return new BusinessException(ErrorCode.MODEL_PROVIDER_DEFAULT_REQUIRED, HttpStatus.CONFLICT, message);
+    }
 }

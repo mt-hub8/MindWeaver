@@ -1,0 +1,54 @@
+package com.tuoman.ai_task_orchestrator.llm;
+
+import com.tuoman.ai_task_orchestrator.modelprovider.ModelProviderType;
+import com.tuoman.ai_task_orchestrator.modelprovider.ResolvedModelProvider;
+import com.tuoman.ai_task_orchestrator.service.ModelProviderSelectionService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Primary;
+import org.springframework.stereotype.Component;
+
+@Component
+@Primary
+@RequiredArgsConstructor
+public class RoutingLlmProvider implements LlmProvider {
+
+    private final ModelProviderSelectionService selectionService;
+
+    private final MockLlmProvider mockLlmProvider;
+
+    private final LocalPythonLlmProvider localPythonLlmProvider;
+
+    private final OpenAiCompatibleLlmProvider openAiCompatibleLlmProvider;
+
+    @Override
+    public LlmGenerateResult generate(String systemPrompt, String userPrompt, LlmGenerateOptions options) {
+        ResolvedModelProvider resolved = selectionService.resolveDefaultLlm();
+        selectionService.ensureEnabled(resolved);
+        LlmGenerateOptions effective = options != null ? options : new LlmGenerateOptions();
+        if ((effective.getModel() == null || effective.getModel().isBlank())
+                && resolved.getLlmModel() != null && !resolved.getLlmModel().isBlank()) {
+            effective.setModel(resolved.getLlmModel());
+        }
+
+        return switch (resolved.getProviderType()) {
+            case MOCK -> mockLlmProvider.generate(systemPrompt, userPrompt, effective);
+            case OLLAMA -> localPythonLlmProvider.generate(systemPrompt, userPrompt, effective);
+            case OPENAI_COMPATIBLE, CUSTOM_OPENAI_COMPATIBLE ->
+                    openAiCompatibleLlmProvider.generate(systemPrompt, userPrompt, effective, resolved);
+        };
+    }
+
+    @Override
+    public String provider() {
+        return selectionService.resolveDefaultLlm().getProviderType().name().toLowerCase();
+    }
+
+    @Override
+    public String defaultModel() {
+        ResolvedModelProvider resolved = selectionService.resolveDefaultLlm();
+        if (resolved.getLlmModel() != null && !resolved.getLlmModel().isBlank()) {
+            return resolved.getLlmModel();
+        }
+        return localPythonLlmProvider.defaultModel();
+    }
+}

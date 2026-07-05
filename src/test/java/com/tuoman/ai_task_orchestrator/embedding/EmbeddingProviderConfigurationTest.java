@@ -21,7 +21,7 @@ class EmbeddingProviderConfigurationTest {
                 (request, localWorkerProperties) -> new LocalEmbeddingWorkerResponse()
         );
 
-        EmbeddingProvider provider = configuration.activeEmbeddingProvider(properties, mock, openAi, localWorker);
+        EmbeddingProvider provider = configuration.propertyBasedEmbeddingProvider(properties, mock, openAi, localWorker);
 
         assertThat(provider).isSameAs(localWorker);
         assertThat(provider.provider()).isEqualTo("local-worker");
@@ -42,7 +42,7 @@ class EmbeddingProviderConfigurationTest {
                 (request, localWorkerProperties) -> new LocalEmbeddingWorkerResponse()
         );
 
-        EmbeddingProvider provider = configuration.activeEmbeddingProvider(properties, mock, openAi, localWorker);
+        EmbeddingProvider provider = configuration.propertyBasedEmbeddingProvider(properties, mock, openAi, localWorker);
 
         assertThat(provider).isSameAs(mock);
         assertThat(provider.provider()).isEqualTo("mock");
@@ -62,7 +62,7 @@ class EmbeddingProviderConfigurationTest {
                 (request, localWorkerProperties) -> new LocalEmbeddingWorkerResponse()
         );
 
-        EmbeddingProvider provider = configuration.activeEmbeddingProvider(properties, mock, openAi, localWorker);
+        EmbeddingProvider provider = configuration.propertyBasedEmbeddingProvider(properties, mock, openAi, localWorker);
 
         assertThat(provider).isSameAs(openAi);
         assertThat(provider.provider()).isEqualTo("openai");
@@ -82,7 +82,7 @@ class EmbeddingProviderConfigurationTest {
                 (request, localWorkerProperties) -> new LocalEmbeddingWorkerResponse()
         );
 
-        EmbeddingProvider provider = configuration.activeEmbeddingProvider(properties, mock, openAi, localWorker);
+        EmbeddingProvider provider = configuration.propertyBasedEmbeddingProvider(properties, mock, openAi, localWorker);
 
         assertThat(provider).isSameAs(localWorker);
         assertThat(provider.provider()).isEqualTo("local-worker");
