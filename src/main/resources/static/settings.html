@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统设置</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="page">
+    <nav id="app-nav-mount" data-active="settings"></nav>
+    <script src="/app-nav.js"></script>
+
+    <header class="hero">
+        <h1>系统设置</h1>
+        <p class="lead">只读展示当前运行环境与本地数据目录规划。本阶段不迁移数据、不修改系统配置。</p>
+    </header>
+
+    <section class="panel">
+        <h2>产品信息</h2>
+        <dl class="summary-dl">
+            <dt>产品名称</dt>
+            <dd>Personal AI Knowledge Workspace / 个人 AI 知识工作台</dd>
+            <dt>当前运行模式</dt>
+            <dd id="settings-active-profile">加载中…</dd>
+        </dl>
+    </section>
+
+    <section class="panel">
+        <h2>本地数据目录</h2>
+        <p>建议的 Windows 本地数据目录（规划）：</p>
+        <pre class="path-box">%APPDATA%\PersonalAIKnowledgeWorkspace\</pre>
+        <p class="muted">
+            当前开发模式仍使用项目配置的数据库、Qdrant 和 Python Worker。
+            后续本地单用户模式会逐步迁移到统一数据目录。本阶段不实际迁移数据。
+        </p>
+    </section>
+
+    <section class="panel">
+        <h2>运行时组件</h2>
+        <dl class="summary-dl" id="runtime-summary">
+            <dt>项目路径</dt>
+            <dd id="settings-project-path">-</dd>
+            <dt>当前数据库模式</dt>
+            <dd>MySQL（Flyway 管理，见 application.properties）</dd>
+            <dt>当前向量库模式</dt>
+            <dd id="settings-vector-store">-</dd>
+            <dt>当前 Python Worker 地址</dt>
+            <dd id="settings-python-worker">-</dd>
+            <dt>当前 Ollama 地址</dt>
+            <dd id="settings-ollama">-</dd>
+        </dl>
+    </section>
+
+    <section class="panel">
+        <h2>日志与缓存</h2>
+        <ul class="lifecycle-list">
+            <li><strong>日志</strong>：Spring Boot 默认输出到控制台；生产部署时可配置 logging.file.name。</li>
+            <li><strong>Embedding 缓存</strong>：相同文档片段不重复计算向量，可通过 API 查看缓存指标。</li>
+            <li><strong>垃圾箱规划</strong>：文档软删除后进入「已删除」状态，不会进入问答；本阶段不做自动物理清理。</li>
+        </ul>
+    </section>
+
+    <section class="panel">
+        <h2>相关入口</h2>
+        <p>
+            <a class="button-link" href="/model-settings.html">模型设置</a>
+            <a class="button-link secondary" href="/">返回首页</a>
+        </p>
+    </section>
+</div>
+
+<script src="/settings.js"></script>
+</body>
+</html>

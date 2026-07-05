@@ -8,16 +8,8 @@
 </head>
 <body>
 <div class="page">
-    <nav class="app-nav" aria-label="主导航">
-        <a class="brand" href="/">AI 知识库助手</a>
-        <a class="nav-link" href="/">首页</a>
-        <a class="nav-link" href="/ask.html">知识库问答</a>
-        <a class="nav-link" href="/documents.html">文档管理</a>
-        <a class="nav-link active" href="/collections.html" aria-current="page">知识库分组</a>
-        <a class="nav-link" href="/agent-tasks.html">AI 任务编排</a>
-        <a class="nav-link" href="/evaluation.html">检索质量评估</a>
-        <a class="nav-link" href="/ingestion-analytics.html">文档处理分析</a>
-    </nav>
+    <nav id="app-nav-mount" data-active="collections"></nav>
+    <script src="/app-nav.js"></script>
 
     <header class="hero">
         <h1>知识库分组</h1>

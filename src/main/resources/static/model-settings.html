@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模型设置</title>
+    <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="page">
+    <nav id="app-nav-mount" data-active="model-settings"></nav>
+    <script src="/app-nav.js"></script>
+
+    <header class="hero">
+        <h1>模型设置</h1>
+        <p class="lead">查看当前运行模式、本地模型配置与连接状态。本阶段仅展示与连接测试，不保存 API Key。</p>
+    </header>
+
+    <div id="loading-status" class="status loading visible" role="status">正在加载模型配置…</div>
+
+    <div id="error-status" class="status error hidden" role="alert">
+        <p id="error-message"></p>
+    </div>
+
+    <section id="status-panel" class="panel hidden">
+        <h2>当前模型</h2>
+        <p id="status-message" class="status-banner muted"></p>
+
+        <dl class="summary-dl">
+            <dt>当前运行模式</dt>
+            <dd id="active-profile">-</dd>
+            <dt>Embedding 提供方</dt>
+            <dd id="embedding-provider">-</dd>
+            <dt>Embedding 模型</dt>
+            <dd id="embedding-model">-</dd>
+            <dt>Embedding 维度</dt>
+            <dd id="embedding-dimension">-</dd>
+            <dt>LLM 提供方</dt>
+            <dd id="llm-provider">-</dd>
+            <dt>LLM 模型</dt>
+            <dd id="llm-model">-</dd>
+            <dt>向量库模式</dt>
+            <dd id="vector-store-provider">-</dd>
+        </dl>
+    </section>
+
+    <section id="connection-panel" class="panel hidden">
+        <h2>本地模型连接</h2>
+        <dl class="summary-dl">
+            <dt>Python Worker 地址</dt>
+            <dd id="python-worker-url">-</dd>
+            <dt>Python Worker 状态</dt>
+            <dd id="python-worker-status">-</dd>
+            <dt>Ollama 地址</dt>
+            <dd id="ollama-url">-</dd>
+            <dt>Ollama 状态</dt>
+            <dd id="ollama-status">-</dd>
+        </dl>
+
+        <div class="upload-actions">
+            <button id="test-embedding-button" type="button">测试 Embedding</button>
+            <button id="test-llm-button" type="button">测试 LLM</button>
+            <button id="refresh-status-button" type="button" class="secondary-button">刷新状态</button>
+        </div>
+        <p class="muted">使用上方按钮进行<strong>测试连接</strong>，确认 Embedding 与 LLM 是否可用。</p>
+        <p id="test-result" class="muted hidden"></p>
+    </section>
+
+    <section class="panel">
+        <h2>说明</h2>
+        <ul class="lifecycle-list">
+            <li><strong>mock 模式</strong>：当前使用 mock 模型，仅用于开发测试。</li>
+            <li><strong>local-ai 模式</strong>：当前使用本地 Ollama 模型，需启动 Ollama 与 Python Worker。</li>
+            <li>详细配置见 <code>application-local-ai.properties</code> 与 <a href="/settings.html">系统设置</a>。</li>
+        </ul>
+    </section>
+</div>
+
+<script src="/model-settings.js"></script>
+</body>
+</html>

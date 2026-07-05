@@ -20,13 +20,16 @@
 
     const answerSection = document.getElementById("answer-section");
     const answerScopeLabel = document.getElementById("answer-scope-label");
+    const answerSummary = document.getElementById("answer-summary");
     const answerContent = document.getElementById("answer-content");
     const citationsSection = document.getElementById("citations-section");
     const citationsEmpty = document.getElementById("citations-empty");
     const citationsList = document.getElementById("citations-list");
     const retrievalSection = document.getElementById("retrieval-section");
+    const retrievalSummary = document.getElementById("retrieval-summary");
     const retrievalMetadata = document.getElementById("retrieval-metadata");
     const generationSection = document.getElementById("generation-section");
+    const generationSummary = document.getElementById("generation-summary");
     const generationMetadata = document.getElementById("generation-metadata");
 
     renderSuggestedQuestions();
@@ -208,9 +211,13 @@
         answerContent.textContent = "";
         answerScopeLabel.textContent = "";
         answerScopeLabel.classList.add("hidden");
+        answerSummary.innerHTML = "";
+        answerSummary.classList.add("hidden");
         citationsList.innerHTML = "";
         citationsEmpty.classList.add("hidden");
+        retrievalSummary.innerHTML = "";
         retrievalMetadata.textContent = "";
+        generationSummary.innerHTML = "";
         generationMetadata.textContent = "";
     }
 
@@ -225,8 +232,11 @@
             answerScopeLabel.classList.remove("hidden");
         }
 
-        citationsSection.classList.remove("hidden");
+        const generation = data.generation || {};
         const citations = Array.isArray(data.citations) ? data.citations : [];
+        renderAnswerSummary(generation, citations.length);
+
+        citationsSection.classList.remove("hidden");
         if (citations.length === 0) {
             citationsEmpty.classList.remove("hidden");
         } else {
@@ -237,10 +247,71 @@
         }
 
         retrievalSection.classList.remove("hidden");
+        renderSummaryDl(retrievalSummary, buildRetrievalSummary(retrieval));
         retrievalMetadata.textContent = prettyJson(data.retrieval);
 
         generationSection.classList.remove("hidden");
+        renderSummaryDl(generationSummary, buildGenerationSummary(generation));
         generationMetadata.textContent = prettyJson(data.generation);
+    }
+
+    function renderAnswerSummary(generation, citationCount) {
+        const items = [];
+        if (generation.llmModel || generation.model) {
+            items.push(["使用模型", (generation.llmProvider || generation.provider || "-") +
+                " / " + (generation.llmModel || generation.model || "-")]);
+        }
+        if (generation.latencyMs != null) {
+            items.push(["耗时", generation.latencyMs + " ms"]);
+        }
+        if (citationCount != null) {
+            items.push(["引用条数", String(citationCount)]);
+        }
+        if (items.length === 0) {
+            return;
+        }
+        renderSummaryDl(answerSummary, items);
+        answerSummary.classList.remove("hidden");
+    }
+
+    function buildRetrievalSummary(retrieval) {
+        const items = [];
+        if (retrieval.returned != null) {
+            items.push(["命中片段数", String(retrieval.returned)]);
+        }
+        if (retrieval.strategy) {
+            items.push(["检索策略", retrieval.strategy]);
+        }
+        if (retrieval.scopeType) {
+            items.push(["范围类型", retrieval.scopeType]);
+        }
+        return items;
+    }
+
+    function buildGenerationSummary(generation) {
+        const items = [];
+        if (generation.llmModel || generation.model) {
+            items.push(["模型", generation.llmModel || generation.model]);
+        }
+        if (generation.latencyMs != null) {
+            items.push(["耗时", generation.latencyMs + " ms"]);
+        }
+        if (generation.inputTokens != null || generation.outputTokens != null) {
+            items.push(["Token", (generation.inputTokens || 0) + " / " + (generation.outputTokens || 0)]);
+        }
+        return items;
+    }
+
+    function renderSummaryDl(container, items) {
+        container.innerHTML = "";
+        items.forEach(function (pair) {
+            const dt = document.createElement("dt");
+            dt.textContent = pair[0];
+            const dd = document.createElement("dd");
+            dd.textContent = pair[1];
+            container.appendChild(dt);
+            container.appendChild(dd);
+        });
     }
 
     function buildScopeLabel(retrieval, requestedCollectionId) {
@@ -264,11 +335,16 @@
         const meta = document.createElement("div");
         meta.className = "citation-meta";
         meta.innerHTML =
-            "<span>序号: " + safeValue(citation.sourceIndex) + "</span>" +
-            "<span>文档 ID: " + safeValue(citation.documentId) + "</span>" +
-            "<span>片段 ID: " + safeValue(citation.chunkId) + "</span>" +
             "<span>相关度: " + safeValue(citation.score) + "</span>";
         item.appendChild(meta);
+
+        const tech = document.createElement("details");
+        tech.className = "tech-details";
+        tech.innerHTML =
+            "<summary>查看技术详情</summary><pre>" +
+            escapeHtml(prettyJson(citation)) +
+            "</pre>";
+        item.appendChild(tech);
 
         const snippet = document.createElement("p");
         snippet.className = "citation-snippet";
@@ -276,6 +352,17 @@
         item.appendChild(snippet);
 
         return item;
+    }
+
+    function escapeHtml(value) {
+        if (value === undefined || value === null) {
+            return "";
+        }
+        return String(value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;");
     }
 
     function prettyJson(value) {

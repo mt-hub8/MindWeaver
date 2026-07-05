@@ -31,9 +31,10 @@ class ProductMvpStaticResourceTest {
     @Test
     void shouldServeIndexHtmlWithChineseProductPath() throws Exception {
         String content = fetchUtf8("/index.html");
+        assertThat(content).contains("个人 AI 知识工作台");
         assertThat(content).contains("知识库问答");
         assertThat(content).contains("文档管理");
-        assertThat(content).contains("检索质量评估");
+        assertThat(content).contains("文档处理分析");
     }
 
     @Test

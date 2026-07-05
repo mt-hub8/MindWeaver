@@ -1,405 +1,369 @@
-# AI Knowledge Assistant · AI Task Orchestrator
+# Personal AI Knowledge Workspace
+# 个人 AI 知识工作台
 
-## 产品定位（第一屏）
+一个**本地优先**的个人 AI 应用：你可以上传自己的资料，配置本地或外部模型，构建个人知识库，并让 AI 基于你的知识执行问答、总结、报告生成和任务编排。
 
-**AI Task Orchestrator 是一个面向企业 AI 应用的知识库问答与 RAG 质量调试系统。** 用户可以摄入私有文档，在浏览器中提问，系统基于文档生成带引用的回答，并展示检索策略、引用来源和质量评估结果。
-
-| | |
-|---|---|
-| **适用场景** | 内部知识库问答、RAG 方案验证、检索策略对比（dense / rerank / hybrid）、演示与面试展示 |
-| **核心能力** | **V8.0 真实本地 AI Runtime（Ollama）** · **V7.0 Tool-Using Agent Workflow** · **V6.0 AI 任务编排** · **V5.0 知识库分组** · **V4.0 知识库生命周期** · RAG / Rerank / Hybrid |
-| **5 分钟体验** | 启动服务 → Documents 上传 → （可选）Collections 分组 → Ask 提问 / **Agent Tasks 提交任务** → 查看执行步骤与结果 |
-| **主要入口** | Web：`/` · `/documents.html` · `/collections.html` · `/ask.html` · **`/agent-tasks.html`** · **`/agent-tools.html`** · API：`GET /agent/tools` · `POST /agent/tasks` · `POST /rag/answers` |
-
-> 技术栈：Java 17 · Spring Boot · MySQL · RabbitMQ · JPA/Flyway · 可选 Qdrant / Local Embedding Worker。下文保留完整能力与架构说明。
+> 仓库技术名仍为 `ai-task-orchestrator`，但产品面向个人用户，**不是企业级 SaaS**。  
+> 详细产品说明见 [V9.0 手册](docs/manual/local-personal-knowledge-workspace.md)。
 
 ---
 
-## 1. 项目定位（技术视角）
+## 1. 项目简介
 
-AI Task Orchestrator 是一个基于 Java / Spring Boot 的 AI 任务编排与 RAG 检索后端系统。它的重点不是简单调用大模型 API，而是构建面向 LLM / RAG / Agent 工作负载的可靠异步底座，并在其上逐步扩展文档处理、Embedding、向量检索、检索评估与 RAG 问答能力。
+本项目帮你把「自己的文档」变成「可对话、可检索、可生成报告」的个人知识库。
 
-英文一句话定位：
+核心特点：
 
-> AI Task Orchestrator is a Java / Spring Boot backend for orchestrating long-running AI workloads and building a RAG retrieval foundation, including async dispatch, transactional outbox, atomic task claiming, embedding provider abstraction, vector store abstraction, retrieval evaluation, rerank, and hybrid retrieval fusion.
+- **本地优先**：资料与索引留在你的机器或你控制的环境中；配合 Ollama 时，文档内容不必上传到云端大模型服务。
+- **个人知识库**：上传 `.txt`、`.md`、文本型 PDF，系统自动切块、向量化并建立索引。
+- **多模型可配置**：支持默认 **mock**（开发测试）与 **local-ai**（Ollama 本地模型）；模型信息可在「模型设置」页查看。
+- **RAG 问答**（Retrieval-Augmented Generation，检索增强生成）：基于知识库检索后生成回答，并附带**引用来源**，便于核对。
+- **AI 任务编排**（AI Task Orchestration）：提交任务后，系统在后台检索知识库、调用工具、生成结构化报告。
+- **Tool Workflow**（工具工作流）：固定安全工具链（检索 → 总结 → 报告），可查看每一步执行过程。
+- **后续 Skill 扩展**：路线图包含 Skill System，当前阶段尚未实现。
 
-当前项目是 **production-oriented prototype**，不是完整 production-grade platform，也不是完整 Agent Runtime。
-
----
-
-## 2. 当前能力总览
-
-### Implemented（已实现）
-
-**Reliable Async Task Execution**
-
-- Task lifecycle / state machine
-- RabbitMQ async dispatch
-- Transactional Outbox
-- Atomic Task Claim
-- Task Attempt（`task_attempt` 持久化 + `GET /tasks/{taskId}/attempts`）
-- Retry / cancellation / timeout
-- Idempotent consumption
-- Mock LLM Client
-- Prompt Template
-- Model Router
-- LLM usage metadata
-- Persisted output chunks
-
-**Document & Chunking**
-
-- Document Upload（`.txt` / `.md`）
-- Fixed Chunking / Adaptive Chunking（`DocumentChunker`）
-- chunk metadata：`headingPath`、`startOffset`、`endOffset`、`chunkStrategy`
-
-**Embedding**
-
-- `EmbeddingProvider` 抽象
-- Mock Embedding Provider（默认）
-- OpenAI-compatible Embedding Provider
-- Local Embedding Worker provider integration（Java 侧接入）
-- provider / model / dimension metadata 保存与校验
-
-**Retrieval & Evaluation**
-
-- Document embedding generation（`POST /documents/{documentId}/embeddings`）
-- Document search TopK（`POST /documents/search`）
-- Retrieval Evaluation Harness（`POST /evaluations/retrieval`）
-- Recall@K / Precision@K / HitRate@K / MRR / NDCG@K / ContextPrecision@K
-- Evaluation Dataset Seed（`retrieval-corpus-v1.md` + `retrieval-benchmark-v1.json`）
-- Evidence Mapper（expectedEvidenceIds → expectedChunkIds）
-- Fixed vs Adaptive Chunking Comparison（测试 harness）
-- Embedding Provider Benchmark Comparison（测试 harness）
-
-**VectorStore**
-
-- `VectorStore` 抽象
-- `ExactCosineVectorStore`（默认 baseline）
-- `QdrantVectorStore`（显式配置时启用）
-- VectorStore Benchmark Harness（测试 harness，baseline vs candidate）
-
-**RAG（问答与检索策略）**
-
-- RAG Answer with Citation API（`POST /rag/answers`）
-- Two-stage Retrieval & Rerank（V2.9，配置 `rag.rerank.enabled`）
-- App-layer Hybrid Retrieval Fusion（V3.0，配置 `rag.hybrid.enabled`）
-- 浏览器产品入口：`/` · `/ask.html` · `/documents.html` · `/evaluation.html`
-
-**Knowledge Base Lifecycle（V4.0）**
-
-- 文档生命周期状态：已启用（ACTIVE）/ 已删除（DELETED）
-- 文档软删除：`DELETE /documents/{documentId}`，不物理清理 document / chunks / vectors
-- 已删除文档与旧版本片段不再进入 Ask / RAG（应用层过滤，含 hybrid / rerank）
-- 文档重新建立索引（重新索引）：`POST /documents/{documentId}/reindex`，复用 `source_text` 异步重建索引
-- 当前索引版本（`current_generation`）与 chunk 代际过滤
-- 中文文档管理页面、生命周期事件时间线、文档处理分析入口
-- 说明文档：[docs/manual/knowledge-base-lifecycle-management.md](docs/manual/knowledge-base-lifecycle-management.md)
-
-**Scoped Retrieval & Collections（V5.0）**
-
-- 知识库分组（Collection）：`POST /collections`、`GET /collections`、`GET /collections/{id}`
-- 文档加入 / 移出分组：`POST|DELETE /collections/{collectionId}/documents/{documentId}`
-- Ask 范围检索：`POST /rag/answers` 可选 `collectionId`；不传时保持全库检索
-- 应用层同时过滤：分组范围 + V4.0 生命周期（已删除文档、旧版本片段）
-- 页面：`/collections.html` · Ask / Documents 页面支持分组管理与范围选择
-- 说明文档：[docs/manual/scoped-retrieval-and-collections.md](docs/manual/scoped-retrieval-and-collections.md)
-
-**AI Runtime & Agent Task Orchestration（V6.0）**
-
-- Java 主编排 + Python AI Runtime Worker（embedding / LLM，`local-ai` profile）
-- 默认测试与默认 profile 使用 **mock** provider，不依赖真实模型
-- AI 任务编排：`POST /agent/tasks` → RabbitMQ 异步执行 → 检索 + LLM → 结果 / 引用 / 事件时间线
-- 页面：`/agent-tasks.html`
-- 说明文档：[docs/manual/ai-runtime-and-agent-task-orchestration.md](docs/manual/ai-runtime-and-agent-task-orchestration.md)
-
-**Tool-Using Agent Workflow（V7.0）**
-
-- 固定三步工具流程：检索知识库 → 总结检索结果 → 生成最终报告
-- 内置工具注册表：`GET /agent/tools`（`knowledge_search`、`context_summary`、`collection_overview`）
-- 任务详情含执行步骤、工具输入/输出、引用来源与事件时间线
-- 页面：`/agent-tasks.html` · `/agent-tools.html`
-- 说明文档：[docs/manual/tool-using-agent-workflow.md](docs/manual/tool-using-agent-workflow.md)
-
-**Real Local AI Runtime（V8.0）**
-
-- 免费本地体验：**Ollama** + `qwen3-embedding:0.6b` + `qwen2.5:7b`（或 `qwen2.5:3b` 备用）
-- 链路：Java → Python Worker → Ollama；**默认 profile 仍为 mock**
-- `local-worker`（Java route）与 `local-ollama`（Worker runtime）是两层概念，不要求相等
-- 启用方式：`local-ai` profile + 手工启动 Python Worker 与 Ollama
-- 说明文档：[docs/manual/real-local-ai-runtime-with-ollama.md](docs/manual/real-local-ai-runtime-with-ollama.md)
-
-**工程化**
-
-- Flyway migration
-- Docker Compose（MySQL / RabbitMQ）
-- GitHub Actions CI
-
-### Prototype / Experimental（原型或实验性实现）
-
-以下能力代码已存在，但不应表述为 production-ready：
-
-- **Local Embedding Worker**：Python FastAPI + sentence-transformers，需手工启动，默认测试不依赖
-- **QdrantVectorStore**：REST 接入 Qdrant，需手工启动 Qdrant 并配置 `app.vector-store.provider=qdrant`
-- **OpenAI-compatible embedding**：需配置 `OPENAI_API_KEY` 与 `app.embedding.provider=openai`，默认测试不调用
-- **Exact vs candidate VectorStore benchmark**：通过 `VectorStoreBenchmarkComparisonTest` 等测试验证，不进入默认 CI 外部依赖
-- **Embedding Provider benchmark comparison**：通过测试 harness 对比 mock / fake candidate provider
-- **RAG Answer**：链路已打通，但 LLM 仍为 Mock，未做 Generation Evaluation
-
-### Not Implemented Yet（尚未实现）
-
-- Production-grade RAG answer / generation quality governance
-- Auth / tenant / quota
-- API rate limit
-- Production observability dashboard（完整 metrics pipeline）
-- Distributed worker registry
-- Agent Runtime
-- KV Cache-aware scheduling
-- Production-grade Qdrant deployment（Docker Compose 集成、健康检查、模型缓存治理）
-- Real billing / subscription system
-- Evaluation result persistence
-- Generation Evaluation（Faithfulness、LLM-as-a-judge 等）
-- Web UI 登录 / 权限 / 文档内容在线编辑
+底层具备较完整的 Java 后端工程能力（异步任务、消息队列、向量检索抽象等），但 README 以**产品使用**为主；深入技术细节见文末附录。
 
 ---
 
-## 3. 系统架构概览
+## 2. 适合谁使用
 
-**任务编排链路**
-
-```text
-HTTP API
--> TaskService / DocumentService
--> MySQL（task / task_event / task_outbox / task_attempt / document / document_chunk / document_chunk_embedding）
--> Outbox Dispatcher
--> RabbitMQ
--> Consumer
--> Atomic Task Claim
--> TaskExecutionService
--> Prompt Template / ModelRouter / LlmClient
--> task_attempt / task_output_chunk 更新
-```
-
-**RAG 检索链路**
-
-```text
-Document Upload
--> Adaptive Chunking
--> EmbeddingProvider（mock / openai / local-worker）
--> VectorStore（exact / qdrant）
--> Document Search TopK
--> RetrievalEvaluation / RAG Answer
-```
-
-两层配置分离：
-
-- `app.embedding.provider`：文本如何生成向量
-- `app.vector-store.provider`：向量如何存储与检索
+- **想构建个人知识库的用户** — 论文笔记、项目文档、学习资料统一管理，随时向 AI 提问。
+- **想本地体验 RAG 的开发者** — 从上传到检索、引用、问答的完整链路，可在浏览器中操作。
+- **想学习 AI 应用后端 / Agent 基础设施的人** — 涵盖文档摄入、Embedding、向量库、异步任务、Tool-Using Workflow 等典型模块。
+- **想用本地模型处理私人资料的人** — 通过 Ollama + Python Worker，在本地完成向量化与文本生成，无需把原文发给云端。
 
 ---
 
-## 4. 核心链路一：Reliable Async Task Execution
+## 3. 核心功能
 
-```text
-POST /tasks
--> task 入库，status = PENDING
--> task_event 写入 TASK_CREATED
--> task_outbox 写入 TASK_DISPATCH_REQUESTED
--> 数据库事务提交
--> Outbox Dispatcher 扫描并 claim outbox
--> 发送 RabbitMQ
--> Consumer 接收 TaskDispatchMessage
--> Atomic Claim：PENDING / RETRY_PENDING -> RUNNING
--> 创建 task_attempt
--> Prompt Template + ModelRouter + MockLlmClient
--> 保存 attempt metadata / output chunks
--> task -> SUCCESS / RETRY_PENDING / FAILED / CANCELLED
-```
-
-要点：
-
-1. `createTask` 不直接发送 RabbitMQ，由 Outbox Dispatcher 负责投递。
-2. Consumer 通过 atomic claim 防止重复执行。
-3. `task_attempt` 记录每次执行尝试，不被 `task` 最终摘要覆盖。
+- **文档上传** — 支持 `.txt`、`.md`、文本型 PDF，异步处理，不阻塞页面。
+- **文本提取** — 从上传文件中提取可索引纯文本（扫描版 PDF / 图片 OCR 暂不支持）。
+- **知识库分组** — 按主题把文档归入不同分组，便于分类管理。
+- **范围检索** — 问答或 AI 任务时可选择「全部文档」或「仅某一分组」。
+- **引用来源** — 回答与报告列出引用的文档片段，降低「AI 胡说」风险。
+- **文档生命周期** — 已启用 / 已删除等状态；已删除文档不会进入问答。
+- **重新索引** — 基于原始文本重新切块与向量化，无需重新上传文件。
+- **本地 Ollama 模型** — `local-ai` 模式下使用 `qwen3-embedding` 与 `qwen2.5` 系列模型。
+- **AI 任务编排** — 提交目标后自动生成检索、总结与最终报告。
+- **工具执行过程** — 查看每一步工具输入、输出与事件时间线。
+- **模型设置** — 查看运行模式、Worker / Ollama 连接状态，支持连接测试。
+- **技术详情折叠** — 页面默认中文友好；`metadata`、`traceId` 等工程字段折叠展示，需要时再展开。
 
 ---
 
-## 5. 核心链路二：RAG Retrieval / VectorStore
+## 4. 当前产品页面
 
-```text
-POST /documents（上传）
--> DocumentChunker 切分
--> POST /documents/{documentId}/embeddings
--> EmbeddingProvider 生成向量
--> VectorStore.upsert（默认 ExactCosineVectorStore 写入 document_chunk_embedding）
--> POST /documents/search
--> VectorStore.search（exact cosine 或 Qdrant）
--> POST /evaluations/retrieval（检索指标评估）
--> POST /rag/answer（检索 + Mock LLM 回答 + citation）
-```
+启动服务后访问 `http://localhost:8080`：
 
-默认配置：
-
-```properties
-app.embedding.provider=mock
-app.vector-store.provider=exact
-```
-
-启用 Qdrant（手工验证，非默认测试）：
-
-```properties
-app.vector-store.provider=qdrant
-app.vector-store.qdrant.base-url=http://127.0.0.1:6333
-app.vector-store.qdrant.initialize-collection=true
-```
+| 页面 | 路径 | 说明 |
+|------|------|------|
+| 首页 | `/` | 产品入口与核心功能导航 |
+| 文档管理 | `/documents.html` | 上传文档、查看状态、重新索引、删除 |
+| 知识库分组 | `/collections.html` | 创建分组、管理文档归属 |
+| 知识库问答 | `/ask.html` | 选择范围提问，查看回答与引用来源 |
+| AI 任务 | `/agent-tasks.html` | 提交任务，查看报告与执行过程 |
+| 模型设置 | `/model-settings.html` | 查看模型配置与连接状态，测试 Embedding / LLM |
+| 系统设置 | `/settings.html` | 运行模式、本地数据目录规划等只读信息 |
+| 文档处理分析 | `/ingestion-analytics.html` | 查看摄入成功率、耗时与失败原因（偏工程向） |
 
 ---
 
-## 6. 本地快速启动
+## 5. 快速开始
 
-详细说明见 [docs/local-dev.md](docs/local-dev.md)。
+### 前置依赖
+
+开发模式需要：**JDK 17+**、**Maven**（或项目自带 `mvnw.cmd`）、**MySQL**、**RabbitMQ**。  
+向量检索推荐 **Qdrant**（见 `docker-compose.qdrant.yml`）。完整环境说明见 [docs/local-dev.md](docs/local-dev.md)。
+
+### 开发模式（默认 mock，不依赖真实模型）
 
 ```powershell
 cd E:\code\ai-task-orchestrator
 docker compose up -d
-.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=docker"
+.\mvnw.cmd test
+.\mvnw.cmd spring-boot:run
 ```
 
-PowerShell 不要使用 `cd /d E:\code\ai-task-orchestrator`。
+浏览器打开：`http://localhost:8080`
 
----
+> 默认 **mock** 模式下，Embedding 与 LLM 均为模拟实现，适合跑通流程与自动化测试，**不代表真实模型效果**。
 
-## 7. 可运行 Demo 入口
+### local-ai 模式（真实本地 Ollama）
 
-**Web UI（V3.1 产品入口）**
-
-| 页面 | 路径 | 说明 |
-| --- | --- | --- |
-| 产品首页 | `/` 或 `/index.html` | 能力说明与导航 |
-| 知识库问答 | `/ask.html`（兼容 `/rag-demo.html`） | 提问、Citations、Metadata |
-| 文档浏览 / 上传 | `/documents.html` · `POST /documents/upload`（txt/md/pdf 同步 ingestion） |
-| 评估说明 | `/evaluation.html` | 指标与报告路径 |
-
-完整 E2E 演示见：[docs/demo/e2e-demo.md](docs/demo/e2e-demo.md)（配合 `docs/demo/task-flow.http` 与 `docs/demo/rag-flow.http`）。
-
-| 能力 | HTTP 入口 |
-| --- | --- |
-| 文档上传（同步 ingestion） | `POST /documents/upload` |
-| 文档列表（只读） | `GET /documents` |
-| 创建任务 | `POST /tasks` |
-| 查询任务 | `GET /tasks/{taskId}` |
-| 查询 attempts | `GET /tasks/{taskId}/attempts` |
-| 查询 output chunks | `GET /tasks/{taskId}/output-chunks` |
-| 上传文档 | `POST /documents` |
-| 生成 embedding | `POST /documents/{documentId}/embeddings` |
-| 文档检索 | `POST /documents/search` |
-| 检索评估 | `POST /evaluations/retrieval` |
-| RAG 问答 | `POST /rag/answers` |
-
-开发/调试接口（非生产）：
-
-| 能力 | HTTP 入口 |
-| --- | --- |
-| 重复投递测试 | `POST /dev/tasks/{taskId}/dispatch` |
-| 修改任务状态 | `PATCH /dev/tasks/{taskId}/status`（需 `dev` profile） |
-
-更多请求示例见 [docs/api-examples.md](docs/api-examples.md)。
-
----
-
-## 8. 测试与评估
-
-**默认单元/集成测试**
+1. **启动 Ollama**（桌面应用或 `ollama serve`）
+2. **启动 Python AI Runtime Worker**（另开终端）：
 
 ```powershell
+cd E:\code\ai-task-orchestrator\workers\ai-runtime-worker
+pip install -r requirements.txt
+python -m uvicorn main:app --host 127.0.0.1 --port 8001
+```
+
+3. **启动 Spring Boot（local-ai profile）**：
+
+```powershell
+cd E:\code\ai-task-orchestrator
+.\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local-ai
+```
+
+### Windows 一键脚本（可选）
+
+```powershell
+cd E:\code\ai-task-orchestrator
+.\scripts\windows\check-env.ps1
+.\scripts\windows\start-local.ps1
+```
+
+说明见 [scripts/windows/README.md](scripts/windows/README.md)。
+
+---
+
+## 6. 本地 Ollama 模型体验
+
+### 安装与拉取模型
+
+1. 安装 [Ollama](https://ollama.com/) 并确保服务运行。
+2. 拉取推荐模型：
+
+```powershell
+ollama list
+ollama pull qwen3-embedding:0.6b
+ollama pull qwen2.5:7b
+```
+
+内存或显卡较紧张时，LLM 可改用较轻量的 `qwen2.5:3b`：
+
+```powershell
+ollama pull qwen2.5:3b
+```
+
+### 调用链路说明
+
+```text
+Java（Spring Boot）→ Python AI Runtime Worker → Ollama
+```
+
+- **Java** 负责业务编排、文档管理、RAG 检索逻辑，**不直接调用 Ollama**。
+- **Python Worker** 提供 `/embed` 与 `/generate` 接口，内部调用 Ollama API。
+- **Ollama** 在本机运行 Embedding 与 LLM 模型。
+
+启动后可在 **模型设置** 页（`/model-settings.html`）查看连接状态并测试 Embedding / LLM。  
+更详细说明：[real-local-ai-runtime-with-ollama.md](docs/manual/real-local-ai-runtime-with-ollama.md)
+
+---
+
+## 7. 使用流程
+
+按以下五步即可走完主路径：
+
+1. **上传文档** — 打开「文档管理」，上传 `.txt` / `.md` / 文本型 PDF。
+2. **等待文档处理完成** — 列表状态变为「已完成」后，切块与向量索引才可用于问答。
+3. **（可选）创建知识库分组** — 在「知识库分组」中新建分组并加入文档，便于按主题提问。
+4. **在知识库问答页面提问** — 选择「全部文档」或指定分组，输入问题，查看回答与引用来源。
+5. **在 AI 任务页面生成报告** — 填写任务目标，系统在后台检索、总结并输出结构化报告。
+
+---
+
+## 8. 技术架构
+
+```text
+Browser UI（浏览器页面）
+    ↓
+Spring Boot Backend（Java 业务编排）
+    ↓
+MySQL / Qdrant / RabbitMQ
+    ↓
+Python AI Runtime Worker
+    ↓
+Ollama（本地模型）
+```
+
+各组件职责：
+
+| 组件 | 职责 |
+|------|------|
+| **Java / Spring Boot** | HTTP API、文档生命周期、RAG 编排、AI 任务调度、业务规则 |
+| **Python Worker** | AI Runtime：调用 Ollama 完成 Embedding 与文本生成 |
+| **Ollama** | 本地运行 Embedding / LLM 模型 |
+| **Qdrant** | 向量存储与相似度检索（可配置；亦支持内存 exact 检索 baseline） |
+| **RabbitMQ** | 异步任务投递（文档摄入、AI 任务执行等） |
+| **MySQL** | 文档、任务、分组、事件等元数据持久化 |
+
+这是典型的 **Java + Python** 分层：Java 做可靠业务底座，Python 做 AI 运行时适配。
+
+---
+
+## 9. 本地数据与隐私
+
+- **当前开发模式**仍使用项目配置中的 MySQL、Qdrant、RabbitMQ 与 Worker 地址，尚未迁移到统一个人数据目录。
+- **后续规划**的 Windows 本地数据目录：`%APPDATA%\PersonalAIKnowledgeWorkspace\`（见「系统设置」页说明）。
+- **local-ai + Ollama** 模式下，文档原文与向量索引留在本地；向 Ollama 发送的是切块后的文本片段，而非把整个仓库推到云端 SaaS。
+- **API Key**：后续将在模型设置中心管理；当前阶段不做完整 Key 加密存储。**请勿把 API Key 提交到 Git**。
+- 删除文档为**软删除**，底层向量不会立即物理清除（见 FAQ）。
+
+---
+
+## 10. 默认 mock 与 local-ai profile
+
+| 模式 | 说明 |
+|------|------|
+| **默认 mock** | 用于开发与自动化测试。Embedding / LLM 均为模拟实现，**不依赖** Ollama、Python Worker、外部 API。`.\mvnw.cmd test` 在此模式下运行。 |
+| **local-ai profile** | 启用真实本地链路：Java → Python Worker → Ollama。需手工启动 Worker 与 Ollama，并使用 `qwen3-embedding:0.6b` 等已拉取模型。 |
+
+切换方式：
+
+```powershell
+# 开发 / 测试（mock）
+.\mvnw.cmd spring-boot:run
+
+# 本地真实模型
+.\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local-ai
+```
+
+配置详见 `application.properties` 与 `application-local-ai.properties`。
+
+---
+
+## 11. 测试
+
+### 默认测试（低依赖）
+
+```powershell
+cd E:\code\ai-task-orchestrator
 .\mvnw.cmd test
 ```
 
-默认测试要求：
+**为什么默认测试低依赖？**  
+为了保证任何开发者 clone 仓库后，无需安装 Ollama、无需 Docker 中的 Qdrant、无需真实 API Key，也能在 CI 与本地快速验证业务逻辑。测试通过 Maven Surefire 注入 `app.embedding.provider=mock` 与 `app.llm.provider=mock`。
 
-- 不启动 Docker（CI 除外）
-- 不连接 Qdrant
-- 不访问 OpenAI API
-- 不启动 Python embedding worker
-- 不下载 embedding 模型
-- 不访问外部网络
+默认测试**不要求**：
 
-测试数量以本地或 CI 实际输出为准，不要手写猜测数字。
+- Ollama 已启动  
+- Python Worker 已启动  
+- Qdrant / Docker 已运行  
+- 真实模型已下载  
+- 外部网络 / API Key  
 
-**Benchmark / Comparison（测试 harness，非生产 API）**
+### Python Worker 测试（单独运行）
 
-| Harness | 说明 |
-| --- | --- |
-| `BenchmarkRunnerEvidenceMapperTest` | benchmark seed + evidence 映射 + evaluation |
-| `EmbeddingProviderBenchmarkComparisonTest` | baseline vs candidate embedding provider |
-| `VectorStoreBenchmarkComparisonTest` | ExactCosineVectorStore vs fake candidate |
-| `ChunkingStrategyComparisonTest` | Fixed vs Adaptive chunking |
+```powershell
+cd E:\code\ai-task-orchestrator\workers\ai-runtime-worker
+python -m pytest test_worker.py -q
+```
 
-这些能力通过测试与 benchmark runner 验证，尚未暴露为独立 HTTP benchmark API。
+Worker 测试使用 mock HTTP，**不调用真实 Ollama**。
 
 ---
 
-## 9. 当前限制
+## 12. 当前不做
 
-- LLM 默认仍为 Mock，不代表真实生成质量。
-- Embedding 默认仍为 Mock，不代表真实语义效果。
-- RAG Answer 基于 Mock LLM，未做 Generation Evaluation。
-- `ExactCosineVectorStore` 为 exact scan，不适合大规模生产检索。
-- Qdrant 接入为实验性实现，无 Docker Compose 集成与生产级运维。
-- Local Embedding Worker 需手工启动 Python 环境。
-- 无多租户、鉴权、限流、完整 observability。
-- Web UI 为 MVP：无登录、无权限、无文档删除/编辑；支持 Documents 页面上传 txt/md/pdf。
-- 不是完整 Agent Runtime。
+请把本项目当作**个人知识工作台原型**，而非可直接上线的企业产品：
 
----
-
-## 10. Roadmap
-
-从当前真实状态继续：
-
-1. **E2E Demo Golden Path** — 端到端演示脚本与验收路径
-2. **Atomic Finalization** — 任务终态与 outbox 边界进一步硬化
-3. **Qdrant Manual Verification** — 手工 external Qdrant benchmark 与运行手册
-4. **API Error Response Standardization** — 统一错误响应格式
-5. **Local Embedding Worker Packaging** — Docker 化与依赖治理
-6. **Retrieval Policy & VIP Search** — 按用户计划调整 topK / 检索策略
-7. **RAG Answer Hardening** — 生产级 citation / generation 质量治理
-8. **Generation Evaluation** — Faithfulness、Answer Relevance、LLM-as-a-judge
-9. **Agent Runtime**
-10. **KV Cache-aware Scheduling**
-11. **Product UI** — 登录、权限、文档上传与管理
-
-已完成能力（V2.4–V3.1）不再列入待做：Retrieval Evaluation、EmbeddingProvider、Local Worker 接入、VectorStore 抽象、QdrantVectorStore、VectorStore Benchmark Harness、Rerank、Hybrid Fusion、产品化 Web 入口。
+- **不是企业 SaaS** — 无多租户、无订阅计费、无运维大屏。
+- **不做登录** — 无账号体系。
+- **不做多用户** — 单用户本地使用场景。
+- **不做权限** — 无角色与访问控制。
+- **不做 workspace** — 无团队空间隔离。
+- **不做云端同步** — 资料不会自动同步到云端账户。
+- **不做多 Agent 圆桌** — 当前为固定工具链，非多 Agent 协作。
+- **不做插件市场** — 无第三方插件生态。
+- **不做生产级部署** — 无完整监控、限流、高可用方案。
+- **不做桌面安装包** — 需自行启动 Java / Python / 依赖服务。
 
 ---
 
-## 11. 面试文档索引
+## 13. 后续路线
 
-分版本 deep-dive 见 [docs/interview](docs/interview)，例如：
-
-| 版本 | 主题 |
-| --- | --- |
-| V0.x | Task / Outbox / Retry / RabbitMQ |
-| V1.x | LLM / Prompt / Model Router / Output Chunks |
-| V2.1 | Document Upload & Chunking |
-| V2.2 | Mock Embedding & Vector Search |
-| V2.2.x | Production Hardening |
-| V2.3 | RAG Answer with Citation |
-| V2.4.x | Retrieval Evaluation / Metrics / Dataset / Benchmark |
-| V2.5 | Real Embedding Provider |
-| V2.5.1 | Embedding Provider Benchmark Comparison |
-| V2.5.2 | Local Embedding Worker |
-| V2.6 | VectorStore Abstraction |
-| V2.6.1 | Qdrant Integration |
-| V2.6.2 | VectorStore Benchmark |
-
-简历与面试表达见 [docs/resume-interview.md](docs/resume-interview.md)。
+| 版本 | 方向 |
+|------|------|
+| **V9.0** | 本地个人知识工作台产品化（当前）：中文 UI、模型设置、系统设置、Windows 脚本 |
+| **V10.0** | 模型 Provider 设置（API Key 管理、更多本地/外部模型预设） |
+| **V11.0** | RAG 质量评分与诊断 |
+| **V12.0** | 垃圾箱与本地存储管理 |
+| **V13.0** | 批量上传与通知 |
+| **V14.0** | Skill System MVP |
+| **V15.0** | 本地应用打包（安装包 / 一键服务） |
+| **V16.0** | 多 Agent 圆桌 |
 
 ---
 
-## 相关文档
+## 14. 面试表达
 
-- [docs/manual/knowledge-base-lifecycle-management.md](docs/manual/knowledge-base-lifecycle-management.md)
-- [docs/local-dev.md](docs/local-dev.md)
-- [docs/api-examples.md](docs/api-examples.md)
-- [docs/project-structure.md](docs/project-structure.md)
-- [docs/resume-interview.md](docs/resume-interview.md)
+若在技术面试中介绍本项目，可从以下角度组织（约 2–3 分钟）：
+
+**产品价值**  
+「这是一个本地优先的个人 AI 知识工作台：用户上传私有文档，基于 RAG 获得带引用的问答，并能通过 AI 任务生成结构化报告。」
+
+**系统架构**  
+「浏览器 + Spring Boot 做业务编排，MySQL 存元数据，Qdrant 做向量检索，RabbitMQ 做异步任务，Python Worker 适配 Ollama，实现 Java + Python 分层。」
+
+**RAG 工程**  
+「文档切块 → Embedding → 向量入库 → TopK 检索 → 引用拼接 → LLM 生成；支持分组范围过滤与文档生命周期过滤，避免已删除或旧版本片段进入上下文。」
+
+**Agent Workflow**  
+「AI 任务走固定 Tool Workflow：检索知识库、总结上下文、生成报告；步骤与工具 I/O 可追踪，便于调试与演示。」
+
+**低依赖测试**  
+「默认测试全部使用 mock Embedding / LLM，不依赖 Ollama 与外部 API，保证 CI 稳定；真实本地模型通过 `local-ai` profile 与 Worker 集成测试验证。」
+
+更多面试材料：[docs/resume-interview.md](docs/resume-interview.md)
+
+---
+
+## 15. FAQ
+
+### 为什么不叫「企业级」？
+
+因为产品定位是**个人本地知识工作台**，不是面向多租户、权限、计费的企业 SaaS。底层虽有较完整的任务编排与 RAG 工程，但用户体验与边界按单用户场景收敛。
+
+### 为什么 Java + Python？
+
+Java（Spring Boot）擅长可靠的业务服务、事务、异步任务与 API 治理；Python 更适合快速对接 Ollama 与 AI Runtime。两者通过 HTTP 解耦，各自演进。
+
+### 为什么默认不用真实模型？
+
+为了让 `.\mvnw.cmd test` 与 CI **零外部依赖**、结果稳定。真实效果请在 `local-ai` profile 下体验。
+
+### Ollama 失败怎么办？
+
+1. 确认 Ollama 已启动：`ollama list`  
+2. 确认模型已拉取：`ollama pull qwen3-embedding:0.6b`  
+3. 确认 Python Worker 运行且 `http://127.0.0.1:8001/health` 可访问  
+4. 在「模型设置」页执行连接测试  
+5. 详见 [scripts/windows/README.md](scripts/windows/README.md) 与 [Ollama 手册](docs/manual/real-local-ai-runtime-with-ollama.md)
+
+### Embedding 维度变了怎么办？
+
+向量维度必须与索引一致。若从 mock（128 维）切换到 Ollama（如 1024 维），需**删除旧文档并重新上传**，或重新建立索引，否则检索会异常。
+
+### 为什么删除文档后不立即物理删除向量？
+
+采用**软删除**策略：问答层立即过滤已删除文档，但底层 chunk / 向量暂不物理清理，便于审计、恢复与简化实现。后续版本（V12.0）会完善垃圾箱与存储管理。
+
+### 上千文档后续怎么处理？
+
+当前原型面向个人规模（数百篇量级）。更大规模需：Qdrant 集群调优、分批摄入、检索策略优化、可能的冷热分层——列入后续路线图，**当前不做**生产级海量优化承诺。
+
+---
+
+## 附录：开发文档索引
+
+主 README 以产品说明为主。按能力查阅详细手册：
+
+| 主题 | 文档 |
+|------|------|
+| V9.0 个人知识工作台 | [local-personal-knowledge-workspace.md](docs/manual/local-personal-knowledge-workspace.md) |
+| 上传与问答 | [upload-to-ask.md](docs/manual/upload-to-ask.md) |
+| Knowledge Base Lifecycle（V4.0）· 软删除 · 重新索引 | [knowledge-base-lifecycle-management.md](docs/manual/knowledge-base-lifecycle-management.md) |
+| 知识库分组 · 范围检索（V5.0）· `collectionId` | [scoped-retrieval-and-collections.md](docs/manual/scoped-retrieval-and-collections.md) |
+| AI 任务编排（V6.0） | [ai-runtime-and-agent-task-orchestration.md](docs/manual/ai-runtime-and-agent-task-orchestration.md) |
+| Tool Workflow（V7.0）· `/agent-tasks.html` | [tool-using-agent-workflow.md](docs/manual/tool-using-agent-workflow.md) |
+| 本地 Ollama（V8.0）· `real-local-ai-runtime-with-ollama.md` | [docs/manual/real-local-ai-runtime-with-ollama.md](docs/manual/real-local-ai-runtime-with-ollama.md) |
+| 本地开发环境 | [docs/local-dev.md](docs/local-dev.md) |
+| API 示例 | [docs/api-examples.md](docs/api-examples.md) |
+| 面试 deep-dive | [docs/interview](docs/interview) |
+
+---
+
+**Personal AI Knowledge Workspace** — 你的文档，你的模型，你的知识库。

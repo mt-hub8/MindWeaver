@@ -33,6 +33,7 @@
     const eventsList = document.getElementById("events-list");
     const toolsEmpty = document.getElementById("tools-empty");
     const toolsList = document.getElementById("tools-list");
+    const modelSummary = document.getElementById("model-summary");
     const modelMetadata = document.getElementById("model-metadata");
     const detailError = document.getElementById("detail-error");
     const detailErrorCode = document.getElementById("detail-error-code");
@@ -285,10 +286,9 @@
                 item.className = "citation-item";
                 item.innerHTML =
                     "<h3>[" + escapeHtml(citation.sourceIndex) + "] 引用来源</h3>" +
-                    '<p class="muted">文档 ID: ' + escapeHtml(citation.documentId) +
-                    " · 片段 ID: " + escapeHtml(citation.chunkId) +
-                    " · 相关度: " + escapeHtml(citation.score) + "</p>" +
-                    "<p>" + escapeHtml(citation.contentSnippet || "") + "</p>";
+                    "<p>" + escapeHtml(citation.contentSnippet || "") + "</p>" +
+                    '<details class="tech-details"><summary>查看技术详情</summary><pre>' +
+                    escapeHtml(prettyJson(citation)) + "</pre></details>";
                 citationsList.appendChild(item);
             });
         }
@@ -302,6 +302,9 @@
                 (event.durationMs != null ? '<p class="muted">耗时: ' + escapeHtml(event.durationMs) + " ms</p>" : "");
             eventsList.appendChild(item);
         });
+
+        modelSummary.innerHTML = "";
+        renderModelSummary(detail.modelMetadata || {});
 
         modelMetadata.textContent = prettyJson(detail.modelMetadata || {});
 
@@ -330,8 +333,15 @@
                 escapeHtml(step.displayStatus || displayStepStatus(step.status)) + "</strong>";
             if (step.errorMessage) {
                 item.innerHTML +=
-                    '<p class="muted">错误原因：' + escapeHtml(step.errorMessage) +
-                    (step.traceId ? " · 追踪 ID：" + escapeHtml(step.traceId) : "") + "</p>";
+                    '<p class="muted">错误原因：' + escapeHtml(step.errorMessage) + "</p>";
+            }
+            if (step.input || step.output) {
+                item.innerHTML +=
+                    '<details class="tech-details"><summary>查看技术详情</summary>' +
+                    (step.input ? "<p><strong>输入</strong></p><pre>" + escapeHtml(prettyJson(step.input)) + "</pre>" : "") +
+                    (step.output ? "<p><strong>输出</strong></p><pre>" + escapeHtml(prettyJson(step.output)) + "</pre>" : "") +
+                    (step.traceId ? '<p class="muted">追踪 ID：' + escapeHtml(step.traceId) + "</p>" : "") +
+                    "</details>";
             }
             stepsList.appendChild(item);
         });
@@ -352,10 +362,45 @@
             block.innerHTML =
                 "<h3>" + escapeHtml(step.displayTitle || step.title) + " · " +
                 escapeHtml(step.displayStatus || displayStepStatus(step.status)) + "</h3>" +
-                '<details><summary>查看工具输入</summary><pre>' + escapeHtml(prettyJson(step.input || {})) + "</pre></details>" +
-                '<details><summary>查看工具输出</summary><pre>' + escapeHtml(prettyJson(step.output || {})) + "</pre></details>";
+                '<details class="tech-details"><summary>查看技术详情</summary>' +
+                "<p><strong>工具输入</strong></p><pre>" + escapeHtml(prettyJson(step.input || {})) + "</pre>" +
+                "<p><strong>工具输出</strong></p><pre>" + escapeHtml(prettyJson(step.output || {})) + "</pre>" +
+                "</details>";
             toolStepsPanel.appendChild(block);
         });
+    }
+
+    function renderModelSummary(metadata) {
+        const meta = metadata || {};
+        const pairs = [];
+        if (meta.provider || meta.llmProvider) {
+            pairs.push(["提供方", meta.llmProvider || meta.provider]);
+        }
+        if (meta.model || meta.llmModel) {
+            pairs.push(["模型", meta.llmModel || meta.model]);
+        }
+        if (meta.inputTokens != null || meta.outputTokens != null) {
+            pairs.push(["Token 用量", (meta.inputTokens || 0) + " / " + (meta.outputTokens || 0)]);
+        }
+        if (meta.latencyMs != null) {
+            pairs.push(["耗时", meta.latencyMs + " ms"]);
+        }
+        pairs.forEach(function (pair) {
+            const dt = document.createElement("dt");
+            dt.textContent = pair[0];
+            const dd = document.createElement("dd");
+            dd.textContent = pair[1];
+            modelSummary.appendChild(dt);
+            modelSummary.appendChild(dd);
+        });
+        if (pairs.length === 0) {
+            const dt = document.createElement("dt");
+            dt.textContent = "摘要";
+            const dd = document.createElement("dd");
+            dd.textContent = "暂无模型调用记录";
+            modelSummary.appendChild(dt);
+            modelSummary.appendChild(dd);
+        }
     }
 
     function displayStepStatus(status) {

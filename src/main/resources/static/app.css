@@ -79,6 +79,20 @@ a:hover {
     color: var(--text);
     margin-right: auto;
     text-decoration: none;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+    gap: 2px;
+}
+
+.app-nav .brand .brand-en {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--muted);
+}
+
+.app-nav .brand .brand-zh {
+    font-size: 1rem;
 }
 
 .app-nav .brand:hover {
@@ -150,6 +164,90 @@ a:hover {
     margin: 0;
     color: var(--muted);
     font-size: 0.95rem;
+}
+
+.card-grid-primary {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.entry-card-primary {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.entry-card-primary .entry-link {
+    display: inline-block;
+    margin-top: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    font-size: 0.9rem;
+}
+
+.card-grid-secondary {
+    margin-top: 16px;
+}
+
+.summary-dl {
+    display: grid;
+    grid-template-columns: minmax(140px, 200px) 1fr;
+    gap: 8px 16px;
+    margin: 0;
+}
+
+.summary-dl dt {
+    margin: 0;
+    font-weight: 600;
+    color: var(--muted);
+}
+
+.summary-dl dd {
+    margin: 0;
+}
+
+.tech-details {
+    margin-top: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    background: var(--code-bg);
+}
+
+.tech-details summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.tech-details pre {
+    margin: 12px 0 0;
+    overflow-x: auto;
+    font-size: 0.85rem;
+}
+
+.path-box {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.9rem;
+}
+
+.status-banner {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+}
+
+.secondary-button {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+}
+
+.answer-summary {
+    margin-bottom: 12px;
 }
 
 .panel {

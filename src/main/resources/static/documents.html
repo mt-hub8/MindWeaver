@@ -8,16 +8,8 @@
 </head>
 <body>
 <div class="page">
-    <nav class="app-nav" aria-label="主导航">
-        <a class="brand" href="/">AI 知识库助手</a>
-        <a class="nav-link" href="/">首页</a>
-        <a class="nav-link" href="/ask.html">知识库问答</a>
-        <a class="nav-link active" href="/documents.html" aria-current="page">文档管理</a>
-        <a class="nav-link" href="/collections.html">知识库分组</a>
-        <a class="nav-link" href="/agent-tasks.html">AI 任务编排</a>
-        <a class="nav-link" href="/evaluation.html">检索质量评估</a>
-        <a class="nav-link" href="/ingestion-analytics.html">文档处理分析</a>
-    </nav>
+    <nav id="app-nav-mount" data-active="documents"></nav>
+    <script src="/app-nav.js"></script>
 
     <header class="hero">
         <h1>文档管理</h1>
@@ -32,7 +24,7 @@
             <li><strong>重新建立索引</strong>：复用原始文本重新切分并生成新索引；旧索引不会立即物理删除，但不会再用于后续问答。</li>
             <li><strong>当前索引版本</strong>：问答只使用最新有效版本的文档片段；旧版本片段视为旧版本，不会进入回答引用。</li>
         </ul>
-        <p class="muted">处理完成后可前往 <a href="/ask.html">知识库问答</a> 验证；可查看 <a href="/ingestion-analytics.html">文档处理分析</a> 了解成功率与耗时。</p>
+        <p class="muted">处理完成后可前往 <a href="/ask.html">知识库问答</a> 验证；可在 <a href="/collections.html">知识库分组</a> 管理文档归属；可查看 <a href="/ingestion-analytics.html">文档处理分析</a> 了解成功率与耗时。</p>
     </section>
 
     <section class="panel upload-panel" aria-labelledby="upload-title">

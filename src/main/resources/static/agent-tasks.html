@@ -3,25 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 任务编排</title>
+    <title>AI 任务</title>
     <link rel="stylesheet" href="/app.css">
 </head>
 <body>
 <div class="page">
-    <nav class="app-nav" aria-label="主导航">
-        <a class="brand" href="/">AI 知识库助手</a>
-        <a class="nav-link" href="/">首页</a>
-        <a class="nav-link" href="/ask.html">知识库问答</a>
-        <a class="nav-link" href="/documents.html">文档管理</a>
-        <a class="nav-link" href="/collections.html">知识库分组</a>
-        <a class="nav-link" href="/agent-tools.html">Agent 工具</a>
-        <a class="nav-link active" href="/agent-tasks.html" aria-current="page">AI 任务编排</a>
-        <a class="nav-link" href="/evaluation.html">检索质量评估</a>
-        <a class="nav-link" href="/ingestion-analytics.html">文档处理分析</a>
-    </nav>
+    <nav id="app-nav-mount" data-active="agent-tasks"></nav>
+    <script src="/app-nav.js"></script>
 
     <header class="hero">
-        <h1>AI 任务编排</h1>
+        <h1>AI 任务</h1>
         <p class="lead">提交一个 AI 任务，系统会按固定工具流程在后台检索知识库、总结上下文并生成带引用来源的最终报告。</p>
         <p class="muted">适合总结、分析、建议类任务；即时问答请使用「知识库问答」。当前阶段仅支持内置安全工具。</p>
     </header>
@@ -88,21 +79,21 @@
         <p id="detail-scope" class="muted"></p>
         <p id="detail-status" class="muted"></p>
 
-        <h3>任务执行计划</h3>
+        <h3>执行步骤</h3>
         <p id="steps-empty" class="empty-state hidden">暂无执行步骤。</p>
         <ol id="steps-list" class="timeline-list"></ol>
 
         <h3>工具执行记录</h3>
         <div id="tool-steps-panel"></div>
 
-        <h3>最终报告</h3>
+        <h3>任务结果</h3>
         <div id="detail-result" class="answer-box"></div>
 
         <h3>引用来源</h3>
         <p id="citations-empty" class="empty-state hidden">暂无引用来源。</p>
         <ul id="citations-list" class="citation-list"></ul>
 
-        <h3>执行过程</h3>
+        <h3>查看执行过程</h3>
         <p class="muted">下方时间线记录任务创建、工具执行与最终报告生成过程。</p>
         <ol id="events-list" class="timeline-list"></ol>
 
@@ -110,20 +101,27 @@
         <p id="tools-empty" class="empty-state hidden">暂无可用工具。</p>
         <ul id="tools-list" class="citation-list"></ul>
 
-        <h3>模型调用信息</h3>
-        <pre id="model-metadata" class="metadata"></pre>
+        <h3>模型调用摘要</h3>
+        <dl id="model-summary" class="summary-dl"></dl>
+        <details class="tech-details">
+            <summary>查看技术详情</summary>
+            <pre id="model-metadata" class="metadata"></pre>
+        </details>
 
         <div id="detail-error" class="status error hidden" role="alert">
-            <p><strong>错误原因</strong></p>
+            <p><strong>执行失败</strong></p>
             <dl>
                 <dt>错误码</dt><dd id="detail-error-code"></dd>
                 <dt>说明</dt><dd id="detail-error-message"></dd>
-                <dt>追踪 ID</dt><dd id="detail-trace-id"></dd>
             </dl>
+            <details class="tech-details">
+                <summary>查看技术详情</summary>
+                <p class="muted">追踪 ID：<span id="detail-trace-id"></span></p>
+            </details>
         </div>
 
         <details class="tech-details">
-            <summary>查看技术详情</summary>
+            <summary>查看技术详情 · 任务原始数据</summary>
             <pre id="detail-tech-json"></pre>
         </details>
     </section>

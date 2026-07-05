@@ -36,22 +36,22 @@ class KnowledgeBaseAgentTaskRegressionTest {
     @Test
     void agentTasksPageShouldExposeChineseUi() throws Exception {
         String html = fetchUtf8("/agent-tasks.html");
-        assertThat(html).contains("AI 任务编排");
+        assertThat(html).contains("AI 任务");
         assertThat(html).contains("新建 AI 任务");
         assertThat(html).contains("任务目标");
         assertThat(html).contains("知识库范围");
-        assertThat(html).contains("任务执行计划");
+        assertThat(html).contains("执行步骤");
         assertThat(html).contains("工具执行记录");
-        assertThat(html).contains("最终报告");
+        assertThat(html).contains("任务结果");
         assertThat(html).contains("引用来源");
-        assertThat(html).contains("执行过程");
+        assertThat(html).contains("查看执行过程");
 
         String js = fetchUtf8("/agent-tasks.js");
         assertThat(js).contains("全部文档");
         assertThat(js).contains("/agent/tasks");
-        assertThat(js).contains("查看工具输入");
-        assertThat(js).contains("查看工具输出");
-        assertThat(html).contains("模型调用信息");
+        assertThat(js).contains("查看技术详情");
+        assertThat(js).contains("工具输入");
+        assertThat(html).contains("模型调用摘要");
         assertThat(html).contains("指定知识库分组");
         assertThat(html).contains("当前可用工具");
     }
@@ -78,14 +78,14 @@ class KnowledgeBaseAgentTaskRegressionTest {
     @Test
     void indexShouldExposeAgentTaskEntry() throws Exception {
         String index = fetchUtf8("/index.html");
-        assertThat(index).contains("AI 任务编排");
+        assertThat(index).contains("创建 AI 任务报告");
         assertThat(index).contains("/agent-tasks.html");
     }
 
     @Test
     void askPageShouldMentionAgentTasks() throws Exception {
         String html = fetchUtf8("/ask.html");
-        assertThat(html).contains("AI 任务编排");
+        assertThat(html).contains("AI 任务");
     }
 
     @Test

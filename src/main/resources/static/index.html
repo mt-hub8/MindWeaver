@@ -3,131 +3,83 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 知识库助手</title>
+    <title>个人 AI 知识工作台</title>
     <link rel="stylesheet" href="/app.css">
 </head>
 <body>
 <div class="page">
-    <nav class="app-nav" aria-label="主导航">
-        <a class="brand" href="/">AI 知识库助手</a>
-        <a class="nav-link active" href="/" aria-current="page">首页</a>
-        <a class="nav-link" href="/ask.html">知识库问答</a>
-        <a class="nav-link" href="/documents.html">文档管理</a>
-        <a class="nav-link" href="/collections.html">知识库分组</a>
-        <a class="nav-link" href="/agent-tasks.html">AI 任务编排</a>
-        <a class="nav-link" href="/agent-tools.html">Agent 工具</a>
-        <a class="nav-link" href="/evaluation.html">检索质量评估</a>
-        <a class="nav-link" href="/ingestion-analytics.html">文档处理分析</a>
-    </nav>
+    <nav id="app-nav-mount" data-active="home"></nav>
+    <script src="/app-nav.js"></script>
 
     <header class="hero">
-        <h1>企业知识库问答与 RAG 质量调试</h1>
+        <h1>个人 AI 知识工作台</h1>
         <p class="lead">
-            上传私有文档 → 等待系统建立知识库索引 → 基于文档提问 → 查看引用来源 → 通过评估报告理解检索质量。
+            一个本地优先的个人 AI 应用：上传自己的资料，配置本地或外部模型，构建个人知识库，并让 AI 基于你的知识执行问答、总结、报告生成和任务编排。
         </p>
-        <p class="sublead">
-            适用场景：内部知识库问答、RAG 方案验证、检索质量对比、演示与面试展示。
-        </p>
+        <p class="sublead">Personal AI Knowledge Workspace — 你的文档、你的模型、你的知识库。</p>
     </header>
 
-    <section class="card-grid" aria-label="产品入口">
-        <a class="entry-card" href="/documents.html">
-            <h2>文档管理</h2>
-            <p>上传 .txt / .md / 文本型 PDF，管理文档生命周期（删除、重新索引），查看异步摄入任务与文档片段预览。</p>
+    <section class="card-grid card-grid-primary" aria-label="核心功能">
+        <a class="entry-card entry-card-primary" href="/documents.html">
+            <h2>构建个人知识库</h2>
+            <p>上传文档，建立只属于你的本地知识库。</p>
+            <span class="entry-link">进入文档管理 →</span>
         </a>
-        <a class="entry-card" href="/agent-tasks.html">
-            <h2>AI 任务编排</h2>
-            <p>支持固定工具执行流程：系统会检索知识库、总结上下文并生成最终报告，可查看执行步骤与引用来源。</p>
+        <a class="entry-card entry-card-primary" href="/model-settings.html">
+            <h2>配置 AI 模型</h2>
+            <p>查看本地 Ollama、Python Worker 和当前使用的模型。</p>
+            <span class="entry-link">进入模型设置 →</span>
         </a>
+        <a class="entry-card entry-card-primary" href="/ask.html">
+            <h2>基于知识库提问</h2>
+            <p>选择全部文档或知识库分组，基于引用来源获得回答。</p>
+            <span class="entry-link">进入知识库问答 →</span>
+        </a>
+        <a class="entry-card entry-card-primary" href="/agent-tasks.html">
+            <h2>创建 AI 任务报告</h2>
+            <p>让 AI 检索知识库、调用工具，并生成结构化报告。</p>
+            <span class="entry-link">进入 AI 任务 →</span>
+        </a>
+    </section>
+
+    <section class="card-grid card-grid-secondary" aria-label="更多入口">
         <a class="entry-card" href="/collections.html">
             <h2>知识库分组</h2>
-            <p>管理文档分组，并在问答时选择检索范围：全部文档，或仅在该分组中提问。</p>
-        </a>
-        <a class="entry-card" href="/ask.html">
-            <h2>知识库问答</h2>
-            <p>文档处理完成后在此提问，查看回答、检索引用（Citation）与检索 metadata。</p>
-        </a>
-        <a class="entry-card" href="/evaluation.html">
-            <h2>检索质量评估</h2>
-            <p>了解 HitRate、Recall、MRR 等指标，对比 dense / rerank / hybrid 策略。</p>
+            <p>管理文档分组，在问答或任务时限定检索范围。</p>
         </a>
         <a class="entry-card" href="/ingestion-analytics.html">
             <h2>文档处理分析</h2>
-            <p>查看文档处理成功率、阶段耗时分布与常见失败原因（基于摄入事件时间线）。</p>
+            <p>查看文档处理成功率、阶段耗时与常见失败原因。</p>
         </a>
-        <a class="entry-card" href="#capabilities">
-            <h2>系统能力说明</h2>
-            <p>查看引用、缓存、评估、重排、混合检索等能力说明。</p>
+        <a class="entry-card" href="/settings.html">
+            <h2>系统设置</h2>
+            <p>查看运行模式、本地数据目录规划与系统信息。</p>
         </a>
     </section>
 
     <section class="panel quick-start">
-        <h2>5 分钟体验路径</h2>
+        <h2>快速开始</h2>
         <ol>
-            <li>启动服务（见 README「本地快速启动」）。</li>
-            <li>打开 <a href="/documents.html">文档管理</a>，上传 <code>.txt</code> / <code>.md</code> / 文本型 <code>.pdf</code>。</li>
-            <li>等待摄入任务状态变为「已完成」（后台自动切块、生成向量、写入索引）。</li>
-            <li>打开 <a href="/ask.html">知识库问答</a> 提问，查看检索引用（Citation）。</li>
-            <li>（可选）按 <a href="/evaluation.html">检索质量评估</a> 说明运行检索评估。</li>
+            <li>（可选）运行 <code>scripts/windows/check-env.ps1</code> 检查本地环境。</li>
+            <li>启动服务后打开 <a href="/model-settings.html">模型设置</a>，确认模型连接状态。</li>
+            <li>在 <a href="/documents.html">文档管理</a> 上传 <code>.txt</code> / <code>.md</code> / 文本型 <code>.pdf</code>。</li>
+            <li>等待处理状态变为「已完成」后，在 <a href="/ask.html">知识库问答</a> 提问。</li>
+            <li>需要完整报告时，使用 <a href="/agent-tasks.html">AI 任务</a> 提交结构化任务。</li>
         </ol>
     </section>
 
-    <section id="capabilities" class="panel">
-        <h2>系统能力说明</h2>
-        <ul class="capability-list">
-            <li>
-                <strong>RAG 问答与检索引用（Citation）</strong>
-                回答附带引用片段，帮助用户追踪来源、降低幻觉风险。
-            </li>
-            <li>
-                <strong>异步文档摄入流水线</strong>
-                上传后快速返回任务 ID，后台完成切块、向量生成与索引写入。
-            </li>
-            <li>
-                <strong>Embedding 缓存 / 去重</strong>
-                相同文档片段不重复计算向量，节省成本与延迟。
-            </li>
-            <li>
-                <strong>检索质量评估（Evaluation）</strong>
-                用 HitRate、Recall、Precision、MRR 等指标判断检索质量。
-            </li>
-            <li>
-                <strong>两阶段检索与重排（Rerank）</strong>
-                先扩大候选集再重排，提升关键词相关片段的最终排名。
-            </li>
-            <li>
-                <strong>混合检索融合（Hybrid）</strong>
-                兼顾语义相似（dense）与关键词匹配（lexical），经 RRF 融合。
-            </li>
-            <li>
-                <strong>AI 任务编排（V6.0）</strong>
-                提交 AI 任务，后台异步执行检索 + 大模型生成，展示任务结果、引用来源与执行过程。
-            </li>
-            <li>
-                <strong>知识库分组与范围检索（V5.0）</strong>
-                创建知识库分组、管理文档归属，在问答时选择全部文档或指定分组；与 V4.0 生命周期过滤共同生效。
-            </li>
-            <li>
-                <strong>知识库生命周期管理（V4.0）</strong>
-                文档软删除、重新建立索引、当前有效片段过滤；已删除文档与旧版本片段不会进入问答。
-            </li>
-            <li>
-                <strong>统一 API 错误响应</strong>
-                统一 code / message / traceId，便于前端与运维排查。
-            </li>
-        </ul>
-    </section>
-
     <section class="panel">
-        <h2>主要入口</h2>
-        <p class="muted">Web UI（本页及子页面）+ REST API（RAG、Documents、Evaluation）。技术细节见项目 README。</p>
-        <ul>
-            <li>产品首页：<code>/</code> 或 <code>/index.html</code></li>
-            <li>AI 任务编排：<code>/agent-tasks.html</code></li>
-            <li>知识库分组：<code>/collections.html</code></li>
-            <li>知识库问答：<code>/ask.html</code>（兼容 <code>/rag-demo.html</code>）</li>
-            <li>文档管理：<code>/documents.html</code> · API：<code>POST /documents/upload</code>（异步）</li>
-            <li>RAG API：<code>POST /rag/answers</code></li>
+        <h2>产品说明</h2>
+        <p class="muted">
+            本项目具备 AI Task Orchestration（任务编排）能力，适合个人知识管理与本地 RAG 体验。
+            页面默认展示中文用户语义；技术字段（metadata、traceId、provider 等）可在各页面通过「查看技术详情」折叠查看。
+        </p>
+        <ul class="capability-list">
+            <li><strong>知识库生命周期管理（V4.0）</strong> — 软删除、重新索引；已删除与旧版本片段不会进入问答。</li>
+            <li><strong>知识库分组与范围检索（V5.0）</strong> — 全部文档或指定分组内问答与任务。</li>
+            <li><strong>RAG 问答与引用来源</strong> — 回答附带可核对的文档片段引用。</li>
+            <li><strong>AI 任务与工具流程</strong> — 检索、总结并生成结构化报告。</li>
+            <li><strong>本地 Ollama 运行时</strong> — 通过 local-ai profile 体验真实本地模型。</li>
         </ul>
     </section>
 </div>
