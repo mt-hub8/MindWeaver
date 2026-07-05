@@ -48,7 +48,32 @@ class ModelProviderConfigServiceTest {
         ModelProviderConfigResponse updated = service.update(created.getId(), update);
         assertThat(updated.getDisplayName()).isEqualTo("测试 OpenAI 更新");
         assertThat(updated.getDefaultLlmModel()).isEqualTo("gpt-test-2");
-        assertThat(repository.findById(created.getId()).orElseThrow().getApiKeyMasked()).isNotNull();
+        assertThat(repository.findById(created.getId()).orElseThrow().getApiKeyMasked()).contains("****");
+    }
+
+    @Test
+    void blankApiKeyOnUpdateShouldPreserveMaskedKey() {
+        ModelProviderConfigResponse created = service.create(request(
+                "保留 Key",
+                ModelProviderType.CUSTOM_OPENAI_COMPATIBLE,
+                "https://api.example.com/v1",
+                "sk-preserve-key-99",
+                "m",
+                "e",
+                128
+        ));
+        String maskedBefore = created.getApiKeyMasked();
+        ModelProviderConfigRequest update = request(
+                "保留 Key",
+                ModelProviderType.CUSTOM_OPENAI_COMPATIBLE,
+                "https://api.example.com/v1",
+                "",
+                "m2",
+                "e2",
+                128
+        );
+        ModelProviderConfigResponse updated = service.update(created.getId(), update);
+        assertThat(updated.getApiKeyMasked()).isEqualTo(maskedBefore);
     }
 
     @Test
@@ -96,9 +121,9 @@ class ModelProviderConfigServiceTest {
     void disabledProviderCannotBeDefault() {
         ModelProviderConfigResponse provider = service.create(request(
                 "待禁用",
-                ModelProviderType.MOCK,
-                null,
-                null,
+                ModelProviderType.CUSTOM_OPENAI_COMPATIBLE,
+                "https://api.example.com/v1",
+                "sk-disable-default-01",
                 "mock-llm",
                 "mock-embedding-v1",
                 128

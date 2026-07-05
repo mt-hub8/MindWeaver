@@ -58,7 +58,7 @@ class V9PersonalWorkspaceRegressionTest {
         assertThat(html).contains("当前模型");
 
         String js = fetchUtf8("/model-settings.js");
-        assertThat(js).contains("/runtime/status");
+        assertThat(js).contains("/model-providers");
     }
 
     @Test
