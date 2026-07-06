@@ -385,11 +385,23 @@
 
     function buildRetrievalSummary(retrieval) {
         const items = [];
+        if (retrieval.retrievalStrategy) {
+            items.push(["当前检索策略", retrieval.retrievalStrategy]);
+        }
+        if (retrieval.hybridEnabled != null) {
+            items.push(["混合检索", retrieval.hybridEnabled ? "已启用" : "未启用"]);
+        }
+        if (retrieval.rerankEnabled != null) {
+            items.push(["重排序", retrieval.rerankEnabled ? "已启用" : "未启用"]);
+        }
+        if (retrieval.contextExpansion) {
+            items.push(["上下文回填", retrieval.contextExpansion]);
+        }
+        if (retrieval.filterMode) {
+            items.push(["Filter 模式", retrieval.filterMode]);
+        }
         if (retrieval.returned != null) {
             items.push(["命中片段数", String(retrieval.returned)]);
-        }
-        if (retrieval.strategy) {
-            items.push(["检索策略", retrieval.strategy]);
         }
         if (retrieval.scopeType) {
             items.push(["范围类型", retrieval.scopeType]);

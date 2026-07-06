@@ -5,6 +5,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
+import com.tuoman.ai_task_orchestrator.config.RetrievalPipelineProperties;
+
 @Configuration
 @EnableConfigurationProperties(RagRerankProperties.class)
 public class RerankerConfiguration {
@@ -13,10 +15,22 @@ public class RerankerConfiguration {
     @Primary
     public Reranker activeReranker(
             RagRerankProperties properties,
-            LexicalOverlapReranker lexicalOverlapReranker
+            RetrievalPipelineProperties pipelineProperties,
+            LexicalOverlapReranker lexicalOverlapReranker,
+            SimpleHeuristicReranker simpleHeuristicReranker,
+            NoopReranker noopReranker
     ) {
-        if (LexicalOverlapReranker.PROVIDER.equalsIgnoreCase(properties.getProvider())) {
-            return lexicalOverlapReranker;
+        String provider = properties.getProvider();
+        if (pipelineProperties.isHybridEnabled() || "heuristic".equalsIgnoreCase(pipelineProperties.getRerankerMode())) {
+            if (SimpleHeuristicReranker.PROVIDER.equalsIgnoreCase(pipelineProperties.getRerankerMode())) {
+                return simpleHeuristicReranker;
+            }
+        }
+        if (NoopReranker.PROVIDER.equalsIgnoreCase(provider)) {
+            return noopReranker;
+        }
+        if (SimpleHeuristicReranker.PROVIDER.equalsIgnoreCase(provider)) {
+            return simpleHeuristicReranker;
         }
         return lexicalOverlapReranker;
     }

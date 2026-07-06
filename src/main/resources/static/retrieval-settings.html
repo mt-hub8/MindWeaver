@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>检索设置 · MindWeaver</title>
+    <link rel="stylesheet" href="/mindweaver.css?v=mw-ivory-app-shell-v1">
+    <link rel="stylesheet" href="/app-shell.css?v=mw-compat-v1">
+</head>
+<body class="mw-page" data-page="retrieval-settings">
+<div class="mw-app-shell app-shell">
+    <aside id="app-sidebar-mount" data-active="retrieval-settings" aria-label="主导航"></aside>
+    <main class="mw-main-panel main-panel">
+        <div class="mw-page-content content-container">
+            <header class="mw-page-header page-header">
+                <div>
+                    <h1 class="mw-page-title page-title">检索设置</h1>
+                    <p class="mw-page-description page-subtitle">配置结构化切分、混合检索、RRF 融合、重排序与上下文回填策略。</p>
+                </div>
+            </header>
+
+            <section class="mw-card card">
+                <h2 class="mw-card-title">当前检索策略</h2>
+                <dl id="strategy-dl" class="summary-dl"></dl>
+            </section>
+
+            <section class="mw-card card">
+                <h2 class="mw-card-title">结构化切分</h2>
+                <p class="muted">控制 chunk 粒度、section_path 与代码块保留策略。</p>
+                <dl id="chunking-dl" class="summary-dl"></dl>
+            </section>
+
+            <section class="mw-card card">
+                <h2 class="mw-card-title">混合检索</h2>
+                <p class="muted">Vector + BM25 keyword 检索，经 RRF 融合排序。</p>
+                <dl id="hybrid-dl" class="summary-dl"></dl>
+            </section>
+
+            <section class="mw-card card">
+                <h2 class="mw-card-title">重排序与上下文回填</h2>
+                <dl id="rerank-dl" class="summary-dl"></dl>
+            </section>
+
+            <section class="mw-card card">
+                <h2 class="mw-card-title">重新索引</h2>
+                <p class="muted" style="font-size:0.88rem">升级 chunk schema 或 metadata 后，可重新构建索引。TRASHED / PURGED 文档不会参与。</p>
+                <div class="action-row">
+                    <button type="button" class="mw-button mw-button-secondary secondary-button" id="reindex-all-btn">重建全部知识库</button>
+                    <a href="/collections.html" class="mw-button mw-button-secondary secondary-button" style="text-decoration:none">按 Collection 重建</a>
+                </div>
+                <p id="reindex-status" class="muted hidden" style="margin-top:12px"></p>
+            </section>
+
+            <details class="technical-details">
+                <summary>查看技术详情</summary>
+                <pre id="settings-json" class="muted" style="font-size:0.8rem;white-space:pre-wrap;margin:8px 0 0"></pre>
+            </details>
+        </div>
+    </main>
+</div>
+<script src="/app-nav.js"></script>
+<script src="/retrieval-settings.js"></script>
+</body>
+</html>

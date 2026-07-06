@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>知识库体检报告 · MindWeaver</title>
+    <link rel="stylesheet" href="/mindweaver.css?v=mw-ivory-app-shell-v1">
+    <link rel="stylesheet" href="/app-shell.css?v=mw-compat-v1">
+</head>
+<body class="mw-page" data-page="knowledge-health">
+<div class="mw-app-shell app-shell">
+    <aside id="app-sidebar-mount" data-active="knowledge-health" aria-label="主导航"></aside>
+    <main class="mw-main-panel main-panel">
+        <div class="mw-page-content content-container">
+            <header class="mw-page-header page-header">
+                <div>
+                    <h1 class="mw-page-title page-title">知识库体检报告</h1>
+                    <p class="mw-page-description page-subtitle">通过评测集、检索指标和生成指标，诊断知识库是否存在召回不足、上下文污染、版本混杂和引用不准确等问题。</p>
+                </div>
+            </header>
+
+            <section class="mw-card card form-card">
+                <h2 class="mw-card-title">评测配置</h2>
+                <div class="form-grid mw-form">
+                    <div class="form-field mw-field">
+                        <label class="mw-label" for="dataset-select">选择评测集</label>
+                        <select class="mw-input" id="dataset-select"><option value="">加载中…</option></select>
+                    </div>
+                    <div class="form-field mw-field">
+                        <label class="mw-label" for="collection-select">选择 Collection（可选）</label>
+                        <select class="mw-input" id="collection-select"><option value="">不指定</option></select>
+                    </div>
+                    <div class="form-field mw-field">
+                        <label class="mw-label" for="strategy-select">检索策略</label>
+                        <select class="mw-input" id="strategy-select">
+                            <option value="VECTOR_ONLY">纯向量检索</option>
+                            <option value="BM25_ONLY">BM25 关键词检索</option>
+                            <option value="VECTOR_WITH_METADATA_FILTER">向量 + 元数据过滤</option>
+                            <option value="HYBRID">混合检索</option>
+                            <option value="HYBRID_RRF">混合检索 + RRF 融合</option>
+                            <option value="HYBRID_RRF_RERANK">混合检索 + RRF + 重排序</option>
+                            <option value="HYBRID_RRF_RERANK_PARENT_CONTEXT">混合检索 + RRF + 重排序 + 父级上下文回填</option>
+                        </select>
+                    </div>
+                    <div class="form-field mw-field">
+                        <label class="mw-label" for="profile-select">评分模式</label>
+                        <select class="mw-input" id="profile-select">
+                            <option value="BALANCED">平衡模式</option>
+                            <option value="PRECISE">精准模式</option>
+                            <option value="COMPREHENSIVE">全面模式</option>
+                            <option value="GENERATION_TRUST">生成可信模式</option>
+                        </select>
+                    </div>
+                    <div class="form-field mw-field">
+                        <label class="mw-label" for="topk-input">TopK</label>
+                        <input class="mw-input" id="topk-input" type="number" min="1" max="20" value="5">
+                    </div>
+                    <div class="form-field mw-field">
+                        <label class="mw-label" for="execute-generation">执行生成评测</label>
+                        <select class="mw-input" id="execute-generation">
+                            <option value="false">否（仅检索指标）</option>
+                            <option value="true">是（含生成指标）</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="action-row">
+                    <button type="button" class="mw-button mw-button-primary primary-button" id="run-eval-btn">运行评测</button>
+                    <a href="/retrieval-settings.html" class="mw-button mw-button-secondary secondary-button" style="text-decoration:none">根据诊断调整检索设置</a>
+                    <span id="run-status" class="status loading hidden" role="status">正在运行评测…</span>
+                </div>
+            </section>
+
+            <section id="score-card" class="mw-card card hidden">
+                <h2 class="mw-card-title">知识库健康评分</h2>
+                <div class="quality-score-card">
+                    <div class="quality-overall">
+                        <span class="quality-overall-label">知识库健康评分</span>
+                        <span id="overall-score" class="quality-overall-value">-</span>
+                        <span class="quality-overall-suffix">/ 100</span>
+                    </div>
+                    <div class="quality-overall-meta">
+                        <span id="overall-level" class="mw-badge status-pill">-</span>
+                        <span id="run-profile-label" class="muted">平衡模式</span>
+                        <span id="run-strategy-label" class="muted">纯向量检索</span>
+                        <span id="run-dataset-label" class="muted">—</span>
+                    </div>
+                </div>
+            </section>
+
+            <section id="metrics-card" class="mw-card card hidden">
+                <h2 class="mw-card-title">指标拆解</h2>
+                <p class="muted" style="font-size:0.86rem;margin:0 0 12px">包含 Recall@K（召回率）、CrossCollectionLeakRate（跨集合污染率）、WrongVersionLeakRate（错误版本污染率）等指标。</p>
+                <div id="metrics-grid" class="mw-stat-grid summary-stat-grid"></div>
+            </section>
+
+            <section id="issues-card" class="mw-card card hidden">
+                <h2 class="mw-card-title">主要问题</h2>
+                <ul id="issues-list" class="quality-list"></ul>
+                <p id="issues-empty" class="muted hidden">未发现显著问题。</p>
+            </section>
+
+            <section id="suggestions-card" class="mw-card card hidden">
+                <h2 class="mw-card-title">优化建议</h2>
+                <ul id="suggestions-list" class="quality-list"></ul>
+                <p id="suggestions-empty" class="muted hidden">暂无优化建议。</p>
+            </section>
+
+            <section id="cases-card" class="mw-card card hidden">
+                <h2 class="mw-card-title">Case 级失败明细</h2>
+                <div id="case-results-list" class="entity-stack"></div>
+            </section>
+
+            <section id="strategy-compare-card" class="mw-card card">
+                <h2 class="mw-card-title">策略对比</h2>
+                <p id="strategy-compare-hint" class="muted">运行多个检索策略后，可以在这里比较召回、排序、污染率和延迟差异。</p>
+                <div id="strategy-compare-list" class="entity-stack hidden"></div>
+            </section>
+
+            <details class="technical-details" id="tech-details">
+                <summary>查看技术详情</summary>
+                <pre id="tech-json" class="muted" style="font-size:0.8rem;white-space:pre-wrap;margin:8px 0 0"></pre>
+            </details>
+        </div>
+    </main>
+</div>
+<script src="/app-nav.js"></script>
+<script src="/knowledge-health.js"></script>
+</body>
+</html>

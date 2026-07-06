@@ -168,7 +168,10 @@ class RagQualityDiagnosisServiceTest {
                 null,
                 null,
                 null,
-                finalContextCount
+                finalContextCount,
+                null,
+                null,
+                null
         );
     }
 

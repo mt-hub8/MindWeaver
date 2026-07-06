@@ -197,6 +197,21 @@ public class DocumentEmbeddingService {
         metadata.put("chunkHash", chunkHash == null ? "" : chunkHash);
         metadata.put("generation", String.valueOf(generation));
         metadata.put("chunkStatus", chunk.getChunkStatus() == null ? ChunkStatus.ACTIVE.name() : chunk.getChunkStatus().name());
+        if (chunk.getSectionPath() != null) {
+            metadata.put("sectionPath", chunk.getSectionPath());
+        }
+        if (chunk.getVersion() != null) {
+            metadata.put("version", chunk.getVersion());
+        }
+        if (chunk.getDocType() != null) {
+            metadata.put("docType", chunk.getDocType().name());
+        }
+        if (chunk.getCollectionId() != null) {
+            metadata.put("collectionId", String.valueOf(chunk.getCollectionId()));
+        }
+        if (chunk.getMetadataStatus() != null) {
+            metadata.put("metadataStatus", chunk.getMetadataStatus().name());
+        }
         return metadata;
     }
 

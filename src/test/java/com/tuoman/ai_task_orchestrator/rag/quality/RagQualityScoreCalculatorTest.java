@@ -150,7 +150,10 @@ class RagQualityScoreCalculatorTest {
                 null,
                 null,
                 null,
-                finalContextCount
+                finalContextCount,
+                null,
+                null,
+                null
         );
     }
 

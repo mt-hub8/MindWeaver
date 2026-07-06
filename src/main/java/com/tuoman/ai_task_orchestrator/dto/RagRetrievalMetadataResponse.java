@@ -59,6 +59,12 @@ public class RagRetrievalMetadataResponse {
 
     private Integer finalContextCount;
 
+    private String retrievalStrategy;
+
+    private String filterMode;
+
+    private String contextExpansion;
+
     public RagRetrievalMetadataResponse(
             Integer topK,
             Integer returned,
@@ -74,6 +80,9 @@ public class RagRetrievalMetadataResponse {
                 model,
                 dimension,
                 vectorStore,
+                null,
+                null,
+                null,
                 null,
                 null,
                 null,

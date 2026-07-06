@@ -28,7 +28,10 @@ class DocumentServiceSoftDeleteTest {
     private com.tuoman.ai_task_orchestrator.repository.DocumentChunkRepository documentChunkRepository;
 
     @Mock
-    private com.tuoman.ai_task_orchestrator.document.DocumentChunker documentChunker;
+    private com.tuoman.ai_task_orchestrator.document.StructuredChunkingService structuredChunkingService;
+
+    @Mock
+    private ChunkMetadataService chunkMetadataService;
 
     @Mock
     private CollectionService collectionService;
@@ -40,7 +43,8 @@ class DocumentServiceSoftDeleteTest {
         documentService = new DocumentService(
                 documentRepository,
                 documentChunkRepository,
-                documentChunker,
+                structuredChunkingService,
+                chunkMetadataService,
                 collectionService,
                 documentTrashService
         );

@@ -8,8 +8,8 @@ import com.tuoman.ai_task_orchestrator.dto.DocumentDeleteResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentDetailResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentSummaryResponse;
 import com.tuoman.ai_task_orchestrator.dto.DocumentUploadResponse;
-import com.tuoman.ai_task_orchestrator.document.DocumentChunkResult;
-import com.tuoman.ai_task_orchestrator.document.DocumentChunker;
+import com.tuoman.ai_task_orchestrator.document.StructuredChunkResult;
+import com.tuoman.ai_task_orchestrator.document.StructuredChunkingService;
 import com.tuoman.ai_task_orchestrator.entity.DocumentChunkEntity;
 import com.tuoman.ai_task_orchestrator.entity.DocumentEntity;
 import com.tuoman.ai_task_orchestrator.enums.ChunkStatus;
@@ -37,7 +37,9 @@ public class DocumentService {
 
     private final DocumentChunkRepository documentChunkRepository;
 
-    private final DocumentChunker documentChunker;
+    private final StructuredChunkingService structuredChunkingService;
+
+    private final ChunkMetadataService chunkMetadataService;
 
     private final CollectionService collectionService;
 
@@ -86,10 +88,12 @@ public class DocumentService {
     }
 
     public int chunkAndPersistForGeneration(DocumentEntity document, String content, int generation) {
-        List<DocumentChunkResult> chunks = documentChunker.chunk(content);
+        chunkMetadataService.applyDocumentMetadata(document);
+        List<StructuredChunkResult> chunks = structuredChunkingService.chunk(content);
         List<DocumentChunkEntity> chunkEntities = new ArrayList<>();
+        List<Integer> parentChunkIndices = new ArrayList<>();
 
-        for (DocumentChunkResult chunkResult : chunks) {
+        for (StructuredChunkResult chunkResult : chunks) {
             DocumentChunkEntity chunk = new DocumentChunkEntity();
             chunk.setDocumentId(document.getId());
             chunk.setChunkIndex(chunkResult.getChunkIndex());
@@ -99,11 +103,24 @@ public class DocumentService {
             chunk.setStartOffset(chunkResult.getStartOffset());
             chunk.setEndOffset(chunkResult.getEndOffset());
             chunk.setHeadingPath(chunkResult.getHeadingPath());
+            chunk.setSectionPath(chunkResult.getSectionPath());
+            chunk.setSectionTitle(chunkResult.getSectionTitle());
+            chunk.setHeadingLevel(chunkResult.getHeadingLevel());
+            chunk.setChunkType(chunkResult.getChunkType());
+            chunk.setContentHash(chunkResult.getContentHash());
+            chunk.setNormalizedContentHash(chunkResult.getNormalizedContentHash());
+            chunk.setTokenCount(chunkResult.getTokenCount());
+            chunk.setCharCount(chunkResult.getContentLength());
+            chunk.setLanguage(chunkResult.getLanguage());
             chunk.setChunkStatus(ChunkStatus.ACTIVE);
             chunk.setGeneration(generation);
+            chunkMetadataService.applyChunkMetadata(document, chunk);
             chunkEntities.add(chunk);
+            parentChunkIndices.add(chunkResult.getParentChunkIndex());
         }
 
+        documentChunkRepository.saveAll(chunkEntities);
+        chunkMetadataService.linkChunkRelations(chunkEntities, parentChunkIndices);
         documentChunkRepository.saveAll(chunkEntities);
 
         document.setStatus(DocumentStatus.CHUNKED);

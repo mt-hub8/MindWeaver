@@ -1,5 +1,6 @@
 package com.tuoman.ai_task_orchestrator.entity;
 
+import com.tuoman.ai_task_orchestrator.enums.DocumentDocType;
 import com.tuoman.ai_task_orchestrator.enums.DocumentLifecycleStatus;
 import com.tuoman.ai_task_orchestrator.enums.DocumentPurgeStatus;
 import com.tuoman.ai_task_orchestrator.enums.DocumentStatus;
@@ -75,6 +76,19 @@ public class DocumentEntity {
 
     @Column(name = "last_reindexed_at")
     private LocalDateTime lastReindexedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "doc_type", length = 64)
+    private DocumentDocType docType;
+
+    @Column(length = 64)
+    private String version;
+
+    @Column(length = 255)
+    private String source;
+
+    @Column(name = "tags_json", columnDefinition = "TEXT")
+    private String tagsJson;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;

@@ -11,11 +11,12 @@ import com.tuoman.ai_task_orchestrator.enums.RetrievalScopeType;
 import com.tuoman.ai_task_orchestrator.llm.LlmClient;
 import com.tuoman.ai_task_orchestrator.llm.LlmRequest;
 import com.tuoman.ai_task_orchestrator.llm.LlmResponse;
+import com.tuoman.ai_task_orchestrator.config.RetrievalPipelineProperties;
 import com.tuoman.ai_task_orchestrator.retrieval.CollectionAskScope;
+import com.tuoman.ai_task_orchestrator.retrieval.RetrievalDiagnostics;
 import com.tuoman.ai_task_orchestrator.retrieval.RetrievalScope;
 import com.tuoman.ai_task_orchestrator.rag.quality.RagQualityMode;
 import com.tuoman.ai_task_orchestrator.rag.quality.RagQualityService;
-import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService.RagRetrievalOutcome;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService.RagRetrievedChunk;
 import com.tuoman.ai_task_orchestrator.vectorstore.ExactCosineVectorStore;
@@ -41,7 +42,9 @@ public class RagAnswerService {
 
     private static final String NO_CONTEXT_REASON = "NO_RETRIEVED_CONTEXT";
 
-    private final RagTwoStageRetrievalService ragTwoStageRetrievalService;
+    private final AppRetrievalService appRetrievalService;
+
+    private final RetrievalPipelineProperties retrievalPipelineProperties;
 
     private final CollectionScopeService collectionScopeService;
 
@@ -69,17 +72,24 @@ public class RagAnswerService {
         }
 
         RetrievalScope retrievalScope = toRetrievalScope(request.getCollectionId(), askScope);
-        RagRetrievalOutcome retrievalOutcome = ragTwoStageRetrievalService.retrieve(
+        AppRetrievalService.UnifiedRetrievalOutcome unifiedOutcome = appRetrievalService.retrieve(
                 request.getQuery(),
                 topK,
-                retrievalScope
+                retrievalScope,
+                request.getCollectionId()
         );
+        RagRetrievalOutcome retrievalOutcome = unifiedOutcome.outcome();
         List<RagCitationResponse> citations = toCitations(
                 retrievalOutcome,
                 retrievalOutcome.rerankEnabled(),
                 retrievalOutcome.hybridEnabled()
         );
-        RagRetrievalMetadataResponse retrieval = toRetrievalMetadata(retrievalOutcome, askScope);
+        RagRetrievalMetadataResponse retrieval = toRetrievalMetadata(
+                retrievalOutcome,
+                askScope,
+                unifiedOutcome.diagnostics(),
+                unifiedOutcome.v15Pipeline()
+        );
 
         if (citations.isEmpty()) {
             String answer = askScope.collectionId() != null
@@ -215,8 +225,21 @@ public class RagAnswerService {
 
     private RagRetrievalMetadataResponse toRetrievalMetadata(
             RagRetrievalOutcome outcome,
-            CollectionAskScope askScope
+            CollectionAskScope askScope,
+            RetrievalDiagnostics diagnostics,
+            boolean v15Pipeline
     ) {
+        String filterMode = diagnostics != null && diagnostics.getFilterMode() != null
+                ? diagnostics.getFilterMode()
+                : "APPLICATION_SIDE";
+        String contextExpansion = diagnostics != null && diagnostics.getContextExpansion() != null
+                ? diagnostics.getContextExpansion()
+                : retrievalPipelineProperties.getContextExpansion() == null
+                ? "NONE"
+                : retrievalPipelineProperties.getContextExpansion().name();
+        String strategy = diagnostics != null && diagnostics.getStrategy() != null
+                ? diagnostics.getStrategy()
+                : resolveRetrievalStrategy(outcome);
         return new RagRetrievalMetadataResponse(
                 outcome.finalTopK(),
                 outcome.chunks().size(),
@@ -244,8 +267,27 @@ public class RagAnswerService {
                 askScope.collectionName(),
                 null,
                 null,
-                outcome.chunks().size()
+                outcome.chunks().size(),
+                strategy,
+                filterMode,
+                contextExpansion
         );
+    }
+
+    private String resolveRetrievalStrategy(RagRetrievalOutcome outcome) {
+        if (appRetrievalService.useV15Pipeline()) {
+            if (retrievalPipelineProperties.isRerankEnabled()) {
+                return "HYBRID_RRF_RERANK";
+            }
+            return "HYBRID_RRF";
+        }
+        if (outcome.hybridEnabled() && outcome.rerankEnabled()) {
+            return "HYBRID_RRF_RERANK";
+        }
+        if (outcome.hybridEnabled()) {
+            return "HYBRID_RRF";
+        }
+        return "VECTOR_ONLY";
     }
 
     private RagRetrievalMetadataResponse toRetrievalMetadataEmpty(int topK, CollectionAskScope askScope) {
@@ -276,7 +318,10 @@ public class RagAnswerService {
                 askScope.collectionName(),
                 null,
                 null,
-                0
+                0,
+                "VECTOR_ONLY",
+                "APPLICATION_SIDE",
+                "ADJACENT"
         );
     }
 

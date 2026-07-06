@@ -12,7 +12,7 @@ import com.tuoman.ai_task_orchestrator.llm.LlmRequest;
 import com.tuoman.ai_task_orchestrator.llm.LlmResponse;
 import com.tuoman.ai_task_orchestrator.rag.quality.RagQualityMode;
 import com.tuoman.ai_task_orchestrator.rag.quality.RagQualityService;
-import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService;
+import com.tuoman.ai_task_orchestrator.config.RetrievalPipelineProperties;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService.RagRetrievalOutcome;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService.RagRetrievedChunk;
 import com.tuoman.ai_task_orchestrator.vectorstore.ExactCosineVectorStore;
@@ -47,7 +47,10 @@ import static org.mockito.Mockito.when;
 class RagAnswerServiceTest {
 
     @Mock
-    private RagTwoStageRetrievalService ragTwoStageRetrievalService;
+    private AppRetrievalService appRetrievalService;
+
+    @Mock
+    private RetrievalPipelineProperties retrievalPipelineProperties;
 
     @Mock
     private EmbeddingProvider embeddingProvider;
@@ -75,6 +78,7 @@ class RagAnswerServiceTest {
 
     @BeforeEach
     void setUpProviderMetadata() {
+        lenient().when(appRetrievalService.useV15Pipeline()).thenReturn(false);
         lenient().when(ragQualityService.evaluate(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new RagQualityScoreResponse(
                         80,
@@ -112,7 +116,7 @@ class RagAnswerServiceTest {
                 null,
                 0L
         );
-        when(ragTwoStageRetrievalService.retrieve(eq("Why use outbox?"), eq(3), any(RetrievalScope.class))).thenReturn(outcome);
+        when(appRetrievalService.retrieve(eq("Why use outbox?"), eq(3), any(RetrievalScope.class), any())).thenReturn(unified(outcome));
         when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("rag prompt");
         when(llmClient.generate(any(LlmRequest.class))).thenReturn(successResponse("Answer with [1] and [2]."));
 
@@ -140,7 +144,7 @@ class RagAnswerServiceTest {
                 null,
                 0L
         );
-        when(ragTwoStageRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class))).thenReturn(outcome);
+        when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any())).thenReturn(unified(outcome));
         when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("rag prompt");
         when(llmClient.generate(any(LlmRequest.class))).thenReturn(successResponse("answer"));
 
@@ -161,7 +165,7 @@ class RagAnswerServiceTest {
                 null,
                 0L
         );
-        when(ragTwoStageRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class))).thenReturn(outcome);
+        when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any())).thenReturn(unified(outcome));
         when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("rag prompt");
         LlmResponse llmResponse = successResponse("answer with [1]");
         llmResponse.setProvider("local-ollama");
@@ -186,7 +190,7 @@ class RagAnswerServiceTest {
                 "lexical",
                 3L
         );
-        when(ragTwoStageRetrievalService.retrieve(eq("cache key"), eq(1), any(RetrievalScope.class))).thenReturn(outcome);
+        when(appRetrievalService.retrieve(eq("cache key"), eq(1), any(RetrievalScope.class), any())).thenReturn(unified(outcome));
         when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("prompt");
         when(llmClient.generate(any())).thenReturn(successResponse("answer"));
 
@@ -204,8 +208,8 @@ class RagAnswerServiceTest {
 
     @Test
     void answerShouldUseDefaultTopKWhenMissing() {
-        when(ragTwoStageRetrievalService.retrieve(eq("query"), eq(5), any(RetrievalScope.class)))
-                .thenReturn(new RagRetrievalOutcome(List.of(), 5, 5, false, null, 0L));
+        when(appRetrievalService.retrieve(eq("query"), eq(5), any(RetrievalScope.class), any()))
+                .thenReturn(unified(new RagRetrievalOutcome(List.of(), 5, 5, false, null, 0L)));
 
         RagAnswerResponse response = ragAnswerService.answer(request("query", null));
 
@@ -231,8 +235,8 @@ class RagAnswerServiceTest {
 
     @Test
     void answerShouldReturnNoContextResponseWithoutCallingLlm() {
-        when(ragTwoStageRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class)))
-                .thenReturn(new RagRetrievalOutcome(List.of(), 5, 5, false, null, 0L));
+        when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any()))
+                .thenReturn(unified(new RagRetrievalOutcome(List.of(), 5, 5, false, null, 0L)));
 
         RagAnswerResponse response = ragAnswerService.answer(request("No context question", 5));
 
@@ -245,14 +249,15 @@ class RagAnswerServiceTest {
     @Test
     void answerShouldLimitCitationSnippetLength() {
         String longContent = "a".repeat(500);
-        when(ragTwoStageRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class))).thenReturn(new RagRetrievalOutcome(
+        when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any()))
+                .thenReturn(unified(new RagRetrievalOutcome(
                 List.of(chunk(1, 1, 10L, 0.9, null, longContent)),
                 1,
                 1,
                 false,
                 null,
                 0L
-        ));
+        )));
         when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("prompt");
         when(llmClient.generate(any())).thenReturn(successResponse("answer"));
 
@@ -263,14 +268,15 @@ class RagAnswerServiceTest {
 
     @Test
     void answerShouldConvertLlmFailureToBusinessException() {
-        when(ragTwoStageRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class))).thenReturn(new RagRetrievalOutcome(
+        when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any()))
+                .thenReturn(unified(new RagRetrievalOutcome(
                 List.of(chunk(1, 1, 10L, 0.9, null, "content")),
                 1,
                 1,
                 false,
                 null,
                 0L
-        ));
+        )));
         when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("prompt");
 
         LlmResponse failed = new LlmResponse();
@@ -305,7 +311,7 @@ class RagAnswerServiceTest {
         assertThat(response.getRetrieval().getScopeType()).isEqualTo("COLLECTION");
         assertThat(response.getRetrieval().getCollectionId()).isEqualTo(9L);
         assertThat(response.getGeneration().getSkipped()).isTrue();
-        verify(ragTwoStageRetrievalService, never()).retrieve(anyString(), anyInt(), any(RetrievalScope.class));
+        verify(appRetrievalService, never()).retrieve(anyString(), anyInt(), any(RetrievalScope.class), any());
         verify(llmClient, never()).generate(any());
     }
 
@@ -327,7 +333,7 @@ class RagAnswerServiceTest {
                 null,
                 0L
         );
-        when(ragTwoStageRetrievalService.retrieve(eq("scoped"), eq(5), any(RetrievalScope.class))).thenReturn(outcome);
+        when(appRetrievalService.retrieve(eq("scoped"), eq(5), any(RetrievalScope.class), any())).thenReturn(unified(outcome));
         when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("prompt");
         when(llmClient.generate(any())).thenReturn(successResponse("scoped answer"));
 
@@ -364,6 +370,10 @@ class RagAnswerServiceTest {
                 rerankScore,
                 content
         );
+    }
+
+    private AppRetrievalService.UnifiedRetrievalOutcome unified(RagRetrievalOutcome outcome) {
+        return new AppRetrievalService.UnifiedRetrievalOutcome(outcome, null, false);
     }
 
     private LlmResponse successResponse(String content) {
