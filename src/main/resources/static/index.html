@@ -3,85 +3,143 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>个人 AI 知识工作台</title>
-    <link rel="stylesheet" href="/app.css">
+    <title>总览 · MindWeaver</title>
+    <link rel="stylesheet" href="/mindweaver.css?v=mw-ivory-app-shell-v1">
+    <link rel="stylesheet" href="/app-shell.css?v=mw-compat-v1">
 </head>
-<body>
-<div class="page">
-    <nav id="app-nav-mount" data-active="home"></nav>
-    <script src="/app-nav.js"></script>
+<body class="mw-page" data-page="overview">
+<div class="mw-app-shell app-shell">
+    <aside id="app-sidebar-mount" data-active="home" aria-label="主导航"></aside>
+    <main class="mw-main-panel main-panel">
+        <div class="mw-page-content content-container">
+            <header class="mw-page-header page-header">
+                <div>
+                    <h1 class="mw-page-title page-title">总览</h1>
+                    <p class="mw-page-description page-subtitle">查看知识库、问答、AI 任务和模型配置的整体状态。个人 AI 知识工作台 · Personal AI Knowledge Workspace</p>
+                </div>
+                <div class="mw-page-actions">
+                    <a href="/ask.html" class="mw-button mw-button-primary primary-button" style="text-decoration:none">开始提问</a>
+                    <a href="/documents.html" class="mw-button mw-button-secondary secondary-button" style="text-decoration:none">上传文档</a>
+                </div>
+            </header>
 
-    <header class="hero">
-        <h1>个人 AI 知识工作台</h1>
-        <p class="lead">
-            一个本地优先的个人 AI 应用：上传自己的资料，配置本地或外部模型，构建个人知识库，并让 AI 基于你的知识执行问答、总结、报告生成和任务编排。
-        </p>
-        <p class="sublead">Personal AI Knowledge Workspace — 你的文档、你的模型、你的知识库。</p>
-    </header>
+            <section class="mw-hero-card hero-card">
+                <div class="mw-hero-copy">
+                    <h2>MindWeaver 工作台</h2>
+                    <p>上传资料、配置模型、构建个人知识库，并让 AI 基于你的知识完成问答和任务报告。</p>
+                    <div class="mw-hero-actions">
+                        <a href="/documents.html" class="mw-button mw-button-secondary secondary-button" style="text-decoration:none">构建个人知识库</a>
+                    </div>
+                </div>
+                <div class="mw-stat-grid summary-stat-grid" style="flex:0 1 420px">
+                    <div class="mw-stat-card summary-stat">
+                        <span class="mw-stat-label summary-stat-label">当前运行状态</span>
+                        <span class="mw-stat-value summary-stat-value" id="dash-runtime-mode">暂无数据</span>
+                    </div>
+                    <div class="mw-stat-card summary-stat">
+                        <span class="mw-stat-label summary-stat-label">当前模型</span>
+                        <span class="mw-stat-value summary-stat-value" id="dash-llm">未配置</span>
+                    </div>
+                </div>
+            </section>
 
-    <section class="card-grid card-grid-primary" aria-label="核心功能">
-        <a class="entry-card entry-card-primary" href="/documents.html">
-            <h2>构建个人知识库</h2>
-            <p>上传文档，建立只属于你的本地知识库。</p>
-            <span class="entry-link">进入文档管理 →</span>
-        </a>
-        <a class="entry-card entry-card-primary" href="/model-settings.html">
-            <h2>配置 AI 模型</h2>
-            <p>查看本地 Ollama、Python Worker 和当前使用的模型。</p>
-            <span class="entry-link">进入模型设置 →</span>
-        </a>
-        <a class="entry-card entry-card-primary" href="/ask.html">
-            <h2>基于知识库提问</h2>
-            <p>选择全部文档或知识库分组，基于引用来源获得回答。</p>
-            <span class="entry-link">进入知识库问答 →</span>
-        </a>
-        <a class="entry-card entry-card-primary" href="/agent-tasks.html">
-            <h2>创建 AI 任务报告</h2>
-            <p>让 AI 检索知识库、调用工具，并生成结构化报告。</p>
-            <span class="entry-link">进入 AI 任务 →</span>
-        </a>
-    </section>
+            <section class="mw-card card">
+                <h2 class="mw-card-title">工作台概览</h2>
+                <div class="mw-stat-grid summary-stat-grid">
+                    <div class="mw-stat-card summary-stat">
+                        <span class="mw-stat-label summary-stat-label">文档数量</span>
+                        <span class="mw-stat-value summary-stat-value" id="dash-documents">暂无数据</span>
+                    </div>
+                    <div class="mw-stat-card summary-stat">
+                        <span class="mw-stat-label summary-stat-label">知识库分组</span>
+                        <span class="mw-stat-value summary-stat-value" id="dash-collections">暂无数据</span>
+                    </div>
+                    <div class="mw-stat-card summary-stat">
+                        <span class="mw-stat-label summary-stat-label">最近任务</span>
+                        <span class="mw-stat-value summary-stat-value" id="dash-agent-task">暂无数据</span>
+                    </div>
+                    <div class="mw-stat-card summary-stat">
+                        <span class="mw-stat-label summary-stat-label">状态</span>
+                        <span class="mw-stat-value"><span id="dashboard-status-pill" class="mw-badge mw-badge-accent status-pill">—</span></span>
+                    </div>
+                </div>
+            </section>
 
-    <section class="card-grid card-grid-secondary" aria-label="更多入口">
-        <a class="entry-card" href="/collections.html">
-            <h2>知识库分组</h2>
-            <p>管理文档分组，在问答或任务时限定检索范围。</p>
-        </a>
-        <a class="entry-card" href="/ingestion-analytics.html">
-            <h2>文档处理分析</h2>
-            <p>查看文档处理成功率、阶段耗时与常见失败原因。</p>
-        </a>
-        <a class="entry-card" href="/settings.html">
-            <h2>系统设置</h2>
-            <p>查看运行模式、本地数据目录规划与系统信息。</p>
-        </a>
-    </section>
+            <section class="mw-card card">
+                <h2 class="mw-card-title">核心功能</h2>
+                <div class="mw-grid-2 feature-grid-2x2">
+                    <a class="feature-card" href="/documents.html">
+                        <span class="feature-card-icon">▤</span>
+                        <h3>构建个人知识库</h3>
+                        <p>上传文档，建立只属于你的本地知识库。</p>
+                        <span class="card-cta">进入文档管理 →</span>
+                    </a>
+                    <a class="feature-card" href="/model-settings.html">
+                        <span class="feature-card-icon">⚙</span>
+                        <h3>配置 AI 模型</h3>
+                        <p>管理模型供应商，设置默认问答与向量模型。</p>
+                        <span class="card-cta">进入模型设置 →</span>
+                    </a>
+                    <a class="feature-card" href="/ask.html">
+                        <span class="feature-card-icon">◎</span>
+                        <h3>基于知识库提问</h3>
+                        <p>选择范围，基于引用来源获得可追溯回答。</p>
+                        <span class="card-cta">进入知识库问答 →</span>
+                    </a>
+                    <a class="feature-card" href="/agent-tasks.html">
+                        <span class="feature-card-icon">✦</span>
+                        <h3>创建 AI 任务报告</h3>
+                        <p>让 AI 检索知识库并生成结构化报告。</p>
+                        <span class="card-cta">进入 AI 任务 →</span>
+                    </a>
+                </div>
+            </section>
 
-    <section class="panel quick-start">
-        <h2>快速开始</h2>
-        <ol>
-            <li>（可选）运行 <code>scripts/windows/check-env.ps1</code> 检查本地环境。</li>
-            <li>启动服务后打开 <a href="/model-settings.html">模型设置</a>，确认模型连接状态。</li>
-            <li>在 <a href="/documents.html">文档管理</a> 上传 <code>.txt</code> / <code>.md</code> / 文本型 <code>.pdf</code>。</li>
-            <li>等待处理状态变为「已完成」后，在 <a href="/ask.html">知识库问答</a> 提问。</li>
-            <li>需要完整报告时，使用 <a href="/agent-tasks.html">AI 任务</a> 提交结构化任务。</li>
-        </ol>
-    </section>
+            <section class="mw-card card">
+                <h2 class="mw-card-title">快捷操作</h2>
+                <div class="mw-quick-grid">
+                    <a class="mw-quick-card" href="/documents.html"><strong>上传文档</strong><span>文档管理</span></a>
+                    <a class="mw-quick-card" href="/collections.html"><strong>创建知识库分组</strong><span>知识库分组</span></a>
+                    <a class="mw-quick-card" href="/ask.html"><strong>知识库问答</strong><span>开始提问</span></a>
+                    <a class="mw-quick-card" href="/agent-tasks.html"><strong>创建 AI 任务</strong><span>AI 任务</span></a>
+                    <a class="mw-quick-card" href="/model-settings.html"><strong>模型设置</strong><span>配置模型</span></a>
+                    <a class="mw-quick-card" href="/quality.html"><strong>质量诊断</strong><span>查看评分说明</span></a>
+                </div>
+            </section>
 
-    <section class="panel">
-        <h2>产品说明</h2>
-        <p class="muted">
-            本项目具备 AI Task Orchestration（任务编排）能力，适合个人知识管理与本地 RAG 体验。
-            页面默认展示中文用户语义；技术字段（metadata、traceId、provider 等）可在各页面通过「查看技术详情」折叠查看。
-        </p>
-        <ul class="capability-list">
-            <li><strong>知识库生命周期管理（V4.0）</strong> — 软删除、重新索引；已删除与旧版本片段不会进入问答。</li>
-            <li><strong>知识库分组与范围检索（V5.0）</strong> — 全部文档或指定分组内问答与任务。</li>
-            <li><strong>RAG 问答与引用来源</strong> — 回答附带可核对的文档片段引用。</li>
-            <li><strong>AI 任务与工具流程</strong> — 检索、总结并生成结构化报告。</li>
-            <li><strong>本地 Ollama 运行时</strong> — 通过 local-ai profile 体验真实本地模型。</li>
-        </ul>
-    </section>
+            <div class="mw-two-col">
+                <section class="mw-card card">
+                    <div class="section-header-row"><h2 class="mw-card-title" style="margin:0">最近上传文档</h2></div>
+                    <ul id="recent-documents" class="mw-activity-list">
+                        <li class="mw-activity-item muted">暂无最近文档</li>
+                    </ul>
+                </section>
+                <section class="mw-card card">
+                    <div class="section-header-row"><h2 class="mw-card-title" style="margin:0">最近问答与任务</h2></div>
+                    <ul id="recent-activity" class="mw-activity-list">
+                        <li class="mw-activity-item muted">暂无最近活动</li>
+                    </ul>
+                </section>
+            </div>
+
+            <section class="mw-card card">
+                <h2 class="mw-card-title">更多入口</h2>
+                <p class="muted" style="margin:0 0 12px;font-size:0.88rem">
+                    <a href="/ingestion-analytics.html">文档处理分析</a> ·
+                    <a href="/collections.html">知识库分组</a> ·
+                    <a href="/collections.html">范围检索</a> ·
+                    <a href="/trash.html">垃圾箱</a> ·
+                    <a href="/settings.html">系统设置</a>
+                </p>
+                <details class="technical-details tech-details">
+                    <summary>查看技术详情</summary>
+                    <p class="muted" style="margin:8px 0 0;font-size:0.86rem">MindWeaver 个人知识工作台本地运行，数据保留在本地。知识库生命周期管理（V4.0）</p>
+                </details>
+            </section>
+        </div>
+    </main>
 </div>
+<script src="/app-nav.js"></script>
+<script src="/index.js"></script>
 </body>
 </html>

@@ -6,6 +6,10 @@
 > 仓库技术名仍为 `ai-task-orchestrator`，但产品面向个人用户，**不是企业级 SaaS**。  
 > 详细产品说明见 [V9.0 手册](docs/manual/local-personal-knowledge-workspace.md)。
 
+
+
+![ScreenShot_2026-07-06_140548_155](C:\Users\mental\Pictures\ScreenShot_2026-07-06_140548_155.png)
+
 ---
 
 ## 1. 项目简介

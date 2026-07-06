@@ -1,0 +1,9 @@
+/* MindWeaver compatibility layer — imports core system and legacy aliases */
+@import url("/mindweaver.css?v=mw-layout-v2");
+
+/* Legacy token aliases for tests & older references */
+:root {
+  --app-bg: #f7f2ea;
+  --panel-bg: #fffdf8;
+  --content-max-width: 1180px;
+}

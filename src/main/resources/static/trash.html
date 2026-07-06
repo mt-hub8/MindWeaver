@@ -3,55 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>垃圾箱</title>
-    <link rel="stylesheet" href="/app.css">
-    <link rel="stylesheet" href="/trash.css">
+    <title>垃圾箱 · MindWeaver</title>
+    <link rel="stylesheet" href="/mindweaver.css?v=mw-ivory-app-shell-v1">
+    <link rel="stylesheet" href="/app-shell.css?v=mw-compat-v1">
 </head>
-<body>
-<div class="page">
-    <nav id="app-nav-mount" data-active="trash"></nav>
-    <script src="/app-nav.js"></script>
+<body class="mw-page" data-page="trash">
+<div class="mw-app-shell app-shell">
+    <aside id="app-sidebar-mount" data-active="trash" aria-label="主导航"></aside>
+    <main class="mw-main-panel main-panel">
+        <div class="mw-page-content content-container">
+            <header class="mw-page-header page-header">
+                <div>
+                    <h1 class="mw-page-title page-title">垃圾箱</h1>
+                    <p class="mw-page-description page-subtitle">已删除的内容将保留一段时间，您可以随时恢复或永久删除。</p>
+                </div>
+            </header>
 
-    <header class="hero">
-        <h1>垃圾箱</h1>
-        <p class="lead">已放入垃圾箱的文档不会参与知识库问答、检索与 AI 任务。7 天后将自动永久删除；恢复后可重新用于问答，无需重新索引。</p>
-    </header>
+            <div class="mw-segmented" role="tablist" aria-label="筛选类型" style="margin-bottom:16px">
+                <span class="mw-segment active">全部</span>
+                <span class="mw-segment">文档</span>
+            </div>
+            <p class="muted" style="font-size:0.84rem;margin:0 0 20px">7 天后将自动永久删除；永久删除后不可恢复。</p>
 
-    <section class="panel lifecycle-hint">
-        <ul class="lifecycle-list">
-            <li><strong>已放入垃圾箱</strong>：文档内容仍保留，可随时恢复。</li>
-            <li><strong>7 天后将自动永久删除</strong>：到期后系统清理原始文本、片段、向量与相关缓存。</li>
-            <li><strong>恢复后可重新用于知识库问答</strong>：无需重新 embedding 或重新索引。</li>
-            <li><strong>永久删除后不可恢复</strong>：请谨慎操作。</li>
-        </ul>
-    </section>
-
-    <section class="panel">
-        <h2>垃圾箱文档</h2>
-        <details class="tech-details">
-            <summary>查看技术详情</summary>
-            <p class="muted">操作列中每条记录可展开查看 documentId、status、trashedAt 等字段。</p>
-        </details>
-        <div class="table-wrap">
-            <table id="trash-table" class="data-table hidden">
-                <thead>
-                <tr>
-                    <th>文档名称</th>
-                    <th>删除时间</th>
-                    <th>预计永久删除</th>
-                    <th>剩余天数</th>
-                    <th>大小</th>
-                    <th>分组</th>
-                    <th>状态</th>
-                    <th>操作</th>
-                </tr>
-                </thead>
-                <tbody id="trash-body"></tbody>
-            </table>
+            <section class="mw-table-card card">
+                <div id="trash-empty" class="mw-empty-state empty-state hidden">
+                    <div class="empty-state-icon" aria-hidden="true">🗑</div>
+                    <h3 class="mw-empty-title">垃圾箱为空</h3>
+                    <p class="mw-empty-description">没有需要处理的删除内容。删除的文档会在这里暂存 7 天。</p>
+                </div>
+                <div id="trash-list" class="entity-stack"></div>
+                <details class="technical-details hidden" id="trash-page-tech-hint" aria-hidden="true">
+                    <summary>查看技术详情</summary>
+                    <p class="muted">文档 ID 等技术字段在列表项折叠区展示。</p>
+                </details>
+            </section>
         </div>
-    </section>
+    </main>
 </div>
-
+<script src="/app-nav.js"></script>
 <script src="/trash.js"></script>
 </body>
 </html>

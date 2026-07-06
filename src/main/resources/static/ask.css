@@ -49,10 +49,21 @@ select {
     align-items: center;
     gap: 20px;
     margin: 12px 0 16px;
-    padding: 16px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--code-bg);
+    padding: 20px;
+    border: 1px solid var(--shell-border, var(--border));
+    border-radius: 12px;
+    background: #fafbfc;
+}
+
+.answer-box {
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.7;
+    font-size: 1rem;
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid var(--shell-border, var(--border));
+    background: #fafbfc;
 }
 
 .quality-overall-label {
@@ -156,15 +167,6 @@ button:disabled {
     color: var(--text);
 }
 
-.answer-box {
-    white-space: pre-wrap;
-    word-break: break-word;
-    padding: 14px;
-    border-radius: 8px;
-    background: var(--code-bg);
-    border: 1px solid var(--border);
-}
-
 .citation-list {
     list-style: none;
     padding: 0;
@@ -175,9 +177,9 @@ button:disabled {
 
 .citation-item {
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 14px;
-    background: var(--code-bg);
+    border-radius: 12px;
+    padding: 16px 18px;
+    background: #fafbfc;
 }
 
 .citation-item h3 {

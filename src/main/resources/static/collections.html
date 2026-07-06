@@ -3,104 +3,122 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>知识库分组</title>
-    <link rel="stylesheet" href="/app.css">
+    <title>知识库分组 · MindWeaver</title>
+    <link rel="stylesheet" href="/mindweaver.css?v=mw-ivory-app-shell-v1">
+    <link rel="stylesheet" href="/app-shell.css?v=mw-compat-v1">
 </head>
-<body>
-<div class="page">
-    <nav id="app-nav-mount" data-active="collections"></nav>
-    <script src="/app-nav.js"></script>
+<body class="mw-page" data-page="collections">
+<div class="mw-app-shell app-shell">
+    <aside id="app-sidebar-mount" data-active="collections" aria-label="主导航"></aside>
+    <main class="mw-main-panel main-panel">
+        <div class="mw-page-content content-container">
+            <header class="mw-page-header page-header">
+                <div>
+                    <h1 class="mw-page-title page-title">知识库分组</h1>
+                    <p class="mw-page-description page-subtitle">将文档按项目、主题或使用场景组织成不同知识库，便于精准问答。</p>
+                </div>
+                <div class="mw-page-actions">
+                    <button type="button" class="mw-button mw-button-primary primary-button" onclick="document.getElementById('collection-name-input').focus()">新建分组</button>
+                </div>
+            </header>
 
-    <header class="hero">
-        <h1>知识库分组</h1>
-        <p class="lead">将文档归入不同分组，在知识库问答时选择「全部文档」或「仅在该分组中提问」。</p>
-        <p class="muted">已删除文档不会进入问答；旧版本片段不会进入回答引用。</p>
-    </header>
+            <section class="mw-hero-card hero-card">
+                <div class="mw-hero-copy hero-card-copy">
+                    <h2>按主题组织你的知识库</h2>
+                    <p>分组让你在问答和 AI 任务中精确限定资料范围，回答更聚焦、引用更相关。</p>
+                </div>
+                <div class="mw-stat-grid hero-stat-grid" aria-label="分组概览" style="flex:0 1 380px">
+                    <div class="mw-stat-card hero-stat">
+                        <span class="mw-stat-label hero-stat-label">分组数量</span>
+                        <span class="mw-stat-value hero-stat-value" id="stat-collection-count">暂无数据</span>
+                    </div>
+                    <div class="mw-stat-card hero-stat">
+                        <span class="mw-stat-label hero-stat-label">可用文档</span>
+                        <span class="mw-stat-value hero-stat-value" id="stat-active-documents">暂无数据</span>
+                    </div>
+                    <div class="mw-stat-card hero-stat">
+                        <span class="mw-stat-label hero-stat-label">最近更新</span>
+                        <span class="mw-stat-value hero-stat-value" id="stat-last-updated">暂无数据</span>
+                    </div>
+                </div>
+            </section>
 
-    <section class="panel" aria-labelledby="create-collection-title">
-        <h2 id="create-collection-title">新建分组</h2>
-        <label for="collection-name-input">分组名称</label>
-        <input id="collection-name-input" type="text" maxlength="128" placeholder="例如：项目 A 文档">
+            <section class="mw-card card form-card" aria-labelledby="create-collection-title">
+                <h2 id="create-collection-title" class="mw-card-title">新建知识库分组</h2>
+                <p class="form-card-desc">为一类资料创建独立范围，例如项目文档、论文资料、面试材料。</p>
+                <div class="form-grid mw-form">
+                    <div class="form-field mw-field">
+                        <label class="mw-label" for="collection-name-input">分组名称</label>
+                        <input class="mw-input" id="collection-name-input" type="text" maxlength="128" placeholder="例如：项目 A 文档">
+                    </div>
+                    <div class="form-field mw-field">
+                        <label class="mw-label" for="collection-description-input">分组说明</label>
+                        <textarea class="mw-textarea" id="collection-description-input" placeholder="例如：项目 A 的需求、设计和技术说明"></textarea>
+                    </div>
+                </div>
+                <div class="action-row">
+                    <span id="create-loading" class="status loading hidden" role="status">正在创建分组…</span>
+                    <button id="refresh-collections-button" type="button" class="mw-button mw-button-secondary secondary-button">刷新列表</button>
+                    <button id="create-collection-button" type="button" class="mw-button mw-button-primary primary-button">新建分组</button>
+                </div>
+                <div id="create-success" class="success-box hidden" aria-live="polite">
+                    <p id="create-success-message" class="muted" style="margin:0"></p>
+                </div>
+            </section>
 
-        <label for="collection-description-input">分组说明（可选）</label>
-        <textarea id="collection-description-input" rows="3" placeholder="例如：项目 A 的需求、设计和接口说明"></textarea>
+            <div id="loading-status" class="status loading hidden" role="status">正在加载知识库分组…</div>
 
-        <div class="upload-actions">
-            <button id="create-collection-button" type="button">新建分组</button>
-            <button id="refresh-collections-button" type="button">刷新列表</button>
-            <span id="create-loading" class="status loading hidden" role="status">正在创建分组…</span>
+            <div id="error-status" class="error-card hidden" role="alert">
+                <strong>操作失败</strong>
+                <p id="error-message" style="margin:4px 0 0"></p>
+                <details class="technical-details" style="margin-top:10px">
+                    <summary>查看技术详情</summary>
+                    <dl style="margin:8px 0 0;font-size:0.84rem">
+                        <dt>错误码</dt><dd id="error-code"></dd>
+                        <dt>追踪 ID</dt><dd id="error-trace-id"></dd>
+                    </dl>
+                </details>
+            </div>
+
+            <div id="collections-empty" class="mw-empty-state empty-state hidden">
+                <div class="empty-state-icon" aria-hidden="true">📁</div>
+                <h3 class="mw-empty-title">还没有知识库分组</h3>
+                <p class="mw-empty-description">创建分组后，可以在问答和 AI 任务中限定知识范围，让回答更准确。</p>
+                <button type="button" class="mw-button mw-button-primary primary-button" id="empty-create-btn">新建第一个分组</button>
+            </div>
+
+            <section id="collections-panel" class="mw-card card hidden" aria-labelledby="collections-list-title">
+                <h2 id="collections-list-title" class="mw-card-title">分组列表</h2>
+                <div id="collections-list" class="entity-grid" style="margin-top:16px"></div>
+            </section>
+
+            <section id="detail-panel" class="mw-card card hidden" aria-labelledby="detail-title">
+                <div class="section-header-row">
+                    <h2 id="detail-title" class="mw-card-title">分组详情</h2>
+                    <button id="close-detail-button" type="button" class="mw-button mw-button-secondary secondary-button">返回列表</button>
+                </div>
+                <p id="detail-description" class="muted"></p>
+                <div class="entity-card-meta" style="margin:12px 0">
+                    <span>文档数量：<strong id="detail-document-count">-</strong></span>
+                    <span>可用于问答的文档：<strong id="detail-active-count">-</strong></span>
+                </div>
+                <p id="detail-empty-hint" class="empty-state hidden">该分组暂无文档。请前往文档管理将文档加入此分组。</p>
+                <p id="detail-no-askable-hint" class="muted hidden">当前分组暂无可用于问答的文档。已删除文档不会参与问答。</p>
+                <div class="action-row" style="justify-content:flex-start">
+                    <a id="ask-in-collection-link" class="mw-button mw-button-primary primary-button" href="/ask.html" style="display:inline-flex;text-decoration:none">前往该分组问答</a>
+                    <a class="mw-button mw-button-secondary secondary-button" href="/documents.html" style="display:inline-flex;text-decoration:none">查看文档</a>
+                </div>
+                <h3 style="font-size:0.95rem;margin:24px 0 12px">分组中的文档</h3>
+                <div id="detail-documents-list" class="entity-stack"></div>
+                <details class="technical-details">
+                    <summary>查看技术详情</summary>
+                    <pre id="detail-tech-json"></pre>
+                </details>
+            </section>
         </div>
-        <div id="create-success" class="success-box hidden" aria-live="polite">
-            <h3>创建成功</h3>
-            <p id="create-success-message" class="muted"></p>
-        </div>
-    </section>
-
-    <div id="loading-status" class="status loading hidden" role="status">正在加载知识库分组…</div>
-
-    <div id="error-status" class="status error" role="alert" aria-live="assertive">
-        <p><strong>操作失败</strong></p>
-        <dl>
-            <dt>错误码</dt><dd id="error-code"></dd>
-            <dt>说明</dt><dd id="error-message"></dd>
-            <dt>追踪 ID</dt><dd id="error-trace-id"></dd>
-        </dl>
-        <p class="muted">可查看技术详情或稍后重试。</p>
-    </div>
-
-    <p id="collections-empty" class="empty-state hidden">还没有创建任何知识库分组。点击「新建分组」开始组织文档。</p>
-
-    <section id="collections-panel" class="panel hidden" aria-labelledby="collections-list-title">
-        <h2 id="collections-list-title">分组列表</h2>
-        <table class="doc-table">
-            <thead>
-            <tr>
-                <th>分组名称</th>
-                <th>分组说明</th>
-                <th>文档数量</th>
-                <th>可用于问答的文档</th>
-                <th>操作</th>
-            </tr>
-            </thead>
-            <tbody id="collections-body"></tbody>
-        </table>
-    </section>
-
-    <section id="detail-panel" class="panel hidden" aria-labelledby="detail-title">
-        <div class="section-header-row">
-            <h2 id="detail-title">分组详情</h2>
-            <button id="close-detail-button" type="button" class="link-button">返回列表</button>
-        </div>
-        <p id="detail-description" class="muted"></p>
-        <dl class="detail-stats">
-            <dt>文档数量</dt><dd id="detail-document-count">-</dd>
-            <dt>可用于问答的文档</dt><dd id="detail-active-count">-</dd>
-        </dl>
-        <p id="detail-empty-hint" class="empty-state hidden">该分组暂无文档。请前往文档管理将文档加入此分组。</p>
-        <p id="detail-no-askable-hint" class="muted hidden">当前分组暂无可用于问答的文档。已删除文档不会参与问答。</p>
-        <p>
-            <a id="ask-in-collection-link" class="button-link" href="/ask.html">前往该分组问答</a>
-            <a class="button-link secondary" href="/documents.html">前往文档管理</a>
-        </p>
-        <h3>分组中的文档</h3>
-        <table class="doc-table">
-            <thead>
-            <tr>
-                <th>文件名</th>
-                <th>文档状态</th>
-                <th>可用于问答</th>
-                <th>操作</th>
-            </tr>
-            </thead>
-            <tbody id="detail-documents-body"></tbody>
-        </table>
-        <details class="tech-details">
-            <summary>查看技术详情</summary>
-            <pre id="detail-tech-json"></pre>
-        </details>
-    </section>
+    </main>
 </div>
-
+<script src="/app-nav.js"></script>
 <script src="/collections.js"></script>
 </body>
 </html>

@@ -5,16 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>文档处理分析</title>
     <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/app-shell.css">
 </head>
-<body>
-<div class="page">
-    <nav id="app-nav-mount" data-active=""></nav>
+<body class="app-body">
+<div class="app-shell">
+    <aside id="app-sidebar-mount" data-active="documents" aria-label="主导航"></aside>
     <script src="/app-nav.js"></script>
-
-    <header class="hero">
-        <h1>文档处理分析</h1>
-        <p class="lead">查看文档上传后的处理成功率、耗时分布和常见失败原因。数据来自摄入任务与事件时间线，不是 Prometheus / Grafana 监控大屏。</p>
-    </header>
+    <main class="main-panel">
+        <div class="content-container">
+        <header class="page-header">
+            <h1 class="page-title">文档处理分析</h1>
+            <p class="page-subtitle">查看文档上传后的处理成功率、耗时分布和常见失败原因。数据来自摄入任务与事件时间线。</p>
+        </header>
 
     <section class="panel" aria-labelledby="window-title">
         <h2 id="window-title">时间范围</h2>
@@ -111,7 +113,9 @@
             </thead>
             <tbody id="slow-tasks-body"></tbody>
         </table>
-    </section>
+        </section>
+        </div>
+    </main>
 </div>
 
 <script src="/ingestion-analytics.js"></script>

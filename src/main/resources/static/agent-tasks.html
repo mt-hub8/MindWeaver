@@ -3,130 +3,99 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 任务</title>
-    <link rel="stylesheet" href="/app.css">
+    <title>AI 任务 · MindWeaver</title>
+    <link rel="stylesheet" href="/mindweaver.css?v=mw-ivory-app-shell-v1">
+    <link rel="stylesheet" href="/app-shell.css?v=mw-compat-v1">
 </head>
-<body>
-<div class="page">
-    <nav id="app-nav-mount" data-active="agent-tasks"></nav>
-    <script src="/app-nav.js"></script>
+<body class="mw-page" data-page="agent-tasks">
+<div class="mw-app-shell app-shell">
+    <aside id="app-sidebar-mount" data-active="agent-tasks" aria-label="主导航"></aside>
+    <main class="mw-main-panel main-panel">
+        <div class="mw-page-content content-container">
+            <header class="mw-page-header page-header">
+                <div>
+                    <h1 class="mw-page-title page-title">AI 任务</h1>
+                    <p class="mw-page-description page-subtitle">创建需要多步骤处理的 AI 任务，并查看任务状态、工具调用和最终报告。</p>
+                </div>
+            </header>
 
-    <header class="hero">
-        <h1>AI 任务</h1>
-        <p class="lead">提交一个 AI 任务，系统会按固定工具流程在后台检索知识库、总结上下文并生成带引用来源的最终报告。</p>
-        <p class="muted">适合总结、分析、建议类任务；即时问答请使用「知识库问答」。当前阶段仅支持内置安全工具。</p>
-    </header>
+            <section class="mw-card card form-card">
+                <h2 class="mw-card-title">新建 AI 任务</h2>
+                <p class="form-card-desc">指定知识库分组或全部文档，系统将检索知识库并生成任务结果。</p>
+                <div class="form-grid mw-form">
+                    <div class="form-field mw-field">
+                        <label class="mw-label" for="task-title-input">任务标题</label>
+                        <input class="mw-input" id="task-title-input" type="text" maxlength="256" placeholder="例如：总结项目文档">
+                    </div>
+                    <div class="form-field mw-field">
+                        <label class="mw-label" for="task-scope-select">知识库范围</label>
+                        <select class="mw-select" id="task-scope-select"><option value="">全部文档</option></select>
+                    </div>
+                    <div class="form-field mw-field" style="grid-column:1/-1">
+                        <label class="mw-label" for="task-objective-input">任务目标</label>
+                        <textarea class="mw-textarea" id="task-objective-input" placeholder="描述你希望系统完成的目标"></textarea>
+                    </div>
+                </div>
+                <div class="action-row">
+                    <button id="refresh-tasks-button" type="button" class="mw-button mw-button-secondary secondary-button">刷新</button>
+                    <button id="submit-task-button" type="button" class="mw-button mw-button-primary primary-button">创建任务</button>
+                </div>
+                <div id="create-success" class="success-box hidden">
+                    <p id="create-success-message" class="muted" style="margin:0"></p>
+                </div>
+            </section>
 
-    <section class="panel" aria-labelledby="create-task-title">
-        <h2 id="create-task-title">新建 AI 任务</h2>
-        <label for="task-title-input">任务标题</label>
-        <input id="task-title-input" type="text" maxlength="256" placeholder="例如：总结项目 A 文档">
+            <div id="loading-status" class="status loading hidden">正在加载…</div>
+            <div id="error-status" class="error-card hidden" role="alert">
+                <strong>操作失败</strong>
+                <p id="error-message" style="margin:4px 0 0"></p>
+                <details class="technical-details"><summary>查看技术详情</summary>
+                    <p style="font-size:0.84rem;margin:8px 0 0">错误码：<span id="error-code"></span> · 追踪 ID：<span id="error-trace-id"></span></p>
+                </details>
+            </div>
 
-        <label for="task-objective-input">任务目标</label>
-        <textarea id="task-objective-input" rows="5" placeholder="描述你希望系统完成的目标，例如：总结核心功能、风险点和下一步建议。"></textarea>
+            <div id="tasks-empty" class="mw-empty-state empty-state hidden">
+                <div class="empty-state-icon" aria-hidden="true">✦</div>
+                <h3 class="mw-empty-title">当前还没有 AI 任务</h3>
+                <p class="mw-empty-description">创建任务后，AI 将检索知识库并生成结构化报告。</p>
+            </div>
 
-        <label for="task-scope-select">知识库范围</label>
-        <select id="task-scope-select">
-            <option value="">全部文档</option>
-        </select>
-        <p class="muted">指定知识库分组时，只会在该分组范围内检索；已删除文档与旧版本片段不会进入任务上下文。</p>
+            <section id="tasks-panel" class="mw-card card hidden">
+                <h2 class="mw-card-title">任务列表</h2>
+                <div id="tasks-list" class="entity-stack"></div>
+            </section>
 
-        <div class="upload-actions">
-            <button id="submit-task-button" type="button">提交任务</button>
-            <button id="refresh-tasks-button" type="button">刷新列表</button>
-            <span id="submit-loading" class="status loading hidden" role="status">正在提交任务…</span>
+            <section id="detail-panel" class="mw-card card hidden">
+                    <div class="section-header-row">
+                        <h2 id="detail-title" class="mw-card-title">任务详情</h2>
+                        <button id="close-detail-button" type="button" class="mw-button mw-button-ghost ghost-button">返回列表</button>
+                    </div>
+                    <p id="detail-scope" class="muted" style="font-size:0.88rem"></p>
+                    <p id="detail-status" class="muted" style="font-size:0.88rem"></p>
+                    <h3 style="font-size:0.95rem;margin:20px 0 12px">执行步骤 · 查看执行过程</h3>
+                    <ol id="steps-list" class="step-timeline"></ol>
+                    <p id="steps-empty" class="muted hidden">暂无执行步骤</p>
+                    <h3 style="font-size:0.95rem;margin:20px 0 12px">最终报告 · 任务结果</h3>
+                    <div id="detail-result" class="answer-box"></div>
+                    <details class="technical-details" style="margin-top:12px">
+                        <summary>查看技术详情 · 工具与模型</summary>
+                        <p class="muted" style="font-size:0.86rem;margin:8px 0">当前可用工具、工具执行记录与模型调用摘要见下方折叠数据。</p>
+                        <div id="tool-steps-panel" class="hidden"></div>
+                        <div id="model-summary" class="hidden"></div>
+                        <div id="events-list" class="hidden"></div>
+                    </details>
+                    <h3 style="font-size:0.95rem;margin:20px 0 12px">引用来源</h3>
+                    <p id="citations-empty" class="muted hidden">暂无引用来源</p>
+                    <ul id="citations-list" class="citation-list"></ul>
+                    <details class="technical-details" style="margin-top:16px">
+                        <summary>查看技术详情</summary>
+                        <pre id="detail-tech-json"></pre>
+                    </details>
+                </section>
         </div>
-        <div id="create-success" class="success-box hidden" aria-live="polite">
-            <h3>提交成功</h3>
-            <p id="create-success-message" class="muted"></p>
-        </div>
-    </section>
-
-    <div id="loading-status" class="status loading hidden" role="status">正在加载任务列表…</div>
-
-    <div id="error-status" class="status error" role="alert" aria-live="assertive">
-        <dl>
-            <dt>错误原因</dt><dd id="error-code"></dd>
-            <dt>说明</dt><dd id="error-message"></dd>
-            <dt>追踪 ID</dt><dd id="error-trace-id"></dd>
-        </dl>
-    </div>
-
-    <p id="tasks-empty" class="empty-state hidden">还没有 AI 任务。填写上方表单提交第一个任务。</p>
-
-    <section id="tasks-panel" class="panel hidden" aria-labelledby="tasks-list-title">
-        <h2 id="tasks-list-title">任务列表</h2>
-        <table class="doc-table">
-            <thead>
-            <tr>
-                <th>任务标题</th>
-                <th>状态</th>
-                <th>知识库范围</th>
-                <th>引用数</th>
-                <th>创建时间</th>
-                <th>操作</th>
-            </tr>
-            </thead>
-            <tbody id="tasks-body"></tbody>
-        </table>
-    </section>
-
-    <section id="detail-panel" class="panel hidden" aria-labelledby="detail-title">
-        <div class="section-header-row">
-            <h2 id="detail-title">任务详情</h2>
-            <button id="close-detail-button" type="button" class="link-button">返回列表</button>
-        </div>
-        <p id="detail-scope" class="muted"></p>
-        <p id="detail-status" class="muted"></p>
-
-        <h3>执行步骤</h3>
-        <p id="steps-empty" class="empty-state hidden">暂无执行步骤。</p>
-        <ol id="steps-list" class="timeline-list"></ol>
-
-        <h3>工具执行记录</h3>
-        <div id="tool-steps-panel"></div>
-
-        <h3>任务结果</h3>
-        <div id="detail-result" class="answer-box"></div>
-
-        <h3>引用来源</h3>
-        <p id="citations-empty" class="empty-state hidden">暂无引用来源。</p>
-        <ul id="citations-list" class="citation-list"></ul>
-
-        <h3>查看执行过程</h3>
-        <p class="muted">下方时间线记录任务创建、工具执行与最终报告生成过程。</p>
-        <ol id="events-list" class="timeline-list"></ol>
-
-        <h3>当前可用工具</h3>
-        <p id="tools-empty" class="empty-state hidden">暂无可用工具。</p>
-        <ul id="tools-list" class="citation-list"></ul>
-
-        <h3>模型调用摘要</h3>
-        <dl id="model-summary" class="summary-dl"></dl>
-        <details class="tech-details">
-            <summary>查看技术详情</summary>
-            <pre id="model-metadata" class="metadata"></pre>
-        </details>
-
-        <div id="detail-error" class="status error hidden" role="alert">
-            <p><strong>执行失败</strong></p>
-            <dl>
-                <dt>错误码</dt><dd id="detail-error-code"></dd>
-                <dt>说明</dt><dd id="detail-error-message"></dd>
-            </dl>
-            <details class="tech-details">
-                <summary>查看技术详情</summary>
-                <p class="muted">追踪 ID：<span id="detail-trace-id"></span></p>
-            </details>
-        </div>
-
-        <details class="tech-details">
-            <summary>查看技术详情 · 任务原始数据</summary>
-            <pre id="detail-tech-json"></pre>
-        </details>
-    </section>
+    </main>
 </div>
-
+<script src="/app-nav.js"></script>
 <script src="/agent-tasks.js"></script>
 </body>
 </html>

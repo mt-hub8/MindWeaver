@@ -1,5 +1,6 @@
 (function () {
     const POLL_INTERVAL_MS = 3000;
+    const REINDEX_COMPLETE_HINT = "重新索引完成，新的文档片段已可用于知识库问答";
 
     const fileInput = document.getElementById("file-input");
     const uploadButton = document.getElementById("upload-button");
@@ -22,11 +23,10 @@
 
     const documentsEmpty = document.getElementById("documents-empty");
     const documentsPanel = document.getElementById("documents-panel");
-    const documentsBody = document.getElementById("documents-body");
+    const documentsList = document.getElementById("documents-list");
 
-    const tasksEmpty = document.getElementById("tasks-empty");
     const tasksPanel = document.getElementById("tasks-panel");
-    const tasksBody = document.getElementById("tasks-body");
+    const tasksList = document.getElementById("tasks-list");
     const timelinePanel = document.getElementById("timeline-panel");
     const timelineTitle = document.getElementById("timeline-title");
     const timelineEmpty = document.getElementById("timeline-empty");
@@ -159,16 +159,16 @@
 
     function renderActionSuccess(title, message, summary) {
         actionSuccessTitle.textContent = title || "操作成功";
-        summaryTaskId.textContent = safeValue(summary && summary.taskId);
-        summaryDocumentId.textContent = safeValue(summary && (summary.documentId || summary.documentId === 0 ? summary.documentId : "-"));
-        summaryFilename.textContent = safeValue(summary && summary.filename);
-        summaryStatus.textContent = safeValue(summary && (summary.displayStatus || summary.status));
+        if (summaryTaskId) summaryTaskId.textContent = safeValue(summary && summary.taskId);
+        if (summaryDocumentId) summaryDocumentId.textContent = safeValue(summary && summary.documentId);
+        if (summaryFilename) summaryFilename.textContent = safeValue(summary && summary.filename);
+        if (summaryStatus) summaryStatus.textContent = safeValue(summary && (summary.displayStatus || summary.status));
         actionSuccessMessage.textContent = message || "";
         actionSuccess.classList.remove("hidden");
     }
 
     function renderDocuments(documents) {
-        documentsBody.innerHTML = "";
+        documentsList.innerHTML = "";
         if (documents.length === 0) {
             documentsPanel.classList.add("hidden");
             documentsEmpty.classList.remove("hidden");
@@ -179,38 +179,52 @@
         documentsPanel.classList.remove("hidden");
 
         documents.forEach(function (doc) {
-            const row = document.createElement("tr");
-            row.className = "document-row";
+            const card = document.createElement("div");
+            card.className = "list-card document-list-card";
             const lifecycleStatus = doc.status || "ACTIVE";
-            const lifecycleClass = lifecycleStatus === "TRASHED" ? "deleted" : "active";
             const lifecycleDisplay = doc.displayStatus || (lifecycleStatus === "TRASHED" ? "已放入垃圾箱" : "已启用");
             const canAsk = doc.canAsk === true;
-            const hint = doc.lifecycleHint || lifecycleHintFallback(doc);
+            const pillClass = lifecycleStatus === "TRASHED" ? "danger" : (canAsk ? "success" : "warning");
+            const collectionLabel = formatCollectionNamesPlain(doc);
+            const updatedAt = formatDate(doc.updatedAt || doc.lastReindexedAt);
 
-            const actions = buildDocumentActions(doc);
-            const collectionLabel = formatCollectionNames(doc);
+            card.innerHTML =
+                '<div class="list-card-head">' +
+                '<div><h3 class="list-card-title">' + escapeHtml(doc.title || "-") + "</h3>" +
+                '<p class="list-card-hint">' + escapeHtml(doc.lifecycleHint || lifecycleHintFallback(doc)) + "</p></div>" +
+                '<span class="status-pill ' + pillClass + '">' + escapeHtml(lifecycleDisplay) + "</span></div>" +
+                '<div class="list-card-meta">' +
+                "<span>所属分组：<strong>" + collectionLabel + "</strong></span>" +
+                "<span>索引版本：<strong>" + escapeHtml(doc.currentGeneration != null ? doc.currentGeneration : 1) + "</strong></span>" +
+                "<span>可用于问答：<strong>" + (canAsk ? "是" : "否") + "</strong></span>" +
+                (updatedAt !== "-" ? "<span>更新：<strong>" + escapeHtml(updatedAt) + "</strong></span>" : "") +
+                "</div>" +
+                '<div class="list-card-actions"></div>' +
+                '<details class="tech-details"><summary>查看技术详情</summary><pre>' +
+                escapeHtml(JSON.stringify({
+                    documentId: doc.documentId,
+                    status: doc.status,
+                    generation: doc.currentGeneration,
+                    chunkCount: doc.chunkCount
+                }, null, 2)) + "</pre></details>";
 
-            row.innerHTML =
-                "<td>" +
-                "<strong>" + escapeHtml(doc.title || "-") + "</strong>" +
-                '<p class="muted doc-hint">' + escapeHtml(hint) + "</p>" +
-                (doc.status === "TRASHED"
-                    ? '<p class="muted">垃圾箱中的文档可保留分组归属，但不会参与问答。可在垃圾箱恢复。</p>'
-                    : "") +
-                "</td>" +
-                "<td>" + collectionLabel + "</td>" +
-                '<td><span class="status-badge ' + lifecycleClass + '">' + escapeHtml(lifecycleDisplay) + "</span></td>" +
-                "<td>" + escapeHtml(doc.displayProcessingStatus || doc.processingStatus || "-") + "</td>" +
-                "<td>" + escapeHtml(doc.currentGeneration != null ? doc.currentGeneration : 1) + "</td>" +
-                "<td>" + escapeHtml(doc.chunkCount) + "</td>" +
-                "<td>" + escapeHtml(doc.reindexCount != null ? doc.reindexCount : 0) + "</td>" +
-                "<td>" + escapeHtml(formatDate(doc.lastReindexedAt)) + "</td>" +
-                '<td>' + (canAsk ? '<span class="status-badge ready">是</span>' : '<span class="muted">否</span>') + "</td>" +
-                '<td class="task-actions">' + actions.join(" ") + "</td>";
+            const actionsEl = card.querySelector(".list-card-actions");
+            buildDocumentActions(doc).forEach(function (html) {
+                const wrap = document.createElement("span");
+                wrap.innerHTML = html;
+                while (wrap.firstChild) {
+                    actionsEl.appendChild(wrap.firstChild);
+                }
+            });
 
-            bindDocumentRowActions(row, doc);
-            documentsBody.appendChild(row);
+            bindDocumentRowActions(card, doc);
+            documentsList.appendChild(card);
         });
+    }
+
+    function formatCollectionNamesPlain(doc) {
+        const names = Array.isArray(doc.collectionNames) ? doc.collectionNames : [];
+        return names.length === 0 ? "未分组" : names.join("、");
     }
 
     function lifecycleHintFallback(doc) {
@@ -478,104 +492,55 @@
     }
 
     function renderTasks(tasks) {
-        tasksBody.innerHTML = "";
+        tasksList.innerHTML = "";
         if (tasks.length === 0) {
             tasksPanel.classList.add("hidden");
-            if (documentsPanel.classList.contains("hidden")) {
-                tasksEmpty.classList.remove("hidden");
-            } else {
-                tasksEmpty.classList.add("hidden");
-            }
             return;
         }
 
-        tasksEmpty.classList.add("hidden");
         tasksPanel.classList.remove("hidden");
 
-        tasks.forEach(function (task) {
-            const row = document.createElement("tr");
-            row.className = "task-row";
-
-            const statusClass = task.status === "COMPLETED"
-                ? "ready"
-                : (task.status === "FAILED" ? "failed" : "pending");
-
-            const lifecycleStatus = task.documentLifecycleStatus || "ACTIVE";
-            const lifecycleDisplay = task.documentDisplayStatus || (lifecycleStatus === "TRASHED" ? "已放入垃圾箱" : "已启用");
-            const lifecycleClass = lifecycleStatus === "TRASHED" ? "deleted" : "active";
+        tasks.slice(0, 8).forEach(function (task) {
+            const card = document.createElement("div");
+            card.className = "list-card task-list-card";
+            const statusPill = task.status === "COMPLETED" ? "success"
+                : (task.status === "FAILED" ? "danger" : "warning");
+            const stepLabel = humanizeStep(task.displayStep || task.step);
             const taskTypeDisplay = task.displayTaskType || "文档摄入";
 
-            let statusHint = "";
-            if (task.taskType === "REINDEX" || taskTypeDisplay === "重新索引") {
-                if (task.status === "COMPLETED") {
-                    statusHint = '<p class="muted">重新索引完成，新的文档片段已可用于知识库问答。处理完成后可以前往「知识库问答」页面验证。</p>';
-                } else if (task.status === "FAILED") {
-                    statusHint = '<p class="task-error muted">重新索引失败，系统会保留旧索引继续用于问答。</p>';
-                }
-            }
+            card.innerHTML =
+                '<div class="list-card-head">' +
+                '<div><h3 class="list-card-title">' + escapeHtml(task.filename || "-") + "</h3>" +
+                '<p class="list-card-hint">' + escapeHtml(stepLabel) + " · " + escapeHtml(taskTypeDisplay) + "</p></div>" +
+                '<span class="status-pill ' + statusPill + '">' + escapeHtml(task.displayStatus || task.status) + "</span></div>" +
+                '<div class="list-card-actions"></div>';
 
-            const failureHint = task.status === "FAILED" && task.errorMessage && task.taskType !== "REINDEX"
-                ? '<p class="task-error muted">处理失败：' + escapeHtml(task.errorMessage) + "</p>"
-                : "";
-
-            const techInfo = task.status === "FAILED"
-                ? '<p class="task-tech muted">错误码：' + escapeHtml(task.errorCode || "-")
-                + " · 任务 ID：" + escapeHtml(task.taskId) + "</p>"
-                : "";
-
+            const actionsEl = card.querySelector(".list-card-actions");
             const actions = [];
-            actions.push(
-                '<button type="button" class="link-button view-timeline-button" data-task-id="'
-                + escapeHtml(task.taskId) + '" data-filename="' + escapeHtml(task.filename) + '">查看处理记录</button>'
-            );
-            actions.push(
-                '<button type="button" class="link-button view-chunks-button" data-document-id="'
-                + escapeHtml(task.documentId) + '" data-filename="' + escapeHtml(task.filename) + '">查看文档片段</button>'
-            );
+            actions.push('<button type="button" class="link-button view-timeline-button">查看处理记录</button>');
             if (task.status === "FAILED" && task.taskType !== "REINDEX") {
-                actions.push(
-                    '<button type="button" class="retry-button" data-task-id="'
-                    + escapeHtml(task.taskId) + '">重新处理</button>'
-                );
+                actions.push('<button type="button" class="link-button retry-button">重新处理</button>');
             }
-            if (task.status === "COMPLETED" && lifecycleStatus !== "TRASHED" && task.documentLifecycleStatus !== "TRASHED") {
-                actions.push('<a class="ask-link" href="/ask.html">去提问</a>');
-            }
-            if (task.canDelete === true || (task.canDelete !== false && lifecycleStatus === "ACTIVE")) {
-                actions.push(
-                    '<button type="button" class="delete-button" data-document-id="'
-                    + escapeHtml(task.documentId) + '" data-filename="' + escapeHtml(task.filename) + '">删除文档</button>'
-                );
-            } else if (lifecycleStatus === "TRASHED") {
-                actions.push('<span class="muted deleted-label">垃圾箱</span>');
-            }
-            if (task.canReindex === true) {
-                actions.push(
-                    '<button type="button" class="reindex-button" data-document-id="'
-                    + escapeHtml(task.documentId) + '" data-filename="' + escapeHtml(task.filename) + '">重新建立索引</button>'
-                );
-            } else if (task.reindexDisabledReason) {
-                actions.push(
-                    '<span class="muted reindex-disabled" title="' + escapeHtml(task.reindexDisabledReason) + '">'
-                    + escapeHtml(task.reindexDisabledReason) + "</span>"
-                );
-            }
+            actions.forEach(function (html) {
+                const w = document.createElement("span");
+                w.innerHTML = html;
+                while (w.firstChild) actionsEl.appendChild(w.firstChild);
+            });
 
-            row.innerHTML =
-                "<td>" + escapeHtml(task.filename || "-") + statusHint + failureHint + techInfo + "</td>" +
-                '<td><span class="status-badge ' + lifecycleClass + '">' + escapeHtml(lifecycleDisplay) + "</span></td>" +
-                "<td>" + escapeHtml(taskTypeDisplay) + "</td>" +
-                '<td><span class="status-badge ' + statusClass + '">' + escapeHtml(task.displayStatus || task.status) + "</span></td>" +
-                "<td>" + escapeHtml(task.displayStep || task.step || "-") + "</td>" +
-                "<td>" + escapeHtml(task.chunkCount) + "</td>" +
-                "<td>" + escapeHtml(task.embeddingCount) + "</td>" +
-                "<td>" + escapeHtml(task.vectorWriteCount) + "</td>" +
-                "<td>" + escapeHtml(formatDate(task.updatedAt)) + "</td>" +
-                '<td class="task-actions">' + actions.join(" ") + "</td>";
-
-            bindTaskRowActions(row, task);
-            tasksBody.appendChild(row);
+            bindTaskRowActions(card, task);
+            tasksList.appendChild(card);
         });
+    }
+
+    function humanizeStep(step) {
+        if (!step) return "处理中";
+        var s = String(step).toUpperCase();
+        if (s.indexOf("CHUNK") >= 0) return "正在切分文本";
+        if (s.indexOf("EMBED") >= 0) return "正在生成向量";
+        if (s.indexOf("INDEX") >= 0 || s.indexOf("VECTOR") >= 0) return "正在写入索引";
+        if (s.indexOf("COMPLETE") >= 0) return "已建立索引";
+        if (s.indexOf("FAIL") >= 0) return "处理失败";
+        return "正在处理";
     }
 
     function bindTaskRowActions(row, task) {
@@ -674,7 +639,9 @@
 
             const headline = document.createElement("div");
             headline.className = "timeline-headline";
-            headline.textContent = event.displayMessage || "处理步骤更新";
+            headline.textContent = event.displayMessage || (
+                event.eventType === "REINDEX_COMPLETED" ? REINDEX_COMPLETE_HINT : "处理步骤更新"
+            );
             item.appendChild(headline);
 
             const meta = document.createElement("div");
@@ -758,7 +725,7 @@
         } catch (networkError) {
             showError({
                 code: "NETWORK_ERROR",
-                message: "重新索引失败，请稍后重试。",
+                message: "重新索引失败，系统会保留旧索引继续用于问答。请稍后重试。",
                 traceId: "-",
                 documentId: documentId
             });
@@ -917,19 +884,19 @@
     }
 
     function clearError() {
-        errorStatus.classList.remove("visible");
-        errorCode.textContent = "";
+        errorStatus.classList.add("hidden");
+        if (errorCode) errorCode.textContent = "";
         errorMessage.textContent = "";
-        errorTraceId.textContent = "";
-        errorDocumentId.textContent = "";
+        if (errorTraceId) errorTraceId.textContent = "";
+        if (errorDocumentId) errorDocumentId.textContent = "";
     }
 
     function showError(error) {
-        errorCode.textContent = error.code || "UNKNOWN";
-        errorMessage.textContent = error.message || "删除失败，请查看错误原因。";
-        errorTraceId.textContent = error.traceId || "-";
-        errorDocumentId.textContent = error.documentId != null ? String(error.documentId) : "-";
-        errorStatus.classList.add("visible");
+        if (errorCode) errorCode.textContent = error.code || "UNKNOWN";
+        errorMessage.textContent = error.message || "操作失败，请查看错误原因。";
+        if (errorTraceId) errorTraceId.textContent = error.traceId || "-";
+        if (errorDocumentId) errorDocumentId.textContent = error.documentId != null ? String(error.documentId) : "-";
+        errorStatus.classList.remove("hidden");
     }
 
     function extractError(payload, status, documentId) {

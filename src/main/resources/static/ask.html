@@ -3,171 +3,128 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>知识库问答</title>
-    <link rel="stylesheet" href="/app.css">
+    <title>知识库问答 · MindWeaver</title>
+    <link rel="stylesheet" href="/mindweaver.css?v=mw-ivory-app-shell-v1">
+    <link rel="stylesheet" href="/app-shell.css?v=mw-compat-v1">
     <link rel="stylesheet" href="/ask.css">
 </head>
-<body>
-<div class="page">
-    <nav id="app-nav-mount" data-active="ask"></nav>
-    <script src="/app-nav.js"></script>
+<body class="mw-page" data-page="ask">
+<div class="mw-app-shell app-shell">
+    <aside id="app-sidebar-mount" data-active="ask" aria-label="主导航"></aside>
+    <main class="mw-main-panel main-panel">
+        <div class="mw-page-content content-container">
+            <header class="mw-page-header page-header">
+                <div>
+                    <h1 class="mw-page-title page-title">知识库问答</h1>
+                    <p class="mw-page-description page-subtitle">选择知识库并提问，MindWeaver 会结合检索片段生成可追溯回答。</p>
+                </div>
+            </header>
 
-    <header class="hero">
-        <h1>知识库问答</h1>
-        <p class="lead">基于已摄入文档提问，系统返回带引用来源的回答，帮助核对来源、降低幻觉风险。</p>
-    </header>
+            <section class="mw-card card form-card">
+                <h2 class="mw-card-title">提出你的问题</h2>
+                <div class="form-field mw-field">
+                    <label class="mw-label" for="scope-select">问答范围</label>
+                    <select class="mw-select" id="scope-select"><option value="">全部文档</option></select>
+                </div>
+                <p id="scope-hint" class="muted" style="font-size:0.84rem;margin:6px 0 14px">垃圾箱中的文档不会再进入回答引用；旧版本片段不会再进入回答引用。</p>
+                <div class="form-field mw-field">
+                    <label class="mw-label" for="query-input">您的问题</label>
+                    <textarea class="mw-textarea" id="query-input" placeholder="输入与知识库相关的问题" style="min-height:140px"></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="mw-field">
+                        <label class="mw-label" for="topk-input">Top K</label>
+                        <input class="mw-input" id="topk-input" type="number" min="1" max="10" value="5">
+                    </div>
+                    <div class="mw-field">
+                        <label class="mw-label" for="quality-mode-select">评分模式</label>
+                        <select class="mw-select" id="quality-mode-select">
+                            <option value="BALANCED">平衡模式</option>
+                            <option value="PRECISE">精准模式</option>
+                            <option value="COMPREHENSIVE">全面模式</option>
+                        </select>
+                    </div>
+                    <button id="ask-button" type="button" class="mw-button mw-button-primary primary-button">开始提问</button>
+                </div>
+                <div class="action-row" style="justify-content:flex-start;margin-top:16px">
+                    <a href="/documents.html" class="mw-button mw-button-secondary secondary-button" style="display:inline-flex;text-decoration:none">去上传文档</a>
+                    <a href="/agent-tasks.html" class="mw-button mw-button-secondary secondary-button" style="display:inline-flex;text-decoration:none">AI 任务</a>
+                </div>
+                <details class="technical-details" style="margin-top:14px">
+                    <summary>查看技术详情</summary>
+                    <p class="muted" style="font-size:0.86rem;margin:8px 0 0">知识库生命周期过滤说明：只会使用「已启用」文档；垃圾箱中的文档不会再进入回答引用；最新有效的文档片段才会进入回答引用。旧版本片段不会再进入回答引用。文档处理分析可在 ingestion-analytics 查看。</p>
+                </details>
+                <div id="loading-status" class="status loading hidden">正在生成回答…</div>
+                <div id="error-status" class="error-card hidden" role="alert">
+                    <strong>提问失败</strong>
+                    <p style="margin:4px 0 0"><span id="error-code"></span> <span id="error-message"></span></p>
+                </div>
+            </section>
 
-    <section class="panel lifecycle-hint" aria-labelledby="ask-agent-hint-title">
-        <h2 id="ask-agent-hint-title">知识库问答 vs AI 任务</h2>
-        <ul class="lifecycle-list">
-            <li><strong>知识库问答</strong>适合即时提问，快速查看回答与引用来源。</li>
-            <li><strong>AI 任务</strong>适合生成较完整的分析结果、总结和建议，并查看执行过程。请前往 <a href="/agent-tasks.html">AI 任务</a>。</li>
-        </ul>
-    </section>
+            <section id="answer-section" class="mw-card card hidden">
+                <h2 class="mw-card-title">回答</h2>
+                <div id="answer-content" class="answer-box"></div>
+                <details class="technical-details hidden" id="answer-tech-details">
+                    <summary>查看技术详情</summary>
+                    <dl id="answer-summary" class="summary-dl answer-summary"></dl>
+                </details>
+            </section>
 
-    <section class="panel lifecycle-hint" aria-labelledby="ask-lifecycle-title">
-        <h2 id="ask-lifecycle-title">知识库生命周期过滤说明</h2>
-        <ul class="lifecycle-list">
-            <li>知识库问答<strong>只会使用「已启用」的文档</strong>；垃圾箱中的文档不会再进入回答引用。</li>
-            <li>重新建立索引后，系统<strong>只会使用最新有效的文档片段</strong>（当前索引版本）。</li>
-            <li><strong>旧版本片段</strong>（已被新索引替代）不会再进入回答引用，即使底层向量尚未物理删除。</li>
-            <li>如需管理文档状态，请前往 <a href="/documents.html">文档管理</a> 进行删除或重新建立索引。</li>
-            <li>处理异常时可查看 <a href="/ingestion-analytics.html">文档处理分析</a>。</li>
-        </ul>
-    </section>
+            <section id="citations-section" class="mw-card card hidden">
+                <h2 class="mw-card-title">引用来源</h2>
+                <p class="muted" style="font-size:0.86rem">检索引用（Citation）— 核对答案依据。</p>
+                <p id="citations-empty" class="muted hidden">暂无引用来源。</p>
+                <ul id="citations-list" class="citation-list"></ul>
+            </section>
 
-    <section class="panel quick-start" aria-labelledby="upload-to-ask-title">
-        <h2 id="upload-to-ask-title">上传文档后提问（Upload-to-Ask）</h2>
-        <ol>
-            <li>前往 <a href="/documents.html">文档管理</a> 页面上传文档。</li>
-            <li>等待处理状态变为「已完成」（系统会异步完成切块、向量生成与知识库索引写入）。</li>
-            <li>回到本页「知识库问答」，输入与文档相关的问题。</li>
-            <li>查看答案与引用来源，必要时展开「查看技术详情」。</li>
-        </ol>
-        <p>
-            <a class="button-link" href="/documents.html">去上传文档</a>
-            <a class="button-link secondary" href="/documents.html">查看文档管理</a>
-        </p>
-    </section>
+            <section id="quality-section" class="mw-card card hidden">
+                <h2 id="rag-quality-section" class="mw-card-title">回答质量评分</h2>
+                <div class="quality-score-card">
+                    <div class="quality-overall">
+                        <span class="quality-overall-label">综合评分</span>
+                        <span id="quality-overall-score" class="quality-overall-value">-</span>
+                        <span class="quality-overall-suffix">/ 100</span>
+                    </div>
+                    <div class="quality-overall-meta">
+                        <span id="quality-overall-level" class="mw-badge status-pill">-</span>
+                        <span id="quality-mode-label" class="muted">平衡模式</span>
+                    </div>
+                </div>
+                <dl id="quality-dimensions" class="summary-dl quality-dimensions">
+                    <dt>检索质量</dt><dd id="quality-retrieval-score">-</dd>
+                    <dt>上下文质量</dt><dd id="quality-context-score">-</dd>
+                    <dt>回答质量</dt><dd id="quality-answer-score">-</dd>
+                    <dt>引用质量</dt><dd id="quality-citation-score">-</dd>
+                </dl>
+                <h3 style="font-size:0.92rem;margin:16px 0 8px">主要扣分原因</h3>
+                <ul id="quality-issues" class="quality-list"></ul>
+                <p id="quality-issues-empty" class="muted hidden">暂无显著扣分项。</p>
+                <h3 style="font-size:0.92rem;margin:16px 0 8px">优化建议</h3>
+                <ul id="quality-suggestions" class="quality-list"></ul>
+                <p id="quality-suggestions-empty" class="muted hidden">暂无额外优化建议。</p>
+                <details class="technical-details">
+                    <summary>查看技术详情 · 评分</summary>
+                    <pre id="quality-metric-details"></pre>
+                </details>
+            </section>
 
-    <section class="panel" aria-labelledby="query-section-title">
-        <h2 id="query-section-title">开始提问</h2>
+            <div class="mw-two-col">
+                <section id="retrieval-section" class="mw-card card hidden">
+                    <h2 class="mw-card-title">检索信息</h2>
+                    <dl id="retrieval-summary" class="summary-dl"></dl>
+                    <details class="technical-details"><summary>查看技术详情 · 检索</summary><pre id="retrieval-metadata"></pre></details>
+                </section>
 
-        <div class="form-row scope-row">
-            <div class="scope-field">
-                <label for="scope-select">问答范围</label>
-                <select id="scope-select">
-                    <option value="">全部文档</option>
-                </select>
-                <p id="scope-hint" class="muted scope-hint">当前回答只基于所选分组中的文档。垃圾箱中的文档不会进入回答引用；旧版本片段不会进入回答引用。</p>
+                <section id="generation-section" class="mw-card card hidden">
+                    <h2 class="mw-card-title">生成信息</h2>
+                    <dl id="generation-summary" class="summary-dl"></dl>
+                    <details class="technical-details"><summary>查看技术详情 · 生成</summary><pre id="generation-metadata"></pre></details>
+                </section>
             </div>
         </div>
-
-        <label for="query-input">您的问题</label>
-        <textarea id="query-input" placeholder="例如：Embedding Cache 的 cache key 由哪些字段组成？"></textarea>
-
-        <div class="form-row">
-            <div>
-                <label for="topk-input">检索条数（Top K）</label>
-                <input id="topk-input" type="number" min="1" max="10" value="5">
-            </div>
-            <div>
-                <label for="quality-mode-select">评分模式</label>
-                <select id="quality-mode-select">
-                    <option value="BALANCED">平衡模式</option>
-                    <option value="PRECISE">精准模式</option>
-                    <option value="COMPREHENSIVE">全面模式</option>
-                </select>
-            </div>
-            <button id="ask-button" type="button">开始提问</button>
-        </div>
-
-        <div class="suggested-questions">
-            <h3>推荐问题</h3>
-            <div id="suggestion-chips" class="suggestion-chips"></div>
-        </div>
-
-        <div id="loading-status" class="status loading" role="status" aria-live="polite">
-            正在检索文档并生成回答，请稍候…
-        </div>
-
-        <div id="error-status" class="status error" role="alert" aria-live="assertive">
-            <dl>
-                <dt>错误</dt>
-                <dd id="error-code"></dd>
-                <dd id="error-message"></dd>
-                <dd id="error-trace-id"></dd>
-            </dl>
-        </div>
-    </section>
-
-    <section id="quality-section" class="panel hidden" aria-labelledby="quality-section-title">
-        <h2 id="quality-section-title">回答质量评分</h2>
-        <p class="muted">综合评分基于检索、上下文、回答与引用四个维度，帮助识别主要扣分原因与可执行优化建议。</p>
-        <div class="quality-score-card">
-            <div class="quality-overall">
-                <span class="quality-overall-label">综合评分</span>
-                <span id="quality-overall-score" class="quality-overall-value">-</span>
-                <span class="quality-overall-suffix">/ 100</span>
-            </div>
-            <div class="quality-overall-meta">
-                <span id="quality-overall-level" class="quality-level-badge">-</span>
-                <span id="quality-mode-label" class="quality-mode-label">平衡模式</span>
-            </div>
-        </div>
-        <dl id="quality-dimensions" class="summary-dl quality-dimensions">
-            <dt>检索质量</dt><dd id="quality-retrieval-score">-</dd>
-            <dt>上下文质量</dt><dd id="quality-context-score">-</dd>
-            <dt>回答质量</dt><dd id="quality-answer-score">-</dd>
-            <dt>引用质量</dt><dd id="quality-citation-score">-</dd>
-        </dl>
-        <div class="quality-diagnosis">
-            <h3>主要扣分原因</h3>
-            <ul id="quality-issues" class="quality-list"></ul>
-            <p id="quality-issues-empty" class="empty-state hidden">暂无显著扣分项。</p>
-            <h3>优化建议</h3>
-            <ul id="quality-suggestions" class="quality-list"></ul>
-            <p id="quality-suggestions-empty" class="empty-state hidden">暂无额外优化建议。</p>
-        </div>
-        <details class="tech-details">
-            <summary>查看技术详情 · 评分</summary>
-            <pre id="quality-metric-details"></pre>
-        </details>
-    </section>
-
-    <section id="answer-section" class="panel hidden" aria-labelledby="answer-section-title">
-        <h2 id="answer-section-title">回答</h2>
-        <p id="answer-scope-label" class="muted hidden"></p>
-        <dl id="answer-summary" class="summary-dl answer-summary hidden"></dl>
-        <div id="answer-content" class="answer-box"></div>
-    </section>
-
-    <section id="citations-section" class="panel hidden" aria-labelledby="citations-section-title">
-        <h2 id="citations-section-title">引用来源</h2>
-        <p class="muted">检索引用（Citation）— 点击片段可核对答案依据。</p>
-        <p id="citations-empty" class="empty-state hidden">暂无引用来源。</p>
-        <ul id="citations-list" class="citation-list"></ul>
-    </section>
-
-    <section id="retrieval-section" class="panel hidden" aria-labelledby="retrieval-section-title">
-        <h2 id="retrieval-section-title">检索信息</h2>
-        <dl id="retrieval-summary" class="summary-dl"></dl>
-        <details class="tech-details">
-            <summary>查看技术详情 · 检索</summary>
-            <pre id="retrieval-metadata"></pre>
-        </details>
-    </section>
-
-    <section id="generation-section" class="panel hidden" aria-labelledby="generation-section-title">
-        <h2 id="generation-section-title">生成信息</h2>
-        <dl id="generation-summary" class="summary-dl"></dl>
-        <details class="tech-details">
-            <summary>查看技术详情 · 生成</summary>
-            <pre id="generation-metadata"></pre>
-        </details>
-    </section>
+    </main>
 </div>
-
+<script src="/app-nav.js"></script>
 <script src="/ask.js"></script>
 </body>
 </html>

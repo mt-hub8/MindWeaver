@@ -3,105 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>系统设置</title>
-    <link rel="stylesheet" href="/app.css">
+    <title>系统设置 · MindWeaver</title>
+    <link rel="stylesheet" href="/mindweaver.css?v=mw-ivory-app-shell-v1">
+    <link rel="stylesheet" href="/app-shell.css?v=mw-compat-v1">
 </head>
-<body>
-<div class="page">
-    <nav id="app-nav-mount" data-active="settings"></nav>
-    <script src="/app-nav.js"></script>
+<body class="mw-page" data-page="settings">
+<div class="mw-app-shell app-shell">
+    <aside id="app-sidebar-mount" data-active="settings" aria-label="主导航"></aside>
+    <main class="mw-main-panel main-panel">
+        <div class="mw-page-content content-container">
+            <header class="mw-page-header page-header">
+                <div>
+                    <h1 class="mw-page-title page-title">系统设置</h1>
+                    <p class="mw-page-description page-subtitle">调整 MindWeaver 的本地工作区、数据存储、显示偏好和系统行为。</p>
+                </div>
+            </header>
 
-    <header class="hero">
-        <h1>系统设置</h1>
-        <p class="lead">只读展示当前运行环境与本地数据目录规划。本阶段不迁移数据、不修改系统配置。</p>
-    </header>
+            <section class="mw-card card">
+                <h2 class="mw-card-title">工作区设置</h2>
+                <div class="setting-group">
+                    <div class="setting-row">
+                        <div><div class="setting-row-label">产品名称</div></div>
+                        <div class="setting-row-value">MindWeaver</div>
+                    </div>
+                    <div class="setting-row">
+                        <div><div class="setting-row-label">当前运行模式</div></div>
+                        <div class="setting-row-value" id="settings-active-profile">加载中…</div>
+                    </div>
+                    <div class="setting-row">
+                        <div><div class="setting-row-label">项目路径</div></div>
+                        <div class="setting-row-value" id="settings-project-path">—</div>
+                    </div>
+                </div>
+            </section>
 
-    <section class="panel">
-        <h2>产品信息</h2>
-        <dl class="summary-dl">
-            <dt>产品名称</dt>
-            <dd>Personal AI Knowledge Workspace / 个人 AI 知识工作台</dd>
-            <dt>当前运行模式</dt>
-            <dd id="settings-active-profile">加载中…</dd>
-        </dl>
-    </section>
+            <section class="mw-card card">
+                <h2 class="mw-card-title">本地数据目录</h2>
+                <div class="setting-row">
+                    <div>
+                        <div class="setting-row-label">建议目录</div>
+                        <div class="setting-row-desc">Windows 规划路径</div>
+                    </div>
+                    <div class="setting-row-value"><code>%APPDATA%\PersonalAIKnowledgeWorkspace\</code></div>
+                </div>
+                <details class="technical-details" style="margin-top:12px">
+                    <summary>查看技术详情</summary>
+                    <div class="setting-group">
+                        <div class="setting-row"><div class="setting-row-label">向量库</div><div class="setting-row-value" id="settings-vector-store">—</div></div>
+                        <div class="setting-row"><div class="setting-row-label">Python Worker</div><div class="setting-row-value" id="settings-python-worker">—</div></div>
+                        <div class="setting-row"><div class="setting-row-label">Ollama</div><div class="setting-row-value" id="settings-ollama">—</div></div>
+                    </div>
+                </details>
+            </section>
 
-    <section class="panel">
-        <h2>本地数据目录</h2>
-        <p>建议的 Windows 本地数据目录（规划）：</p>
-        <pre class="path-box">%APPDATA%\PersonalAIKnowledgeWorkspace\</pre>
-        <p class="muted">
-            当前开发模式仍使用项目配置的数据库、Qdrant 和 Python Worker。
-            后续本地单用户模式会逐步迁移到统一数据目录。本阶段不实际迁移数据。
-        </p>
-    </section>
+            <section class="mw-card card">
+                <h2 class="mw-card-title">数据与缓存 · 存储空间</h2>
+                <div class="setting-group">
+                    <div class="setting-row"><div class="setting-row-label">原始文件</div><div class="setting-row-value" id="storage-original">加载中…</div></div>
+                    <div class="setting-row"><div class="setting-row-label">解析文本</div><div class="setting-row-value" id="storage-extracted">加载中…</div></div>
+                    <div class="setting-row"><div class="setting-row-label">文本片段</div><div class="setting-row-value" id="storage-chunks">加载中…</div></div>
+                    <div class="setting-row"><div class="setting-row-label">向量索引</div><div class="setting-row-value" id="storage-vectors">加载中…</div></div>
+                    <div class="setting-row"><div class="setting-row-label">Embedding 缓存</div><div class="setting-row-value" id="storage-embedding-cache">加载中…</div></div>
+                    <div class="setting-row"><div class="setting-row-label">总占用估算</div><div class="setting-row-value" id="storage-total">加载中…</div></div>
+                </div>
+            </section>
 
-    <section class="panel">
-        <h2>运行时组件</h2>
-        <dl class="summary-dl" id="runtime-summary">
-            <dt>项目路径</dt>
-            <dd id="settings-project-path">-</dd>
-            <dt>当前数据库模式</dt>
-            <dd>MySQL（Flyway 管理，见 application.properties）</dd>
-            <dt>当前向量库模式</dt>
-            <dd id="settings-vector-store">-</dd>
-            <dt>当前 Python Worker 地址</dt>
-            <dd id="settings-python-worker">-</dd>
-            <dt>当前 Ollama 地址</dt>
-            <dd id="settings-ollama">-</dd>
-        </dl>
-    </section>
+            <section class="mw-card card">
+                <h2 class="mw-card-title">缓存管理</h2>
+                <p class="muted" style="font-size:0.88rem;margin:0 0 16px">清理缓存不会删除原始文档和知识库记录，但可能导致下次处理变慢。</p>
+                <div class="setting-row">
+                    <div><div class="setting-row-label">Embedding Cache</div></div>
+                    <button type="button" class="mw-button mw-button-secondary secondary-button" id="clear-embedding-cache-btn">清理缓存</button>
+                </div>
+                <div class="setting-row">
+                    <div><div class="setting-row-label">Retrieval Cache</div></div>
+                    <button type="button" class="mw-button mw-button-secondary secondary-button" id="clear-retrieval-cache-btn">清理缓存</button>
+                </div>
+                <div class="setting-row">
+                    <div><div class="setting-row-label">全部可重建缓存</div></div>
+                    <button type="button" class="mw-button mw-button-primary primary-button" id="clear-all-cache-btn">清理全部</button>
+                </div>
+                <p id="cache-action-result" class="muted hidden" style="margin-top:12px"></p>
+            </section>
 
-    <section class="panel">
-        <h2>存储空间</h2>
-        <dl class="summary-dl" id="storage-summary">
-            <dt>原始文件占用</dt><dd id="storage-original">加载中…</dd>
-            <dt>解析文本占用</dt><dd id="storage-extracted">加载中…</dd>
-            <dt>文本片段记录数</dt><dd id="storage-chunks">加载中…</dd>
-            <dt>向量记录</dt><dd id="storage-vectors">加载中…</dd>
-            <dt>Embedding 缓存</dt><dd id="storage-embedding-cache">加载中…</dd>
-            <dt>总占用估算</dt><dd id="storage-total">加载中…</dd>
-        </dl>
-        <p class="muted">部分数据（如 Qdrant 向量）可能显示为「由 Qdrant 管理」或「暂无法完整统计」，不会伪造占用数值。</p>
-    </section>
-
-    <section class="panel">
-        <h2>缓存管理</h2>
-        <p class="muted">清理缓存不会删除原始文档和知识库记录，但可能导致下次处理变慢。缓存可以重新生成。</p>
-        <div class="settings-actions">
-            <button type="button" id="clear-embedding-cache-btn">清理 Embedding Cache</button>
-            <button type="button" id="clear-retrieval-cache-btn">清理 Retrieval Cache</button>
-            <button type="button" id="clear-all-cache-btn">清理全部可重建缓存</button>
+            <section class="mw-card card">
+                <h2 class="mw-card-title">显示偏好</h2>
+                <div class="setting-row">
+                    <div>
+                        <div class="setting-row-label">界面主题</div>
+                        <div class="setting-row-desc">当前为暖色浅色主题（MindWeaver 默认）</div>
+                    </div>
+                    <div class="setting-row-value">暖色浅色</div>
+                </div>
+            </section>
         </div>
-        <p id="cache-action-result" class="muted hidden"></p>
-    </section>
-
-    <section class="panel">
-        <h2>垃圾箱与数据生命周期</h2>
-        <ul class="lifecycle-list">
-            <li><strong>ACTIVE</strong> → <strong>TRASHED</strong> → <strong>PURGED</strong>：删除后进入垃圾箱，7 天内可恢复。</li>
-            <li>永久删除会清理原始文本、片段、向量与相关缓存。</li>
-            <li>前往 <a href="/trash.html">垃圾箱</a> 管理已删除文档。</li>
-        </ul>
-    </section>
-
-    <section class="panel">
-        <h2>日志与说明</h2>
-        <ul class="lifecycle-list">
-            <li><strong>日志</strong>：Spring Boot 默认输出到控制台；生产部署时可配置 logging.file.name。</li>
-            <li><strong>Embedding 缓存</strong>：相同文档片段不重复计算向量，可在上方清理缓存。</li>
-        </ul>
-    </section>
-
-    <section class="panel">
-        <h2>相关入口</h2>
-        <p>
-            <a class="button-link" href="/model-settings.html">模型设置</a>
-            <a class="button-link secondary" href="/">返回首页</a>
-        </p>
-    </section>
+    </main>
 </div>
-
+<script src="/app-nav.js"></script>
 <script src="/settings.js"></script>
 </body>
 </html>

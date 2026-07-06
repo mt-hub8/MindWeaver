@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>使用指南 · MindWeaver</title>
+    <link rel="stylesheet" href="/mindweaver.css?v=mw-ivory-app-shell-v1">
+    <link rel="stylesheet" href="/app-shell.css?v=mw-compat-v1">
+</head>
+<body class="mw-page" data-page="guide">
+<div class="mw-app-shell app-shell">
+    <aside id="app-sidebar-mount" data-active="guide" aria-label="主导航"></aside>
+    <main class="mw-main-panel main-panel">
+        <div class="mw-page-content content-container">
+            <header class="mw-page-header page-header">
+                <div>
+                    <h1 class="mw-page-title page-title">使用指南</h1>
+                    <p class="mw-page-description page-subtitle">从上传文档到知识库问答，再到 AI 任务和质量诊断，快速了解 MindWeaver 的使用流程。个人 AI 知识工作台 · Personal AI Knowledge Workspace</p>
+                </div>
+            </header>
+
+            <section class="mw-card card">
+                <h2 class="mw-card-title">快速开始</h2>
+                <div class="mw-guide-steps">
+                    <a class="mw-guide-step" href="/documents.html"><span class="step-num">1</span><strong>上传文档</strong><span>建立知识库</span></a>
+                    <a class="mw-guide-step" href="/collections.html"><span class="step-num">2</span><strong>创建分组</strong><span>组织范围</span></a>
+                    <a class="mw-guide-step" href="/ask.html"><span class="step-num">3</span><strong>开始问答</strong><span>可追溯回答</span></a>
+                    <a class="mw-guide-step" href="/quality.html"><span class="step-num">4</span><strong>查看质量</strong><span>诊断 RAG</span></a>
+                    <a class="mw-guide-step" href="/agent-tasks.html"><span class="step-num">5</span><strong>创建任务</strong><span>AI 报告</span></a>
+                </div>
+            </section>
+
+            <section class="mw-card card">
+                <h2 class="mw-card-title">功能说明</h2>
+                <div class="mw-grid-3 entity-grid">
+                    <div class="entity-card">
+                        <h3 class="entity-card-title">文档管理</h3>
+                        <p class="entity-card-hint">上传并索引本地文档，查看处理状态与片段。</p>
+                        <a href="/documents.html" class="card-cta">了解更多 →</a>
+                    </div>
+                    <div class="entity-card">
+                        <h3 class="entity-card-title">知识库分组</h3>
+                        <p class="entity-card-hint">按主题组织文档，限定问答与任务范围。</p>
+                        <a href="/collections.html" class="card-cta">了解更多 →</a>
+                    </div>
+                    <div class="entity-card">
+                        <h3 class="entity-card-title">知识库问答</h3>
+                        <p class="entity-card-hint">基于检索片段生成带引用的回答。</p>
+                        <a href="/ask.html" class="card-cta">了解更多 →</a>
+                    </div>
+                    <div class="entity-card">
+                        <h3 class="entity-card-title">AI 任务</h3>
+                        <p class="entity-card-hint">多步骤检索与工具调用，输出结构化报告。</p>
+                        <a href="/agent-tasks.html" class="card-cta">了解更多 →</a>
+                    </div>
+                    <div class="entity-card">
+                        <h3 class="entity-card-title">模型设置</h3>
+                        <p class="entity-card-hint">配置 LLM 与 Embedding 供应商。</p>
+                        <a href="/model-settings.html" class="card-cta">了解更多 →</a>
+                    </div>
+                    <div class="entity-card">
+                        <h3 class="entity-card-title">质量诊断</h3>
+                        <p class="entity-card-hint">理解 RAG 评分指标与优化方向。</p>
+                        <a href="/quality.html" class="card-cta">了解更多 →</a>
+                    </div>
+                </div>
+            </section>
+
+            <div class="mw-two-col">
+                <section class="mw-card card">
+                    <h2 class="mw-card-title">常见问题</h2>
+                    <details class="technical-details" style="margin:0 0 8px">
+                        <summary>为什么问答没有结果？</summary>
+                        <p class="muted" style="margin:8px 0 0;font-size:0.88rem">请确认已上传文档且处理完成，并检查所选知识库分组内是否有可用文档。</p>
+                    </details>
+                    <details class="technical-details" style="margin:0 0 8px">
+                        <summary>为什么模型调用失败？</summary>
+                        <p class="muted" style="margin:8px 0 0;font-size:0.88rem">请在模型设置中测试连接，确认 API Key 或本地 Ollama 服务正常。</p>
+                    </details>
+                    <details class="technical-details" style="margin:0 0 8px">
+                        <summary>为什么文档处理失败？</summary>
+                        <p class="muted" style="margin:8px 0 0;font-size:0.88rem">检查文件格式与大小限制，可在文档管理查看处理记录与错误详情。</p>
+                    </details>
+                    <details class="technical-details">
+                        <summary>如何提升检索质量？</summary>
+                        <p class="muted" style="margin:8px 0 0;font-size:0.88rem">优化文档切分、选择合适分组、调整 TopK，并参考质量诊断页建议。</p>
+                    </details>
+                </section>
+
+                <section class="mw-card card">
+                    <h2 class="mw-card-title">术语速览</h2>
+                    <dl class="summary-dl" style="margin:0">
+                        <dt>RAG</dt><dd>检索增强生成：先检索知识库再生成回答。</dd>
+                        <dt>Embedding</dt><dd>向量表示：将文本转为可相似度检索的向量。</dd>
+                        <dt>TopK</dt><dd>召回数量：检索时取相似度最高的 K 个片段。</dd>
+                        <dt>Recall@K</dt><dd>召回率：相关文档是否出现在前 K 个结果中。</dd>
+                        <dt>Context Precision</dt><dd>上下文精准度：送入模型的片段是否真正相关。</dd>
+                    </dl>
+                </section>
+            </div>
+
+            <details class="mw-card card technical-details">
+                <summary class="mw-card-title" style="cursor:pointer">查看技术详情</summary>
+                <p class="muted" style="margin:12px 0 0">完整手册见 <code>docs/manual/</code> 目录。</p>
+            </details>
+        </div>
+    </main>
+</div>
+<script src="/app-nav.js"></script>
+</body>
+</html>

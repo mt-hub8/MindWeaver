@@ -18,7 +18,7 @@
 
     const tasksEmpty = document.getElementById("tasks-empty");
     const tasksPanel = document.getElementById("tasks-panel");
-    const tasksBody = document.getElementById("tasks-body");
+    const tasksList = document.getElementById("tasks-list");
 
     const detailPanel = document.getElementById("detail-panel");
     const detailTitle = document.getElementById("detail-title");
@@ -80,6 +80,7 @@
     }
 
     function renderTools(tools) {
+        if (!toolsList) return;
         toolsList.innerHTML = "";
         if (tools.length === 0) {
             toolsEmpty.classList.remove("hidden");
@@ -199,12 +200,10 @@
     }
 
     function renderTasks(tasks) {
-        tasksBody.innerHTML = "";
+        tasksList.innerHTML = "";
         if (tasks.length === 0) {
             tasksPanel.classList.add("hidden");
-            if (!detailPanel.classList.contains("hidden")) {
-                tasksEmpty.classList.add("hidden");
-            } else {
+            if (detailPanel.classList.contains("hidden")) {
                 tasksEmpty.classList.remove("hidden");
             }
             return;
@@ -213,19 +212,20 @@
         tasksPanel.classList.remove("hidden");
 
         tasks.forEach(function (task) {
-            const row = document.createElement("tr");
-            const statusClass = statusClassName(task.status);
-            row.innerHTML =
-                "<td><strong>" + escapeHtml(task.title) + "</strong></td>" +
-                '<td><span class="status-badge ' + statusClass + '">' + escapeHtml(task.displayStatus || displayStatus(task.status)) + "</span></td>" +
-                "<td>" + escapeHtml(task.collectionName || "全部文档") + "</td>" +
-                "<td>" + escapeHtml(task.citationCount != null ? task.citationCount : "-") + "</td>" +
-                "<td>" + escapeHtml(formatDate(task.createdAt)) + "</td>" +
-                '<td><button type="button" class="link-button view-detail-button">查看任务结果</button></td>';
-            row.querySelector(".view-detail-button").addEventListener("click", function () {
+            const card = document.createElement("div");
+            card.className = "list-card";
+            const pill = mapStatusPill(task.status);
+            card.innerHTML =
+                '<div class="list-card-head">' +
+                '<div><h3 class="list-card-title">' + escapeHtml(task.title) + '</h3>' +
+                '<p class="list-card-hint">' + escapeHtml(task.collectionName || "全部文档") + ' · ' + escapeHtml(formatDate(task.createdAt)) + '</p></div>' +
+                '<span class="status-pill ' + pill + '">' + escapeHtml(task.displayStatus || displayStatus(task.status)) + '</span></div>' +
+                '<div class="list-card-actions">' +
+                '<button type="button" class="link-button view-detail-button">查看详情</button></div>';
+            card.querySelector(".view-detail-button").addEventListener("click", function () {
                 showTaskDetail(task.taskId);
             });
-            tasksBody.appendChild(row);
+            tasksList.appendChild(card);
         });
     }
 
@@ -273,7 +273,9 @@
         detailTechJson.textContent = prettyJson(detail);
 
         renderSteps(Array.isArray(detail.steps) ? detail.steps : []);
-        renderToolSteps(Array.isArray(detail.steps) ? detail.steps : []);
+        if (toolStepsPanel) {
+            renderToolSteps(Array.isArray(detail.steps) ? detail.steps : []);
+        }
 
         citationsList.innerHTML = "";
         const citations = Array.isArray(detail.citations) ? detail.citations : [];
@@ -293,28 +295,34 @@
             });
         }
 
-        eventsList.innerHTML = "";
-        events.forEach(function (event) {
-            const item = document.createElement("li");
-            item.innerHTML =
-                "<strong>" + escapeHtml(event.displayEventType || event.eventType) + "</strong>" +
-                "<p>" + escapeHtml(event.displayMessage || event.message || "") + "</p>" +
-                (event.durationMs != null ? '<p class="muted">耗时: ' + escapeHtml(event.durationMs) + " ms</p>" : "");
-            eventsList.appendChild(item);
-        });
+        if (eventsList) {
+            eventsList.innerHTML = "";
+            events.forEach(function (event) {
+                const item = document.createElement("li");
+                item.innerHTML =
+                    "<strong>" + escapeHtml(event.displayEventType || event.eventType) + "</strong>" +
+                    "<p>" + escapeHtml(event.displayMessage || event.message || "") + "</p>";
+                eventsList.appendChild(item);
+            });
+        }
 
-        modelSummary.innerHTML = "";
-        renderModelSummary(detail.modelMetadata || {});
+        if (modelSummary) {
+            modelSummary.innerHTML = "";
+            renderModelSummary(detail.modelMetadata || {});
+        }
+        if (modelMetadata) {
+            modelMetadata.textContent = prettyJson(detail.modelMetadata || {});
+        }
 
-        modelMetadata.textContent = prettyJson(detail.modelMetadata || {});
-
-        if (detail.status === "FAILED" && detail.errorMessage) {
-            detailError.classList.remove("hidden");
-            detailErrorCode.textContent = detail.errorCode || "-";
-            detailErrorMessage.textContent = detail.errorMessage || "-";
-            detailTraceId.textContent = detail.traceId || "-";
-        } else {
-            detailError.classList.add("hidden");
+        if (detailError) {
+            if (detail.status === "FAILED" && detail.errorMessage) {
+                detailError.classList.remove("hidden");
+                if (detailErrorCode) detailErrorCode.textContent = detail.errorCode || "-";
+                if (detailErrorMessage) detailErrorMessage.textContent = detail.errorMessage || "-";
+                if (detailTraceId) detailTraceId.textContent = detail.traceId || "-";
+            } else {
+                detailError.classList.add("hidden");
+            }
         }
     }
 
@@ -325,24 +333,22 @@
             return;
         }
         stepsEmpty.classList.add("hidden");
-        steps.forEach(function (step) {
+        steps.forEach(function (step, index) {
             const item = document.createElement("li");
+            item.className = "step-item";
+            var duration = step.durationMs != null ? step.durationMs + " ms" : "";
             item.innerHTML =
-                "<strong>Step " + escapeHtml(step.stepOrder) + "：" +
-                escapeHtml(step.displayTitle || step.title) + " - " +
-                escapeHtml(step.displayStatus || displayStepStatus(step.status)) + "</strong>";
-            if (step.errorMessage) {
-                item.innerHTML +=
-                    '<p class="muted">错误原因：' + escapeHtml(step.errorMessage) + "</p>";
-            }
-            if (step.input || step.output) {
-                item.innerHTML +=
+                '<div class="step-number">' + escapeHtml(String(index + 1)) + '</div>' +
+                '<div class="step-body"><h4>' + escapeHtml(step.displayTitle || step.title) + '</h4>' +
+                '<p>' + escapeHtml(step.displayStatus || displayStepStatus(step.status)) +
+                (duration ? " · " + escapeHtml(duration) : "") + '</p>' +
+                (step.errorMessage ? '<p class="muted">' + escapeHtml(step.errorMessage) + '</p>' : '') +
+                ((step.input || step.output) ?
                     '<details class="tech-details"><summary>查看技术详情</summary>' +
-                    (step.input ? "<p><strong>输入</strong></p><pre>" + escapeHtml(prettyJson(step.input)) + "</pre>" : "") +
-                    (step.output ? "<p><strong>输出</strong></p><pre>" + escapeHtml(prettyJson(step.output)) + "</pre>" : "") +
-                    (step.traceId ? '<p class="muted">追踪 ID：' + escapeHtml(step.traceId) + "</p>" : "") +
-                    "</details>";
-            }
+                    (step.input ? "<pre>" + escapeHtml(prettyJson(step.input)) + "</pre>" : "") +
+                    (step.output ? "<pre>" + escapeHtml(prettyJson(step.output)) + "</pre>" : "") +
+                    "</details>" : "") +
+                '</div>';
             stepsList.appendChild(item);
         });
     }
@@ -431,6 +437,12 @@
         return map[status] || status || "-";
     }
 
+    function mapStatusPill(status) {
+        if (status === "COMPLETED" || status === "SUCCEEDED") return "success";
+        if (status === "FAILED") return "danger";
+        return "warning";
+    }
+
     function statusClassName(status) {
         if (status === "COMPLETED") {
             return "ready";
@@ -454,17 +466,17 @@
     }
 
     function clearError() {
-        errorStatus.classList.remove("visible");
-        errorCode.textContent = "";
+        errorStatus.classList.add("hidden");
+        if (errorCode) errorCode.textContent = "";
         errorMessage.textContent = "";
-        errorTraceId.textContent = "";
+        if (errorTraceId) errorTraceId.textContent = "";
     }
 
     function showError(error) {
-        errorCode.textContent = error.code || "UNKNOWN";
+        if (errorCode) errorCode.textContent = error.code || "UNKNOWN";
         errorMessage.textContent = error.message || "未知错误";
-        errorTraceId.textContent = error.traceId || "-";
-        errorStatus.classList.add("visible");
+        if (errorTraceId) errorTraceId.textContent = error.traceId || "-";
+        errorStatus.classList.remove("hidden");
     }
 
     async function parseJsonResponse(response) {

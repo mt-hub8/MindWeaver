@@ -22,6 +22,7 @@
     const answerSection = document.getElementById("answer-section");
     const answerScopeLabel = document.getElementById("answer-scope-label");
     const answerSummary = document.getElementById("answer-summary");
+    const answerTechDetails = document.getElementById("answer-tech-details");
     const answerContent = document.getElementById("answer-content");
     const citationsSection = document.getElementById("citations-section");
     const citationsEmpty = document.getElementById("citations-empty");
@@ -205,7 +206,7 @@
     }
 
     function clearError() {
-        errorStatus.classList.remove("visible");
+        errorStatus.classList.add("hidden");
         errorCode.textContent = "";
         errorMessage.textContent = "";
         errorTraceId.textContent = "";
@@ -215,7 +216,7 @@
         errorCode.textContent = "code: " + (error.code || "UNKNOWN");
         errorMessage.textContent = "message: " + (error.message || "未知错误");
         errorTraceId.textContent = "traceId: " + (error.traceId || "-");
-        errorStatus.classList.add("visible");
+        errorStatus.classList.remove("hidden");
     }
 
     function clearResults() {
@@ -228,7 +229,9 @@
         answerScopeLabel.textContent = "";
         answerScopeLabel.classList.add("hidden");
         answerSummary.innerHTML = "";
-        answerSummary.classList.add("hidden");
+        if (answerTechDetails) {
+            answerTechDetails.classList.add("hidden");
+        }
         citationsList.innerHTML = "";
         citationsEmpty.classList.add("hidden");
         retrievalSummary.innerHTML = "";
@@ -375,7 +378,9 @@
             return;
         }
         renderSummaryDl(answerSummary, items);
-        answerSummary.classList.remove("hidden");
+        if (answerTechDetails) {
+            answerTechDetails.classList.remove("hidden");
+        }
     }
 
     function buildRetrievalSummary(retrieval) {

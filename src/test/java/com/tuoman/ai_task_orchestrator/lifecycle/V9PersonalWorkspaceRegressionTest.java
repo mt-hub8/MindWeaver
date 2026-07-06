@@ -44,7 +44,7 @@ class V9PersonalWorkspaceRegressionTest {
         assertThat(appNav).contains("AI 任务");
 
         String documents = fetchUtf8("/documents.html");
-        assertThat(documents).contains("app-nav-mount");
+        assertThat(documents).contains("app-sidebar-mount");
 
         String documentsJs = fetchUtf8("/documents.js");
         assertThat(documentsJs).contains("查看技术详情");

@@ -3,143 +3,172 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>文档管理</title>
-    <link rel="stylesheet" href="/app.css">
+    <title>文档管理 · MindWeaver</title>
+    <link rel="stylesheet" href="/mindweaver.css?v=mw-layout-v2">
+    <link rel="stylesheet" href="/app-shell.css?v=mw-layout-v2">
 </head>
-<body>
-<div class="page">
-    <nav id="app-nav-mount" data-active="documents"></nav>
-    <script src="/app-nav.js"></script>
-
-    <header class="hero">
-        <h1>文档管理</h1>
-        <p class="lead">管理知识库文档的完整生命周期：上传文档、建立索引、知识库问答、重新建立索引与放入垃圾箱。垃圾箱与已永久删除的文档不会再用于问答。</p>
-    </header>
-
-    <section class="panel lifecycle-hint" aria-labelledby="lifecycle-hint-title">
-        <h2 id="lifecycle-hint-title">知识库生命周期说明</h2>
-        <ul class="lifecycle-list">
-            <li><strong>已启用</strong>：文档可用于知识库问答（索引就绪后）。</li>
-            <li><strong>垃圾箱（TRASHED）</strong>：删除文档后进入垃圾箱，7 天内可恢复，暂不参与问答。</li>
-            <li><strong>重新建立索引</strong>：复用原始文本重新切分并生成新索引；旧索引不会立即物理删除，但不会再用于后续问答。</li>
-            <li><strong>当前索引版本</strong>：问答只使用最新有效版本的文档片段；旧版本片段视为旧版本，不会进入回答引用。</li>
-        </ul>
-        <p class="muted">处理完成后可前往 <a href="/ask.html">知识库问答</a> 验证；可在 <a href="/collections.html">知识库分组</a> 管理文档归属；可查看 <a href="/ingestion-analytics.html">文档处理分析</a> 了解成功率与耗时。</p>
-    </section>
-
-    <section class="panel upload-panel" aria-labelledby="upload-title">
-        <h2 id="upload-title">上传文档</h2>
-        <p class="upload-hint">
-            支持 <strong>.txt</strong>、<strong>.md</strong>、<strong>文本型 .pdf</strong>（最大 2MB）。
-            系统会保存原始文本，便于后续重新建立索引。当前暂不支持扫描版 PDF / 图片 OCR、加密 PDF、Word / Excel。
-        </p>
-        <label for="file-input">选择文件</label>
-        <input id="file-input" type="file" accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf">
-        <div class="upload-actions">
-            <button id="upload-button" type="button">上传文档</button>
-            <button id="refresh-button" type="button">刷新列表</button>
-            <span id="upload-loading" class="status loading hidden" role="status">正在提交文档…</span>
+<body class="mw-page" data-page="documents">
+<div class="mw-app-shell app-shell">
+    <aside id="app-sidebar-mount" class="mw-sidebar" data-active="documents" aria-label="主导航">
+        <div class="mw-window-dots" aria-hidden="true">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
         </div>
-        <div id="action-success" class="success-box hidden" aria-live="polite">
-            <h3 id="action-success-title">操作成功</h3>
-            <p id="action-success-message" class="muted"></p>
-            <dl>
-                <dt>任务 ID</dt><dd id="summary-task-id"></dd>
-                <dt>文档 ID</dt><dd id="summary-document-id"></dd>
-                <dt>文件名</dt><dd id="summary-filename"></dd>
-                <dt>处理状态</dt><dd id="summary-status"></dd>
-            </dl>
-            <p class="action-links">
-                <a class="button-link secondary" href="/ask.html">去知识库问答</a>
-                <a class="button-link secondary" href="/ingestion-analytics.html">查看文档处理分析</a>
-            </p>
+
+        <div class="mw-brand">
+            <a href="/index.html">
+                <div class="mw-brand-mark" aria-hidden="true">◇</div>
+                <div>
+                    <div class="mw-brand-name">MindWeaver</div>
+                    <div class="mw-brand-subtitle">AI Knowledge Workspace</div>
+                </div>
+            </a>
         </div>
-    </section>
 
-    <div id="loading-status" class="status loading hidden" role="status" aria-live="polite">
-        正在加载文档与任务列表…
-    </div>
+        <nav class="mw-nav">
+            <a class="mw-nav-item" data-nav="overview" href="/index.html"><span class="mw-nav-icon" aria-hidden="true">◆</span><span>总览</span></a>
+            <a class="mw-nav-item active" data-nav="documents" href="/documents.html" aria-current="page"><span class="mw-nav-icon" aria-hidden="true">▤</span><span>文档管理</span></a>
+            <a class="mw-nav-item" data-nav="collections" href="/collections.html"><span class="mw-nav-icon" aria-hidden="true">▦</span><span>知识库分组</span></a>
+            <a class="mw-nav-item" data-nav="ask" href="/ask.html"><span class="mw-nav-icon" aria-hidden="true">◎</span><span>知识库问答</span></a>
+            <a class="mw-nav-item" data-nav="agent-tasks" href="/agent-tasks.html"><span class="mw-nav-icon" aria-hidden="true">✦</span><span>AI 任务</span></a>
+            <a class="mw-nav-item" data-nav="model-settings" href="/model-settings.html"><span class="mw-nav-icon" aria-hidden="true">⚙</span><span>模型设置</span></a>
+            <a class="mw-nav-item" data-nav="quality" href="/quality.html"><span class="mw-nav-icon" aria-hidden="true">◇</span><span>质量诊断</span></a>
+            <a class="mw-nav-item" data-nav="trash" href="/trash.html"><span class="mw-nav-icon" aria-hidden="true">⌫</span><span>垃圾箱</span></a>
+            <a class="mw-nav-item" data-nav="settings" href="/settings.html"><span class="mw-nav-icon" aria-hidden="true">◈</span><span>系统设置</span></a>
+            <a class="mw-nav-item" data-nav="guide" href="/guide.html"><span class="mw-nav-icon" aria-hidden="true">?</span><span>使用指南</span></a>
+        </nav>
 
-    <div id="error-status" class="status error" role="alert" aria-live="assertive">
-        <p><strong>操作失败，请查看错误原因。</strong></p>
-        <dl>
-            <dt>错误码</dt><dd id="error-code"></dd>
-            <dt>说明</dt><dd id="error-message"></dd>
-            <dt>追踪 ID</dt><dd id="error-trace-id"></dd>
-            <dt>文档 ID</dt><dd id="error-document-id"></dd>
-        </dl>
-        <p class="muted">可点击「查看技术详情」了解更多信息，或稍后重试。</p>
-    </div>
-
-    <p id="documents-empty" class="empty-state hidden">还没有上传任何文档。请上传 .txt、.md 或文本型 PDF，系统会自动建立知识库索引。处理完成后，你可以前往「知识库问答」页面提问。</p>
-
-    <section id="documents-panel" class="panel hidden" aria-labelledby="documents-title">
-        <div class="section-header-row">
-            <h2 id="documents-title">文档列表</h2>
-            <a class="button-link secondary" href="/ingestion-analytics.html">查看文档处理分析</a>
+        <div class="mw-workspace-card">
+            <div class="workspace-avatar" aria-hidden="true">M</div>
+            <div class="workspace-meta">
+                <div class="workspace-title">MindWeaver Workspace</div>
+                <div class="workspace-subtitle" id="sidebar-runtime-mode">本地知识库</div>
+            </div>
+            <div class="workspace-arrow" aria-hidden="true">›</div>
         </div>
-        <p class="muted">展示每个文档的生命周期状态、当前索引版本与可执行操作。删除与重新索引均会保留历史记录，不会立即物理清理底层数据。</p>
-        <table class="doc-table documents-table">
-            <thead>
-            <tr>
-                <th>文件名</th>
-                <th>所属分组</th>
-                <th>文档状态</th>
-                <th>索引状态</th>
-                <th>当前索引版本</th>
-                <th>文档片段数</th>
-                <th>重新索引次数</th>
-                <th>最近重新索引</th>
-                <th>可用于问答</th>
-                <th>操作</th>
-            </tr>
-            </thead>
-            <tbody id="documents-body"></tbody>
-        </table>
-    </section>
+    </aside>
 
-    <p id="tasks-empty" class="empty-state hidden">暂无处理任务记录。</p>
+    <main class="mw-main-panel main-panel content-container">
+        <header class="mw-page-header">
+            <div>
+                <h1 class="mw-page-title">文档管理</h1>
+                <p class="mw-page-description">上传、查看和管理进入知识库的文档，确保内容被正确切分与索引。</p>
+            </div>
+            <button class="mw-button mw-button-primary primary-button" type="button" id="uploadShortcutButton" onclick="document.getElementById('file-input').click()">上传文档</button>
+        </header>
 
-    <section id="tasks-panel" class="panel hidden" aria-labelledby="tasks-title">
-        <div class="section-header-row">
-            <h2 id="tasks-title">最近处理任务</h2>
-            <a class="button-link secondary" href="/ingestion-analytics.html">查看文档处理分析</a>
+        <div class="mw-upload-layout">
+            <section class="mw-card mw-upload-card">
+                <div class="mw-card-header">
+                    <h2 class="mw-card-title">上传文档</h2>
+                    <p class="mw-card-description">支持 .txt、.md、文本型 .pdf 等格式，上传后会自动解析、切分并建立索引。</p>
+                </div>
+
+                <div class="mw-upload-dropzone upload-zone">
+                    <p class="muted">拖拽或点击选择文件。支持 <strong>.txt</strong>、<strong>.md</strong>、<strong>文本型 .pdf</strong>（最大 2MB）</p>
+                    <p class="muted" style="font-size:0.84rem;margin-top:6px">删除文档将进入垃圾箱，7 天内可恢复。可在 <a href="/collections.html">知识库分组</a> 管理文档归属。</p>
+                    <input id="file-input" type="file" accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf">
+                </div>
+
+                <div class="action-row" style="justify-content:flex-start">
+                    <button id="upload-button" type="button" class="mw-button mw-button-primary primary-button">上传文档</button>
+                    <button id="refresh-button" type="button" class="mw-button mw-button-secondary secondary-button">刷新</button>
+                    <span id="upload-loading" class="status loading hidden" role="status">正在提交文档…</span>
+                </div>
+
+                <div id="action-success" class="success-box hidden" aria-live="polite">
+                    <h3 id="action-success-title" style="margin:0 0 8px;font-size:0.95rem">操作成功</h3>
+                    <p id="action-success-message" class="muted"></p>
+                    <p class="action-links" style="margin-top:12px">
+                        <a class="mw-button mw-button-secondary secondary-button" href="/ask.html" style="display:inline-flex;text-decoration:none">去知识库问答</a>
+                    </p>
+                </div>
+            </section>
+
+            <aside class="mw-card mw-help-card">
+                <h2 class="mw-card-title">文档管理小贴士</h2>
+                <ul>
+                    <li>结构清晰的文档更适合用于知识库问答。</li>
+                    <li>索引完成后，文档才会参与检索。</li>
+                    <li>可将文档加入分组，提升问答范围控制能力。</li>
+                    <li>处理失败时可查看处理记录并重新建立索引。</li>
+                </ul>
+            </aside>
         </div>
-        <p class="muted">页面每 3 秒自动刷新处理状态。可点击「查看处理记录」查看任务时间线（含删除、重新索引相关事件）。失败任务可点击「重新处理」。</p>
-        <table class="doc-table ingestion-table">
-            <thead>
-            <tr>
-                <th>文件名</th>
-                <th>文档状态</th>
-                <th>任务类型</th>
-                <th>处理状态</th>
-                <th>当前步骤</th>
-                <th>文档片段数</th>
-                <th>向量数</th>
-                <th>索引写入数</th>
-                <th>更新时间</th>
-                <th>操作</th>
-            </tr>
-            </thead>
-            <tbody id="tasks-body"></tbody>
-        </table>
-    </section>
 
-    <section id="timeline-panel" class="panel hidden" aria-labelledby="timeline-title">
-        <h2 id="timeline-title">处理记录 · 任务时间线</h2>
-        <p class="muted">按时间顺序展示文档摄入、重新索引各步骤、耗时与错误原因。主展示为中文说明；技术详情包含事件类型、步骤、追踪 ID 等。</p>
-        <p id="timeline-empty" class="empty-state hidden">暂无处理记录。</p>
-        <ol id="timeline-list" class="timeline-list"></ol>
-    </section>
+        <div id="loading-status" class="status loading hidden" role="status">正在加载文档…</div>
 
-    <section id="chunks-panel" class="panel hidden" aria-labelledby="chunks-title">
-        <h2 id="chunks-title">文档片段（当前索引版本）</h2>
-        <p class="muted">仅展示当前有效索引版本的文档片段；旧版本片段不会再用于知识库问答。</p>
-        <p id="chunks-empty" class="empty-state hidden">该文档暂无文档片段。</p>
-        <ul id="chunks-list" class="chunk-list"></ul>
-    </section>
+        <div id="error-status" class="error-card hidden" role="alert">
+            <strong>操作失败</strong>
+            <p id="error-message" style="margin:4px 0 0"></p>
+            <details class="technical-details" style="margin-top:10px">
+                <summary>查看技术详情</summary>
+                <dl style="margin:8px 0 0;font-size:0.84rem">
+                    <dt>错误码</dt><dd id="error-code"></dd>
+                    <dt>追踪 ID</dt><dd id="error-trace-id"></dd>
+                    <dt>文档 ID</dt><dd id="error-document-id"></dd>
+                </dl>
+            </details>
+        </div>
+
+        <div id="documents-empty" class="mw-empty-state empty-state hidden">
+            <div class="empty-state-icon" aria-hidden="true">📄</div>
+            <h3 class="mw-empty-title">还没有文档</h3>
+            <p class="mw-empty-description">还没有上传任何文档？请上传 .txt、.md 或文本型 PDF，开始构建你的个人知识库。</p>
+            <button type="button" class="mw-button mw-button-primary primary-button" onclick="document.getElementById('file-input').click()">选择文件上传</button>
+        </div>
+
+        <section id="documents-panel" class="mw-card mw-table-card hidden">
+            <div class="mw-card-header">
+                <div>
+                    <h2 class="mw-card-title">文档列表</h2>
+                    <p class="mw-card-description">查看文档状态、索引版本和可问答状态。</p>
+                </div>
+            </div>
+
+            <details class="technical-details" style="margin:12px 24px 0">
+                <summary>查看技术详情 · 知识库生命周期说明</summary>
+                <ul class="lifecycle-list" style="margin:8px 0 0;padding-left:1.2rem;font-size:0.88rem;color:var(--mw-text-muted)">
+                    <li><strong>已启用</strong>：文档可用于知识库问答。</li>
+                    <li><strong>文档状态</strong>：已启用 / 处理中 / 已放入垃圾箱。</li>
+                    <li><strong>所属分组</strong>：可在列表中管理文档归属与范围检索。</li>
+                    <li><strong>垃圾箱（TRASHED）</strong>：删除文档后进入垃圾箱，暂不参与问答。</li>
+                    <li><strong>重新建立索引</strong>：复用原始文本重新切分并生成新索引。</li>
+                    <li><strong>删除文档</strong>：进入垃圾箱，可在垃圾箱恢复。</li>
+                    <li><strong>查看处理记录</strong>：查看任务时间线与处理进度。</li>
+                    <li><strong>当前索引版本</strong>：问答只使用最新有效版本的文档片段。</li>
+                </ul>
+                <p class="muted" style="margin-top:8px;font-size:0.84rem"><a href="/ingestion-analytics.html">查看文档处理分析</a></p>
+            </details>
+
+            <div class="mw-table-scroll">
+                <div id="documents-list" class="entity-stack" style="margin-top:16px;padding-bottom:8px"></div>
+            </div>
+        </section>
+
+        <section id="tasks-panel" class="mw-card card hidden">
+            <h2 class="mw-card-title">最近处理任务</h2>
+            <p class="muted" style="font-size:0.88rem">可点击「查看处理记录」查看任务时间线。失败任务可「重新处理」。</p>
+            <div class="mw-table-scroll">
+                <div id="tasks-list" class="entity-stack" style="margin-top:14px;padding-bottom:8px"></div>
+            </div>
+        </section>
+
+        <section id="timeline-panel" class="mw-card card hidden">
+            <h2 id="timeline-title" class="mw-card-title">处理记录 · 任务时间线</h2>
+            <p id="timeline-empty" class="empty-state-card hidden">暂无处理记录。</p>
+            <ol id="timeline-list" class="step-timeline"></ol>
+        </section>
+
+        <section id="chunks-panel" class="mw-card card hidden">
+            <h2 id="chunks-title" class="mw-card-title">文档片段</h2>
+            <p id="chunks-empty" class="muted hidden">该文档暂无文档片段。</p>
+            <ul id="chunks-list" class="citation-list"></ul>
+        </section>
+    </main>
 </div>
-
+<script src="/app-nav.js"></script>
 <script src="/documents.js"></script>
 </body>
 </html>

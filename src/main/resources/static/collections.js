@@ -15,7 +15,7 @@
 
     const collectionsEmpty = document.getElementById("collections-empty");
     const collectionsPanel = document.getElementById("collections-panel");
-    const collectionsBody = document.getElementById("collections-body");
+    const collectionsList = document.getElementById("collections-list");
 
     const detailPanel = document.getElementById("detail-panel");
     const detailTitle = document.getElementById("detail-title");
@@ -24,16 +24,26 @@
     const detailActiveCount = document.getElementById("detail-active-count");
     const detailEmptyHint = document.getElementById("detail-empty-hint");
     const detailNoAskableHint = document.getElementById("detail-no-askable-hint");
-    const detailDocumentsBody = document.getElementById("detail-documents-body");
+    const detailDocumentsList = document.getElementById("detail-documents-list");
     const detailTechJson = document.getElementById("detail-tech-json");
     const askInCollectionLink = document.getElementById("ask-in-collection-link");
     const closeDetailButton = document.getElementById("close-detail-button");
+    const emptyCreateBtn = document.getElementById("empty-create-btn");
+    const statCollectionCount = document.getElementById("stat-collection-count");
+    const statActiveDocuments = document.getElementById("stat-active-documents");
+    const statLastUpdated = document.getElementById("stat-last-updated");
 
     let cachedCollections = [];
 
     createButton.addEventListener("click", createCollection);
     refreshButton.addEventListener("click", loadCollections);
     closeDetailButton.addEventListener("click", hideDetail);
+    if (emptyCreateBtn) {
+        emptyCreateBtn.addEventListener("click", function () {
+            nameInput.focus();
+            nameInput.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+    }
 
     const params = new URLSearchParams(window.location.search);
     const initialCollectionId = params.get("collectionId");
@@ -110,7 +120,9 @@
     }
 
     function renderCollections(collections) {
-        collectionsBody.innerHTML = "";
+        if (!collectionsList) return;
+        collectionsList.innerHTML = "";
+        updateHeroStats(collections);
         if (collections.length === 0) {
             collectionsPanel.classList.add("hidden");
             detailPanel.classList.add("hidden");
@@ -121,24 +133,48 @@
         collectionsPanel.classList.remove("hidden");
 
         collections.forEach(function (collection) {
-            const row = document.createElement("tr");
             const activeCount = collection.activeDocumentCount != null ? collection.activeDocumentCount : 0;
             const docCount = collection.documentCount != null ? collection.documentCount : 0;
-            row.innerHTML =
-                "<td><strong>" + escapeHtml(collection.name) + "</strong></td>" +
-                "<td>" + escapeHtml(collection.description || "—") + "</td>" +
-                "<td>" + escapeHtml(docCount) + "</td>" +
-                "<td>" + escapeHtml(activeCount) + "</td>" +
-                '<td class="task-actions">' +
-                '<button type="button" class="link-button view-detail-button" data-collection-id="'
-                + escapeHtml(collection.collectionId) + '">查看分组详情</button> ' +
-                '<a class="ask-link" href="/ask.html?collectionId=' + encodeURIComponent(collection.collectionId) + '">前往该分组问答</a>' +
-                "</td>";
-            row.querySelector(".view-detail-button").addEventListener("click", function () {
+            const card = document.createElement("div");
+            card.className = "entity-card";
+            card.innerHTML =
+                '<div class="entity-card-head">' +
+                '<div><h3 class="entity-card-title">' + escapeHtml(collection.name) + "</h3>" +
+                '<p class="entity-card-hint">' + escapeHtml(collection.description || "暂无分组说明") + "</p></div></div>" +
+                '<div class="entity-card-meta">' +
+                "<span>文档数量：<strong>" + escapeHtml(docCount) + "</strong></span>" +
+                "<span>可用于问答的文档：<strong>" + escapeHtml(activeCount) + "</strong></span>" +
+                "</div>" +
+                '<div class="entity-card-actions">' +
+                '<button type="button" class="secondary-button view-detail-button">查看文档</button>' +
+                '<a class="secondary-button" href="/ask.html?collectionId=' + encodeURIComponent(collection.collectionId) + '" style="display:inline-flex;text-decoration:none">前往该分组问答</a>' +
+                '<button type="button" class="ghost-button view-detail-button-alt">查看详情</button>' +
+                "</div>";
+            card.querySelector(".view-detail-button").addEventListener("click", function () {
                 showCollectionDetail(collection.collectionId);
             });
-            collectionsBody.appendChild(row);
+            card.querySelector(".view-detail-button-alt").addEventListener("click", function () {
+                showCollectionDetail(collection.collectionId);
+            });
+            collectionsList.appendChild(card);
         });
+    }
+
+    function updateHeroStats(collections) {
+        if (!statCollectionCount) return;
+        if (!collections || collections.length === 0) {
+            statCollectionCount.textContent = "0";
+            statActiveDocuments.textContent = "0";
+            statLastUpdated.textContent = "暂无数据";
+            return;
+        }
+        statCollectionCount.textContent = String(collections.length);
+        var totalActive = 0;
+        collections.forEach(function (c) {
+            totalActive += c.activeDocumentCount != null ? c.activeDocumentCount : 0;
+        });
+        statActiveDocuments.textContent = String(totalActive);
+        statLastUpdated.textContent = "刚刚刷新";
     }
 
     async function showCollectionDetail(collectionId) {
@@ -178,27 +214,30 @@
         const askableCount = documents.filter(function (doc) { return doc.canAsk === true; }).length;
         detailNoAskableHint.classList.toggle("hidden", askableCount > 0 || documents.length === 0);
 
-        detailDocumentsBody.innerHTML = "";
+        detailDocumentsList.innerHTML = "";
         documents.forEach(function (doc) {
-            const row = document.createElement("tr");
-            const lifecycleClass = doc.status === "TRASHED" ? "deleted" : "active";
-            row.innerHTML =
-                "<td>" + escapeHtml(doc.title || doc.filename || "-") + "</td>" +
-                '<td><span class="status-badge ' + lifecycleClass + '">' + escapeHtml(doc.displayStatus || doc.status) + "</span></td>" +
-                "<td>" + (doc.canAsk ? '<span class="status-badge ready">是</span>' : '<span class="muted">否</span>') + "</td>" +
-                '<td class="task-actions">' +
+            const lifecycleClass = doc.status === "TRASHED" ? "warning" : "active";
+            const card = document.createElement("div");
+            card.className = "entity-card";
+            card.innerHTML =
+                '<div class="entity-card-head">' +
+                '<div><h3 class="entity-card-title">' + escapeHtml(doc.title || doc.filename || "-") + "</h3></div>" +
+                '<span class="status-pill ' + lifecycleClass + '">' + escapeHtml(doc.displayStatus || doc.status) + "</span></div>" +
+                '<div class="entity-card-meta">' +
+                "<span>可用于问答：<strong>" + (doc.canAsk ? "是" : "否") + "</strong></span>" +
+                "</div>" +
+                '<div class="entity-card-actions">' +
                 (doc.canRemoveFromCollection !== false
-                    ? '<button type="button" class="link-button remove-button" data-document-id="'
-                    + escapeHtml(doc.documentId) + '">移出分组</button>'
+                    ? '<button type="button" class="secondary-button remove-button">移出分组</button>'
                     : "") +
-                "</td>";
-            const removeButton = row.querySelector(".remove-button");
+                "</div>";
+            const removeButton = card.querySelector(".remove-button");
             if (removeButton) {
                 removeButton.addEventListener("click", function () {
                     confirmRemoveFromCollection(detail.collectionId, doc.documentId, doc.title || doc.filename);
                 });
             }
-            detailDocumentsBody.appendChild(row);
+            detailDocumentsList.appendChild(card);
         });
     }
 
@@ -247,7 +286,7 @@
     }
 
     function clearError() {
-        errorStatus.classList.remove("visible");
+        errorStatus.classList.add("hidden");
         errorCode.textContent = "";
         errorMessage.textContent = "";
         errorTraceId.textContent = "";
@@ -257,7 +296,7 @@
         errorCode.textContent = error.code || "UNKNOWN";
         errorMessage.textContent = error.message || "未知错误";
         errorTraceId.textContent = error.traceId || "-";
-        errorStatus.classList.add("visible");
+        errorStatus.classList.remove("hidden");
     }
 
     async function parseJsonResponse(response) {

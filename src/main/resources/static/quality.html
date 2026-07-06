@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>质量诊断 · MindWeaver</title>
+    <link rel="stylesheet" href="/mindweaver.css?v=mw-ivory-app-shell-v1">
+    <link rel="stylesheet" href="/app-shell.css?v=mw-compat-v1">
+</head>
+<body class="mw-page" data-page="quality">
+<div class="mw-app-shell app-shell">
+    <aside id="app-sidebar-mount" data-active="quality" aria-label="主导航"></aside>
+    <main class="mw-main-panel main-panel">
+        <div class="mw-page-content content-container">
+            <header class="mw-page-header page-header">
+                <div>
+                    <h1 class="mw-page-title page-title">质量诊断</h1>
+                    <p class="mw-page-description page-subtitle">分析知识库问答链路中的检索、上下文与回答质量，帮助定位 RAG 效果问题。</p>
+                </div>
+            </header>
+
+            <section class="mw-card card">
+                <h2 class="mw-card-title">质量评分总览</h2>
+                <div class="mw-empty-state" style="padding:28px 0">
+                    <h3 class="mw-empty-title">暂无最近一次评估结果</h3>
+                    <p class="mw-empty-description">在知识库问答中提问后，系统会生成检索与回答质量评分，可在此了解评分含义与优化方向。</p>
+                    <a href="/ask.html" class="mw-button mw-button-primary primary-button mw-empty-action" style="display:inline-flex;text-decoration:none">前往知识库问答 →</a>
+                </div>
+            </section>
+
+            <section class="mw-card card">
+                <h2 class="mw-card-title">评分模式</h2>
+                <div class="mw-mode-grid entity-grid">
+                    <div class="mw-mode-card entity-card selected-border">
+                        <h3 class="entity-card-title">平衡模式</h3>
+                        <p class="entity-card-hint">综合权衡检索与回答质量，适合日常使用。</p>
+                        <span class="mw-badge mw-badge-accent">当前推荐</span>
+                    </div>
+                    <div class="mw-mode-card entity-card">
+                        <h3 class="entity-card-title">精准模式</h3>
+                        <p class="entity-card-hint">更关注引用准确性与回答相关性。</p>
+                    </div>
+                    <div class="mw-mode-card entity-card">
+                        <h3 class="entity-card-title">全面模式</h3>
+                        <p class="entity-card-hint">覆盖更多诊断维度，适合排查复杂问题。</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="mw-card card">
+                <h2 class="mw-card-title">核心指标</h2>
+                <div class="mw-metric-grid mw-stat-grid">
+                    <div class="mw-metric-card mw-stat-card">
+                        <strong>Recall@K</strong>
+                        <p class="muted" style="margin:6px 0 0;font-size:0.84rem">召回率：相关文档是否被检索到。</p>
+                    </div>
+                    <div class="mw-metric-card mw-stat-card">
+                        <strong>Precision@K</strong>
+                        <p class="muted" style="margin:6px 0 0;font-size:0.84rem">精准率：检索结果中有多少真正相关。</p>
+                    </div>
+                    <div class="mw-metric-card mw-stat-card">
+                        <strong>MRR</strong>
+                        <p class="muted" style="margin:6px 0 0;font-size:0.84rem">首个正确结果排名越靠前越好。</p>
+                    </div>
+                    <div class="mw-metric-card mw-stat-card">
+                        <strong>NDCG@K</strong>
+                        <p class="muted" style="margin:6px 0 0;font-size:0.84rem">排序质量：更相关的结果是否排在前面。</p>
+                    </div>
+                    <div class="mw-metric-card mw-stat-card">
+                        <strong>Context Precision</strong>
+                        <p class="muted" style="margin:6px 0 0;font-size:0.84rem">上下文精准度：送入模型的片段是否贴切。</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="mw-card card mw-tip-banner">
+                <h2 class="mw-card-title">如何提升质量</h2>
+                <ul style="margin:0;padding-left:1.2rem;line-height:1.8;color:var(--mw-text-secondary);font-size:0.9rem">
+                    <li>优化文档切分粒度，避免片段过长或过短。</li>
+                    <li>在问答时选择更精准的知识库分组。</li>
+                    <li>适当调整 TopK，平衡召回与噪声。</li>
+                    <li>检查引用片段是否与问题真正相关。</li>
+                    <li>使用中文语义能力更强的 Embedding 模型。</li>
+                </ul>
+                <div class="action-row" style="justify-content:flex-start;margin-top:16px">
+                    <a href="/ask.html#rag-quality-section" class="mw-button mw-button-secondary secondary-button" style="display:inline-flex;text-decoration:none">在问答中查看评分</a>
+                    <a href="/documents.html" class="mw-button mw-button-ghost ghost-button" style="display:inline-flex;text-decoration:none">管理文档</a>
+                </div>
+            </section>
+
+            <details class="mw-card card technical-details">
+                <summary class="mw-card-title" style="cursor:pointer;list-style:none">查看技术详情</summary>
+                <p class="muted" style="margin:12px 0 0">详见 <code>docs/manual/rag-quality-score-and-diagnostics.md</code></p>
+            </details>
+        </div>
+    </main>
+</div>
+<script src="/app-nav.js"></script>
+</body>
+</html>

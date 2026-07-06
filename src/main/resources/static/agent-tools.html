@@ -5,35 +5,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Agent 工具</title>
     <link rel="stylesheet" href="/app.css">
+    <link rel="stylesheet" href="/app-shell.css">
 </head>
-<body>
-<div class="page">
-    <nav id="app-nav-mount" data-active=""></nav>
-    <script src="/app-nav.js"></script>
+<body class="app-body">
+<div class="app-shell">
+    <aside id="app-sidebar-mount" data-active="agent-tasks" aria-label="主导航"></aside>
+    <main class="main-panel">
+        <div class="content-container">
+            <header class="page-header">
+                <h1 class="page-title">Agent 工具</h1>
+                <p class="page-subtitle">当前阶段仅支持内置安全工具。AI 任务会按固定流程自动调用「检索知识库」「总结检索结果」，并生成最终报告。</p>
+            </header>
 
-    <header class="hero">
-        <h1>Agent 工具</h1>
-        <p class="lead">当前阶段仅支持内置安全工具。AI 任务会按固定流程自动调用「检索知识库」「总结检索结果」，并生成最终报告。</p>
-    </header>
+            <div id="loading-status" class="status loading hidden" role="status">正在加载可用工具…</div>
+            <div id="error-status" class="error-card hidden" role="alert">
+                <strong>加载失败</strong>
+                <p id="error-message" style="margin:4px 0 0"></p>
+            </div>
 
-    <div id="loading-status" class="status loading hidden" role="status">正在加载可用工具…</div>
-    <div id="error-status" class="status error" role="alert">
-        <p id="error-message"></p>
-    </div>
+            <section class="card" aria-labelledby="tools-title">
+                <h2 id="tools-title">可用工具</h2>
+                <div id="tools-empty" class="empty-state hidden">
+                    <p>暂无可用工具。</p>
+                </div>
+                <div id="tools-list" class="entity-stack"></div>
+            </section>
 
-    <section class="panel" aria-labelledby="tools-title">
-        <h2 id="tools-title">可用工具</h2>
-        <p id="tools-empty" class="empty-state hidden">暂无可用工具。</p>
-        <ul id="tools-list" class="citation-list"></ul>
-    </section>
-
-    <details class="tech-details">
-        <summary>查看技术详情</summary>
-        <p class="muted">API：<code>GET /agent/tools</code></p>
-        <pre id="tools-json"></pre>
-    </details>
+            <details class="technical-details">
+                <summary>查看技术详情</summary>
+                <p class="muted">API：<code>GET /agent/tools</code></p>
+                <pre id="tools-json"></pre>
+            </details>
+        </div>
+    </main>
 </div>
-
+<script src="/app-nav.js"></script>
 <script>
 (function () {
     const loadingStatus = document.getElementById("loading-status");
@@ -47,7 +53,7 @@
 
     async function loadTools() {
         loadingStatus.classList.remove("hidden");
-        errorStatus.classList.remove("visible");
+        errorStatus.classList.add("hidden");
         try {
             const response = await fetch("/agent/tools");
             const payload = await response.json();
@@ -58,7 +64,7 @@
             toolsJson.textContent = JSON.stringify(payload, null, 2);
         } catch (error) {
             errorMessage.textContent = error.message || "无法加载工具列表";
-            errorStatus.classList.add("visible");
+            errorStatus.classList.remove("hidden");
         } finally {
             loadingStatus.classList.add("hidden");
         }
@@ -72,13 +78,13 @@
         }
         toolsEmpty.classList.add("hidden");
         tools.forEach(function (tool) {
-            const item = document.createElement("li");
-            item.className = "citation-item";
-            item.innerHTML =
-                "<h3>" + escapeHtml(tool.displayName || tool.toolName) + "</h3>" +
-                "<p>" + escapeHtml(tool.description || "") + "</p>" +
-                '<p class="muted">技术名称：' + escapeHtml(tool.toolName) + "</p>";
-            toolsList.appendChild(item);
+            const card = document.createElement("div");
+            card.className = "entity-card";
+            card.innerHTML =
+                '<h3 class="entity-card-title">' + escapeHtml(tool.displayName || tool.toolName) + "</h3>" +
+                '<p class="entity-card-hint">' + escapeHtml(tool.description || "") + "</p>" +
+                '<p class="muted" style="font-size:0.84rem;margin-top:8px">技术名称：' + escapeHtml(tool.toolName) + "</p>";
+            toolsList.appendChild(card);
         });
     }
 
