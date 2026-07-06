@@ -1,5 +1,5 @@
 /* MindWeaver compatibility layer — imports core system and legacy aliases */
-@import url("/mindweaver.css?v=mw-layout-v2");
+@import url("/mindweaver.css?v=mw-model-settings-v1");
 
 /* Legacy token aliases for tests & older references */
 :root {

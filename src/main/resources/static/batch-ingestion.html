@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>批量导入 · MindWeaver</title>
+    <link rel="stylesheet" href="/mindweaver.css?v=mw-ivory-app-shell-v1">
+    <link rel="stylesheet" href="/app-shell.css?v=mw-compat-v1">
+</head>
+<body class="mw-page" data-page="batch-ingestion">
+<div class="mw-app-shell app-shell">
+    <aside id="app-sidebar-mount" data-active="batch-ingestion" aria-label="主导航"></aside>
+    <main class="mw-main-panel main-panel">
+        <div class="mw-page-content content-container">
+            <header class="mw-page-header page-header">
+                <div>
+                    <h1 class="mw-page-title page-title">批量导入</h1>
+                    <p class="mw-page-description page-subtitle">一次选择多个文档，系统会按队列处理并显示进度。取消不会删除已成功导入的文档。</p>
+                </div>
+            </header>
+
+            <section class="mw-card card form-card">
+                <h2 class="mw-card-title">批量上传</h2>
+                <p class="muted" style="font-size:0.88rem;margin:0 0 16px">支持 .txt、.md、文本型 PDF。单文件不超过 2MB。</p>
+                <div class="form-grid mw-form">
+                    <div class="form-field mw-field">
+                        <label class="mw-label" for="batch-files">选择文件</label>
+                        <input class="mw-input" id="batch-files" type="file" multiple accept=".txt,.md,.pdf">
+                    </div>
+                    <div class="form-field mw-field">
+                        <label class="mw-label" for="batch-name">批次名称（可选）</label>
+                        <input class="mw-input" id="batch-name" type="text" placeholder="例如：论文资料批量导入">
+                    </div>
+                    <div class="form-field mw-field">
+                        <label class="mw-label" for="batch-collection">目标知识库分组（可选）</label>
+                        <select class="mw-input" id="batch-collection"><option value="">不指定分组</option></select>
+                    </div>
+                    <div class="form-field mw-field">
+                        <label class="mw-label" for="duplicate-policy">重复文件策略</label>
+                        <select class="mw-input" id="duplicate-policy">
+                            <option value="SKIP">跳过重复文件</option>
+                            <option value="IMPORT_ANYWAY">仍然导入</option>
+                            <option value="USE_EXISTING">使用已有文档</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="action-row">
+                    <button type="button" class="mw-button mw-button-primary primary-button" id="start-batch-btn">创建批量导入</button>
+                    <span id="upload-status" class="status loading hidden" role="status">正在创建批量导入…</span>
+                </div>
+            </section>
+
+            <section id="batch-progress-card" class="mw-card card hidden">
+                <h2 class="mw-card-title">当前批次进度</h2>
+                <div class="mw-stat-grid summary-stat-grid">
+                    <div class="mw-stat-card summary-stat"><span class="mw-stat-label">总文件数</span><span class="mw-stat-value" id="stat-total">0</span></div>
+                    <div class="mw-stat-card summary-stat"><span class="mw-stat-label">成功</span><span class="mw-stat-value" id="stat-completed">0</span></div>
+                    <div class="mw-stat-card summary-stat"><span class="mw-stat-label">失败</span><span class="mw-stat-value" id="stat-failed">0</span></div>
+                    <div class="mw-stat-card summary-stat"><span class="mw-stat-label">跳过重复</span><span class="mw-stat-value" id="stat-skipped">0</span></div>
+                    <div class="mw-stat-card summary-stat"><span class="mw-stat-label">处理中</span><span class="mw-stat-value" id="stat-processing">0</span></div>
+                    <div class="mw-stat-card summary-stat"><span class="mw-stat-label">取消</span><span class="mw-stat-value" id="stat-canceled">0</span></div>
+                </div>
+                <p class="muted" style="margin:12px 0 4px">进度：<strong id="batch-progress-percent">0%</strong> · 状态：<span id="batch-status-label">—</span></p>
+                <p id="batch-summary-message" class="muted" style="margin:0"></p>
+                <div class="action-row" style="margin-top:16px">
+                    <button type="button" class="mw-button mw-button-secondary secondary-button" id="retry-failed-btn">重试失败文件</button>
+                    <button type="button" class="mw-button mw-button-secondary secondary-button" id="cancel-batch-btn">取消剩余任务</button>
+                    <a href="/documents.html" class="mw-button mw-button-secondary secondary-button" style="text-decoration:none">查看成功导入的文档</a>
+                </div>
+                <p class="muted" style="font-size:0.84rem;margin-top:12px">取消剩余任务不会删除已成功导入的文档。</p>
+            </section>
+
+            <section id="batch-items-card" class="mw-card card hidden">
+                <h2 class="mw-card-title">文件列表</h2>
+                <div id="batch-items-list" class="entity-stack"></div>
+            </section>
+
+            <details class="technical-details" id="batch-tech-details" style="margin-top:16px">
+                <summary>查看技术详情</summary>
+                <pre id="batch-tech-json" class="muted" style="font-size:0.8rem;white-space:pre-wrap;margin:8px 0 0"></pre>
+            </details>
+        </div>
+    </main>
+</div>
+<script src="/app-nav.js"></script>
+<script src="/batch-ingestion.js"></script>
+</body>
+</html>

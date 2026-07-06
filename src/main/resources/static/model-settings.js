@@ -5,7 +5,6 @@
     const currentPanel = document.getElementById("current-panel");
     const providersPanel = document.getElementById("providers-panel");
     const formPanel = document.getElementById("form-panel");
-    const currentModelBody = document.getElementById("current-model-body");
     const runtimeMode = document.getElementById("runtime-mode");
     const dimensionWarning = document.getElementById("dimension-warning");
     const providersList = document.getElementById("providers-list");
@@ -17,10 +16,12 @@
     const formTechJson = document.getElementById("form-tech-json");
     const actionNotice = document.getElementById("action-notice");
     const actionNoticeMessage = document.getElementById("action-notice-message");
+    const currentTechBody = document.getElementById("current-tech-body");
 
     let presets = [];
     let providers = [];
     let editingId = null;
+    let currentStatus = null;
 
     document.getElementById("add-provider-button").addEventListener("click", function () {
         openForm(null);
@@ -30,6 +31,7 @@
     document.getElementById("scroll-to-providers-btn").addEventListener("click", function () {
         providersPanel.scrollIntoView({ behavior: "smooth" });
     });
+    document.getElementById("test-current-connection-btn").addEventListener("click", testCurrentConnection);
     presetSelect.addEventListener("change", applyPreset);
 
     loadAll();
@@ -73,7 +75,9 @@
     }
 
     function renderCurrent(current) {
+        currentStatus = current;
         runtimeMode.textContent = current.runtimeModeDescription || "";
+
         if (current.embeddingDimensionMismatchWarning) {
             dimensionWarning.textContent = current.embeddingDimensionMismatchMessage
                 || "切换 Embedding 模型后，已有文档可能需要重新索引。";
@@ -82,24 +86,131 @@
             dimensionWarning.classList.add("hidden");
         }
 
-        var llmName = (current.llmProviderName || "未配置") + " / " + (current.llmModel || "-");
-        var embName = (current.embeddingProviderName || "未配置") + " / " + (current.embeddingModel || "-");
-        var tags = '<div class="capability-tags">' +
-            '<span class="capability-tag">LLM</span>' +
-            '<span class="capability-tag">Embedding</span>' +
-            '<span class="capability-tag">' + escapeHtml(current.activeProfile || "mock") + '</span></div>';
+        setText("current-llm-model", current.llmModel || "未配置");
+        setText("current-embedding-model", current.embeddingModel || "未配置");
+        setText("current-llm-hint", llmUsageHint(current));
+        setText("current-embedding-hint", "用于文档向量化与语义检索。");
+        setText("current-llm-provider", providerLine(current.llmProviderName, "问答模型供应商"));
+        setText("current-embedding-provider", providerLine(current.embeddingProviderName, "向量模型供应商"));
+        setText("current-runtime-label", runtimeChainLabel(current));
+        setText("current-runtime-hint", runtimeChainHint(current));
+        setText("current-provider-status", providerStatusSummary(current));
 
-        currentModelBody.innerHTML =
-            '<div><h3 class="provider-name" style="font-size:1.1rem">' + escapeHtml(current.llmModel || "当前模型") + '</h3>' +
-            '<p class="provider-type-label">' + escapeHtml(current.llmProviderName || "默认 Provider") + '</p>' +
-            tags + '</div>' +
-            '<div><div class="provider-field-label">默认 LLM</div><div class="provider-field-value">' + escapeHtml(llmName) + '</div></div>' +
-            '<div><div class="provider-field-label">默认 Embedding</div><div class="provider-field-value">' + escapeHtml(embName) + '</div></div>' +
-            '<div></div>';
+        if (currentTechBody) {
+            currentTechBody.innerHTML = buildCurrentTechDetails(current);
+        }
+    }
+
+    function setText(id, value) {
+        var el = document.getElementById(id);
+        if (el) {
+            el.textContent = value || "";
+        }
+    }
+
+    function llmUsageHint(current) {
+        if (!current.llmModel) {
+            return "尚未配置默认问答模型。";
+        }
+        return "用于生成回答、摘要和任务报告。";
+    }
+
+    function providerLine(name, fallback) {
+        if (!name) {
+            return fallback + "：未配置";
+        }
+        return fallback + "：" + name;
+    }
+
+    function runtimeChainLabel(current) {
+        var desc = (current.runtimeModeDescription || "").toLowerCase();
+        if (desc.indexOf("ollama") >= 0 || desc.indexOf("python worker") >= 0) {
+            return "本地模型服务";
+        }
+        if (current.activeProfile && current.activeProfile.indexOf("local") >= 0) {
+            return "本地模型服务";
+        }
+        if (current.activeProfile === "default" || desc.indexOf("mock") >= 0) {
+            return "开发 / Mock 模式";
+        }
+        if (current.llmModel || current.embeddingModel) {
+            return "已配置模型链路";
+        }
+        return "未配置";
+    }
+
+    function runtimeChainHint(current) {
+        var desc = current.runtimeModeDescription || "";
+        if (desc.indexOf("Ollama") >= 0 && desc.indexOf("Python Worker") >= 0) {
+            return "通过 Ollama 与本地 Worker 调用，不依赖云端。";
+        }
+        if (desc.indexOf("Ollama") >= 0) {
+            return "通过本地 Ollama 服务调用。";
+        }
+        if (desc.indexOf("Python Worker") >= 0) {
+            return "通过本地 Python Worker 调用。";
+        }
+        if (desc.indexOf("application.properties") >= 0) {
+            return "配置来源见下方技术详情。";
+        }
+        if (current.llmProviderName) {
+            return "由 " + current.llmProviderName + " 提供模型能力。";
+        }
+        return "完成供应商配置后可在此查看运行链路。";
+    }
+
+    function providerStatusSummary(current) {
+        var profile = current.activeProfile || "default";
+        if (profile === "default") {
+            return "运行配置：mock / 默认";
+        }
+        if (profile.indexOf("local") >= 0) {
+            return "运行配置：local-ai · 已启用";
+        }
+        return "运行配置：" + profile;
+    }
+
+    function buildCurrentTechDetails(current) {
+        var rows = [
+            ["运行模式说明", current.runtimeModeDescription || "—"],
+            ["Active Profile", current.activeProfile || "—"],
+            ["LLM Provider", formatProviderRef(current.llmProviderName, current.llmProviderConfigId)],
+            ["Embedding Provider", formatProviderRef(current.embeddingProviderName, current.embeddingProviderConfigId)],
+            ["Embedding 维度", current.embeddingDimension != null ? String(current.embeddingDimension) : "—"]
+        ];
+        return "<dl>" + rows.map(function (row) {
+            return "<dt>" + escapeHtml(row[0]) + "</dt><dd>" + escapeHtml(row[1]) + "</dd>";
+        }).join("") + "</dl>";
+    }
+
+    function formatProviderRef(name, id) {
+        if (!name && (id == null || id === "")) {
+            return "未配置";
+        }
+        var label = name || "未命名";
+        if (id != null && id !== "") {
+            return label + " (ID: " + id + ")";
+        }
+        return label;
+    }
+
+    async function testCurrentConnection() {
+        if (!currentStatus) {
+            showError("当前模型信息尚未加载");
+            return;
+        }
+        var targetId = currentStatus.llmProviderConfigId || currentStatus.embeddingProviderConfigId;
+        if (!targetId) {
+            showError("当前没有可测试的模型供应商");
+            return;
+        }
+        await testProvider(targetId);
     }
 
     function providerInitials(name) {
-        if (!name) return "?";
+        if (!name) {
+            return "?";
+        }
         return name.substring(0, 2).toUpperCase();
     }
 
@@ -111,66 +222,103 @@
         }
         providersEmpty.classList.add("hidden");
         providers.forEach(function (p) {
-            var card = document.createElement("div");
+            var card = document.createElement("article");
             var selected = p.defaultLlm || p.defaultEmbedding;
-            card.className = "provider-card" + (selected ? " selected" : "");
+            card.className = "mw-card provider-card" + (selected ? " selected" : "");
             card.innerHTML =
-                '<div class="provider-card-inner">' +
                 '<div class="provider-identity">' +
-                '<div class="provider-avatar">' + escapeHtml(providerInitials(p.displayName)) + '</div>' +
-                '<div><h3 class="provider-name">' + escapeHtml(p.displayName) + '</h3>' +
-                '<p class="provider-type-label">' + escapeHtml(formatProviderType(p.providerType)) + '</p>' +
-                '<p class="provider-desc">' + escapeHtml(providerDescription(p)) + '</p></div></div>' +
-                '<div><div class="provider-status-row"><span class="status-dot ' + connectionDotClass(p) + '"></span>' +
-                '<span>' + escapeHtml(connectionStatusText(p)) + '</span></div>' +
-                '<div class="provider-field-value" style="font-size:0.82rem;color:var(--text-muted)">' + escapeHtml(apiKeyStatusText(p)) + '</div></div>' +
-                '<div><div class="provider-field-label">默认 LLM</div><div class="provider-field-value">' + escapeHtml(p.defaultLlmModel || "-") + (p.defaultLlm ? " ★" : "") + '</div></div>' +
-                '<div><div class="provider-field-label">默认 Embedding</div><div class="provider-field-value">' + escapeHtml(p.defaultEmbeddingModel || "-") + (p.defaultEmbedding ? " ★" : "") + '</div></div>' +
-                '<div class="provider-actions"></div></div>' +
-                '<details class="tech-details"><summary>查看技术详情</summary><pre>' +
-                escapeHtml(JSON.stringify({ id: p.id, providerType: p.providerType, enabled: p.enabled }, null, 2)) + '</pre></details>';
+                '<div class="provider-logo">' + escapeHtml(providerInitials(p.displayName)) + "</div>" +
+                "<div>" +
+                '<h3 class="provider-name">' + escapeHtml(p.displayName) + (p.defaultLlm ? ' <span class="mw-badge mw-badge-accent">默认 LLM</span>' : "") +
+                (p.defaultEmbedding ? ' <span class="mw-badge mw-badge-accent">默认 Embedding</span>' : "") + "</h3>" +
+                '<p class="provider-type-label">' + escapeHtml(formatProviderType(p.providerType)) + "</p>" +
+                '<p class="provider-desc">' + escapeHtml(providerDescription(p)) + "</p>" +
+                "</div></div>" +
+                '<div class="provider-meta"><span class="provider-meta-label">默认 LLM</span>' +
+                '<strong class="provider-meta-value">' + escapeHtml(p.defaultLlmModel || "—") + "</strong></div>" +
+                '<div class="provider-meta"><span class="provider-meta-label">默认 Embedding</span>' +
+                '<strong class="provider-meta-value">' + escapeHtml(p.defaultEmbeddingModel || "—") + "</strong></div>" +
+                '<div class="provider-status">' +
+                '<span class="provider-status-main"><span class="status-dot ' + connectionDotClass(p) + '"></span>' +
+                escapeHtml(connectionStatusText(p)) + "</span>" +
+                '<span class="provider-status-sub">' + escapeHtml(apiKeyStatusText(p)) + "</span></div>" +
+                '<div class="provider-actions"></div>' +
+                '<details class="provider-card-tech technical-details"><summary>查看技术详情</summary><pre>' +
+                escapeHtml(JSON.stringify({
+                    id: p.id,
+                    providerType: p.providerType,
+                    enabled: p.enabled,
+                    baseUrl: p.baseUrl || null,
+                    embeddingDimension: p.embeddingDimension,
+                    lastTestStatus: p.lastTestStatus || null
+                }, null, 2)) + "</pre></details>";
+
             var actions = card.querySelector(".provider-actions");
-            actions.appendChild(actionButton("测试连接", function () { testProvider(p.id); }));
+            actions.appendChild(actionButton("测试连接", function () { testProvider(p.id); }, "mw-button-secondary"));
+            actions.appendChild(actionButton("编辑", function () { openForm(p); }, "mw-button-ghost"));
             actions.appendChild(moreMenuButton(p));
             providersList.appendChild(card);
         });
     }
 
     function moreMenuButton(p) {
-        var wrap = document.createElement("div");
-        wrap.style.display = "flex";
-        wrap.style.flexDirection = "column";
-        wrap.style.gap = "4px";
-        wrap.style.alignItems = "flex-end";
-        wrap.appendChild(actionButton("设为默认问答模型", function () { setDefault(p.id, "llm"); }));
-        wrap.appendChild(actionButton("设为默认向量模型", function () { setDefault(p.id, "embedding"); }));
-        wrap.appendChild(actionButton("编辑", function () { openForm(p); }));
-        return wrap;
+        var details = document.createElement("details");
+        details.className = "provider-more-menu";
+        details.innerHTML = '<summary class="mw-button mw-button-ghost">更多</summary><div class="provider-more-menu-body"></div>';
+        var body = details.querySelector(".provider-more-menu-body");
+        body.appendChild(actionButton("设为默认问答模型", function () { setDefault(p.id, "llm"); }, "mw-button-ghost"));
+        body.appendChild(actionButton("设为默认向量模型", function () { setDefault(p.id, "embedding"); }, "mw-button-ghost"));
+        if (p.enabled) {
+            body.appendChild(actionButton("停用供应商", function () { toggleEnable(p.id, false); }, "mw-button-ghost"));
+        } else {
+            body.appendChild(actionButton("启用供应商", function () { toggleEnable(p.id, true); }, "mw-button-ghost"));
+        }
+        return details;
     }
 
     function formatProviderType(type) {
-        if (type === "OLLAMA") return "本地 Ollama";
-        if (type === "MOCK") return "Mock（开发测试）";
+        if (type === "OLLAMA") {
+            return "本地 Ollama";
+        }
+        if (type === "MOCK") {
+            return "Mock（开发测试）";
+        }
         return "OpenAI-compatible";
     }
 
     function providerDescription(p) {
-        if (p.providerType === "OLLAMA") return "本地模型运行，无需 API Key";
-        if (p.providerType === "MOCK") return "开发测试用模拟模型";
+        if (p.providerType === "OLLAMA") {
+            return "本地模型运行，无需 API Key";
+        }
+        if (p.providerType === "MOCK") {
+            return "开发测试用模拟模型";
+        }
         return "通过 API 密钥连接远程服务";
     }
 
     function connectionDotClass(p) {
-        if (!p.enabled) return "warning";
-        if (p.lastTestStatus === "SUCCESS") return "success";
-        if (p.lastTestStatus === "FAILED") return "error";
+        if (!p.enabled) {
+            return "warning";
+        }
+        if (p.lastTestStatus === "SUCCESS") {
+            return "success";
+        }
+        if (p.lastTestStatus === "FAILED") {
+            return "danger";
+        }
         return "warning";
     }
 
     function connectionStatusText(p) {
-        if (!p.enabled) return "已禁用";
-        if (!p.lastTestStatus) return "未测试";
-        if (p.lastTestStatus === "SUCCESS") return "已连接";
+        if (!p.enabled) {
+            return "已禁用";
+        }
+        if (!p.lastTestStatus) {
+            return "未测试";
+        }
+        if (p.lastTestStatus === "SUCCESS") {
+            return "已连接";
+        }
         return "测试失败";
     }
 
@@ -178,31 +326,19 @@
         if (p.providerType === "OLLAMA" || p.providerType === "MOCK") {
             return "本地模型无需密钥";
         }
-        if (p.apiKeyMasked) return "API Key 已配置";
+        if (p.apiKeyMasked) {
+            return "API Key 已配置";
+        }
         return "API Key 未配置";
     }
 
-    function actionButton(label, handler) {
+    function actionButton(label, handler, variant) {
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.className = "link-button";
+        btn.className = "mw-button " + (variant || "mw-button-ghost");
         btn.textContent = label;
         btn.addEventListener("click", handler);
         return btn;
-    }
-
-    function formatEnabled(p) {
-        return p.enabled ? "已启用" : "已禁用";
-    }
-
-    function formatTest(p) {
-        if (!p.lastTestStatus) {
-            return "未测试";
-        }
-        if (p.lastTestStatus === "SUCCESS") {
-            return "连接正常";
-        }
-        return "连接异常";
     }
 
     function openForm(provider) {

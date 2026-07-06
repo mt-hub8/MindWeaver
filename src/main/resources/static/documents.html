@@ -29,12 +29,14 @@
         <nav class="mw-nav">
             <a class="mw-nav-item" data-nav="overview" href="/index.html"><span class="mw-nav-icon" aria-hidden="true">◆</span><span>总览</span></a>
             <a class="mw-nav-item active" data-nav="documents" href="/documents.html" aria-current="page"><span class="mw-nav-icon" aria-hidden="true">▤</span><span>文档管理</span></a>
+            <a class="mw-nav-item" data-nav="batch-ingestion" href="/batch-ingestion.html"><span class="mw-nav-icon" aria-hidden="true">▥</span><span>批量导入</span></a>
             <a class="mw-nav-item" data-nav="collections" href="/collections.html"><span class="mw-nav-icon" aria-hidden="true">▦</span><span>知识库分组</span></a>
             <a class="mw-nav-item" data-nav="ask" href="/ask.html"><span class="mw-nav-icon" aria-hidden="true">◎</span><span>知识库问答</span></a>
             <a class="mw-nav-item" data-nav="agent-tasks" href="/agent-tasks.html"><span class="mw-nav-icon" aria-hidden="true">✦</span><span>AI 任务</span></a>
             <a class="mw-nav-item" data-nav="model-settings" href="/model-settings.html"><span class="mw-nav-icon" aria-hidden="true">⚙</span><span>模型设置</span></a>
             <a class="mw-nav-item" data-nav="quality" href="/quality.html"><span class="mw-nav-icon" aria-hidden="true">◇</span><span>质量诊断</span></a>
             <a class="mw-nav-item" data-nav="trash" href="/trash.html"><span class="mw-nav-icon" aria-hidden="true">⌫</span><span>垃圾箱</span></a>
+            <a class="mw-nav-item" data-nav="notifications" href="/notifications.html"><span class="mw-nav-icon" aria-hidden="true">🔔</span><span>通知中心</span></a>
             <a class="mw-nav-item" data-nav="settings" href="/settings.html"><span class="mw-nav-icon" aria-hidden="true">◈</span><span>系统设置</span></a>
             <a class="mw-nav-item" data-nav="guide" href="/guide.html"><span class="mw-nav-icon" aria-hidden="true">?</span><span>使用指南</span></a>
         </nav>
@@ -55,7 +57,10 @@
                 <h1 class="mw-page-title">文档管理</h1>
                 <p class="mw-page-description">上传、查看和管理进入知识库的文档，确保内容被正确切分与索引。</p>
             </div>
-            <button class="mw-button mw-button-primary primary-button" type="button" id="uploadShortcutButton" onclick="document.getElementById('file-input').click()">上传文档</button>
+            <div class="mw-page-actions" style="display:flex;gap:8px">
+                <a href="/batch-ingestion.html" class="mw-button mw-button-secondary secondary-button" style="text-decoration:none">批量导入</a>
+                <button class="mw-button mw-button-primary primary-button" type="button" id="uploadShortcutButton" onclick="document.getElementById('file-input').click()">上传文档</button>
+            </div>
         </header>
 
         <div class="mw-upload-layout">

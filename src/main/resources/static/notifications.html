@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>通知中心 · MindWeaver</title>
+    <link rel="stylesheet" href="/mindweaver.css?v=mw-ivory-app-shell-v1">
+    <link rel="stylesheet" href="/app-shell.css?v=mw-compat-v1">
+</head>
+<body class="mw-page" data-page="notifications">
+<div class="mw-app-shell app-shell">
+    <aside id="app-sidebar-mount" data-active="notifications" aria-label="主导航"></aside>
+    <main class="mw-main-panel main-panel">
+        <div class="mw-page-content content-container">
+            <header class="mw-page-header page-header">
+                <div>
+                    <h1 class="mw-page-title page-title">通知中心</h1>
+                    <p class="mw-page-description page-subtitle">查看批量导入完成、失败与取消等站内通知。可手动刷新或定时轮询未读数量。</p>
+                </div>
+                <div class="mw-page-actions">
+                    <button type="button" class="mw-button mw-button-secondary secondary-button" id="refresh-notifications-btn">刷新</button>
+                    <button type="button" class="mw-button mw-button-primary primary-button" id="read-all-btn">全部已读</button>
+                </div>
+            </header>
+
+            <section class="mw-card card">
+                <p class="muted" style="margin:0 0 16px">未读通知：<strong id="unread-count">0</strong> · 支持标记已读与全部已读</p>
+                <div id="notifications-list" class="entity-stack"></div>
+                <div id="notifications-empty" class="mw-empty-state empty-state hidden">
+                    <h3 class="mw-empty-title">暂无通知</h3>
+                    <p class="mw-empty-description">批量导入完成后会在这里显示通知。</p>
+                </div>
+            </section>
+        </div>
+    </main>
+</div>
+<script src="/app-nav.js"></script>
+<script src="/notifications.js"></script>
+</body>
+</html>

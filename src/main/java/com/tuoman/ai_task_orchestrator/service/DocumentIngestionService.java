@@ -4,6 +4,7 @@ import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
 import com.tuoman.ai_task_orchestrator.document.extract.DocumentTextExtractorRegistry;
 import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentFileValidator;
 import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionEventRecorder;
+import com.tuoman.ai_task_orchestrator.document.ingestion.FileHashService;
 import com.tuoman.ai_task_orchestrator.document.ingestion.IngestionDisplayTexts;
 import com.tuoman.ai_task_orchestrator.dto.DocumentIngestionSubmitResponse;
 import com.tuoman.ai_task_orchestrator.entity.DocumentEntity;
@@ -20,6 +21,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
 
 @Service
 @RequiredArgsConstructor
@@ -41,6 +44,8 @@ public class DocumentIngestionService {
 
     private final DocumentIngestionTaskProgressService documentIngestionTaskProgressService;
 
+    private final FileHashService fileHashService;
+
     @Transactional
     public DocumentIngestionSubmitResponse submitUpload(MultipartFile file) {
         var fileType = documentFileValidator.validate(file);
@@ -48,9 +53,45 @@ public class DocumentIngestionService {
         if (text == null || text.isBlank()) {
             throw BusinessException.validationError("提取的文档文本不能为空");
         }
+        try {
+            byte[] bytes = file.getBytes();
+            return submitIngestion(
+                    file.getOriginalFilename(),
+                    file.getContentType(),
+                    file.getSize(),
+                    bytes,
+                    text,
+                    null
+            );
+        } catch (IOException exception) {
+            throw BusinessException.internalError("读取上传文件失败");
+        }
+    }
 
-        DocumentEntity document = documentService.createDocumentEntity(file);
+    @Transactional
+    public DocumentIngestionSubmitResponse submitIngestion(
+            String originalFilename,
+            String contentType,
+            long fileSize,
+            byte[] fileBytes,
+            String text,
+            Long batchItemId
+    ) {
+        if (text == null || text.isBlank()) {
+            throw BusinessException.validationError("提取的文档文本不能为空");
+        }
+
+        String fileHash = fileHashService.hashBytes(fileBytes);
+        String textHash = fileHashService.hashText(text);
+
+        DocumentEntity document = documentService.createDocumentEntityFromMeta(
+                originalFilename,
+                contentType,
+                fileSize
+        );
         document.setSourceText(text);
+        document.setFileHash(fileHash);
+        document.setTextHash(textHash);
         document.setCurrentGeneration(1);
         document.setReindexCount(0);
         document.setStatus(DocumentStatus.UPLOADED);
@@ -64,6 +105,7 @@ public class DocumentIngestionService {
         task.setStep(IngestionTaskStep.TEXT_EXTRACTED);
         task.setTaskType(IngestionTaskType.INGEST);
         task.setSourceText(text);
+        task.setBatchItemId(batchItemId);
         DocumentIngestionTaskEntity savedTask = documentIngestionTaskRepository.save(task);
 
         documentIngestionEventRecorder.recordTaskCreated(

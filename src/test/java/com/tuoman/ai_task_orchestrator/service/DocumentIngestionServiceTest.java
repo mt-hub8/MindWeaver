@@ -25,6 +25,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -70,7 +72,8 @@ class DocumentIngestionServiceTest {
                 documentIngestionTaskRepository,
                 documentIngestionMessagePublisher,
                 documentIngestionEventRecorder,
-                documentIngestionTaskProgressService
+                documentIngestionTaskProgressService,
+                new com.tuoman.ai_task_orchestrator.document.ingestion.FileHashService()
         );
     }
 
@@ -79,7 +82,7 @@ class DocumentIngestionServiceTest {
         DocumentEntity document = new DocumentEntity();
         document.setId(10L);
         document.setOriginalFilename("demo.txt");
-        when(documentService.createDocumentEntity(any())).thenReturn(document);
+        when(documentService.createDocumentEntityFromMeta(anyString(), anyString(), anyLong())).thenReturn(document);
         when(documentRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(documentIngestionTaskRepository.save(any())).thenAnswer(invocation -> {
             DocumentIngestionTaskEntity task = invocation.getArgument(0);
@@ -106,7 +109,7 @@ class DocumentIngestionServiceTest {
         DocumentEntity document = new DocumentEntity();
         document.setId(10L);
         document.setOriginalFilename("demo.txt");
-        when(documentService.createDocumentEntity(any())).thenReturn(document);
+        when(documentService.createDocumentEntityFromMeta(anyString(), anyString(), anyLong())).thenReturn(document);
         ArgumentCaptor<DocumentEntity> documentCaptor = ArgumentCaptor.forClass(DocumentEntity.class);
         when(documentRepository.save(documentCaptor.capture())).thenAnswer(invocation -> invocation.getArgument(0));
         when(documentIngestionTaskRepository.save(any())).thenAnswer(invocation -> {

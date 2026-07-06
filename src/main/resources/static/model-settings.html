@@ -4,112 +4,144 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>模型设置 · MindWeaver</title>
-    <link rel="stylesheet" href="/mindweaver.css?v=mw-ivory-app-shell-v1">
-    <link rel="stylesheet" href="/app-shell.css?v=mw-compat-v1">
+    <link rel="stylesheet" href="/mindweaver.css?v=mw-model-settings-v1">
+    <link rel="stylesheet" href="/app-shell.css?v=mw-model-settings-v1">
 </head>
 <body class="mw-page" data-page="model-settings">
 <div class="mw-app-shell app-shell">
     <aside id="app-sidebar-mount" data-active="model-settings" aria-label="主导航"></aside>
-    <main class="mw-main-panel main-panel">
-        <div class="mw-page-content content-container">
-            <header class="mw-page-header page-header page-header-with-action">
+    <main class="mw-main-panel main-panel content-container">
+        <header class="mw-page-header page-header">
+            <div>
+                <h1 class="mw-page-title page-title">模型设置</h1>
+                <p class="mw-page-description page-subtitle">配置模型供应商、默认 LLM 与 Embedding 模型，让 MindWeaver 可以调用真实模型能力。</p>
+            </div>
+            <a href="/guide.html" class="mw-button mw-button-secondary secondary-button page-guide-link" style="text-decoration:none">使用指南</a>
+        </header>
+
+        <div id="loading-status" class="status loading visible" role="status">正在加载…</div>
+        <div id="error-status" class="error-card hidden" role="alert"><p id="error-message" style="margin:0"></p></div>
+        <div id="action-notice" class="success-box hidden" role="status" aria-live="polite"><p id="action-notice-message" style="margin:0"></p></div>
+
+        <section id="current-panel" class="mw-card model-current-card hidden">
+            <div class="model-current-header">
                 <div>
-                    <h1 class="mw-page-title page-title">模型设置</h1>
-                    <p class="mw-page-description page-subtitle">配置模型供应商、默认 LLM 与 Embedding 模型，让 MindWeaver 可以调用真实模型能力。</p>
+                    <div class="mw-section-eyebrow">Current Model</div>
+                    <h2 class="mw-card-title">当前模型</h2>
+                    <p class="mw-card-description">MindWeaver 当前用于问答、检索与 AI 任务的默认模型链路。</p>
                 </div>
-                <div class="mw-page-actions">
-                    <a href="/guide.html" class="mw-button mw-button-ghost page-guide-link" style="text-decoration:none">使用指南</a>
-                </div>
-            </header>
+                <span class="mw-badge mw-badge-accent status-pill active">使用中</span>
+            </div>
 
-            <div id="loading-status" class="status loading visible" role="status">正在加载…</div>
-            <div id="error-status" class="error-card hidden" role="alert"><p id="error-message" style="margin:0"></p></div>
-            <div id="action-notice" class="success-box hidden" role="status" aria-live="polite"><p id="action-notice-message" style="margin:0"></p></div>
+            <p id="dimension-warning" class="model-dimension-warning hidden" role="alert"></p>
 
-            <section id="current-panel" class="mw-hero-card hero-card selected-border hidden">
-                <div class="section-header-row">
-                    <h2 class="mw-card-title" style="margin:0">当前模型</h2>
-                    <span class="mw-badge mw-badge-success status-pill active">使用中</span>
-                </div>
-                <p id="runtime-mode" class="muted" style="font-size:0.86rem;margin:0 0 16px"></p>
-                <p id="dimension-warning" class="error-banner hidden" style="margin-bottom:16px"></p>
-                <div id="current-model-body" class="summary-row"></div>
-                <div style="margin-top:18px;text-align:right">
-                    <button type="button" class="mw-button mw-button-secondary secondary-button" id="scroll-to-providers-btn">更改默认模型</button>
-                </div>
-            </section>
+            <div class="model-current-grid">
+                <article class="model-current-item">
+                    <span class="model-label">默认 LLM</span>
+                    <strong id="current-llm-model">未配置</strong>
+                    <p id="current-llm-hint">用于生成回答、摘要和任务报告。</p>
+                    <span class="model-subline" id="current-llm-provider"></span>
+                </article>
+                <article class="model-current-item">
+                    <span class="model-label">默认 Embedding</span>
+                    <strong id="current-embedding-model">未配置</strong>
+                    <p id="current-embedding-hint">用于文档向量化与语义检索。</p>
+                    <span class="model-subline" id="current-embedding-provider"></span>
+                </article>
+                <article class="model-current-item">
+                    <span class="model-label">运行链路</span>
+                    <strong id="current-runtime-label">—</strong>
+                    <p id="current-runtime-hint">—</p>
+                    <span class="model-subline" id="current-provider-status"></span>
+                </article>
+            </div>
 
-            <section id="providers-panel" class="mw-card card hidden">
-                <h2 class="mw-card-title">模型提供商</h2>
-                <p class="muted" style="font-size:0.88rem">切换 Embedding 模型后，已有文档可能需要重新索引。API Key 不会明文展示。支持测试连接、设为默认问答模型、设为默认向量模型。</p>
-                <div id="providers-empty" class="empty-state-card hidden">还没有模型供应商，请点击「添加提供商」或「添加模型供应商」。</div>
-                <div id="providers-list" style="margin-top:16px"></div>
-                <div class="providers-footer">
-                    <button id="add-provider-button" type="button" class="mw-button mw-button-primary primary-button">+ 添加提供商</button>
-                </div>
-            </section>
+            <div class="model-current-actions">
+                <button type="button" class="mw-button mw-button-secondary secondary-button" id="test-current-connection-btn">测试连接</button>
+                <button type="button" class="mw-button mw-button-primary primary-button" id="scroll-to-providers-btn">更改默认模型</button>
+            </div>
 
-            <section id="form-panel" class="mw-card card form-card hidden">
-                <h2 id="form-title" class="mw-card-title">添加模型供应商</h2>
-                <p class="form-card-desc">API Key 不会明文展示；编辑时留空表示保留原 Key。</p>
-                <div class="form-grid mw-form">
-                    <div class="form-field mw-field">
-                        <label class="mw-label" for="preset-select">从预设填充</label>
-                        <select class="mw-select" id="preset-select"><option value="">手动填写</option></select>
-                    </div>
-                    <div class="form-field mw-field">
-                        <label class="mw-label" for="provider-type">供应商类型</label>
-                        <select class="mw-select" id="provider-type">
-                            <option value="OLLAMA">本地 Ollama</option>
-                            <option value="CUSTOM_OPENAI_COMPATIBLE">自定义 OpenAI-compatible</option>
-                            <option value="OPENAI_COMPATIBLE">OpenAI-compatible 预设</option>
-                            <option value="MOCK">Mock（开发测试）</option>
-                        </select>
-                    </div>
-                    <div class="form-field mw-field">
-                        <label class="mw-label" for="display-name">显示名称</label>
-                        <input class="mw-input" id="display-name" type="text" maxlength="128">
-                    </div>
-                    <div class="form-field mw-field">
-                        <label class="mw-label" for="base-url">Base URL</label>
-                        <input class="mw-input" id="base-url" type="text" maxlength="512">
-                    </div>
-                    <div class="form-field mw-field">
-                        <label class="mw-label" for="api-key">API Key</label>
-                        <input class="mw-input" id="api-key" type="password" maxlength="512" autocomplete="off">
-                    </div>
-                    <div class="form-field mw-field">
-                        <label class="mw-label" for="default-llm-model">默认 LLM 模型</label>
-                        <input class="mw-input" id="default-llm-model" type="text" maxlength="128">
-                    </div>
-                    <div class="form-field mw-field">
-                        <label class="mw-label" for="default-embedding-model">默认 Embedding 模型</label>
-                        <input class="mw-input" id="default-embedding-model" type="text" maxlength="128">
-                    </div>
-                    <div class="form-field mw-field">
-                        <label class="mw-label" for="embedding-dimension">Embedding 维度</label>
-                        <input class="mw-input" id="embedding-dimension" type="number" min="1" max="8192">
-                    </div>
-                </div>
-                <label style="display:block;margin-top:12px"><input id="enabled" type="checkbox" checked> 启用</label>
-                <div class="action-row">
-                    <button id="cancel-form-button" type="button" class="mw-button mw-button-secondary secondary-button">取消</button>
-                    <button id="save-provider-button" type="button" class="mw-button mw-button-primary primary-button">保存</button>
-                </div>
-                <p id="form-result" class="muted hidden"></p>
-                <details class="technical-details hidden" id="form-tech-details">
-                    <summary>查看技术详情</summary>
-                    <pre id="form-tech-json"></pre>
-                </details>
-            </section>
+            <p id="runtime-mode" class="hidden" aria-hidden="true"></p>
+            <div id="current-model-body" class="hidden" aria-hidden="true"></div>
+        </section>
 
-            <section class="mw-card card" style="margin-top:20px">
-                <p class="muted" style="margin:0;font-size:0.86rem;display:flex;align-items:center;gap:8px">
-                    <span aria-hidden="true">🛡</span>
-                    安全提示：API Key 保存在本地，仅用于连接对应服务，不会同步到云端。
-                </p>
-            </section>
-        </div>
+        <section id="providers-panel" class="mw-section hidden">
+            <div class="mw-section-header">
+                <h2>模型提供商</h2>
+                <p>切换 Embedding 模型后，已有文档可能需要重新索引。API Key 不会明文展示。支持测试连接、设为默认问答模型、设为默认向量模型。</p>
+            </div>
+
+            <div id="providers-empty" class="empty-state-card hidden">还没有模型供应商，请点击「添加提供商」或「添加模型供应商」。</div>
+            <div id="providers-list" class="provider-list"></div>
+
+            <div class="provider-footer-actions providers-footer">
+                <button id="add-provider-button" type="button" class="mw-button mw-button-primary primary-button">+ 添加提供商</button>
+            </div>
+        </section>
+
+        <section id="form-panel" class="mw-card card form-card hidden">
+            <h2 id="form-title" class="mw-card-title">添加模型供应商</h2>
+            <p class="form-card-desc">API Key 不会明文展示；编辑时留空表示保留原 Key。</p>
+            <div class="form-grid mw-form">
+                <div class="form-field mw-field">
+                    <label class="mw-label" for="preset-select">从预设填充</label>
+                    <select class="mw-select" id="preset-select"><option value="">手动填写</option></select>
+                </div>
+                <div class="form-field mw-field">
+                    <label class="mw-label" for="provider-type">供应商类型</label>
+                    <select class="mw-select" id="provider-type">
+                        <option value="OLLAMA">本地 Ollama</option>
+                        <option value="CUSTOM_OPENAI_COMPATIBLE">自定义 OpenAI-compatible</option>
+                        <option value="OPENAI_COMPATIBLE">OpenAI-compatible 预设</option>
+                        <option value="MOCK">Mock（开发测试）</option>
+                    </select>
+                </div>
+                <div class="form-field mw-field">
+                    <label class="mw-label" for="display-name">显示名称</label>
+                    <input class="mw-input" id="display-name" type="text" maxlength="128">
+                </div>
+                <div class="form-field mw-field">
+                    <label class="mw-label" for="base-url">Base URL</label>
+                    <input class="mw-input" id="base-url" type="text" maxlength="512">
+                </div>
+                <div class="form-field mw-field">
+                    <label class="mw-label" for="api-key">API Key</label>
+                    <input class="mw-input" id="api-key" type="password" maxlength="512" autocomplete="off">
+                </div>
+                <div class="form-field mw-field">
+                    <label class="mw-label" for="default-llm-model">默认 LLM 模型</label>
+                    <input class="mw-input" id="default-llm-model" type="text" maxlength="128">
+                </div>
+                <div class="form-field mw-field">
+                    <label class="mw-label" for="default-embedding-model">默认 Embedding 模型</label>
+                    <input class="mw-input" id="default-embedding-model" type="text" maxlength="128">
+                </div>
+                <div class="form-field mw-field">
+                    <label class="mw-label" for="embedding-dimension">Embedding 维度</label>
+                    <input class="mw-input" id="embedding-dimension" type="number" min="1" max="8192">
+                </div>
+            </div>
+            <label style="display:block;margin-top:12px"><input id="enabled" type="checkbox" checked> 启用</label>
+            <div class="action-row">
+                <button id="cancel-form-button" type="button" class="mw-button mw-button-secondary secondary-button">取消</button>
+                <button id="save-provider-button" type="button" class="mw-button mw-button-primary primary-button">保存</button>
+            </div>
+            <p id="form-result" class="muted hidden"></p>
+            <details class="technical-details mw-details-card hidden" id="form-tech-details">
+                <summary>查看技术详情</summary>
+                <pre id="form-tech-json"></pre>
+            </details>
+        </section>
+
+        <section class="model-security-note" aria-label="安全提示">
+            <span aria-hidden="true">🛡</span>
+            安全提示：API Key 保存在本地，仅用于连接对应服务，不会同步到云端。
+        </section>
+
+        <details class="mw-details-card technical-details" id="page-tech-details">
+            <summary>查看技术详情</summary>
+            <div id="current-tech-body" class="tech-details-body"></div>
+        </details>
     </main>
 </div>
 <script src="/app-nav.js"></script>

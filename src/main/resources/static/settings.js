@@ -27,6 +27,29 @@
 
     loadRuntimeSummary();
     loadStorageSummary();
+    loadBatchConfig();
+
+    async function loadBatchConfig() {
+        const ids = {
+            maxFiles: document.getElementById("batch-max-files"),
+            parseConcurrency: document.getElementById("batch-parse-concurrency"),
+            embeddingConcurrency: document.getElementById("batch-embedding-concurrency"),
+            maxRetry: document.getElementById("batch-max-retry"),
+            stagingDir: document.getElementById("batch-staging-dir")
+        };
+        try {
+            const response = await fetch("/documents/batches/config");
+            const data = await response.json();
+            if (!response.ok) return;
+            ids.maxFiles.textContent = String(data.maxFilesPerBatch);
+            ids.parseConcurrency.textContent = String(data.documentParseConcurrency);
+            ids.embeddingConcurrency.textContent = String(data.embeddingConcurrency);
+            ids.maxRetry.textContent = String(data.maxRetryCount);
+            ids.stagingDir.textContent = data.stagingDir || "-";
+        } catch (e) {
+            Object.values(ids).forEach(function (el) { if (el) el.textContent = "—"; });
+        }
+    }
 
     async function loadRuntimeSummary() {
         try {

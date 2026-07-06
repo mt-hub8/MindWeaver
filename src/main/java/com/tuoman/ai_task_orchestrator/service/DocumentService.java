@@ -64,10 +64,14 @@ public class DocumentService {
     }
 
     public DocumentEntity createDocumentEntity(MultipartFile file) {
+        return createDocumentEntityFromMeta(file.getOriginalFilename(), file.getContentType(), file.getSize());
+    }
+
+    public DocumentEntity createDocumentEntityFromMeta(String originalFilename, String contentType, long fileSize) {
         DocumentEntity document = new DocumentEntity();
-        document.setOriginalFilename(file.getOriginalFilename());
-        document.setContentType(file.getContentType());
-        document.setFileSize(file.getSize());
+        document.setOriginalFilename(originalFilename);
+        document.setContentType(contentType);
+        document.setFileSize(fileSize);
         document.setStatus(DocumentStatus.UPLOADED);
         document.setLifecycleStatus(DocumentLifecycleStatus.ACTIVE);
         document.setCurrentGeneration(1);

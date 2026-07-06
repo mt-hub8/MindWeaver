@@ -56,6 +56,8 @@
 - **本地 Ollama 模型** — `local-ai` 模式下使用 `qwen3-embedding` 与 `qwen2.5` 系列模型。
 - **模型供应商配置（V10.0）** — 在「模型设置」管理 Ollama / OpenAI-compatible 供应商，设置默认 LLM 与 Embedding；**API Key 不会明文展示**。
 - **RAG 质量评分与诊断（V11.0）** — Ask 页面展示**综合评分**、四维质量分、**主要扣分原因**与**优化建议**；支持平衡 / 精准 / 全面三种评分模式；技术详情可折叠查看原始指标与权重。
+- **批量文档导入（V13.0）** — 一次上传多个文件，按批次队列处理；支持文件级 / 文本级去重；失败可重试、可取消剩余任务。
+- **通知中心（V13.0）** — 批量导入完成、部分失败、失败或取消时生成站内通知，可跳转批次详情。
 - **AI 任务编排** — 提交目标后自动生成检索、总结与最终报告。
 - **工具执行过程** — 查看每一步工具输入、输出与事件时间线。
 - **模型设置** — 查看运行模式、Worker / Ollama 连接状态，支持连接测试。
@@ -71,6 +73,8 @@
 |------|------|------|
 | 首页 | `/` | 产品入口与核心功能导航 |
 | 文档管理 | `/documents.html` | 上传文档、查看状态、重新索引、放入垃圾箱 |
+| 批量导入 | `/batch-ingestion.html` | 多文件批次上传、进度、重试与取消（V13.0） |
+| 通知中心 | `/notifications.html` | 站内通知、标记已读（V13.0） |
 | 垃圾箱 | `/trash.html` | 恢复或永久删除已删除文档 |
 | 知识库分组 | `/collections.html` | 创建分组、管理文档归属 |
 | 知识库问答 | `/ask.html` | 选择范围提问，查看回答、引用来源与 **RAG 质量评分** |
@@ -299,9 +303,9 @@ Worker 测试使用 mock HTTP，**不调用真实 Ollama**。
 | **V10.0** | 模型 Provider 设置：Ollama / OpenAI-compatible 供应商、API Key 加密、默认模型 |
 | **V11.0** | RAG 质量评分与诊断（当前）：Ask 综合评分、扣分原因、优化建议、三种评分模式 |
 | **V12.0** | 垃圾箱与本地存储管理（当前）：ACTIVE → TRASHED → PURGED、7 天恢复、缓存管理 |
-| **V13.0** | Batch Ingestion & Notification（批量上传与通知） |
-| **V14.0** | Skill System MVP |
-| **V15.0** | 本地应用打包（安装包 / 一键服务） |
+| **V13.0** | 批量文档导入与通知中心（当前）：UploadBatch、文件级去重、文本级去重、站内通知 |
+| **V14.0** | 本地应用打包（安装包 / 一键服务） |
+| **V15.0** | Skill System MVP |
 | **V16.0** | 多 Agent 圆桌 |
 
 ---
@@ -378,7 +382,9 @@ Java（Spring Boot）擅长可靠的业务服务、事务、异步任务与 API 
 | 知识库分组 · 范围检索（V5.0）· `collectionId` | [scoped-retrieval-and-collections.md](docs/manual/scoped-retrieval-and-collections.md) |
 | AI 任务编排（V6.0） | [ai-runtime-and-agent-task-orchestration.md](docs/manual/ai-runtime-and-agent-task-orchestration.md) |
 | Tool Workflow（V7.0）· `/agent-tasks.html` | [tool-using-agent-workflow.md](docs/manual/tool-using-agent-workflow.md) |
-| 本地 Ollama（V8.0）· `real-local-ai-runtime-with-ollama.md` | [docs/manual/real-local-ai-runtime-with-ollama.md](docs/manual/real-local-ai-runtime-with-ollama.md) |
+| 本地 Ollama（V8.0） | [real-local-ai-runtime-with-ollama.md](docs/manual/real-local-ai-runtime-with-ollama.md) |
+| 垃圾箱与本地存储（V12.0） | [trash-and-local-storage-management.md](docs/manual/trash-and-local-storage-management.md) |
+| V13.0 Batch Ingestion & Notification | [batch-ingestion-and-notification.md](docs/manual/batch-ingestion-and-notification.md) |
 | 本地开发环境 | [docs/local-dev.md](docs/local-dev.md) |
 | API 示例 | [docs/api-examples.md](docs/api-examples.md) |
 | 面试 deep-dive | [docs/interview](docs/interview) |

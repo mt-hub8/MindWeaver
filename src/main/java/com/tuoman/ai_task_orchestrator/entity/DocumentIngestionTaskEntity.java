@@ -64,6 +64,9 @@ public class DocumentIngestionTaskEntity {
     @Column(name = "retry_count", nullable = false)
     private Integer retryCount;
 
+    @Column(name = "batch_item_id")
+    private Long batchItemId;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 

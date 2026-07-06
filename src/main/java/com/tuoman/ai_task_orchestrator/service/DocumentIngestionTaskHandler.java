@@ -1,5 +1,6 @@
 package com.tuoman.ai_task_orchestrator.service;
 
+import com.tuoman.ai_task_orchestrator.batch.DuplicateDetectionService;
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
 import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionEventRecorder;
 import com.tuoman.ai_task_orchestrator.dto.DocumentEmbeddingResponse;
@@ -12,9 +13,11 @@ import com.tuoman.ai_task_orchestrator.enums.IngestionTaskType;
 import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 @Slf4j
 @Service
@@ -32,6 +35,11 @@ public class DocumentIngestionTaskHandler {
     private final DocumentRepository documentRepository;
 
     private final DocumentIngestionEventRecorder documentIngestionEventRecorder;
+
+    private final DuplicateDetectionService duplicateDetectionService;
+
+    @Lazy
+    private final UploadBatchService uploadBatchService;
 
     public void process(Long taskId) {
         DocumentIngestionTaskEntitySnapshot snapshot = loadPendingTask(taskId);
@@ -52,6 +60,7 @@ public class DocumentIngestionTaskHandler {
 
         try {
             documentIngestionEventRecorder.recordTaskStarted(taskId);
+            uploadBatchService.onIngestionTaskStarted(taskId);
             documentIngestionTaskProgressService.updateTask(taskId, task -> {
                 task.setStatus(IngestionTaskStatus.PROCESSING);
                 task.setStep(IngestionTaskStep.CHUNKING);
@@ -71,9 +80,15 @@ public class DocumentIngestionTaskHandler {
             );
 
             documentIngestionTaskProgressService.updateTask(taskId, task -> task.setChunkCount(chunkCount));
+
+            if (shouldSkipTextDuplicate(taskId, snapshot, document)) {
+                return;
+            }
+
             completeEmbeddingAndVectorStages(taskId, document.getId(), currentStep, taskStartedAt, false, null);
+            uploadBatchService.onIngestionTaskCompleted(taskId);
         } catch (Exception exception) {
-            handleIngestFailure(taskId, snapshot.documentId(), currentStep, exception);
+            handleIngestFailure(taskId, snapshot.documentId(), snapshot.batchItemId(), currentStep, exception);
         }
     }
 
@@ -197,6 +212,7 @@ public class DocumentIngestionTaskHandler {
     private void handleIngestFailure(
             Long taskId,
             Long documentId,
+            Long batchItemId,
             IngestionTaskStep currentStep,
             Exception exception
     ) {
@@ -218,6 +234,9 @@ public class DocumentIngestionTaskHandler {
                 exception
         );
         markDocumentFailed(documentId, exception);
+        if (batchItemId != null) {
+            uploadBatchService.onIngestionTaskFailed(taskId, errorCode, errorMessage);
+        }
     }
 
     private void handleReindexFailure(
@@ -260,8 +279,39 @@ public class DocumentIngestionTaskHandler {
                 task.getDocumentId(),
                 task.getSourceText(),
                 taskType,
-                task.getTargetGeneration()
+                task.getTargetGeneration(),
+                task.getBatchItemId()
         );
+    }
+
+    private boolean shouldSkipTextDuplicate(
+            Long taskId,
+            DocumentIngestionTaskEntitySnapshot snapshot,
+            DocumentEntity document
+    ) {
+        if (snapshot.batchItemId() == null) {
+            return false;
+        }
+        Optional<Long> duplicateDocumentId = duplicateDetectionService.findActiveTextDuplicate(
+                document.getTextHash(),
+                document.getId()
+        );
+        if (duplicateDocumentId.isEmpty()) {
+            return false;
+        }
+
+        document.setStatus(DocumentStatus.FAILED);
+        document.setErrorMessage("检测到相同文本内容，已跳过重复 embedding。");
+        documentRepository.save(document);
+
+        documentIngestionTaskProgressService.updateTask(taskId, task -> {
+            task.setStatus(IngestionTaskStatus.COMPLETED);
+            task.setStep(IngestionTaskStep.COMPLETED);
+            task.setCompletedAt(LocalDateTime.now());
+        });
+        documentIngestionEventRecorder.recordTaskCompleted(taskId, 0L);
+        uploadBatchService.markTextDuplicateSkipped(snapshot.batchItemId(), duplicateDocumentId.get());
+        return true;
     }
 
     private void markDocumentFailed(Long documentId, Exception exception) {
@@ -276,7 +326,8 @@ public class DocumentIngestionTaskHandler {
             Long documentId,
             String sourceText,
             IngestionTaskType taskType,
-            Integer targetGeneration
+            Integer targetGeneration,
+            Long batchItemId
     ) {
     }
 }

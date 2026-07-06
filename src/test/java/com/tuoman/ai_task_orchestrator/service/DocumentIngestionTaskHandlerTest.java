@@ -1,5 +1,6 @@
 package com.tuoman.ai_task_orchestrator.service;
 
+import com.tuoman.ai_task_orchestrator.batch.DuplicateDetectionService;
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
 import com.tuoman.ai_task_orchestrator.document.ingestion.DocumentIngestionEventRecorder;
 import com.tuoman.ai_task_orchestrator.dto.DocumentEmbeddingResponse;
@@ -51,6 +52,12 @@ class DocumentIngestionTaskHandlerTest {
     @Mock
     private DocumentIngestionEventRecorder documentIngestionEventRecorder;
 
+    @Mock
+    private DuplicateDetectionService duplicateDetectionService;
+
+    @Mock
+    private UploadBatchService uploadBatchService;
+
     private DocumentIngestionTaskHandler handler;
 
     private DocumentIngestionTaskEntity task;
@@ -63,7 +70,9 @@ class DocumentIngestionTaskHandlerTest {
                 documentService,
                 documentEmbeddingService,
                 documentRepository,
-                documentIngestionEventRecorder
+                documentIngestionEventRecorder,
+                duplicateDetectionService,
+                uploadBatchService
         );
 
         task = new DocumentIngestionTaskEntity();

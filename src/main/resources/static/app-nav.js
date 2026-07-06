@@ -2,12 +2,14 @@
     var NAV_ITEMS = [
         { key: "overview", nav: "overview", href: "/index.html", label: "总览", icon: "◆" },
         { key: "documents", nav: "documents", href: "/documents.html", label: "文档管理", icon: "▤" },
+        { key: "batch-ingestion", nav: "batch-ingestion", href: "/batch-ingestion.html", label: "批量导入", icon: "▥" },
         { key: "collections", nav: "collections", href: "/collections.html", label: "知识库分组", icon: "▦" },
         { key: "ask", nav: "ask", href: "/ask.html", label: "知识库问答", icon: "◎" },
         { key: "agent-tasks", nav: "agent-tasks", href: "/agent-tasks.html", label: "AI 任务", icon: "✦" },
         { key: "model-settings", nav: "model-settings", href: "/model-settings.html", label: "模型设置", icon: "⚙" },
         { key: "quality", nav: "quality", href: "/quality.html", label: "质量诊断", icon: "◇" },
         { key: "trash", nav: "trash", href: "/trash.html", label: "垃圾箱", icon: "⌫" },
+        { key: "notifications", nav: "notifications", href: "/notifications.html", label: "通知中心", icon: "🔔" },
         { key: "settings", nav: "settings", href: "/settings.html", label: "系统设置", icon: "◈" },
         { key: "guide", nav: "guide", href: "/guide.html", label: "使用指南", icon: "?" }
     ];

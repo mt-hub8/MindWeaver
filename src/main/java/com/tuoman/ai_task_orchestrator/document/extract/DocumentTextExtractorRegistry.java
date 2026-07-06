@@ -33,6 +33,17 @@ public class DocumentTextExtractorRegistry {
         return extractor.extract(file);
     }
 
+    public String extractFromBytes(byte[] bytes, String originalFilename, String contentType) {
+        DocumentFileType fileType = resolveFileType(originalFilename);
+        MultipartFile file = new InMemoryMultipartFile(
+                "file",
+                originalFilename,
+                contentType,
+                bytes
+        );
+        return extract(file, fileType);
+    }
+
     public static DocumentFileType resolveFileType(String originalFilename) {
         if (originalFilename == null || originalFilename.isBlank()) {
             throw BusinessException.validationError("Filename must not be blank");

@@ -47,6 +47,8 @@ class FrontendProductizationRegressionTest {
         assertThat(appNav).contains("AI 任务");
         assertThat(appNav).contains("模型设置");
         assertThat(appNav).contains("质量诊断");
+        assertThat(appNav).contains("批量导入");
+        assertThat(appNav).contains("通知中心");
         assertThat(appNav).contains("垃圾箱");
         assertThat(appNav).contains("系统设置");
         assertThat(appNav).contains("使用指南");

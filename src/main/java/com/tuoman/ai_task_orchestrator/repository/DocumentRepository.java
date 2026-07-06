@@ -31,4 +31,15 @@ public interface DocumentRepository extends JpaRepository<DocumentEntity, Long> 
 
     @Query("SELECT COALESCE(SUM(LENGTH(d.sourceText)), 0) FROM DocumentEntity d WHERE d.lifecycleStatus = com.tuoman.ai_task_orchestrator.enums.DocumentLifecycleStatus.ACTIVE AND d.sourceText IS NOT NULL")
     Long sumActiveSourceTextBytes();
+
+    java.util.Optional<DocumentEntity> findFirstByFileHashAndLifecycleStatus(
+            String fileHash,
+            DocumentLifecycleStatus lifecycleStatus
+    );
+
+    java.util.Optional<DocumentEntity> findFirstByTextHashAndLifecycleStatusAndIdNot(
+            String textHash,
+            DocumentLifecycleStatus lifecycleStatus,
+            Long excludeDocumentId
+    );
 }

@@ -67,6 +67,12 @@ public class DocumentEntity {
     @Column(name = "reindex_count", nullable = false)
     private Integer reindexCount;
 
+    @Column(name = "file_hash", length = 64)
+    private String fileHash;
+
+    @Column(name = "text_hash", length = 64)
+    private String textHash;
+
     @Column(name = "last_reindexed_at")
     private LocalDateTime lastReindexedAt;
 

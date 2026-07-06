@@ -1342,4 +1342,357 @@ body.mw-page { --border: var(--mw-border); --text: var(--mw-text-main); --muted:
   }
 
   .provider-card-inner { grid-template-columns: 1fr; }
+
+  body[data-page="model-settings"] .provider-card {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+
+  body[data-page="model-settings"] .provider-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+/* ── Model settings page ── */
+body[data-page="model-settings"] .model-current-card {
+  margin-bottom: 28px;
+  padding: 28px;
+  min-height: 180px;
+  background:
+    radial-gradient(circle at 88% 42%, rgba(255, 224, 150, 0.28), transparent 26%),
+    linear-gradient(135deg, rgba(255, 252, 244, 0.98), rgba(255, 246, 222, 0.72));
+}
+
+body[data-page="model-settings"] .model-current-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+body[data-page="model-settings"] .mw-section-eyebrow {
+  margin-bottom: 8px;
+  color: var(--mw-accent);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+body[data-page="model-settings"] .model-dimension-warning {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(196, 90, 74, 0.28);
+  background: #FDF3F1;
+  color: var(--mw-danger);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+body[data-page="model-settings"] .model-current-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+body[data-page="model-settings"] .model-current-item {
+  min-width: 0;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: rgba(255, 252, 244, 0.72);
+  border: 1px solid var(--mw-border);
+}
+
+body[data-page="model-settings"] .model-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--mw-text-muted);
+}
+
+body[data-page="model-settings"] .model-current-item strong {
+  display: block;
+  font-size: 17px;
+  color: var(--mw-text-main);
+  word-break: break-word;
+}
+
+body[data-page="model-settings"] .model-current-item p {
+  margin: 6px 0 0;
+  color: var(--mw-text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+body[data-page="model-settings"] .model-subline {
+  display: block;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--mw-text-soft);
+  overflow-wrap: anywhere;
+}
+
+body[data-page="model-settings"] .model-current-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+  flex-wrap: wrap;
+}
+
+body[data-page="model-settings"] .mw-section {
+  margin-top: 28px;
+  min-width: 0;
+}
+
+body[data-page="model-settings"] .mw-section-header {
+  margin-bottom: 14px;
+}
+
+body[data-page="model-settings"] .mw-section-header h2 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--mw-text-main);
+}
+
+body[data-page="model-settings"] .mw-section-header p {
+  margin: 6px 0 0;
+  color: var(--mw-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+body[data-page="model-settings"] .provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+body[data-page="model-settings"] .provider-card {
+  display: grid;
+  grid-template-columns: minmax(200px, 1.4fr) minmax(140px, 1fr) minmax(160px, 1fr) minmax(140px, 0.8fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 18px 20px;
+  margin-bottom: 0;
+  min-width: 0;
+}
+
+body[data-page="model-settings"] .provider-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+body[data-page="model-settings"] .provider-logo,
+body[data-page="model-settings"] .provider-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  background: var(--mw-card-soft);
+  border: 1px solid var(--mw-border);
+  color: var(--mw-accent);
+  font-weight: 800;
+  font-size: 13px;
+}
+
+body[data-page="model-settings"] .provider-name {
+  margin: 0;
+  font-size: 15px;
+  color: var(--mw-text-main);
+}
+
+body[data-page="model-settings"] .provider-desc {
+  margin: 4px 0 0;
+  color: var(--mw-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+body[data-page="model-settings"] .provider-type-label {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--mw-text-soft);
+}
+
+body[data-page="model-settings"] .provider-meta {
+  min-width: 0;
+}
+
+body[data-page="model-settings"] .provider-meta-label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 12px;
+  color: var(--mw-text-muted);
+}
+
+body[data-page="model-settings"] .provider-meta-value {
+  display: block;
+  color: var(--mw-text-main);
+  font-size: 13px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+body[data-page="model-settings"] .provider-status {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+body[data-page="model-settings"] .provider-status-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mw-text-main);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+body[data-page="model-settings"] .provider-status-sub {
+  color: var(--mw-text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+body[data-page="model-settings"] .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--mw-text-soft);
+  flex: 0 0 auto;
+}
+
+body[data-page="model-settings"] .status-dot.success {
+  background: var(--mw-success);
+}
+
+body[data-page="model-settings"] .status-dot.warning {
+  background: var(--mw-warning);
+}
+
+body[data-page="model-settings"] .status-dot.danger,
+body[data-page="model-settings"] .status-dot.error {
+  background: var(--mw-danger);
+}
+
+body[data-page="model-settings"] .provider-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+body[data-page="model-settings"] .provider-more-menu {
+  position: relative;
+}
+
+body[data-page="model-settings"] .provider-more-menu summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+body[data-page="model-settings"] .provider-more-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+body[data-page="model-settings"] .provider-more-menu-body {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 4;
+  min-width: 168px;
+  padding: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--mw-border);
+  background: var(--mw-card-bg);
+  box-shadow: var(--mw-shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+body[data-page="model-settings"] .provider-more-menu-body .mw-button {
+  width: 100%;
+  justify-content: flex-start;
+  height: 34px;
+  font-size: 12px;
+}
+
+body[data-page="model-settings"] .provider-card-tech {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+}
+
+body[data-page="model-settings"] .provider-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+body[data-page="model-settings"] .model-security-note {
+  margin-top: 22px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--mw-border);
+  background: var(--mw-card-soft);
+  color: var(--mw-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+body[data-page="model-settings"] .mw-details-card {
+  margin-top: 14px;
+  padding: 16px 18px;
+  background: rgba(255, 252, 244, 0.88);
+  border: 1px solid var(--mw-border);
+  border-radius: var(--mw-radius-card);
+  min-width: 0;
+}
+
+body[data-page="model-settings"] .mw-details-card summary {
+  cursor: pointer;
+  color: var(--mw-text-main);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+body[data-page="model-settings"] .tech-details-body {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--mw-text-muted);
+  overflow-wrap: anywhere;
+}
+
+body[data-page="model-settings"] .tech-details-body dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(120px, auto) 1fr;
+  gap: 8px 16px;
+}
+
+body[data-page="model-settings"] .tech-details-body dt {
+  color: var(--mw-text-secondary);
+  font-weight: 600;
+}
+
+body[data-page="model-settings"] .tech-details-body dd {
+  margin: 0;
+}
+
+@media (max-width: 1200px) {
+  body[data-page="model-settings"] .model-current-grid {
+    grid-template-columns: 1fr;
+  }
 }

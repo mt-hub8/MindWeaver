@@ -61,7 +61,6 @@ class V12TrashRegressionTest {
         assertThat(readme).contains("PURGED");
         assertThat(readme).contains("7 天");
         assertThat(readme).contains("缓存管理");
-        assertThat(readme).contains("Batch Ingestion");
     }
 
     private String fetchUtf8(String path) throws Exception {
