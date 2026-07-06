@@ -11,7 +11,8 @@
 
 
 
-![ScreenShot_2026-07-06_140548_155](C:\Users\mental\Pictures\ScreenShot_2026-07-06_140548_155.png)
+<img width="3824" height="1912" alt="ScreenShot_2026-07-06_140548_155" src="https://github.com/user-attachments/assets/d33fb762-7ba6-4bcd-a409-54e5b570c0ff" />
+
 
 ---
 
