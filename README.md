@@ -1,6 +1,9 @@
 # Personal AI Knowledge Workspace
 # 个人 AI 知识工作台
 
+
+
+
 一个**本地优先**的个人 AI 应用：你可以上传自己的资料，配置本地或外部模型，构建个人知识库，并让 AI 基于你的知识执行问答、总结、报告生成和任务编排。
 
 > 仓库技术名仍为 `ai-task-orchestrator`，但产品面向个人用户，**不是企业级 SaaS**。  
