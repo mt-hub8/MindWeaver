@@ -14,6 +14,7 @@ import com.tuoman.ai_task_orchestrator.enums.DocumentLifecycleStatus;
 import com.tuoman.ai_task_orchestrator.enums.DocumentPurgeStatus;
 import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
 import com.tuoman.ai_task_orchestrator.storage.StorageCleanupService;
+import com.tuoman.ai_task_orchestrator.vectorindex.VectorLifecycleSyncService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -36,6 +37,8 @@ public class DocumentTrashService {
     private final TrashProperties trashProperties;
 
     private final StorageCleanupService storageCleanupService;
+
+    private final VectorLifecycleSyncService vectorLifecycleSyncService;
 
     private final DocumentIngestionEventRecorder documentIngestionEventRecorder;
 
@@ -70,6 +73,7 @@ public class DocumentTrashService {
         documentRepository.save(document);
 
         documentIngestionEventRecorder.recordDocumentTrashed(documentId, purgeAfter);
+        vectorLifecycleSyncService.syncTrash(documentId);
         log.info("Document moved to trash, documentId={}, purgeAfter={}", documentId, purgeAfter);
 
         return new DocumentDeleteResponse(
@@ -99,6 +103,7 @@ public class DocumentTrashService {
         documentRepository.save(document);
 
         documentIngestionEventRecorder.recordDocumentRestored(documentId);
+        vectorLifecycleSyncService.syncRestore(documentId);
         log.info("Document restored from trash, documentId={}", documentId);
 
         return new DocumentRestoreResponse(

@@ -1,9 +1,13 @@
 package com.tuoman.ai_task_orchestrator.evaluation;
 
+import com.tuoman.ai_task_orchestrator.vectorstore.VectorCountFilter;
+import com.tuoman.ai_task_orchestrator.vectorstore.VectorDeleteFilter;
+import com.tuoman.ai_task_orchestrator.vectorstore.VectorScanFilter;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorSearchRequest;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorSearchResult;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorStore;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorStoreDocument;
+import com.tuoman.ai_task_orchestrator.vectorstore.VectorStoreOperationResult;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -49,6 +53,46 @@ public class LatencyMeasuringVectorStore implements VectorStore {
     @Override
     public void deleteByDocumentIdAndProviderAndModel(Long documentId, String provider, String model) {
         delegate.deleteByDocumentIdAndProviderAndModel(documentId, provider, model);
+    }
+
+    @Override
+    public VectorStoreOperationResult deleteByVectorId(String vectorId) {
+        return delegate.deleteByVectorId(vectorId);
+    }
+
+    @Override
+    public VectorStoreOperationResult deleteByStableVectorKey(String stableVectorKey) {
+        return delegate.deleteByStableVectorKey(stableVectorKey);
+    }
+
+    @Override
+    public VectorStoreOperationResult deleteByDocumentIdScoped(Long collectionId, Long documentId) {
+        return delegate.deleteByDocumentIdScoped(collectionId, documentId);
+    }
+
+    @Override
+    public VectorStoreOperationResult deleteByCollectionId(Long collectionId) {
+        return delegate.deleteByCollectionId(collectionId);
+    }
+
+    @Override
+    public VectorStoreOperationResult deleteByGeneration(Long collectionId, Long generation) {
+        return delegate.deleteByGeneration(collectionId, generation);
+    }
+
+    @Override
+    public VectorStoreOperationResult deleteByFilter(VectorDeleteFilter filter) {
+        return delegate.deleteByFilter(filter);
+    }
+
+    @Override
+    public long countByFilter(VectorCountFilter filter) {
+        return delegate.countByFilter(filter);
+    }
+
+    @Override
+    public List<VectorStoreDocument> scanByFilter(VectorScanFilter filter) {
+        return delegate.scanByFilter(filter);
     }
 
     public long getTotalSearchLatencyNanos() {

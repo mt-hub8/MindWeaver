@@ -1,5 +1,6 @@
 package com.tuoman.ai_task_orchestrator.vectorstore;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tuoman.ai_task_orchestrator.repository.DocumentChunkEmbeddingRepository;
 import com.tuoman.ai_task_orchestrator.repository.DocumentChunkRepository;
 import com.tuoman.ai_task_orchestrator.vectorstore.qdrant.QdrantPayloadMapper;
@@ -17,9 +18,10 @@ public class VectorStoreConfiguration {
     @Bean
     public ExactCosineVectorStore exactCosineVectorStore(
             DocumentChunkEmbeddingRepository documentChunkEmbeddingRepository,
-            DocumentChunkRepository documentChunkRepository
+            DocumentChunkRepository documentChunkRepository,
+            ObjectMapper objectMapper
     ) {
-        return new ExactCosineVectorStore(documentChunkEmbeddingRepository, documentChunkRepository);
+        return new ExactCosineVectorStore(documentChunkEmbeddingRepository, documentChunkRepository, objectMapper);
     }
 
     @Bean

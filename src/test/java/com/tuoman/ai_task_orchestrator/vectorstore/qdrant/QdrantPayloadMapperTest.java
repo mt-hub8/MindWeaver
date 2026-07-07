@@ -98,7 +98,7 @@ class QdrantPayloadMapperTest {
 
     @Test
     void toPointShouldFailWhenDimensionDoesNotMatchVectorLength() {
-        VectorStoreDocument invalid = new VectorStoreDocument(
+        VectorStoreDocument invalid = VectorStoreDocument.of(
                 10L,
                 20L,
                 "chunk content",
@@ -116,7 +116,7 @@ class QdrantPayloadMapperTest {
     }
 
     private VectorStoreDocument document() {
-        return new VectorStoreDocument(
+        return VectorStoreDocument.of(
                 10L,
                 20L,
                 "chunk content",

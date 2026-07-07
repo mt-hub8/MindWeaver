@@ -61,6 +61,7 @@
 - **通知中心（V13.0）** — 批量导入完成、部分失败、失败或取消时生成站内通知，可跳转批次详情。
 - **知识库体检报告（V14.0）** — 基于自建 **Gold Test Set** 评测知识库检索与生成质量；支持多检索策略对比（Vector / Hybrid / **RRF** / Rerank）；输出 **0–100 健康分**、**CrossCollectionLeakRate（跨集合污染率）**、**WrongVersionLeakRate（错误版本污染率）** 与可执行优化建议；适合**万级文档** RAG 诊断。
 - **结构化切分与混合检索（V15.0）** — 结构化 chunk（section_path、chunk_type、prev/next/parent）、metadata 增强、**RetrievalFilter** 预过滤、BM25/keyword 检索、**Hybrid + RRF**、启发式 Reranker、parent/adjacent 上下文回填、检索诊断与重新索引。
+- **向量索引健康（V16.0）** — 稳定 **vector_id** 幂等 upsert、**generation** 代际隔离、trash/purge 向量同步、batch retry 防重复；**CrossCollectionVectorLeakRate（跨集合向量污染率）** 等存储层审计；页面 `/vector-index-health.html`。
 - **AI 任务编排** — 提交目标后自动生成检索、总结与最终报告。
 - **工具执行过程** — 查看每一步工具输入、输出与事件时间线。
 - **模型设置** — 查看运行模式、Worker / Ollama 连接状态，支持连接测试。
@@ -83,6 +84,7 @@
 | 知识库问答 | `/ask.html` | 选择范围提问，查看回答、引用来源与 **RAG 质量评分** |
 | 知识库体检 | `/knowledge-health.html` | 评测集运行、健康评分、指标拆解、策略对比（V14.0） |
 | 检索设置 | `/retrieval-settings.html` | 结构化切分、混合检索、RRF、重排序、重新索引（V15.0） |
+| 向量索引健康 | `/vector-index-health.html` | 向量重复/污染/残留审计与清理（V16.0） |
 | AI 任务 | `/agent-tasks.html` | 提交任务，查看报告与执行过程 |
 | 模型设置 | `/model-settings.html` | 管理**模型供应商**、默认 LLM/Embedding、**测试连接**（V10.0） |
 | 系统设置 | `/settings.html` | 运行模式、本地数据目录规划等只读信息 |
@@ -311,9 +313,10 @@ Worker 测试使用 mock HTTP，**不调用真实 Ollama**。
 | **V13.0** | 批量文档导入与通知中心：UploadBatch、文件级去重、文本级去重、站内通知 |
 | **V14.0** | 知识库体检报告与万级文档 RAG 诊断：评测集、多检索策略、健康评分、污染率指标、run 对比 |
 | **V15.0** | 结构化切分与混合检索主链路优化（当前）：section_path、metadata filter、Hybrid+RRF、rerank、context expansion |
-| **V16.0** | 本地应用打包（安装包 / 一键服务） |
-| **V16.0** | Skill System MVP |
-| **V17.0** | 多 Agent 圆桌 |
+| **V16.0** | 向量索引隔离与去重防污染强化（当前）：稳定 vector_id、幂等 upsert、generation 代际、vector audit、cleanup |
+| **V17.0** | 本地应用打包（安装包 / 一键服务） |
+| **V18.0** | Skill System MVP |
+| **V19.0** | 多 Agent 圆桌 |
 
 ---
 
@@ -394,6 +397,7 @@ Java（Spring Boot）擅长可靠的业务服务、事务、异步任务与 API 
 | V13.0 Batch Ingestion & Notification | [batch-ingestion-and-notification.md](docs/manual/batch-ingestion-and-notification.md) |
 | V14.0 Knowledge Base Health Report | [knowledge-base-health-report-and-large-scale-rag-diagnostics.md](docs/manual/knowledge-base-health-report-and-large-scale-rag-diagnostics.md) |
 | V15.0 Structured Chunking & Hybrid Retrieval | [structured-chunking-and-hybrid-retrieval-pipeline.md](docs/manual/structured-chunking-and-hybrid-retrieval-pipeline.md) |
+| V16.0 Vector Index Isolation & Deduplication | [vector-index-isolation-and-deduplication-hardening.md](docs/manual/vector-index-isolation-and-deduplication-hardening.md) |
 | 本地开发环境 | [docs/local-dev.md](docs/local-dev.md) |
 | API 示例 | [docs/api-examples.md](docs/api-examples.md) |
 | 面试 deep-dive | [docs/interview](docs/interview) |

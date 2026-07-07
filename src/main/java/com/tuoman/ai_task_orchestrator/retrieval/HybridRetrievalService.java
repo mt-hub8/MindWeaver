@@ -102,6 +102,9 @@ public class HybridRetrievalService {
         int crossLeak = countCrossCollectionLeak(merged, effectiveFilter);
         int wrongVersion = countWrongVersionLeak(merged, effectiveFilter);
         int deprecated = countDeprecated(merged);
+        if (crossLeak > 0 || wrongVersion > 0) {
+            warnings.add("可能存在向量索引污染，请运行向量索引健康检查（/vector-index-health.html）。");
+        }
 
         RetrievalDiagnostics diagnostics = RetrievalDiagnostics.builder()
                 .query(query)

@@ -9,11 +9,14 @@ import com.tuoman.ai_task_orchestrator.embedding.EmbeddingCacheService;
 import com.tuoman.ai_task_orchestrator.embedding.EmbeddingProvider;
 import com.tuoman.ai_task_orchestrator.entity.DocumentChunkEntity;
 import com.tuoman.ai_task_orchestrator.repository.DocumentChunkRepository;
+import com.tuoman.ai_task_orchestrator.repository.DocumentCollectionRepository;
 import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
 import com.tuoman.ai_task_orchestrator.service.DocumentEmbeddingService;
 import com.tuoman.ai_task_orchestrator.service.DocumentLifecycleFilterService;
 import com.tuoman.ai_task_orchestrator.service.RetrievalEvaluationService;
 import com.tuoman.ai_task_orchestrator.service.RetrievalMetricsCalculator;
+import com.tuoman.ai_task_orchestrator.vectorindex.IdempotentVectorUpsertService;
+import com.tuoman.ai_task_orchestrator.vectorindex.VectorGenerationService;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorStore;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -30,9 +33,15 @@ public class VectorStoreBenchmarkRunner {
 
     private final DocumentChunkRepository documentChunkRepository;
 
+    private final DocumentCollectionRepository documentCollectionRepository;
+
     private final RetrievalMetricsCalculator retrievalMetricsCalculator;
 
     private final EmbeddingCacheService embeddingCacheService;
+
+    private final IdempotentVectorUpsertService idempotentVectorUpsertService;
+
+    private final VectorGenerationService vectorGenerationService;
 
     public VectorStoreBenchmarkResponse compare(VectorStoreBenchmarkRequest request) {
         validateRequest(request);
@@ -75,10 +84,13 @@ public class VectorStoreBenchmarkRunner {
         DocumentEmbeddingService documentEmbeddingService = new DocumentEmbeddingService(
                 documentRepository,
                 documentChunkRepository,
+                documentCollectionRepository,
                 embeddingProvider,
                 embeddingCacheService,
                 measuringVectorStore,
-                new DocumentLifecycleFilterService(documentRepository, documentChunkRepository)
+                new DocumentLifecycleFilterService(documentRepository, documentChunkRepository),
+                idempotentVectorUpsertService,
+                vectorGenerationService
         );
         documentEmbeddingService.embedDocument(documentId);
 

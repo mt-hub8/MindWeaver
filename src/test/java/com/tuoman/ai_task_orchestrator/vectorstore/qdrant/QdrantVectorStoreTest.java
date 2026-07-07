@@ -127,7 +127,7 @@ class QdrantVectorStoreTest {
 
         assertThatThrownBy(() -> vectorStore.upsert(List.of(
                 document(10L, 20L, List.of(0.1, 0.2)),
-                new VectorStoreDocument(
+                VectorStoreDocument.of(
                         11L,
                         20L,
                         "content",
@@ -158,7 +158,7 @@ class QdrantVectorStoreTest {
     }
 
     private VectorStoreDocument document(Long chunkId, Long documentId, List<Double> embedding) {
-        return new VectorStoreDocument(
+        return VectorStoreDocument.of(
                 chunkId,
                 documentId,
                 "content-" + chunkId,

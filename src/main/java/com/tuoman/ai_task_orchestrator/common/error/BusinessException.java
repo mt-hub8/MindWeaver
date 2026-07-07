@@ -275,4 +275,36 @@ public class BusinessException extends RuntimeException {
     public static BusinessException modelProviderDefaultRequired(String message) {
         return new BusinessException(ErrorCode.MODEL_PROVIDER_DEFAULT_REQUIRED, HttpStatus.CONFLICT, message);
     }
+
+    public static BusinessException vectorIdentityInvalid(String message) {
+        return new BusinessException(ErrorCode.VECTOR_IDENTITY_INVALID, HttpStatus.BAD_REQUEST, message);
+    }
+
+    public static BusinessException vectorPayloadInvalid(String message) {
+        return new BusinessException(ErrorCode.VECTOR_PAYLOAD_INVALID, HttpStatus.BAD_REQUEST, message);
+    }
+
+    public static BusinessException vectorNamespaceViolation(String message) {
+        return new BusinessException(ErrorCode.VECTOR_NAMESPACE_VIOLATION, HttpStatus.CONFLICT, message);
+    }
+
+    public static BusinessException vectorDimensionMismatch(String message) {
+        return new BusinessException(ErrorCode.VECTOR_DIMENSION_MISMATCH, HttpStatus.BAD_REQUEST, message);
+    }
+
+    public static BusinessException vectorCollectionMismatch(String message) {
+        return new BusinessException(ErrorCode.VECTOR_COLLECTION_MISMATCH, HttpStatus.CONFLICT, message);
+    }
+
+    public static BusinessException vectorDocumentMismatch(String message) {
+        return new BusinessException(ErrorCode.VECTOR_DOCUMENT_MISMATCH, HttpStatus.CONFLICT, message);
+    }
+
+    public static BusinessException vectorGenerationInvalid(String message) {
+        return new BusinessException(ErrorCode.VECTOR_GENERATION_INVALID, HttpStatus.CONFLICT, message);
+    }
+
+    public static BusinessException vectorUpsertFailed(String message) {
+        return new BusinessException(ErrorCode.VECTOR_UPSERT_FAILED, HttpStatus.INTERNAL_SERVER_ERROR, message);
+    }
 }

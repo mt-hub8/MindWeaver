@@ -41,7 +41,7 @@ class QdrantManualIntegrationTest {
         long chunkId = 9002L;
         List<Double> embedding = normalizedVector(1, 0);
 
-        vectorStore.upsert(List.of(new VectorStoreDocument(
+        vectorStore.upsert(List.of(VectorStoreDocument.of(
                 chunkId,
                 documentId,
                 "qdrant manual verification chunk",

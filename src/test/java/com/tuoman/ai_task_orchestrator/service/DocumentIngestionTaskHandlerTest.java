@@ -11,6 +11,7 @@ import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStep;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskType;
 import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
+import com.tuoman.ai_task_orchestrator.vectorindex.VectorReindexIntegrationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -58,6 +59,9 @@ class DocumentIngestionTaskHandlerTest {
     @Mock
     private UploadBatchService uploadBatchService;
 
+    @Mock
+    private VectorReindexIntegrationService vectorReindexIntegrationService;
+
     private DocumentIngestionTaskHandler handler;
 
     private DocumentIngestionTaskEntity task;
@@ -72,7 +76,8 @@ class DocumentIngestionTaskHandlerTest {
                 documentRepository,
                 documentIngestionEventRecorder,
                 duplicateDetectionService,
-                uploadBatchService
+                uploadBatchService,
+                vectorReindexIntegrationService
         );
 
         task = new DocumentIngestionTaskEntity();

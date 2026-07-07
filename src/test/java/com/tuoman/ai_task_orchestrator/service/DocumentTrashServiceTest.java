@@ -12,6 +12,7 @@ import com.tuoman.ai_task_orchestrator.enums.DocumentPurgeStatus;
 import com.tuoman.ai_task_orchestrator.enums.DocumentStatus;
 import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
 import com.tuoman.ai_task_orchestrator.storage.StorageCleanupService;
+import com.tuoman.ai_task_orchestrator.vectorindex.VectorLifecycleSyncService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -50,6 +51,9 @@ class DocumentTrashServiceTest {
     private StorageCleanupService storageCleanupService;
 
     @Mock
+    private VectorLifecycleSyncService vectorLifecycleSyncService;
+
+    @Mock
     private DocumentIngestionEventRecorder documentIngestionEventRecorder;
 
     private TrashProperties trashProperties;
@@ -65,6 +69,7 @@ class DocumentTrashServiceTest {
                 collectionService,
                 trashProperties,
                 storageCleanupService,
+                vectorLifecycleSyncService,
                 documentIngestionEventRecorder,
                 Clock.fixed(FIXED_INSTANT, ZONE)
         );

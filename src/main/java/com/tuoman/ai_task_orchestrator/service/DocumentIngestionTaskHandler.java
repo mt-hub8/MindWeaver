@@ -11,6 +11,7 @@ import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStatus;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskStep;
 import com.tuoman.ai_task_orchestrator.enums.IngestionTaskType;
 import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
+import com.tuoman.ai_task_orchestrator.vectorindex.VectorReindexIntegrationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
@@ -40,6 +41,8 @@ public class DocumentIngestionTaskHandler {
 
     @Lazy
     private final UploadBatchService uploadBatchService;
+
+    private final VectorReindexIntegrationService vectorReindexIntegrationService;
 
     public void process(Long taskId) {
         DocumentIngestionTaskEntitySnapshot snapshot = loadPendingTask(taskId);
@@ -132,6 +135,8 @@ public class DocumentIngestionTaskHandler {
             );
             documentIngestionTaskProgressService.updateTask(taskId, task -> task.setChunkCount(chunkCount));
 
+            vectorReindexIntegrationService.onReindexStarted(document.getId(), targetGeneration);
+
             completeEmbeddingAndVectorStages(taskId, document.getId(), currentStep, taskStartedAt, true, targetGeneration);
         } catch (Exception exception) {
             handleReindexFailure(taskId, snapshot.documentId(), targetGeneration, currentStep, exception);
@@ -179,6 +184,7 @@ public class DocumentIngestionTaskHandler {
 
         if (reindex) {
             documentService.completeReindexGeneration(documentId, targetGeneration, embeddingCount);
+            vectorReindexIntegrationService.onReindexCompleted(documentId, targetGeneration);
             documentIngestionTaskProgressService.updateTask(taskId, task -> {
                 task.setStatus(IngestionTaskStatus.COMPLETED);
                 task.setStep(IngestionTaskStep.COMPLETED);
@@ -249,6 +255,7 @@ public class DocumentIngestionTaskHandler {
         log.error("Document reindex task failed, taskId={}, documentId={}", taskId, documentId, exception);
         if (targetGeneration != null) {
             documentService.cleanupFailedReindexGeneration(documentId, targetGeneration);
+            vectorReindexIntegrationService.onReindexFailed(documentId, targetGeneration, exception.getMessage());
         }
         String traceId = DocumentIngestionEventRecorder.newTraceId();
         String errorCode = DocumentIngestionTaskService.resolveErrorCode(exception);

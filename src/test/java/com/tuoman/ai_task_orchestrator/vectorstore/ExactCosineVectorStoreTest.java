@@ -44,6 +44,16 @@ class ExactCosineVectorStoreTest {
             });
             return savedList;
         });
+        when(embeddingRepository.save(any())).thenAnswer(invocation -> {
+            DocumentChunkEmbeddingEntity entity = invocation.getArgument(0);
+            embeddings.removeIf(existing -> existing.getDocumentChunkId() != null
+                    && existing.getDocumentChunkId().equals(entity.getDocumentChunkId())
+                    && existing.getEmbeddingProvider().equals(entity.getEmbeddingProvider())
+                    && existing.getEmbeddingModel().equals(entity.getEmbeddingModel()));
+            embeddings.add(entity);
+            return entity;
+        });
+        when(embeddingRepository.findByVectorId(any())).thenReturn(java.util.Optional.empty());
         when(embeddingRepository.findByEmbeddingProviderAndEmbeddingModel(any(), any()))
                 .thenAnswer(invocation -> embeddings.stream()
                         .filter(entity -> entity.getEmbeddingProvider().equals(invocation.getArgument(0)))
@@ -202,7 +212,7 @@ class ExactCosineVectorStoreTest {
     }
 
     private VectorStoreDocument document(Long chunkId, Long documentId, List<Double> embedding) {
-        return new VectorStoreDocument(
+        return VectorStoreDocument.of(
                 chunkId,
                 documentId,
                 "content-" + chunkId,

@@ -34,6 +34,20 @@ public interface DocumentChunkEmbeddingRepository extends JpaRepository<Document
             String embeddingModel
     );
 
+    Optional<DocumentChunkEmbeddingEntity> findByVectorId(String vectorId);
+
+    List<DocumentChunkEmbeddingEntity> findByCollectionId(Long collectionId);
+
+    List<DocumentChunkEmbeddingEntity> findByDocumentId(Long documentId);
+
+    List<DocumentChunkEmbeddingEntity> findByStableVectorKey(String stableVectorKey);
+
+    List<DocumentChunkEmbeddingEntity> findByCollectionIdAndVectorGeneration(Long collectionId, Long vectorGeneration);
+
+    long countByCollectionId(Long collectionId);
+
+    long countByDocumentId(Long documentId);
+
     @Query("SELECT DISTINCT e.vectorDimension FROM DocumentChunkEmbeddingEntity e")
     List<Integer> findDistinctVectorDimensions();
 }

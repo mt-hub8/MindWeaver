@@ -19,11 +19,14 @@ import com.tuoman.ai_task_orchestrator.entity.DocumentEntity;
 import com.tuoman.ai_task_orchestrator.enums.DocumentStatus;
 import com.tuoman.ai_task_orchestrator.repository.DocumentChunkEmbeddingRepository;
 import com.tuoman.ai_task_orchestrator.repository.DocumentChunkRepository;
+import com.tuoman.ai_task_orchestrator.repository.DocumentCollectionRepository;
 import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
 import com.tuoman.ai_task_orchestrator.service.DocumentEmbeddingService;
 import com.tuoman.ai_task_orchestrator.service.DocumentLifecycleFilterService;
 import com.tuoman.ai_task_orchestrator.service.RetrievalEvaluationService;
 import com.tuoman.ai_task_orchestrator.service.RetrievalMetricsCalculator;
+import com.tuoman.ai_task_orchestrator.vectorindex.IdempotentVectorUpsertService;
+import com.tuoman.ai_task_orchestrator.vectorindex.VectorGenerationService;
 import com.tuoman.ai_task_orchestrator.vectorstore.ExactCosineVectorStore;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -77,6 +80,15 @@ class EmbeddingProviderBenchmarkComparisonTest {
 
     @Autowired
     private DocumentLifecycleFilterService documentLifecycleFilterService;
+
+    @Autowired
+    private DocumentCollectionRepository documentCollectionRepository;
+
+    @Autowired
+    private IdempotentVectorUpsertService idempotentVectorUpsertService;
+
+    @Autowired
+    private VectorGenerationService vectorGenerationService;
 
     @Test
     void shouldCompareBaselineAndCandidateProviderWithSameBenchmarkWithoutExternalApi() throws Exception {
@@ -162,10 +174,13 @@ class EmbeddingProviderBenchmarkComparisonTest {
         return new DocumentEmbeddingService(
                 documentRepository,
                 documentChunkRepository,
+                documentCollectionRepository,
                 provider,
                 embeddingCacheService,
                 new ExactCosineVectorStore(documentChunkEmbeddingRepository, documentChunkRepository),
-                documentLifecycleFilterService
+                documentLifecycleFilterService,
+                idempotentVectorUpsertService,
+                vectorGenerationService
         );
     }
 

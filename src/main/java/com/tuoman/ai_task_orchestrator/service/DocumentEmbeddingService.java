@@ -9,16 +9,20 @@ import com.tuoman.ai_task_orchestrator.embedding.EmbeddingCacheService;
 import com.tuoman.ai_task_orchestrator.embedding.EmbeddingRequest;
 import com.tuoman.ai_task_orchestrator.embedding.EmbeddingResponse;
 import com.tuoman.ai_task_orchestrator.embedding.EmbeddingProvider;
-import com.tuoman.ai_task_orchestrator.enums.ChunkStatus;
 import com.tuoman.ai_task_orchestrator.entity.DocumentChunkEntity;
 import com.tuoman.ai_task_orchestrator.entity.DocumentEntity;
+import com.tuoman.ai_task_orchestrator.enums.ChunkStatus;
 import com.tuoman.ai_task_orchestrator.repository.DocumentChunkRepository;
+import com.tuoman.ai_task_orchestrator.repository.DocumentCollectionRepository;
 import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
+import com.tuoman.ai_task_orchestrator.vectorindex.IdempotentVectorUpsertService;
+import com.tuoman.ai_task_orchestrator.vectorindex.VectorGenerationService;
+import com.tuoman.ai_task_orchestrator.vectorindex.VectorUpsertRequest;
+import com.tuoman.ai_task_orchestrator.vectorindex.VectorUpsertResult;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorSearchFilter;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorSearchRequest;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorSearchResult;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorStore;
-import com.tuoman.ai_task_orchestrator.vectorstore.VectorStoreDocument;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +43,8 @@ public class DocumentEmbeddingService {
 
     private final DocumentChunkRepository documentChunkRepository;
 
+    private final DocumentCollectionRepository documentCollectionRepository;
+
     private final EmbeddingProvider embeddingProvider;
 
     private final EmbeddingCacheService embeddingCacheService;
@@ -46,6 +52,10 @@ public class DocumentEmbeddingService {
     private final VectorStore vectorStore;
 
     private final DocumentLifecycleFilterService documentLifecycleFilterService;
+
+    private final IdempotentVectorUpsertService idempotentVectorUpsertService;
+
+    private final VectorGenerationService vectorGenerationService;
 
     @Transactional
     public DocumentEmbeddingResponse embedDocument(Long documentId) {
@@ -56,10 +66,26 @@ public class DocumentEmbeddingService {
 
     @Transactional
     public DocumentEmbeddingResponse embedDocumentGeneration(Long documentId, int generation, boolean replaceExistingVectors) {
-        ensureDocumentExists(documentId);
+        DocumentEntity document = findDocumentOrThrow(documentId);
+        Long collectionId = resolvePrimaryCollectionId(documentId);
 
         String embeddingProviderName = embeddingProvider.provider();
         String embeddingModel = embeddingProvider.model();
+        Integer embeddingDimension = embeddingProvider.dimension();
+
+        if (replaceExistingVectors) {
+            vectorGenerationService.ensureActiveGeneration(
+                    collectionId,
+                    documentId,
+                    embeddingModel,
+                    embeddingDimension
+            );
+            vectorStore.deleteByDocumentIdAndProviderAndModel(
+                    documentId,
+                    embeddingProviderName,
+                    embeddingModel
+            );
+        }
 
         List<DocumentChunkEntity> chunks = documentChunkRepository
                 .findByDocumentIdAndChunkStatusAndGenerationOrderByChunkIndexAsc(
@@ -72,33 +98,49 @@ public class DocumentEmbeddingService {
                     documentId,
                     embeddingProviderName,
                     embeddingModel,
-                    embeddingProvider.dimension(),
+                    embeddingDimension,
                     "COSINE",
                     0
             );
         }
 
-        if (replaceExistingVectors) {
-            vectorStore.deleteByDocumentIdAndProviderAndModel(
-                    documentId,
+        int embeddedCount = 0;
+        for (DocumentChunkEntity chunk : chunks) {
+            CachedEmbeddingResult cached = embeddingCacheService.getOrCompute(
+                    chunk.getContent(),
                     embeddingProviderName,
-                    embeddingModel
+                    embeddingModel,
+                    embeddingDimension,
+                    embeddingProvider
             );
+            VectorUpsertResult result = idempotentVectorUpsertService.upsert(VectorUpsertRequest.builder()
+                    .collectionId(collectionId != null ? collectionId : chunk.getCollectionId())
+                    .documentId(documentId)
+                    .document(document)
+                    .chunk(chunk)
+                    .embeddingVector(cached.embedding())
+                    .embeddingProvider(cached.provider())
+                    .embeddingModel(cached.model())
+                    .embeddingDimension(cached.dimension())
+                    .generation((long) generation)
+                    .distanceMetric(cached.distanceMetric())
+                    .documentGeneration(document.getCurrentGeneration() == null
+                            ? (long) generation
+                            : document.getCurrentGeneration().longValue())
+                    .chunkGeneration(chunk.getGeneration() == null ? (long) generation : chunk.getGeneration().longValue())
+                    .build());
+            if (result.getOperation() != null) {
+                embeddedCount++;
+            }
         }
-
-        List<VectorStoreDocument> embeddings = chunks.stream()
-                .map(chunk -> toVectorStoreDocument(documentId, chunk, embeddingModel, generation))
-                .toList();
-
-        vectorStore.upsert(embeddings);
 
         return new DocumentEmbeddingResponse(
                 documentId,
                 embeddingProviderName,
                 embeddingModel,
-                embeddingProvider.dimension(),
+                embeddingDimension,
                 "COSINE",
-                embeddings.size()
+                embeddedCount
         );
     }
 
@@ -121,9 +163,14 @@ public class DocumentEmbeddingService {
         embeddingRequest.setModel(embeddingModel);
         EmbeddingResponse queryEmbedding = embeddingProvider.embed(embeddingRequest);
 
+        Map<String, String> metadataEquals = new LinkedHashMap<>();
+        vectorGenerationService.getActiveGeneration(request.getDocumentId()).ifPresent(activeGeneration ->
+                metadataEquals.put("vector_generation", String.valueOf(activeGeneration))
+        );
+
         VectorSearchFilter filter = request.getDocumentId() == null
-                ? VectorSearchFilter.empty()
-                : new VectorSearchFilter(List.of(request.getDocumentId()), Map.of());
+                ? new VectorSearchFilter(List.of(), metadataEquals)
+                : new VectorSearchFilter(List.of(request.getDocumentId()), metadataEquals);
 
         return documentLifecycleFilterService.filterSearchResults(
                 vectorStore.search(new VectorSearchRequest(
@@ -145,33 +192,6 @@ public class DocumentEmbeddingService {
                 .orElseThrow(BusinessException::documentNotFound);
     }
 
-    private VectorStoreDocument toVectorStoreDocument(
-            Long documentId,
-            DocumentChunkEntity chunk,
-            String embeddingModel,
-            int generation
-    ) {
-        CachedEmbeddingResult cached = embeddingCacheService.getOrCompute(
-                chunk.getContent(),
-                embeddingProvider.provider(),
-                embeddingModel,
-                embeddingProvider.dimension(),
-                embeddingProvider
-        );
-
-        return new VectorStoreDocument(
-                chunk.getId(),
-                documentId,
-                chunk.getContent(),
-                cached.embedding(),
-                cached.provider(),
-                cached.model(),
-                cached.dimension(),
-                cached.distanceMetric(),
-                chunkMetadata(chunk, cached.chunkHash(), generation)
-        );
-    }
-
     private DocumentSearchResultResponse toSearchResponse(VectorSearchResult result) {
         return new DocumentSearchResultResponse(
                 result.documentId(),
@@ -190,40 +210,22 @@ public class DocumentEmbeddingService {
         );
     }
 
-    private Map<String, String> chunkMetadata(DocumentChunkEntity chunk, String chunkHash, int generation) {
-        Map<String, String> metadata = new LinkedHashMap<>();
-        metadata.put("chunkStrategy", chunk.getChunkStrategy() == null ? "" : chunk.getChunkStrategy());
-        metadata.put("headingPath", chunk.getHeadingPath() == null ? "" : chunk.getHeadingPath());
-        metadata.put("chunkHash", chunkHash == null ? "" : chunkHash);
-        metadata.put("generation", String.valueOf(generation));
-        metadata.put("chunkStatus", chunk.getChunkStatus() == null ? ChunkStatus.ACTIVE.name() : chunk.getChunkStatus().name());
-        if (chunk.getSectionPath() != null) {
-            metadata.put("sectionPath", chunk.getSectionPath());
+    private Long resolvePrimaryCollectionId(Long documentId) {
+        List<Object[]> rows = documentCollectionRepository.findCollectionSummariesByDocumentId(documentId);
+        if (rows.isEmpty()) {
+            return null;
         }
-        if (chunk.getVersion() != null) {
-            metadata.put("version", chunk.getVersion());
-        }
-        if (chunk.getDocType() != null) {
-            metadata.put("docType", chunk.getDocType().name());
-        }
-        if (chunk.getCollectionId() != null) {
-            metadata.put("collectionId", String.valueOf(chunk.getCollectionId()));
-        }
-        if (chunk.getMetadataStatus() != null) {
-            metadata.put("metadataStatus", chunk.getMetadataStatus().name());
-        }
-        return metadata;
+        Object id = rows.get(0)[0];
+        return id instanceof Number number ? number.longValue() : null;
     }
 
     private int normalizeTopK(Integer topK) {
         if (topK == null) {
             return DEFAULT_TOP_K;
         }
-
         if (topK <= 0) {
             throw BusinessException.invalidRequest("topK must be greater than 0");
         }
-
         return Math.min(topK, MAX_TOP_K);
     }
 
@@ -235,7 +237,7 @@ public class DocumentEmbeddingService {
 
     private String normalizeModel(String embeddingModel) {
         return embeddingModel == null || embeddingModel.isBlank()
-                ? embeddingProvider.model()
+                ? this.embeddingProvider.model()
                 : embeddingModel;
     }
 

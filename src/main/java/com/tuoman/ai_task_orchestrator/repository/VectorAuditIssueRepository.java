@@ -1,0 +1,11 @@
+package com.tuoman.ai_task_orchestrator.repository;
+
+import com.tuoman.ai_task_orchestrator.entity.VectorAuditIssueEntity;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.List;
+
+public interface VectorAuditIssueRepository extends JpaRepository<VectorAuditIssueEntity, Long> {
+
+    List<VectorAuditIssueEntity> findByAuditRunIdOrderByIdAsc(Long auditRunId);
+}

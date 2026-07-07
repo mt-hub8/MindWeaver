@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>向量索引健康 · MindWeaver</title>
+    <link rel="stylesheet" href="/mindweaver.css?v=mw-ivory-app-shell-v1">
+    <link rel="stylesheet" href="/app-shell.css?v=mw-compat-v1">
+</head>
+<body class="mw-page" data-page="vector-index-health">
+<div class="mw-app-shell app-shell">
+    <aside id="app-sidebar-mount" data-active="vector-index-health" aria-label="主导航"></aside>
+    <main class="mw-main-panel main-panel">
+        <div class="mw-page-content content-container">
+            <header class="mw-page-header page-header">
+                <div>
+                    <h1 class="mw-page-title page-title">向量索引健康</h1>
+                    <p class="mw-page-description page-subtitle">检查知识库分组的向量是否存在重复写入、跨集合污染、旧索引残留、缺失向量和永久删除残留。</p>
+                </div>
+            </header>
+
+            <section class="mw-card card" id="overview-card">
+                <h2 class="mw-card-title">概览</h2>
+                <p class="muted" style="font-size:0.88rem">指标包括：重复向量率、孤儿向量、缺失向量、跨集合向量污染率、错误代际向量、永久删除残留。</p>
+                <dl id="overview-dl" class="summary-dl"></dl>
+            </section>
+
+            <section class="mw-card card">
+                <h2 class="mw-card-title">Collection 审计</h2>
+                <div class="form-grid mw-form">
+                    <div class="form-field mw-field">
+                        <label class="mw-label" for="collection-select">选择 Collection</label>
+                        <select class="mw-input" id="collection-select"><option value="">加载中…</option></select>
+                    </div>
+                </div>
+                <div class="action-row">
+                    <button type="button" class="mw-button mw-button-primary primary-button" id="run-audit-btn">运行审计</button>
+                    <button type="button" class="mw-button mw-button-secondary secondary-button" id="cleanup-orphans-btn">清理孤儿向量</button>
+                    <button type="button" class="mw-button mw-button-secondary secondary-button" id="cleanup-retired-btn">清理 retired generation</button>
+                    <a href="/collections.html" class="mw-button mw-button-secondary secondary-button" style="text-decoration:none">重建 collection 索引</a>
+                </div>
+                <p id="audit-status" class="muted hidden" style="margin-top:12px"></p>
+            </section>
+
+            <section class="mw-card card hidden" id="audit-result-card">
+                <h2 class="mw-card-title">审计结果</h2>
+                <dl id="audit-metrics-dl" class="summary-dl"></dl>
+                <h3 class="mw-card-title" style="font-size:1rem;margin-top:16px">问题列表</h3>
+                <div id="issues-list"></div>
+            </section>
+
+            <section class="mw-card card">
+                <h2 class="mw-card-title">风险提示</h2>
+                <p class="muted">清理向量不会删除原始文档，但可能影响该文档的检索结果。建议在清理后重新运行知识库体检报告。</p>
+            </section>
+
+            <details class="technical-details">
+                <summary>查看技术详情</summary>
+                <pre id="audit-json" class="muted" style="font-size:0.8rem;white-space:pre-wrap;margin:8px 0 0"></pre>
+            </details>
+        </div>
+    </main>
+</div>
+<script src="/app-nav.js"></script>
+<script src="/vector-index-health.js"></script>
+</body>
+</html>
