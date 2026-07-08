@@ -30,6 +30,11 @@
     const retrievalSection = document.getElementById("retrieval-section");
     const retrievalSummary = document.getElementById("retrieval-summary");
     const retrievalMetadata = document.getElementById("retrieval-metadata");
+    const queryUnderstandingSection = document.getElementById("query-understanding-section");
+    const queryUnderstandingSummary = document.getElementById("query-understanding-summary");
+    const queryUnderstandingMetadata = document.getElementById("query-understanding-metadata");
+    const queryRewriteSection = document.getElementById("query-rewrite-section");
+    const queryRewriteSummary = document.getElementById("query-rewrite-summary");
     const generationSection = document.getElementById("generation-section");
     const generationSummary = document.getElementById("generation-summary");
     const generationMetadata = document.getElementById("generation-metadata");
@@ -224,6 +229,8 @@
         qualitySection.classList.add("hidden");
         citationsSection.classList.add("hidden");
         retrievalSection.classList.add("hidden");
+        queryUnderstandingSection.classList.add("hidden");
+        queryRewriteSection.classList.add("hidden");
         generationSection.classList.add("hidden");
         answerContent.textContent = "";
         answerScopeLabel.textContent = "";
@@ -236,6 +243,9 @@
         citationsEmpty.classList.add("hidden");
         retrievalSummary.innerHTML = "";
         retrievalMetadata.textContent = "";
+        queryUnderstandingSummary.innerHTML = "";
+        queryUnderstandingMetadata.textContent = "";
+        queryRewriteSummary.innerHTML = "";
         generationSummary.innerHTML = "";
         generationMetadata.textContent = "";
         qualityOverallScore.textContent = "-";
@@ -259,6 +269,7 @@
         answerContent.textContent = data.answer || "（无 answer 字段）";
 
         const retrieval = data.retrieval || {};
+        renderQueryUnderstanding(data.queryUnderstanding || {});
         const scopeLabel = buildScopeLabel(retrieval, requestedCollectionId);
         if (scopeLabel) {
             answerScopeLabel.textContent = scopeLabel;
@@ -286,6 +297,31 @@
         generationSection.classList.remove("hidden");
         renderSummaryDl(generationSummary, buildGenerationSummary(generation));
         generationMetadata.textContent = prettyJson(data.generation);
+    }
+
+    function renderQueryUnderstanding(queryUnderstanding) {
+        if (!queryUnderstanding || Object.keys(queryUnderstanding).length === 0) {
+            return;
+        }
+        queryUnderstandingSection.classList.remove("hidden");
+        renderSummaryDl(queryUnderstandingSummary, [
+            ["Query Type", safeValue(queryUnderstanding.queryType)],
+            ["Version", safeValue(queryUnderstanding.extractedVersion)],
+            ["Doc Type", safeValue(queryUnderstanding.extractedDocType)],
+            ["Code Symbol", safeValue((queryUnderstanding.extractedSymbols || []).join(", "))],
+            ["Config Key", safeValue((queryUnderstanding.extractedConfigKeys || []).join(", "))],
+            ["Confidence", queryUnderstanding.confidence != null ? String(queryUnderstanding.confidence) : "-"]
+        ]);
+        queryUnderstandingMetadata.textContent = prettyJson(queryUnderstanding);
+
+        const rewritten = queryUnderstanding.rewrittenQueries || {};
+        queryRewriteSection.classList.remove("hidden");
+        renderSummaryDl(queryRewriteSummary, [
+            ["normalizedQuery", safeValue(rewritten.normalizedQuery)],
+            ["keywordQuery", safeValue(rewritten.keywordQuery)],
+            ["semanticQuery", safeValue(rewritten.semanticQuery)],
+            ["symbolQuery", safeValue(rewritten.symbolQuery)]
+        ]);
     }
 
     function renderQualityScore(qualityScore) {
@@ -385,26 +421,29 @@
 
     function buildRetrievalSummary(retrieval) {
         const items = [];
-        if (retrieval.retrievalStrategy) {
-            items.push(["当前检索策略", retrieval.retrievalStrategy]);
-        }
-        if (retrieval.hybridEnabled != null) {
-            items.push(["混合检索", retrieval.hybridEnabled ? "已启用" : "未启用"]);
-        }
-        if (retrieval.rerankEnabled != null) {
-            items.push(["重排序", retrieval.rerankEnabled ? "已启用" : "未启用"]);
-        }
-        if (retrieval.contextExpansion) {
-            items.push(["上下文回填", retrieval.contextExpansion]);
-        }
-        if (retrieval.filterMode) {
-            items.push(["Filter 模式", retrieval.filterMode]);
-        }
         if (retrieval.returned != null) {
             items.push(["命中片段数", String(retrieval.returned)]);
         }
+        if (retrieval.strategy) {
+            items.push(["检索策略", retrieval.strategy]);
+        }
         if (retrieval.scopeType) {
             items.push(["范围类型", retrieval.scopeType]);
+        }
+        if (retrieval.denseTopK != null) {
+            items.push(["vectorTopK", String(retrieval.denseTopK)]);
+        }
+        if (retrieval.lexicalTopK != null) {
+            items.push(["keywordTopK", String(retrieval.lexicalTopK)]);
+        }
+        if (retrieval.finalTopK != null) {
+            items.push(["finalTopK", String(retrieval.finalTopK)]);
+        }
+        if (retrieval.rerankEnabled != null) {
+            items.push(["rerank", retrieval.rerankEnabled ? "enabled" : "disabled"]);
+        }
+        if (retrieval.contextExpansion) {
+            items.push(["contextExpansion", retrieval.contextExpansion]);
         }
         return items;
     }

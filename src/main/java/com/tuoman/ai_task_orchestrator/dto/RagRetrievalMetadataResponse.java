@@ -59,7 +59,7 @@ public class RagRetrievalMetadataResponse {
 
     private Integer finalContextCount;
 
-    private String retrievalStrategy;
+    private String strategy;
 
     private String filterMode;
 
@@ -99,6 +99,65 @@ public class RagRetrievalMetadataResponse {
                 null,
                 null,
                 null,
+                null,
+                null,
+                null
+        );
+    }
+
+    public RagRetrievalMetadataResponse(
+            Integer topK,
+            Integer returned,
+            String provider,
+            String model,
+            Integer dimension,
+            String vectorStore,
+            Boolean rerankEnabled,
+            String rerankerName,
+            Integer candidateTopK,
+            Integer finalTopK,
+            Long rerankLatencyMs,
+            Boolean hybridEnabled,
+            Integer denseTopK,
+            Integer lexicalTopK,
+            String fusionStrategy,
+            Integer denseCandidateCount,
+            Integer lexicalCandidateCount,
+            Integer fusedCandidateCount,
+            Long hybridLatencyMs,
+            String scopeType,
+            Long collectionId,
+            String collectionName,
+            Integer filteredByCollectionCount,
+            Integer filteredByLifecycleCount,
+            Integer finalContextCount
+    ) {
+        this(
+                topK,
+                returned,
+                provider,
+                model,
+                dimension,
+                vectorStore,
+                rerankEnabled,
+                rerankerName,
+                candidateTopK,
+                finalTopK,
+                rerankLatencyMs,
+                hybridEnabled,
+                denseTopK,
+                lexicalTopK,
+                fusionStrategy,
+                denseCandidateCount,
+                lexicalCandidateCount,
+                fusedCandidateCount,
+                hybridLatencyMs,
+                scopeType,
+                collectionId,
+                collectionName,
+                filteredByCollectionCount,
+                filteredByLifecycleCount,
+                finalContextCount,
                 null,
                 null,
                 null

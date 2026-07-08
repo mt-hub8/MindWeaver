@@ -15,6 +15,17 @@ import com.tuoman.ai_task_orchestrator.config.RetrievalPipelineProperties;
 import com.tuoman.ai_task_orchestrator.retrieval.CollectionAskScope;
 import com.tuoman.ai_task_orchestrator.retrieval.RetrievalDiagnostics;
 import com.tuoman.ai_task_orchestrator.retrieval.RetrievalScope;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryClarificationGuard;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryRewriteResult;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryRewriteService;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryUnderstandingDiagnostics;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryUnderstandingResult;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryUnderstandingService;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.RetrievalRoutingDecision;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.RetrievalRoutingPolicyService;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.UserSelectedFilters;
+import com.tuoman.ai_task_orchestrator.repository.DocumentCollectionRepository;
+import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
 import com.tuoman.ai_task_orchestrator.rag.quality.RagQualityMode;
 import com.tuoman.ai_task_orchestrator.rag.quality.RagQualityService;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService.RagRetrievalOutcome;
@@ -60,6 +71,18 @@ public class RagAnswerService {
 
     private final RagQualityService ragQualityService;
 
+    private final QueryUnderstandingService queryUnderstandingService;
+
+    private final QueryRewriteService queryRewriteService;
+
+    private final RetrievalRoutingPolicyService retrievalRoutingPolicyService;
+
+    private final QueryClarificationGuard queryClarificationGuard;
+
+    private final DocumentRepository documentRepository;
+
+    private final DocumentCollectionRepository documentCollectionRepository;
+
     public RagAnswerResponse answer(RagAnswerRequest request) {
         if (request == null) {
             throw BusinessException.validationError("request must not be null");
@@ -67,16 +90,62 @@ public class RagAnswerService {
 
         int topK = normalizeTopK(request.getTopK());
         CollectionAskScope askScope = resolveAskScope(request.getCollectionId());
+        UserSelectedFilters userSelectedFilters = UserSelectedFilters.ofCollection(request.getCollectionId());
+        QueryUnderstandingResult understanding = queryUnderstandingService.understand(
+                request.getQuery(),
+                request.getCollectionId(),
+                userSelectedFilters
+        );
+        QueryRewriteResult rewrite = queryRewriteService.rewrite(understanding);
+        RetrievalRoutingDecision routingDecision = retrievalRoutingPolicyService.route(understanding, userSelectedFilters);
+        QueryClarificationGuard.GuardResult guardResult = queryClarificationGuard.evaluate(
+                understanding,
+                routingDecision,
+                userSelectedFilters,
+                documentRepository.count(),
+                documentCollectionRepository.count()
+        );
+        if (guardResult.clarificationRequired()) {
+            RetrievalRoutingDecision guardedDecision = RetrievalRoutingDecision.builder()
+                    .strategy(routingDecision.getStrategy())
+                    .filter(routingDecision.getFilter())
+                    .vectorTopK(routingDecision.getVectorTopK())
+                    .keywordTopK(routingDecision.getKeywordTopK())
+                    .finalTopK(routingDecision.getFinalTopK())
+                    .rerankTopN(routingDecision.getRerankTopN())
+                    .contextExpansion(routingDecision.getContextExpansion())
+                    .scoringProfile(routingDecision.getScoringProfile())
+                    .clarificationRequired(true)
+                    .clarificationQuestion(guardResult.clarificationQuestion())
+                    .routingReasons(routingDecision.getRoutingReasons())
+                    .warnings(routingDecision.getWarnings())
+                    .noAnswerRisk(routingDecision.isNoAnswerRisk())
+                    .build();
+            QueryUnderstandingDiagnostics diagnostics = QueryUnderstandingDiagnostics.from(
+                    understanding,
+                    rewrite,
+                    guardedDecision,
+                    String.join(",", guardResult.reasons())
+            );
+            return withQualityScore(buildClarificationResponse(guardResult.clarificationQuestion(), topK, askScope, diagnostics), request);
+        }
+        QueryUnderstandingDiagnostics queryDiagnostics = QueryUnderstandingDiagnostics.from(
+                understanding,
+                rewrite,
+                routingDecision,
+                null
+        );
         if (askScope.shouldSkipRetrieval()) {
-            return withQualityScore(buildNoContextResponse(askScope.noContextMessage(), topK, askScope), request);
+            return withQualityScore(buildNoContextResponse(askScope.noContextMessage(), topK, askScope, queryDiagnostics), request);
         }
 
         RetrievalScope retrievalScope = toRetrievalScope(request.getCollectionId(), askScope);
         AppRetrievalService.UnifiedRetrievalOutcome unifiedOutcome = appRetrievalService.retrieve(
-                request.getQuery(),
+                rewrite.getKeywordQuery() == null || rewrite.getKeywordQuery().isBlank() ? request.getQuery() : rewrite.getKeywordQuery(),
                 topK,
                 retrievalScope,
-                request.getCollectionId()
+                request.getCollectionId(),
+                routingDecision
         );
         RagRetrievalOutcome retrievalOutcome = unifiedOutcome.outcome();
         List<RagCitationResponse> citations = toCitations(
@@ -95,10 +164,13 @@ public class RagAnswerService {
             String answer = askScope.collectionId() != null
                     ? "当前所选分组下未检索到可用于回答的文档片段。"
                     : NO_CONTEXT_ANSWER;
-            return withQualityScore(buildNoContextResponse(answer, topK, askScope, retrieval), request);
+            return withQualityScore(buildNoContextResponse(answer, topK, askScope, retrieval, queryDiagnostics), request);
         }
 
         String prompt = ragPromptBuilder.buildPrompt(request.getQuery(), citations);
+        if (routingDecision.isNoAnswerRisk()) {
+            prompt = prompt + "\n\n如果上下文没有依据，请明确说明未找到依据。";
+        }
 
         LlmRequest llmRequest = new LlmRequest();
         llmRequest.setPrompt(prompt);
@@ -126,7 +198,9 @@ public class RagAnswerService {
                 llmResponse.getContent(),
                 citations,
                 retrieval,
-                generation
+                generation,
+                null,
+                queryDiagnostics
         ), request);
     }
 
@@ -144,7 +218,8 @@ public class RagAnswerService {
                         response.getRetrieval(),
                         response.getGeneration(),
                         mode
-                )
+                ),
+                response.getQueryUnderstanding()
         );
     }
 
@@ -167,7 +242,16 @@ public class RagAnswerService {
     }
 
     private RagAnswerResponse buildNoContextResponse(String answer, int topK, CollectionAskScope askScope) {
-        return buildNoContextResponse(answer, topK, askScope, toRetrievalMetadataEmpty(topK, askScope));
+        return buildNoContextResponse(answer, topK, askScope, toRetrievalMetadataEmpty(topK, askScope), null);
+    }
+
+    private RagAnswerResponse buildNoContextResponse(
+            String answer,
+            int topK,
+            CollectionAskScope askScope,
+            QueryUnderstandingDiagnostics queryDiagnostics
+    ) {
+        return buildNoContextResponse(answer, topK, askScope, toRetrievalMetadataEmpty(topK, askScope), queryDiagnostics);
     }
 
     private RagAnswerResponse buildNoContextResponse(
@@ -176,11 +260,39 @@ public class RagAnswerService {
             CollectionAskScope askScope,
             RagRetrievalMetadataResponse retrieval
     ) {
+        return buildNoContextResponse(answer, topK, askScope, retrieval, null);
+    }
+
+    private RagAnswerResponse buildNoContextResponse(
+            String answer,
+            int topK,
+            CollectionAskScope askScope,
+            RagRetrievalMetadataResponse retrieval,
+            QueryUnderstandingDiagnostics queryDiagnostics
+    ) {
         return new RagAnswerResponse(
                 answer,
                 List.of(),
                 retrieval,
-                new RagGenerationMetadataResponse(null, null, null, null, true, NO_CONTEXT_REASON, null, null, null)
+                new RagGenerationMetadataResponse(null, null, null, null, true, NO_CONTEXT_REASON, null, null, null),
+                null,
+                queryDiagnostics
+        );
+    }
+
+    private RagAnswerResponse buildClarificationResponse(
+            String question,
+            int topK,
+            CollectionAskScope askScope,
+            QueryUnderstandingDiagnostics queryDiagnostics
+    ) {
+        return new RagAnswerResponse(
+                question,
+                List.of(),
+                toRetrievalMetadataEmpty(topK, askScope),
+                new RagGenerationMetadataResponse(null, null, null, null, true, "CLARIFICATION_REQUIRED", null, null, null),
+                null,
+                queryDiagnostics
         );
     }
 

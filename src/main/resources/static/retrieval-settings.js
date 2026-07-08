@@ -38,6 +38,15 @@
             dlRow(rerank, "Reranker 模式", s.rerankerMode);
             dlRow(rerank, "Context Expansion", s.contextExpansion);
 
+            var queryUnderstanding = $("query-understanding-dl");
+            queryUnderstanding.innerHTML = "";
+            dlRow(queryUnderstanding, "启用查询理解", s.queryUnderstandingEnabled ? "是" : "否");
+            dlRow(queryUnderstanding, "启用 query rewrite", s.queryRewriteEnabled ? "是" : "否");
+            dlRow(queryUnderstanding, "启用 clarification guard", s.clarificationGuardEnabled ? "是" : "否");
+            dlRow(queryUnderstanding, "min confidence", s.minQueryUnderstandingConfidence);
+            dlRow(queryUnderstanding, "max global search documents", s.maxGlobalSearchDocuments);
+            dlRow(queryUnderstanding, "routing policy", s.routingPolicy);
+
             $("settings-json").textContent = JSON.stringify(s, null, 2);
         });
     }

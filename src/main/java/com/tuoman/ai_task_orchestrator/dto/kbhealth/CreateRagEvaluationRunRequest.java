@@ -30,4 +30,6 @@ public class CreateRagEvaluationRunRequest {
     private Map<String, Object> metadataFilter;
 
     private Boolean executeGeneration;
+
+    private Boolean enableQueryUnderstanding;
 }

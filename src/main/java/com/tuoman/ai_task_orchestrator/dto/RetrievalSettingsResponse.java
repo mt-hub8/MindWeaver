@@ -30,4 +30,16 @@ public class RetrievalSettingsResponse {
     private String rerankerMode;
 
     private String filterMode;
+
+    private boolean queryUnderstandingEnabled;
+
+    private boolean queryRewriteEnabled;
+
+    private boolean clarificationGuardEnabled;
+
+    private double minQueryUnderstandingConfidence;
+
+    private int maxGlobalSearchDocuments;
+
+    private String routingPolicy;
 }

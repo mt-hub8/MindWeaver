@@ -28,6 +28,12 @@ import com.tuoman.ai_task_orchestrator.kbhealth.RagHealthRetrievalMetricsCalcula
 import com.tuoman.ai_task_orchestrator.kbhealth.RagHealthScoringProfile;
 import com.tuoman.ai_task_orchestrator.kbhealth.RagQualityVetoRuleService;
 import com.tuoman.ai_task_orchestrator.kbhealth.RetrievalStrategyRunner;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryUnderstandingMetricsService;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryUnderstandingResult;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryUnderstandingService;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.RetrievalRoutingDecision;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.RetrievalRoutingPolicyService;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.UserSelectedFilters;
 import com.tuoman.ai_task_orchestrator.repository.RagEvaluationCaseRepository;
 import com.tuoman.ai_task_orchestrator.repository.RagEvaluationCaseResultRepository;
 import com.tuoman.ai_task_orchestrator.repository.RagEvaluationDatasetRepository;
@@ -75,6 +81,12 @@ public class RagEvaluationRunService {
 
     private final ObjectMapper objectMapper;
 
+    private final QueryUnderstandingService queryUnderstandingService;
+
+    private final RetrievalRoutingPolicyService retrievalRoutingPolicyService;
+
+    private final QueryUnderstandingMetricsService queryUnderstandingMetricsService;
+
     @Transactional
     public RagEvaluationRunResponse createAndExecuteRun(CreateRagEvaluationRunRequest request) {
         if (request == null || request.getDatasetId() == null) {
@@ -99,7 +111,11 @@ public class RagEvaluationRunService {
         run.setRetrievalTopK(request.getRetrievalTopK());
         run.setRerankTopN(request.getRerankTopN());
         run.setCollectionId(request.getCollectionId());
-        run.setMetadataFilterJson(JsonFieldCodec.write(request.getMetadataFilter()));
+        Map<String, Object> metadataFilter = request.getMetadataFilter() == null
+                ? new HashMap<>()
+                : new HashMap<>(request.getMetadataFilter());
+        metadataFilter.put("_enableQueryUnderstanding", Boolean.TRUE.equals(request.getEnableQueryUnderstanding()));
+        run.setMetadataFilterJson(JsonFieldCodec.write(metadataFilter));
         run.setExecuteGeneration(Boolean.TRUE.equals(request.getExecuteGeneration()));
         run.setStartedAt(LocalDateTime.now());
         run.setTotalCases(cases.size());
@@ -264,14 +280,35 @@ public class RagEvaluationRunService {
             Map<String, Object> runMetadataFilter
     ) {
         long startedAt = System.nanoTime();
+        boolean enableQueryUnderstanding = Boolean.TRUE.equals(runMetadataFilter.get("_enableQueryUnderstanding"));
+        Map<String, Object> effectiveRunFilter = new HashMap<>(runMetadataFilter);
+        effectiveRunFilter.remove("_enableQueryUnderstanding");
+        QueryUnderstandingResult understanding = null;
+        RetrievalRoutingDecision routingDecision = null;
+        RagEvaluationRetrievalStrategy strategy = run.getStrategy();
+        Long collectionId = run.getCollectionId();
+        if (enableQueryUnderstanding) {
+            UserSelectedFilters selected = UserSelectedFilters.ofCollection(
+                    run.getCollectionId() != null ? run.getCollectionId() : evalCase.getCollectionId()
+            );
+            understanding = queryUnderstandingService.understand(evalCase.getQuery(), selected.getCollectionId(), selected);
+            routingDecision = retrievalRoutingPolicyService.route(understanding, selected);
+            strategy = toEvaluationStrategy(routingDecision);
+            if (collectionId == null && routingDecision.getFilter() != null) {
+                collectionId = routingDecision.getFilter().getCollectionId();
+            }
+            if (routingDecision.getFilter() != null && routingDecision.getFilter().getVersion() != null) {
+                effectiveRunFilter.put("version", routingDecision.getFilter().getVersion());
+            }
+        }
         RetrievalStrategyRunner.RetrievalRunOutcome retrievalOutcome = retrievalStrategyRunner.retrieve(
                 evalCase,
-                run.getStrategy(),
+                strategy,
                 run.getTopK(),
                 run.getRetrievalTopK() == null ? run.getTopK() * 2 : run.getRetrievalTopK(),
                 run.getRerankTopN(),
-                run.getCollectionId(),
-                runMetadataFilter
+                collectionId,
+                effectiveRunFilter
         );
 
         String answer = null;
@@ -280,7 +317,7 @@ public class RagEvaluationRunService {
             RagAnswerRequest answerRequest = new RagAnswerRequest();
             answerRequest.setQuery(evalCase.getQuery());
             answerRequest.setTopK(run.getTopK());
-            answerRequest.setCollectionId(run.getCollectionId() != null ? run.getCollectionId() : evalCase.getCollectionId());
+            answerRequest.setCollectionId(collectionId != null ? collectionId : evalCase.getCollectionId());
             RagAnswerResponse answerResponse = ragAnswerService.answer(answerRequest);
             answer = answerResponse.getAnswer();
             citations = answerResponse.getCitations() == null
@@ -303,6 +340,10 @@ public class RagEvaluationRunService {
                 retrievalOutcome.chunks(),
                 run.getTopK()
         );
+        if (enableQueryUnderstanding && understanding != null) {
+            retrievalMetrics = new ArrayList<>(retrievalMetrics);
+            retrievalMetrics.addAll(queryUnderstandingMetricsService.calculate(evalCase, understanding, routingDecision));
+        }
         List<HealthMetricValue> generationMetrics = generationMetricsCalculator.calculate(
                 evalCase,
                 answer,
@@ -325,7 +366,7 @@ public class RagEvaluationRunService {
         result.setCaseRefId(evalCase.getId());
         result.setCaseId(evalCase.getCaseId());
         result.setQuery(evalCase.getQuery());
-        result.setStrategy(run.getStrategy());
+        result.setStrategy(strategy);
         result.setTopK(run.getTopK());
         result.setRetrievedChunksJson(JsonFieldCodec.write(retrievalOutcome.chunks()));
         result.setGeneratedAnswer(answer);
@@ -336,6 +377,18 @@ public class RagEvaluationRunService {
         result.setDiagnosisJson(JsonFieldCodec.write(diagnosis));
         result.setLatencyMs(latencyMs);
         return result;
+    }
+
+    private RagEvaluationRetrievalStrategy toEvaluationStrategy(RetrievalRoutingDecision decision) {
+        if (decision == null || decision.getStrategy() == null) {
+            return RagEvaluationRetrievalStrategy.VECTOR_ONLY;
+        }
+        return switch (decision.getStrategy()) {
+            case VECTOR_WITH_METADATA_FILTER -> RagEvaluationRetrievalStrategy.VECTOR_WITH_METADATA_FILTER;
+            case HYBRID_RRF -> RagEvaluationRetrievalStrategy.HYBRID_RRF;
+            case HYBRID_RRF_RERANK -> RagEvaluationRetrievalStrategy.HYBRID_RRF_RERANK;
+            case HYBRID_RRF_RERANK_PARENT_CONTEXT -> RagEvaluationRetrievalStrategy.HYBRID_RRF_RERANK_PARENT_CONTEXT;
+        };
     }
 
     private String buildHeuristicAnswer(List<EvaluationRetrievedChunk> chunks) {

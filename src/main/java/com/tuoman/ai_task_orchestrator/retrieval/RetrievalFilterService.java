@@ -57,6 +57,10 @@ public class RetrievalFilterService {
         if (!filter.isIncludeDraft() && chunk.getMetadataStatus() == ChunkMetadataStatus.DRAFT) {
             return false;
         }
+        if (filter.getStatus() != null && chunk.getMetadataStatus() != null
+                && filter.getStatus() != chunk.getMetadataStatus()) {
+            return false;
+        }
         if (filter.getCollectionId() != null && chunk.getCollectionId() != null
                 && !filter.getCollectionId().equals(chunk.getCollectionId())) {
             return false;

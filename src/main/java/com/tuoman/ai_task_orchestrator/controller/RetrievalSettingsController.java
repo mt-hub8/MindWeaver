@@ -4,6 +4,7 @@ import com.tuoman.ai_task_orchestrator.config.ChunkingProperties;
 import com.tuoman.ai_task_orchestrator.config.RetrievalPipelineProperties;
 import com.tuoman.ai_task_orchestrator.dto.RetrievalSettingsResponse;
 import com.tuoman.ai_task_orchestrator.hybrid.RagHybridProperties;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryUnderstandingProperties;
 import com.tuoman.ai_task_orchestrator.rerank.RagRerankProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +24,8 @@ public class RetrievalSettingsController {
 
     private final RagRerankProperties ragRerankProperties;
 
+    private final QueryUnderstandingProperties queryUnderstandingProperties;
+
     @GetMapping
     public RetrievalSettingsResponse getSettings() {
         return new RetrievalSettingsResponse(
@@ -37,7 +40,13 @@ public class RetrievalSettingsController {
                 pipelineProperties.getDefaultFusion() == null ? null : pipelineProperties.getDefaultFusion().name(),
                 pipelineProperties.getRrfK(),
                 ragRerankProperties.getProvider(),
-                "APPLICATION_SIDE"
+                "APPLICATION_SIDE",
+                queryUnderstandingProperties.isEnabled(),
+                queryUnderstandingProperties.isRewriteEnabled(),
+                queryUnderstandingProperties.isClarificationEnabled(),
+                queryUnderstandingProperties.getMinConfidence(),
+                queryUnderstandingProperties.getMaxGlobalSearchDocuments(),
+                "heuristic-rule-based"
         );
     }
 }

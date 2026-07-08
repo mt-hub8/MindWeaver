@@ -1,9 +1,9 @@
 package com.tuoman.ai_task_orchestrator.entity;
 
-import com.tuoman.ai_task_orchestrator.enums.DocumentDocType;
 import com.tuoman.ai_task_orchestrator.enums.DocumentLifecycleStatus;
 import com.tuoman.ai_task_orchestrator.enums.DocumentPurgeStatus;
 import com.tuoman.ai_task_orchestrator.enums.DocumentStatus;
+import com.tuoman.ai_task_orchestrator.enums.DocumentDocType;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;

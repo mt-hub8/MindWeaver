@@ -21,6 +21,18 @@ import com.tuoman.ai_task_orchestrator.vectorstore.VectorStoreProperties;
 import com.tuoman.ai_task_orchestrator.retrieval.CollectionAskEmptyReason;
 import com.tuoman.ai_task_orchestrator.retrieval.CollectionAskScope;
 import com.tuoman.ai_task_orchestrator.retrieval.RetrievalScope;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryClarificationGuard;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryRewriteResult;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryRewriteService;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryType;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryUnderstandingResult;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryUnderstandingService;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.RetrievalRoutingDecision;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.RetrievalRoutingPolicyService;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.RetrievalRoutingStrategy;
+import com.tuoman.ai_task_orchestrator.repository.DocumentCollectionRepository;
+import com.tuoman.ai_task_orchestrator.repository.DocumentRepository;
+import com.tuoman.ai_task_orchestrator.retrieval.RetrievalFilter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -73,6 +85,24 @@ class RagAnswerServiceTest {
     @Mock
     private RagQualityService ragQualityService;
 
+    @Mock
+    private QueryUnderstandingService queryUnderstandingService;
+
+    @Mock
+    private QueryRewriteService queryRewriteService;
+
+    @Mock
+    private RetrievalRoutingPolicyService retrievalRoutingPolicyService;
+
+    @Mock
+    private QueryClarificationGuard queryClarificationGuard;
+
+    @Mock
+    private DocumentRepository documentRepository;
+
+    @Mock
+    private DocumentCollectionRepository documentCollectionRepository;
+
     @InjectMocks
     private RagAnswerService ragAnswerService;
 
@@ -100,6 +130,41 @@ class RagAnswerServiceTest {
         lenient().when(embeddingProvider.model()).thenReturn(MockEmbeddingClient.DEFAULT_MODEL);
         lenient().when(embeddingProvider.dimension()).thenReturn(MockEmbeddingClient.DIMENSION);
         lenient().when(vectorStoreProperties.getProvider()).thenReturn(ExactCosineVectorStore.PROVIDER);
+        RetrievalRoutingDecision decision = RetrievalRoutingDecision.builder()
+                .strategy(RetrievalRoutingStrategy.VECTOR_WITH_METADATA_FILTER)
+                .filter(RetrievalFilter.empty())
+                .vectorTopK(20)
+                .keywordTopK(20)
+                .finalTopK(5)
+                .rerankTopN(5)
+                .routingReasons(List.of())
+                .warnings(List.of())
+                .build();
+        lenient().when(queryUnderstandingService.understand(anyString(), any(), any())).thenAnswer(invocation -> {
+            String query = invocation.getArgument(0);
+            return QueryUnderstandingResult.builder()
+                    .originalQuery(query)
+                    .normalizedQuery(query)
+                    .queryType(QueryType.SINGLE_DOC_FACT)
+                    .confidence(0.8)
+                    .entities(List.of(query))
+                    .codeSymbols(List.of())
+                    .configKeys(List.of())
+                    .apiPaths(List.of())
+                    .tags(List.of())
+                    .warnings(List.of())
+                    .reasons(List.of())
+                    .build();
+        });
+        lenient().when(queryRewriteService.rewrite(any())).thenAnswer(invocation -> {
+            QueryUnderstandingResult result = invocation.getArgument(0);
+            return new QueryRewriteResult(result.getOriginalQuery(), result.getOriginalQuery(), result.getOriginalQuery(), result.getOriginalQuery(), null, result.getOriginalQuery());
+        });
+        lenient().when(retrievalRoutingPolicyService.route(any(), any())).thenReturn(decision);
+        lenient().when(queryClarificationGuard.evaluate(any(), any(), any(), any(Long.class), any(Long.class)))
+                .thenReturn(new QueryClarificationGuard.GuardResult(false, null, List.of()));
+        lenient().when(documentRepository.count()).thenReturn(1L);
+        lenient().when(documentCollectionRepository.count()).thenReturn(1L);
     }
 
     @Test
@@ -116,7 +181,7 @@ class RagAnswerServiceTest {
                 null,
                 0L
         );
-        when(appRetrievalService.retrieve(eq("Why use outbox?"), eq(3), any(RetrievalScope.class), any())).thenReturn(unified(outcome));
+        when(appRetrievalService.retrieve(eq("Why use outbox?"), eq(3), any(RetrievalScope.class), any(), any())).thenReturn(unified(outcome));
         when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("rag prompt");
         when(llmClient.generate(any(LlmRequest.class))).thenReturn(successResponse("Answer with [1] and [2]."));
 
@@ -144,7 +209,7 @@ class RagAnswerServiceTest {
                 null,
                 0L
         );
-        when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any())).thenReturn(unified(outcome));
+        when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any(), any())).thenReturn(unified(outcome));
         when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("rag prompt");
         when(llmClient.generate(any(LlmRequest.class))).thenReturn(successResponse("answer"));
 
@@ -165,7 +230,7 @@ class RagAnswerServiceTest {
                 null,
                 0L
         );
-        when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any())).thenReturn(unified(outcome));
+        when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any(), any())).thenReturn(unified(outcome));
         when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("rag prompt");
         LlmResponse llmResponse = successResponse("answer with [1]");
         llmResponse.setProvider("local-ollama");
@@ -190,7 +255,7 @@ class RagAnswerServiceTest {
                 "lexical",
                 3L
         );
-        when(appRetrievalService.retrieve(eq("cache key"), eq(1), any(RetrievalScope.class), any())).thenReturn(unified(outcome));
+        when(appRetrievalService.retrieve(eq("cache key"), eq(1), any(RetrievalScope.class), any(), any())).thenReturn(unified(outcome));
         when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("prompt");
         when(llmClient.generate(any())).thenReturn(successResponse("answer"));
 
@@ -208,7 +273,7 @@ class RagAnswerServiceTest {
 
     @Test
     void answerShouldUseDefaultTopKWhenMissing() {
-        when(appRetrievalService.retrieve(eq("query"), eq(5), any(RetrievalScope.class), any()))
+        when(appRetrievalService.retrieve(eq("query"), eq(5), any(RetrievalScope.class), any(), any()))
                 .thenReturn(unified(new RagRetrievalOutcome(List.of(), 5, 5, false, null, 0L)));
 
         RagAnswerResponse response = ragAnswerService.answer(request("query", null));
@@ -235,7 +300,7 @@ class RagAnswerServiceTest {
 
     @Test
     void answerShouldReturnNoContextResponseWithoutCallingLlm() {
-        when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any()))
+        when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any(), any()))
                 .thenReturn(unified(new RagRetrievalOutcome(List.of(), 5, 5, false, null, 0L)));
 
         RagAnswerResponse response = ragAnswerService.answer(request("No context question", 5));
@@ -249,7 +314,7 @@ class RagAnswerServiceTest {
     @Test
     void answerShouldLimitCitationSnippetLength() {
         String longContent = "a".repeat(500);
-        when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any()))
+        when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any(), any()))
                 .thenReturn(unified(new RagRetrievalOutcome(
                 List.of(chunk(1, 1, 10L, 0.9, null, longContent)),
                 1,
@@ -268,7 +333,7 @@ class RagAnswerServiceTest {
 
     @Test
     void answerShouldConvertLlmFailureToBusinessException() {
-        when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any()))
+        when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any(), any()))
                 .thenReturn(unified(new RagRetrievalOutcome(
                 List.of(chunk(1, 1, 10L, 0.9, null, "content")),
                 1,
@@ -311,7 +376,7 @@ class RagAnswerServiceTest {
         assertThat(response.getRetrieval().getScopeType()).isEqualTo("COLLECTION");
         assertThat(response.getRetrieval().getCollectionId()).isEqualTo(9L);
         assertThat(response.getGeneration().getSkipped()).isTrue();
-        verify(appRetrievalService, never()).retrieve(anyString(), anyInt(), any(RetrievalScope.class), any());
+        verify(appRetrievalService, never()).retrieve(anyString(), anyInt(), any(RetrievalScope.class), any(), any());
         verify(llmClient, never()).generate(any());
     }
 
@@ -333,7 +398,7 @@ class RagAnswerServiceTest {
                 null,
                 0L
         );
-        when(appRetrievalService.retrieve(eq("scoped"), eq(5), any(RetrievalScope.class), any())).thenReturn(unified(outcome));
+        when(appRetrievalService.retrieve(eq("scoped"), eq(5), any(RetrievalScope.class), any(), any())).thenReturn(unified(outcome));
         when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("prompt");
         when(llmClient.generate(any())).thenReturn(successResponse("scoped answer"));
 
@@ -343,6 +408,67 @@ class RagAnswerServiceTest {
 
         assertThat(response.getAnswer()).isEqualTo("scoped answer");
         assertThat(response.getRetrieval().getCollectionName()).isEqualTo("项目 B");
+    }
+
+    @Test
+    void askShouldExposeQueryUnderstandingDiagnosticsAndPassRoutingDecision() {
+        RetrievalRoutingDecision decision = RetrievalRoutingDecision.builder()
+                .strategy(RetrievalRoutingStrategy.HYBRID_RRF_RERANK)
+                .filter(RetrievalFilter.builder().version("V10.0").build())
+                .vectorTopK(30)
+                .keywordTopK(50)
+                .finalTopK(8)
+                .rerankTopN(8)
+                .routingReasons(List.of("test"))
+                .warnings(List.of())
+                .build();
+        when(retrievalRoutingPolicyService.route(any(), any())).thenReturn(decision);
+        when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any(), eq(decision)))
+                .thenReturn(unified(new RagRetrievalOutcome(
+                        List.of(chunk(1, 1, 10L, 0.9, null, "content")),
+                        8,
+                        30,
+                        true,
+                        "lexical",
+                        0L
+                )));
+        when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("prompt");
+        when(llmClient.generate(any())).thenReturn(successResponse("answer"));
+
+        RagAnswerResponse response = ragAnswerService.answer(request("V10.0 LocalPythonLlmProvider", 5));
+
+        assertThat(response.getQueryUnderstanding()).isNotNull();
+        assertThat(response.getQueryUnderstanding().getRoutingDecision().getStrategy()).isEqualTo(RetrievalRoutingStrategy.HYBRID_RRF_RERANK);
+        verify(appRetrievalService).retrieve(anyString(), eq(5), any(RetrievalScope.class), any(), eq(decision));
+    }
+
+    @Test
+    void ambiguousQueryShouldNotBlindSearch() {
+        QueryUnderstandingResult ambiguous = QueryUnderstandingResult.builder()
+                .originalQuery("啥")
+                .normalizedQuery("啥")
+                .queryType(QueryType.AMBIGUOUS)
+                .confidence(0.2)
+                .entities(List.of())
+                .codeSymbols(List.of())
+                .configKeys(List.of())
+                .apiPaths(List.of())
+                .warnings(List.of())
+                .reasons(List.of())
+                .build();
+        when(queryUnderstandingService.understand(eq("啥"), any(), any())).thenReturn(ambiguous);
+        when(queryClarificationGuard.evaluate(any(), any(), any(), any(Long.class), any(Long.class)))
+                .thenReturn(new QueryClarificationGuard.GuardResult(
+                        true,
+                        "当前问题比较模糊，建议先选择知识库分组，避免跨项目文档混入。",
+                        List.of("queryType=AMBIGUOUS")
+                ));
+
+        RagAnswerResponse response = ragAnswerService.answer(request("啥", 5));
+
+        assertThat(response.getAnswer()).contains("当前问题比较模糊");
+        assertThat(response.getQueryUnderstanding().isClarificationRequired()).isTrue();
+        verify(appRetrievalService, never()).retrieve(anyString(), anyInt(), any(RetrievalScope.class), any(), any());
     }
 
     private RagAnswerRequest request(String query, Integer topK) {

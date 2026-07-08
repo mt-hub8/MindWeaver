@@ -8,6 +8,7 @@ import com.tuoman.ai_task_orchestrator.retrieval.HybridRetrievalService;
 import com.tuoman.ai_task_orchestrator.retrieval.RetrievalDiagnostics;
 import com.tuoman.ai_task_orchestrator.retrieval.RetrievalFilter;
 import com.tuoman.ai_task_orchestrator.retrieval.RetrievalScope;
+import com.tuoman.ai_task_orchestrator.queryunderstanding.RetrievalRoutingDecision;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService.RagRetrievalOutcome;
 import com.tuoman.ai_task_orchestrator.rerank.RagTwoStageRetrievalService.RagRetrievedChunk;
@@ -33,26 +34,41 @@ public class AppRetrievalService {
     private final Reranker reranker;
 
     public UnifiedRetrievalOutcome retrieve(String query, int topK, RetrievalScope scope, Long collectionId) {
+        return retrieve(query, topK, scope, collectionId, null);
+    }
+
+    public UnifiedRetrievalOutcome retrieve(
+            String query,
+            int topK,
+            RetrievalScope scope,
+            Long collectionId,
+            RetrievalRoutingDecision routingDecision
+    ) {
         if (useV15Pipeline()) {
-            RetrievalFilter filter = RetrievalFilter.builder()
-                    .collectionId(collectionId)
-                    .scopedDocumentIds(scope == null ? null : scope.allowedDocumentIdsOrEmpty())
-                    .build();
-            boolean rerankEnabled = pipelineProperties.isRerankEnabled();
-            boolean expandContext = pipelineProperties.getContextExpansion() != null
-                    && pipelineProperties.getContextExpansion() != ContextExpansionStrategy.NONE;
+            RetrievalFilter routedFilter = routingDecision == null ? null : routingDecision.getFilter();
+            RetrievalFilter filter = mergeScope(routedFilter, collectionId, scope);
+            boolean rerankEnabled = routingDecision == null
+                    ? pipelineProperties.isRerankEnabled()
+                    : routingDecision.rerankEnabled();
+            boolean expandContext = routingDecision == null
+                    ? pipelineProperties.getContextExpansion() != null
+                    && pipelineProperties.getContextExpansion() != ContextExpansionStrategy.NONE
+                    : routingDecision.contextExpansionEnabled();
+            int vectorTopK = routingDecision == null ? pipelineProperties.getVectorTopK() : routingDecision.getVectorTopK();
+            int keywordTopK = routingDecision == null ? pipelineProperties.getKeywordTopK() : routingDecision.getKeywordTopK();
+            int finalTopK = routingDecision == null ? topK : routingDecision.getFinalTopK();
             HybridRetrievalService.HybridRetrievalOutcome hybridOutcome = hybridRetrievalService.retrieve(
                     query,
                     filter,
-                    pipelineProperties.getVectorTopK(),
-                    pipelineProperties.getKeywordTopK(),
-                    topK,
+                    vectorTopK,
+                    keywordTopK,
+                    finalTopK,
                     pipelineProperties.getDefaultFusion(),
                     rerankEnabled,
                     expandContext
             );
             return new UnifiedRetrievalOutcome(
-                    toLegacyOutcome(hybridOutcome, topK, rerankEnabled),
+                    toLegacyOutcome(hybridOutcome, finalTopK, rerankEnabled),
                     hybridOutcome.diagnostics(),
                     true
             );
@@ -70,6 +86,24 @@ public class AppRetrievalService {
 
     public boolean legacyHybridEnabled() {
         return ragHybridProperties.isEnabled();
+    }
+
+    private RetrievalFilter mergeScope(RetrievalFilter routedFilter, Long requestCollectionId, RetrievalScope scope) {
+        Long collectionId = routedFilter != null && routedFilter.getCollectionId() != null
+                ? routedFilter.getCollectionId()
+                : requestCollectionId;
+        return RetrievalFilter.builder()
+                .collectionId(collectionId)
+                .docType(routedFilter == null ? null : routedFilter.getDocType())
+                .version(routedFilter == null ? null : routedFilter.getVersion())
+                .source(routedFilter == null ? null : routedFilter.getSource())
+                .status(routedFilter == null ? null : routedFilter.getStatus())
+                .tags(routedFilter == null ? null : routedFilter.getTags())
+                .includeDeprecated(routedFilter != null && routedFilter.isIncludeDeprecated())
+                .includeDraft(routedFilter != null && routedFilter.isIncludeDraft())
+                .includeTrashed(routedFilter != null && routedFilter.isIncludeTrashed())
+                .scopedDocumentIds(scope == null ? null : scope.allowedDocumentIdsOrEmpty())
+                .build();
     }
 
     private RagRetrievalOutcome toLegacyOutcome(

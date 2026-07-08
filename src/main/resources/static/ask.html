@@ -55,6 +55,7 @@
                     <p class="muted" style="font-size:0.86rem;margin:8px 0 0">知识库生命周期过滤说明：只会使用「已启用」文档；垃圾箱中的文档不会再进入回答引用；最新有效的文档片段才会进入回答引用。旧版本片段不会再进入回答引用。文档处理分析可在 ingestion-analytics 查看。</p>
                 </details>
                 <div id="loading-status" class="status loading hidden">正在生成回答…</div>
+                <p id="clarification-template" class="hidden">当前问题比较模糊，建议先选择知识库分组，避免跨项目文档混入。</p>
                 <div id="error-status" class="error-card hidden" role="alert">
                     <strong>提问失败</strong>
                     <p style="margin:4px 0 0"><span id="error-code"></span> <span id="error-message"></span></p>
@@ -110,8 +111,21 @@
             </section>
 
             <div class="mw-two-col">
+                <section id="query-understanding-section" class="mw-card card hidden">
+                    <h2 class="mw-card-title">查询理解</h2>
+                    <dl id="query-understanding-summary" class="summary-dl"></dl>
+                    <details class="technical-details"><summary>查看技术详情 · 查询理解</summary><pre id="query-understanding-metadata"></pre></details>
+                </section>
+
+                <section id="query-rewrite-section" class="mw-card card hidden">
+                    <h2 class="mw-card-title">改写后的查询</h2>
+                    <dl id="query-rewrite-summary" class="summary-dl"></dl>
+                </section>
+            </div>
+
+            <div class="mw-two-col">
                 <section id="retrieval-section" class="mw-card card hidden">
-                    <h2 class="mw-card-title">检索信息</h2>
+                    <h2 class="mw-card-title">检索路由</h2>
                     <p class="muted" style="font-size:0.86rem;margin:0 0 8px">当前检索策略</p>
                     <dl id="retrieval-summary" class="summary-dl"></dl>
                     <details class="technical-details"><summary>查看技术详情 · 检索</summary><pre id="retrieval-metadata"></pre></details>

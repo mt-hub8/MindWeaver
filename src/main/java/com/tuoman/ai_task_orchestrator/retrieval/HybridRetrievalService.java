@@ -187,6 +187,9 @@ public class HybridRetrievalService {
         if (filter.getDocType() != null) {
             metadata.put("docType", filter.getDocType().name());
         }
+        if (filter.getStatus() != null) {
+            metadata.put("status", filter.getStatus().name());
+        }
         return metadata;
     }
 
