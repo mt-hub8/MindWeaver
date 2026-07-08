@@ -1,2 +1,8 @@
 /mvnw text eol=lf
+.gitattributes text eol=lf
 *.cmd text eol=crlf
+*.java text eol=lf
+*.properties text eol=lf
+*.md text eol=lf
+*.html text eol=lf
+*.js text eol=lf
