@@ -47,6 +47,21 @@ class ProductMvpStaticResourceTest {
     }
 
     @Test
+    void shouldServeAskHtmlWithGroundedAnswerDiagnosticsCopy() throws Exception {
+        String html = fetchUtf8("/ask.html");
+        String js = fetchUtf8("/ask.js");
+
+        assertThat(html).contains("可信回答状态");
+        assertThat(html).contains("引用校验");
+        assertThat(html).contains("未被资料支持的主张");
+        assertThat(html).contains("当前资料不足");
+        assertThat(html).contains("查看技术详情");
+        assertThat(js).contains("引用已校验");
+        assertThat(js).contains("引用支撑较弱");
+        assertThat(js).contains("存在未被资料支持的主张");
+    }
+
+    @Test
     void shouldServeDocumentsHtmlWithChineseUploadSection() throws Exception {
         String content = fetchUtf8("/documents.html");
         assertThat(content).contains("文档管理");

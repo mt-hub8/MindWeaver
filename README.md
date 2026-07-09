@@ -63,6 +63,7 @@
 - **结构化切分与混合检索（V15.0）** — 结构化 chunk（section_path、chunk_type、prev/next/parent）、metadata 增强、**RetrievalFilter** 预过滤、BM25/keyword 检索、**Hybrid + RRF**、启发式 Reranker、parent/adjacent 上下文回填、检索诊断与重新索引。
 - **向量索引健康（V16.0）** — 稳定 **vector_id** 幂等 upsert、**generation** 代际隔离、trash/purge 向量同步、batch retry 防重复；**CrossCollectionVectorLeakRate（跨集合向量污染率）** 等存储层审计；页面 `/vector-index-health.html`。
 - **查询理解与检索路由（V17.0）** — 自动识别版本、最新方案、文档类型、代码符号、配置项和 API 路径；根据 query type 选择 Vector / Hybrid RRF / Rerank / parent-adjacent context；模糊问题触发澄清提示，防止全库盲搜；Ask 页面展示查询理解、检索路由和改写后的查询。
+- **可信回答生成（V18.0）** — 建立 Grounded Answer Contract、可追踪 final context、chunk/section 级 citation、引用校验、上下文不足拒答、未支持主张检测和 Answer Grounding Score；Ask 页面展示可信回答状态、引用校验与未支持主张。
 - **AI 任务编排** — 提交目标后自动生成检索、总结与最终报告。
 - **工具执行过程** — 查看每一步工具输入、输出与事件时间线。
 - **模型设置** — 查看运行模式、Worker / Ollama 连接状态，支持连接测试。
@@ -316,7 +317,7 @@ Worker 测试使用 mock HTTP，**不调用真实 Ollama**。
 | **V15.0** | 结构化切分与混合检索主链路优化（当前）：section_path、metadata filter、Hybrid+RRF、rerank、context expansion |
 | **V16.0** | 向量索引隔离与去重防污染强化：稳定 vector_id、幂等 upsert、generation 代际、vector audit、cleanup |
 | **V17.0** | 查询理解与检索路由（当前）：自动识别版本、doc_type、代码符号、配置项、API 路径；动态选择 retrieval strategy；防止模糊问题全库盲搜 |
-| **V18.0** | 本地应用打包（安装包 / 一键服务） |
+| **V18.0** | 可信回答生成与引用校验（当前）：Grounded Answer Contract、citation verification、unsupported claim detection、context-insufficient refusal、AnswerGroundingScore |
 | **V19.0** | Skill System MVP |
 | **V19.0** | 多 Agent 圆桌 |
 
@@ -401,6 +402,7 @@ Java（Spring Boot）擅长可靠的业务服务、事务、异步任务与 API 
 | V15.0 Structured Chunking & Hybrid Retrieval | [structured-chunking-and-hybrid-retrieval-pipeline.md](docs/manual/structured-chunking-and-hybrid-retrieval-pipeline.md) |
 | V16.0 Vector Index Isolation & Deduplication | [vector-index-isolation-and-deduplication-hardening.md](docs/manual/vector-index-isolation-and-deduplication-hardening.md) |
 | V17.0 Query Understanding & Retrieval Routing | [query-understanding-and-retrieval-routing.md](docs/manual/query-understanding-and-retrieval-routing.md) |
+| V18.0 Grounded Answer Contract & Citation Verification | [grounded-answer-contract-and-citation-verification.md](docs/manual/grounded-answer-contract-and-citation-verification.md) |
 | 本地开发环境 | [docs/local-dev.md](docs/local-dev.md) |
 | API 示例 | [docs/api-examples.md](docs/api-examples.md) |
 | 面试 deep-dive | [docs/interview](docs/interview) |

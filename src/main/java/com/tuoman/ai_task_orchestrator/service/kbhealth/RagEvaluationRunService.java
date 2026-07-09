@@ -28,6 +28,7 @@ import com.tuoman.ai_task_orchestrator.kbhealth.RagHealthRetrievalMetricsCalcula
 import com.tuoman.ai_task_orchestrator.kbhealth.RagHealthScoringProfile;
 import com.tuoman.ai_task_orchestrator.kbhealth.RagQualityVetoRuleService;
 import com.tuoman.ai_task_orchestrator.kbhealth.RetrievalStrategyRunner;
+import com.tuoman.ai_task_orchestrator.grounding.GroundedAnswerDiagnostics;
 import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryUnderstandingMetricsService;
 import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryUnderstandingResult;
 import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryUnderstandingService;
@@ -313,6 +314,7 @@ public class RagEvaluationRunService {
 
         String answer = null;
         List<String> citations = List.of();
+        GroundedAnswerDiagnostics grounding = null;
         if (Boolean.TRUE.equals(run.getExecuteGeneration())) {
             RagAnswerRequest answerRequest = new RagAnswerRequest();
             answerRequest.setQuery(evalCase.getQuery());
@@ -320,6 +322,7 @@ public class RagEvaluationRunService {
             answerRequest.setCollectionId(collectionId != null ? collectionId : evalCase.getCollectionId());
             RagAnswerResponse answerResponse = ragAnswerService.answer(answerRequest);
             answer = answerResponse.getAnswer();
+            grounding = answerResponse.getGrounding();
             citations = answerResponse.getCitations() == null
                     ? List.of()
                     : answerResponse.getCitations().stream()
@@ -350,6 +353,10 @@ public class RagEvaluationRunService {
                 citations,
                 retrievalOutcome.chunks()
         );
+        if (grounding != null) {
+            generationMetrics = new ArrayList<>(generationMetrics);
+            generationMetrics.addAll(groundingMetrics(grounding));
+        }
 
         List<HealthMetricValue> allMetrics = new ArrayList<>();
         allMetrics.addAll(retrievalMetrics);
@@ -371,12 +378,66 @@ public class RagEvaluationRunService {
         result.setRetrievedChunksJson(JsonFieldCodec.write(retrievalOutcome.chunks()));
         result.setGeneratedAnswer(answer);
         result.setCitationsJson(JsonFieldCodec.write(citations));
+        if (grounding != null) {
+            result.setContextBundleJson(JsonFieldCodec.write(grounding.getContextBundle()));
+            result.setCitationVerificationJson(JsonFieldCodec.write(grounding.getCitationVerification()));
+            result.setUnsupportedClaimReportJson(JsonFieldCodec.write(grounding.getUnsupportedClaimReport()));
+            result.setRefusalDecisionJson(JsonFieldCodec.write(grounding.getRefusalDecision()));
+            result.setGroundingScoreJson(JsonFieldCodec.write(grounding.getGroundingScore()));
+        }
         result.setRetrievalMetricsJson(JsonFieldCodec.write(retrievalMetrics));
         result.setGenerationMetricsJson(JsonFieldCodec.write(generationMetrics));
         result.setQualityScore(vetoResult.getFinalScore());
         result.setDiagnosisJson(JsonFieldCodec.write(diagnosis));
         result.setLatencyMs(latencyMs);
         return result;
+    }
+
+    private List<HealthMetricValue> groundingMetrics(GroundedAnswerDiagnostics grounding) {
+        List<HealthMetricValue> metrics = new ArrayList<>();
+        if (grounding.getCitationVerification() != null) {
+            metrics.add(HealthMetricValue.of(
+                    "GROUNDED_CITATION_ACCURACY",
+                    "Grounded CitationAccuracy（引用校验准确率）",
+                    grounding.getCitationVerification().getCitationAccuracy(),
+                    true
+            ));
+        }
+        if (grounding.getUnsupportedClaimReport() != null) {
+            int total = grounding.getUnsupportedClaimReport().getTotalClaims();
+            double unsupportedRate = total == 0
+                    ? 0.0
+                    : (double) grounding.getUnsupportedClaimReport().getUnsupportedClaims() / total;
+            metrics.add(HealthMetricValue.of(
+                    "UNSUPPORTED_CLAIM_RATE",
+                    "UnsupportedClaimRate（未支持主张率）",
+                    unsupportedRate,
+                    true
+            ));
+            metrics.add(HealthMetricValue.of(
+                    "GROUNDED_FAITHFULNESS",
+                    "Grounded Faithfulness（基于未支持主张）",
+                    1.0 - unsupportedRate,
+                    true
+            ));
+        }
+        if (grounding.getRefusalDecision() != null) {
+            metrics.add(HealthMetricValue.of(
+                    "GROUNDED_REFUSAL_DECISION",
+                    "Grounded RefusalDecision（拒答决策）",
+                    grounding.getRefusalDecision().isShouldRefuse() ? 1.0 : 0.0,
+                    true
+            ));
+        }
+        if (grounding.getGroundingScore() != null) {
+            metrics.add(HealthMetricValue.of(
+                    "ANSWER_GROUNDING_SCORE",
+                    "AnswerGroundingScore（可信回答评分）",
+                    grounding.getGroundingScore().getGroundingScore() / 100.0,
+                    true
+            ));
+        }
+        return metrics;
     }
 
     private RagEvaluationRetrievalStrategy toEvaluationStrategy(RetrievalRoutingDecision decision) {

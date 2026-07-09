@@ -3,6 +3,7 @@ package com.tuoman.ai_task_orchestrator.dto;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import com.tuoman.ai_task_orchestrator.grounding.GroundedAnswerDiagnostics;
 import com.tuoman.ai_task_orchestrator.queryunderstanding.QueryUnderstandingDiagnostics;
 
 import java.util.List;
@@ -23,13 +24,15 @@ public class RagAnswerResponse {
 
     private QueryUnderstandingDiagnostics queryUnderstanding;
 
+    private GroundedAnswerDiagnostics grounding;
+
     public RagAnswerResponse(
             String answer,
             List<RagCitationResponse> citations,
             RagRetrievalMetadataResponse retrieval,
             RagGenerationMetadataResponse generation
     ) {
-        this(answer, citations, retrieval, generation, null, null);
+        this(answer, citations, retrieval, generation, null, null, null);
     }
 
     public RagAnswerResponse(
@@ -39,7 +42,18 @@ public class RagAnswerResponse {
             RagGenerationMetadataResponse generation,
             RagQualityScoreResponse qualityScore
     ) {
-        this(answer, citations, retrieval, generation, qualityScore, null);
+        this(answer, citations, retrieval, generation, qualityScore, null, null);
+    }
+
+    public RagAnswerResponse(
+            String answer,
+            List<RagCitationResponse> citations,
+            RagRetrievalMetadataResponse retrieval,
+            RagGenerationMetadataResponse generation,
+            RagQualityScoreResponse qualityScore,
+            QueryUnderstandingDiagnostics queryUnderstanding
+    ) {
+        this(answer, citations, retrieval, generation, qualityScore, queryUnderstanding, null);
     }
 
 }

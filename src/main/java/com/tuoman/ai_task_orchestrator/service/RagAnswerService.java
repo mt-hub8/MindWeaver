@@ -8,6 +8,21 @@ import com.tuoman.ai_task_orchestrator.dto.RagGenerationMetadataResponse;
 import com.tuoman.ai_task_orchestrator.dto.RagRetrievalMetadataResponse;
 import com.tuoman.ai_task_orchestrator.embedding.EmbeddingProvider;
 import com.tuoman.ai_task_orchestrator.enums.RetrievalScopeType;
+import com.tuoman.ai_task_orchestrator.grounding.AnswerContractMode;
+import com.tuoman.ai_task_orchestrator.grounding.AnswerGroundingScore;
+import com.tuoman.ai_task_orchestrator.grounding.AnswerGroundingScoreCalculator;
+import com.tuoman.ai_task_orchestrator.grounding.CitationVerificationResult;
+import com.tuoman.ai_task_orchestrator.grounding.CitationVerificationService;
+import com.tuoman.ai_task_orchestrator.grounding.GroundedAnswerContract;
+import com.tuoman.ai_task_orchestrator.grounding.GroundedAnswerDiagnostics;
+import com.tuoman.ai_task_orchestrator.grounding.GroundedAnswerPromptBuilder;
+import com.tuoman.ai_task_orchestrator.grounding.GroundedContextAssembler;
+import com.tuoman.ai_task_orchestrator.grounding.GroundedContextBundle;
+import com.tuoman.ai_task_orchestrator.grounding.GroundedContextChunk;
+import com.tuoman.ai_task_orchestrator.grounding.RefusalDecision;
+import com.tuoman.ai_task_orchestrator.grounding.RefusalPolicyService;
+import com.tuoman.ai_task_orchestrator.grounding.UnsupportedClaimDetector;
+import com.tuoman.ai_task_orchestrator.grounding.UnsupportedClaimReport;
 import com.tuoman.ai_task_orchestrator.llm.LlmClient;
 import com.tuoman.ai_task_orchestrator.llm.LlmRequest;
 import com.tuoman.ai_task_orchestrator.llm.LlmResponse;
@@ -82,6 +97,18 @@ public class RagAnswerService {
     private final DocumentRepository documentRepository;
 
     private final DocumentCollectionRepository documentCollectionRepository;
+
+    private final GroundedContextAssembler groundedContextAssembler;
+
+    private final GroundedAnswerPromptBuilder groundedAnswerPromptBuilder;
+
+    private final CitationVerificationService citationVerificationService;
+
+    private final UnsupportedClaimDetector unsupportedClaimDetector;
+
+    private final RefusalPolicyService refusalPolicyService;
+
+    private final AnswerGroundingScoreCalculator answerGroundingScoreCalculator;
 
     public RagAnswerResponse answer(RagAnswerRequest request) {
         if (request == null) {
@@ -159,15 +186,65 @@ public class RagAnswerService {
                 unifiedOutcome.diagnostics(),
                 unifiedOutcome.v15Pipeline()
         );
+        AnswerContractMode contractMode = AnswerContractMode.defaultMode();
+        GroundedAnswerContract contract = new GroundedAnswerContract(contractMode);
+        GroundedContextBundle contextBundle = groundedContextAssembler.assemble(
+                request.getQuery(),
+                retrievalOutcome.chunks(),
+                understanding,
+                routingDecision,
+                retrievalPipelineProperties.getMaxContextChars(),
+                contractMode
+        );
+        citations = enrichCitations(citations, contextBundle);
 
-        if (citations.isEmpty()) {
+        if (citations.isEmpty() || contextBundle.isEmpty()) {
             String answer = askScope.collectionId() != null
                     ? "当前所选分组下未检索到可用于回答的文档片段。"
                     : NO_CONTEXT_ANSWER;
-            return withQualityScore(buildNoContextResponse(answer, topK, askScope, retrieval, queryDiagnostics), request);
+            RefusalDecision refusal = refusalPolicyService.decideBeforeGeneration(
+                    contextBundle,
+                    understanding,
+                    routingDecision,
+                    contractMode
+            );
+            GroundedAnswerDiagnostics grounding = buildGroundingDiagnostics(
+                    answer,
+                    contract,
+                    contextBundle,
+                    routingDecision,
+                    understanding,
+                    refusal
+            );
+            return withQualityScore(buildNoContextResponse(answer, topK, askScope, retrieval, queryDiagnostics, grounding), request);
         }
 
-        String prompt = ragPromptBuilder.buildPrompt(request.getQuery(), citations);
+        RefusalDecision preGenerationRefusal = refusalPolicyService.decideBeforeGeneration(
+                contextBundle,
+                understanding,
+                routingDecision,
+                contractMode
+        );
+        if (preGenerationRefusal.isShouldRefuse()) {
+            GroundedAnswerDiagnostics grounding = buildGroundingDiagnostics(
+                    preGenerationRefusal.getSuggestedAnswer(),
+                    contract,
+                    contextBundle,
+                    routingDecision,
+                    understanding,
+                    preGenerationRefusal
+            );
+            return withQualityScore(buildNoContextResponse(
+                    preGenerationRefusal.getSuggestedAnswer(),
+                    topK,
+                    askScope,
+                    retrieval,
+                    queryDiagnostics,
+                    grounding
+            ), request);
+        }
+
+        String prompt = groundedAnswerPromptBuilder.buildPrompt(request.getQuery(), contextBundle, contract, understanding);
         if (routingDecision.isNoAnswerRisk()) {
             prompt = prompt + "\n\n如果上下文没有依据，请明确说明未找到依据。";
         }
@@ -194,13 +271,36 @@ public class RagAnswerService {
                 llmResponse.getPromptTokenCount(),
                 llmResponse.getCompletionTokenCount()
         );
+        CitationVerificationResult verification = citationVerificationService.verify(
+                llmResponse.getContent(),
+                contextBundle,
+                routingDecision.getFilter(),
+                understanding
+        );
+        UnsupportedClaimReport unsupportedClaimReport = unsupportedClaimDetector.detect(llmResponse.getContent(), contextBundle);
+        RefusalDecision postVerificationRefusal = refusalPolicyService.decideAfterVerification(verification, contractMode);
+        AnswerGroundingScore groundingScore = answerGroundingScoreCalculator.calculate(
+                contextBundle,
+                verification,
+                unsupportedClaimReport,
+                postVerificationRefusal
+        );
+        GroundedAnswerDiagnostics grounding = GroundedAnswerDiagnostics.builder()
+                .contract(contract)
+                .contextBundle(contextBundle)
+                .citationVerification(verification)
+                .unsupportedClaimReport(unsupportedClaimReport)
+                .refusalDecision(postVerificationRefusal)
+                .groundingScore(groundingScore)
+                .build();
         return withQualityScore(new RagAnswerResponse(
                 llmResponse.getContent(),
                 citations,
                 retrieval,
                 generation,
                 null,
-                queryDiagnostics
+                queryDiagnostics,
+                grounding
         ), request);
     }
 
@@ -219,7 +319,8 @@ public class RagAnswerService {
                         response.getGeneration(),
                         mode
                 ),
-                response.getQueryUnderstanding()
+                response.getQueryUnderstanding(),
+                response.getGrounding()
         );
     }
 
@@ -270,13 +371,25 @@ public class RagAnswerService {
             RagRetrievalMetadataResponse retrieval,
             QueryUnderstandingDiagnostics queryDiagnostics
     ) {
+        return buildNoContextResponse(answer, topK, askScope, retrieval, queryDiagnostics, null);
+    }
+
+    private RagAnswerResponse buildNoContextResponse(
+            String answer,
+            int topK,
+            CollectionAskScope askScope,
+            RagRetrievalMetadataResponse retrieval,
+            QueryUnderstandingDiagnostics queryDiagnostics,
+            GroundedAnswerDiagnostics grounding
+    ) {
         return new RagAnswerResponse(
                 answer,
                 List.of(),
                 retrieval,
                 new RagGenerationMetadataResponse(null, null, null, null, true, NO_CONTEXT_REASON, null, null, null),
                 null,
-                queryDiagnostics
+                queryDiagnostics,
+                grounding
         );
     }
 
@@ -292,8 +405,40 @@ public class RagAnswerService {
                 toRetrievalMetadataEmpty(topK, askScope),
                 new RagGenerationMetadataResponse(null, null, null, null, true, "CLARIFICATION_REQUIRED", null, null, null),
                 null,
-                queryDiagnostics
+                queryDiagnostics,
+                null
         );
+    }
+
+    private GroundedAnswerDiagnostics buildGroundingDiagnostics(
+            String answer,
+            GroundedAnswerContract contract,
+            GroundedContextBundle contextBundle,
+            RetrievalRoutingDecision routingDecision,
+            QueryUnderstandingResult understanding,
+            RefusalDecision refusal
+    ) {
+        CitationVerificationResult verification = citationVerificationService.verify(
+                answer,
+                contextBundle,
+                routingDecision == null ? null : routingDecision.getFilter(),
+                understanding
+        );
+        UnsupportedClaimReport unsupportedClaimReport = unsupportedClaimDetector.detect(answer, contextBundle);
+        AnswerGroundingScore groundingScore = answerGroundingScoreCalculator.calculate(
+                contextBundle,
+                verification,
+                unsupportedClaimReport,
+                refusal
+        );
+        return GroundedAnswerDiagnostics.builder()
+                .contract(contract)
+                .contextBundle(contextBundle)
+                .citationVerification(verification)
+                .unsupportedClaimReport(unsupportedClaimReport)
+                .refusalDecision(refusal)
+                .groundingScore(groundingScore)
+                .build();
     }
 
     private List<RagCitationResponse> toCitations(
@@ -333,6 +478,46 @@ public class RagAnswerService {
                 hybridEnabled ? chunk.denseHit() : null,
                 hybridEnabled ? chunk.lexicalHit() : null
         );
+    }
+
+    private List<RagCitationResponse> enrichCitations(List<RagCitationResponse> citations, GroundedContextBundle contextBundle) {
+        if (citations == null || citations.isEmpty() || contextBundle == null || contextBundle.getChunks() == null) {
+            return citations == null ? List.of() : citations;
+        }
+        return citations.stream()
+                .map(citation -> {
+                    GroundedContextChunk contextChunk = contextBundle.getChunks().stream()
+                            .filter(chunk -> citation.getChunkId() != null && citation.getChunkId().equals(chunk.getChunkId()))
+                            .findFirst()
+                            .orElse(null);
+                    if (contextChunk == null) {
+                        return citation;
+                    }
+                    return new RagCitationResponse(
+                            citation.getSourceIndex(),
+                            citation.getDocumentId(),
+                            citation.getChunkId(),
+                            citation.getScore(),
+                            citation.getContentSnippet(),
+                            citation.getOriginalRank(),
+                            citation.getRerankedRank(),
+                            citation.getOriginalScore(),
+                            citation.getRerankScore(),
+                            citation.getDenseRank(),
+                            citation.getLexicalRank(),
+                            citation.getDenseScore(),
+                            citation.getLexicalScore(),
+                            citation.getFusionScore(),
+                            citation.getDenseHit(),
+                            citation.getLexicalHit(),
+                            contextChunk.getDocumentTitle(),
+                            contextChunk.getSectionPath(),
+                            contextChunk.getVersion(),
+                            contextChunk.getCitationKey(),
+                            null
+                    );
+                })
+                .toList();
     }
 
     private RagRetrievalMetadataResponse toRetrievalMetadata(

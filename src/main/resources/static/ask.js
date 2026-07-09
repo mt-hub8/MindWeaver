@@ -27,6 +27,13 @@
     const citationsSection = document.getElementById("citations-section");
     const citationsEmpty = document.getElementById("citations-empty");
     const citationsList = document.getElementById("citations-list");
+    const groundingSection = document.getElementById("grounding-section");
+    const groundingSummary = document.getElementById("grounding-summary");
+    const citationVerificationSummary = document.getElementById("citation-verification-summary");
+    const groundingRefusal = document.getElementById("grounding-refusal");
+    const unsupportedClaimsList = document.getElementById("unsupported-claims-list");
+    const unsupportedClaimsEmpty = document.getElementById("unsupported-claims-empty");
+    const groundingMetadata = document.getElementById("grounding-metadata");
     const retrievalSection = document.getElementById("retrieval-section");
     const retrievalSummary = document.getElementById("retrieval-summary");
     const retrievalMetadata = document.getElementById("retrieval-metadata");
@@ -228,6 +235,7 @@
         answerSection.classList.add("hidden");
         qualitySection.classList.add("hidden");
         citationsSection.classList.add("hidden");
+        groundingSection.classList.add("hidden");
         retrievalSection.classList.add("hidden");
         queryUnderstandingSection.classList.add("hidden");
         queryRewriteSection.classList.add("hidden");
@@ -241,6 +249,12 @@
         }
         citationsList.innerHTML = "";
         citationsEmpty.classList.add("hidden");
+        groundingSummary.innerHTML = "";
+        citationVerificationSummary.innerHTML = "";
+        groundingRefusal.classList.add("hidden");
+        unsupportedClaimsList.innerHTML = "";
+        unsupportedClaimsEmpty.classList.add("hidden");
+        groundingMetadata.textContent = "";
         retrievalSummary.innerHTML = "";
         retrievalMetadata.textContent = "";
         queryUnderstandingSummary.innerHTML = "";
@@ -281,6 +295,7 @@
         renderAnswerSummary(generation, citations.length);
 
         citationsSection.classList.remove("hidden");
+        renderGrounding(data.grounding || {});
         if (citations.length === 0) {
             citationsEmpty.classList.remove("hidden");
         } else {
@@ -322,6 +337,58 @@
             ["semanticQuery", safeValue(rewritten.semanticQuery)],
             ["symbolQuery", safeValue(rewritten.symbolQuery)]
         ]);
+    }
+
+    function renderGrounding(grounding) {
+        if (!grounding || Object.keys(grounding).length === 0) {
+            return;
+        }
+        groundingSection.classList.remove("hidden");
+        const score = grounding.groundingScore || {};
+        const contract = grounding.contract || {};
+        renderSummaryDl(groundingSummary, [
+            ["状态", safeValue(score.level)],
+            ["groundingScore", score.groundingScore != null ? String(score.groundingScore) + " / 100" : "-"],
+            ["answerContractMode", safeValue(contract.mode)],
+            ["citationCoverage", percent(score.citationCoverage)],
+            ["unsupportedClaimRate", percent(score.unsupportedClaimRate)]
+        ]);
+
+        const verification = grounding.citationVerification || {};
+        renderSummaryDl(citationVerificationSummary, [
+            ["totalCitations", safeValue(verification.totalCitations)],
+            ["verifiedCitations", safeValue(verification.verifiedCitations)],
+            ["weakCitations", safeValue(verification.weakCitations)],
+            ["unsupportedCitations", safeValue(verification.unsupportedCitations)],
+            ["invalidCitationCount", safeValue(verification.invalidCitationCount)]
+        ]);
+
+        const refusal = grounding.refusalDecision || {};
+        if (refusal.shouldRefuse) {
+            groundingRefusal.textContent = refusal.reasonText || "当前资料不足，建议补充文档或缩小检索范围。";
+            groundingRefusal.classList.remove("hidden");
+        }
+
+        const report = grounding.unsupportedClaimReport || {};
+        const claims = Array.isArray(report.claimDetails)
+            ? report.claimDetails.filter(function (claim) {
+                return claim.issueType && claim.issueType !== "NONE";
+            })
+            : [];
+        unsupportedClaimsList.innerHTML = "";
+        if (claims.length === 0) {
+            unsupportedClaimsEmpty.classList.remove("hidden");
+        } else {
+            unsupportedClaimsEmpty.classList.add("hidden");
+            claims.forEach(function (claim) {
+                const item = document.createElement("li");
+                item.textContent = (claim.claimText || "未支持主张")
+                    + " - " + (claim.reason || claim.issueType || "存在未被资料支持的主张")
+                    + " - " + (claim.severity || "-");
+                unsupportedClaimsList.appendChild(item);
+            });
+        }
+        groundingMetadata.textContent = prettyJson(grounding);
     }
 
     function renderQualityScore(qualityScore) {
@@ -495,7 +562,11 @@
         const meta = document.createElement("div");
         meta.className = "citation-meta";
         meta.innerHTML =
-            "<span>相关度: " + safeValue(citation.score) + "</span>";
+            "<span>相关度: " + safeValue(citation.score) + "</span>"
+            + "<span>文档: " + safeValue(citation.documentTitle || citation.documentId) + "</span>"
+            + "<span>章节: " + safeValue(citation.sectionPath) + "</span>"
+            + "<span>版本: " + safeValue(citation.version) + "</span>"
+            + "<span>" + supportLabel(citation.supportLevel) + "</span>";
         item.appendChild(meta);
 
         const tech = document.createElement("details");
@@ -541,5 +612,25 @@
             return "-";
         }
         return String(value);
+    }
+
+    function percent(value) {
+        if (value === undefined || value === null) {
+            return "-";
+        }
+        return Math.round(Number(value) * 100) + "%";
+    }
+
+    function supportLabel(level) {
+        if (level === "EXACT" || level === "PARTIAL") {
+            return "引用已校验";
+        }
+        if (level === "WEAK") {
+            return "引用支撑较弱";
+        }
+        if (level === "UNSUPPORTED") {
+            return "存在未被资料支持的主张";
+        }
+        return "待校验";
     }
 })();

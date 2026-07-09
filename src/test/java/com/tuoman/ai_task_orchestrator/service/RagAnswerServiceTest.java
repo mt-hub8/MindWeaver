@@ -7,6 +7,19 @@ import com.tuoman.ai_task_orchestrator.dto.RagQualityDiagnosisResponse;
 import com.tuoman.ai_task_orchestrator.dto.RagQualityScoreResponse;
 import com.tuoman.ai_task_orchestrator.embedding.EmbeddingProvider;
 import com.tuoman.ai_task_orchestrator.embedding.MockEmbeddingClient;
+import com.tuoman.ai_task_orchestrator.grounding.AnswerGroundingScore;
+import com.tuoman.ai_task_orchestrator.grounding.AnswerGroundingScoreCalculator;
+import com.tuoman.ai_task_orchestrator.grounding.Citation;
+import com.tuoman.ai_task_orchestrator.grounding.CitationVerificationResult;
+import com.tuoman.ai_task_orchestrator.grounding.CitationVerificationService;
+import com.tuoman.ai_task_orchestrator.grounding.GroundedAnswerPromptBuilder;
+import com.tuoman.ai_task_orchestrator.grounding.GroundedContextAssembler;
+import com.tuoman.ai_task_orchestrator.grounding.GroundedContextBundle;
+import com.tuoman.ai_task_orchestrator.grounding.GroundedContextChunk;
+import com.tuoman.ai_task_orchestrator.grounding.RefusalDecision;
+import com.tuoman.ai_task_orchestrator.grounding.RefusalPolicyService;
+import com.tuoman.ai_task_orchestrator.grounding.UnsupportedClaimDetector;
+import com.tuoman.ai_task_orchestrator.grounding.UnsupportedClaimReport;
 import com.tuoman.ai_task_orchestrator.llm.LlmClient;
 import com.tuoman.ai_task_orchestrator.llm.LlmRequest;
 import com.tuoman.ai_task_orchestrator.llm.LlmResponse;
@@ -103,6 +116,24 @@ class RagAnswerServiceTest {
     @Mock
     private DocumentCollectionRepository documentCollectionRepository;
 
+    @Mock
+    private GroundedContextAssembler groundedContextAssembler;
+
+    @Mock
+    private GroundedAnswerPromptBuilder groundedAnswerPromptBuilder;
+
+    @Mock
+    private CitationVerificationService citationVerificationService;
+
+    @Mock
+    private UnsupportedClaimDetector unsupportedClaimDetector;
+
+    @Mock
+    private RefusalPolicyService refusalPolicyService;
+
+    @Mock
+    private AnswerGroundingScoreCalculator answerGroundingScoreCalculator;
+
     @InjectMocks
     private RagAnswerService ragAnswerService;
 
@@ -130,6 +161,7 @@ class RagAnswerServiceTest {
         lenient().when(embeddingProvider.model()).thenReturn(MockEmbeddingClient.DEFAULT_MODEL);
         lenient().when(embeddingProvider.dimension()).thenReturn(MockEmbeddingClient.DIMENSION);
         lenient().when(vectorStoreProperties.getProvider()).thenReturn(ExactCosineVectorStore.PROVIDER);
+        lenient().when(retrievalPipelineProperties.getMaxContextChars()).thenReturn(6000);
         RetrievalRoutingDecision decision = RetrievalRoutingDecision.builder()
                 .strategy(RetrievalRoutingStrategy.VECTOR_WITH_METADATA_FILTER)
                 .filter(RetrievalFilter.empty())
@@ -165,6 +197,43 @@ class RagAnswerServiceTest {
                 .thenReturn(new QueryClarificationGuard.GuardResult(false, null, List.of()));
         lenient().when(documentRepository.count()).thenReturn(1L);
         lenient().when(documentCollectionRepository.count()).thenReturn(1L);
+        lenient().when(groundedContextAssembler.assemble(any(), any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> testBundle(invocation.getArgument(1)));
+        lenient().when(groundedAnswerPromptBuilder.buildPrompt(any(), any(), any(), any())).thenReturn("grounded prompt");
+        lenient().when(refusalPolicyService.decideBeforeGeneration(any(), any(), any(), any()))
+                .thenReturn(RefusalDecision.allow());
+        lenient().when(refusalPolicyService.decideAfterVerification(any(), any()))
+                .thenReturn(RefusalDecision.allow());
+        lenient().when(citationVerificationService.verify(any(), any(), any(), any()))
+                .thenReturn(CitationVerificationResult.builder()
+                        .valid(true)
+                        .citationAccuracy(1.0)
+                        .totalCitations(1)
+                        .verifiedCitations(1)
+                        .heuristic(true)
+                        .warnings(List.of())
+                        .citationDetails(List.of())
+                        .build());
+        lenient().when(unsupportedClaimDetector.detect(any(), any()))
+                .thenReturn(UnsupportedClaimReport.builder()
+                        .totalClaims(0)
+                        .supportedClaims(0)
+                        .unsupportedClaims(0)
+                        .missingCitationClaims(0)
+                        .hallucinationRisk(false)
+                        .claimDetails(List.of())
+                        .build());
+        lenient().when(answerGroundingScoreCalculator.calculate(any(), any(), any(), any()))
+                .thenReturn(AnswerGroundingScore.builder()
+                        .citationCoverage(1.0)
+                        .citationAccuracy(1.0)
+                        .unsupportedClaimRate(0.0)
+                        .refusalCorrectness(0.0)
+                        .contextUsage(1.0)
+                        .groundingScore(90)
+                        .level("可信")
+                        .heuristic(true)
+                        .build());
     }
 
     @Test
@@ -182,7 +251,6 @@ class RagAnswerServiceTest {
                 0L
         );
         when(appRetrievalService.retrieve(eq("Why use outbox?"), eq(3), any(RetrievalScope.class), any(), any())).thenReturn(unified(outcome));
-        when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("rag prompt");
         when(llmClient.generate(any(LlmRequest.class))).thenReturn(successResponse("Answer with [1] and [2]."));
 
         RagAnswerResponse response = ragAnswerService.answer(request);
@@ -195,7 +263,12 @@ class RagAnswerServiceTest {
         assertThat(response.getRetrieval().getReturned()).isEqualTo(2);
         assertThat(response.getRetrieval().getRerankEnabled()).isFalse();
         assertThat(response.getRetrieval().getRerankerName()).isNull();
-        verify(ragPromptBuilder).buildPrompt(request.getQuery(), response.getCitations());
+        assertThat(response.getGrounding()).isNotNull();
+        assertThat(response.getGrounding().getContextBundle().getChunks()).hasSize(2);
+        assertThat(response.getGrounding().getCitationVerification()).isNotNull();
+        assertThat(response.getGrounding().getUnsupportedClaimReport()).isNotNull();
+        assertThat(response.getGrounding().getGroundingScore().getGroundingScore()).isEqualTo(90);
+        verify(groundedAnswerPromptBuilder).buildPrompt(eq(request.getQuery()), any(), any(), any());
         verify(llmClient).generate(any(LlmRequest.class));
     }
 
@@ -210,7 +283,6 @@ class RagAnswerServiceTest {
                 0L
         );
         when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any(), any())).thenReturn(unified(outcome));
-        when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("rag prompt");
         when(llmClient.generate(any(LlmRequest.class))).thenReturn(successResponse("answer"));
 
         ragAnswerService.answer(request("question", 1));
@@ -231,7 +303,6 @@ class RagAnswerServiceTest {
                 0L
         );
         when(appRetrievalService.retrieve(anyString(), anyInt(), any(RetrievalScope.class), any(), any())).thenReturn(unified(outcome));
-        when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("rag prompt");
         LlmResponse llmResponse = successResponse("answer with [1]");
         llmResponse.setProvider("local-ollama");
         llmResponse.setModel("qwen2.5:7b");
@@ -256,7 +327,6 @@ class RagAnswerServiceTest {
                 3L
         );
         when(appRetrievalService.retrieve(eq("cache key"), eq(1), any(RetrievalScope.class), any(), any())).thenReturn(unified(outcome));
-        when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("prompt");
         when(llmClient.generate(any())).thenReturn(successResponse("answer"));
 
         RagAnswerResponse response = ragAnswerService.answer(request("cache key", 1));
@@ -308,6 +378,8 @@ class RagAnswerServiceTest {
         assertThat(response.getAnswer()).isEqualTo("根据当前检索到的文档内容，无法确定。");
         assertThat(response.getCitations()).isEmpty();
         assertThat(response.getGeneration().getSkipped()).isTrue();
+        assertThat(response.getGrounding()).isNotNull();
+        assertThat(response.getGrounding().getRefusalDecision()).isNotNull();
         verify(llmClient, never()).generate(any());
     }
 
@@ -323,7 +395,6 @@ class RagAnswerServiceTest {
                 null,
                 0L
         )));
-        when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("prompt");
         when(llmClient.generate(any())).thenReturn(successResponse("answer"));
 
         RagAnswerResponse response = ragAnswerService.answer(request("query", 1));
@@ -342,7 +413,6 @@ class RagAnswerServiceTest {
                 null,
                 0L
         )));
-        when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("prompt");
 
         LlmResponse failed = new LlmResponse();
         failed.setSuccess(false);
@@ -399,7 +469,6 @@ class RagAnswerServiceTest {
                 0L
         );
         when(appRetrievalService.retrieve(eq("scoped"), eq(5), any(RetrievalScope.class), any(), any())).thenReturn(unified(outcome));
-        when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("prompt");
         when(llmClient.generate(any())).thenReturn(successResponse("scoped answer"));
 
         RagAnswerRequest request = request("scoped", 5);
@@ -432,7 +501,6 @@ class RagAnswerServiceTest {
                         "lexical",
                         0L
                 )));
-        when(ragPromptBuilder.buildPrompt(any(), any())).thenReturn("prompt");
         when(llmClient.generate(any())).thenReturn(successResponse("answer"));
 
         RagAnswerResponse response = ragAnswerService.answer(request("V10.0 LocalPythonLlmProvider", 5));
@@ -509,5 +577,55 @@ class RagAnswerServiceTest {
         response.setContent(content);
         response.setSuccess(true);
         return response;
+    }
+
+    private GroundedContextBundle testBundle(List<RagRetrievedChunk> chunks) {
+        if (chunks == null || chunks.isEmpty()) {
+            return GroundedContextBundle.builder()
+                    .contextId("test")
+                    .query("test")
+                    .chunks(List.of())
+                    .citations(List.of())
+                    .contextBudget(6000)
+                    .usedChars(0)
+                    .usedTokensEstimate(0)
+                    .warnings(List.of())
+                    .build();
+        }
+        List<GroundedContextChunk> contextChunks = new java.util.ArrayList<>();
+        List<Citation> citations = new java.util.ArrayList<>();
+        int index = 1;
+        for (RagRetrievedChunk chunk : chunks) {
+            String key = "[" + index + "]";
+            GroundedContextChunk contextChunk = GroundedContextChunk.builder()
+                    .chunkId(chunk.chunkId())
+                    .documentId(chunk.documentId())
+                    .documentTitle(chunk.documentTitle())
+                    .text(chunk.content())
+                    .rank(chunk.rerankedRank())
+                    .score(chunk.originalScore())
+                    .citationKey(key)
+                    .directHit(true)
+                    .build();
+            contextChunks.add(contextChunk);
+            citations.add(Citation.builder()
+                    .citationId(key)
+                    .citationKey(key)
+                    .chunkId(chunk.chunkId())
+                    .documentId(chunk.documentId())
+                    .quoteSnippet(chunk.content())
+                    .build());
+            index++;
+        }
+        return GroundedContextBundle.builder()
+                .contextId("test")
+                .query("test")
+                .chunks(contextChunks)
+                .citations(citations)
+                .contextBudget(6000)
+                .usedChars(contextChunks.stream().map(GroundedContextChunk::getText).mapToInt(text -> text == null ? 0 : text.length()).sum())
+                .usedTokensEstimate(10)
+                .warnings(List.of())
+                .build();
     }
 }

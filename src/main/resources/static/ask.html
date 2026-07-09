@@ -78,6 +78,21 @@
                 <ul id="citations-list" class="citation-list"></ul>
             </section>
 
+            <section id="grounding-section" class="mw-card card hidden">
+                <h2 class="mw-card-title">可信回答状态</h2>
+                <dl id="grounding-summary" class="summary-dl"></dl>
+                <h3 style="font-size:0.92rem;margin:16px 0 8px">引用校验</h3>
+                <dl id="citation-verification-summary" class="summary-dl"></dl>
+                <p id="grounding-refusal" class="muted hidden">当前资料不足，建议补充文档或缩小检索范围。</p>
+                <h3 style="font-size:0.92rem;margin:16px 0 8px">未被资料支持的主张</h3>
+                <ul id="unsupported-claims-list" class="quality-list"></ul>
+                <p id="unsupported-claims-empty" class="muted hidden">暂未发现明显未被资料支持的主张。</p>
+                <details class="technical-details">
+                    <summary>查看技术详情</summary>
+                    <pre id="grounding-metadata"></pre>
+                </details>
+            </section>
+
             <section id="quality-section" class="mw-card card hidden">
                 <h2 id="rag-quality-section" class="mw-card-title">回答质量评分</h2>
                 <div class="quality-score-card">

@@ -45,6 +45,21 @@ public class RagEvaluationCaseResultEntity {
     @Column(name = "citations_json", columnDefinition = "TEXT")
     private String citationsJson;
 
+    @Column(name = "context_bundle_json", columnDefinition = "MEDIUMTEXT")
+    private String contextBundleJson;
+
+    @Column(name = "citation_verification_json", columnDefinition = "MEDIUMTEXT")
+    private String citationVerificationJson;
+
+    @Column(name = "unsupported_claim_report_json", columnDefinition = "MEDIUMTEXT")
+    private String unsupportedClaimReportJson;
+
+    @Column(name = "refusal_decision_json", columnDefinition = "MEDIUMTEXT")
+    private String refusalDecisionJson;
+
+    @Column(name = "grounding_score_json", columnDefinition = "MEDIUMTEXT")
+    private String groundingScoreJson;
+
     @Column(name = "retrieval_metrics_json", columnDefinition = "MEDIUMTEXT")
     private String retrievalMetricsJson;
 

@@ -1,11 +1,9 @@
 package com.tuoman.ai_task_orchestrator.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 
 @Getter
-@AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class RagCitationResponse {
 
@@ -41,6 +39,16 @@ public class RagCitationResponse {
 
     private Boolean lexicalHit;
 
+    private String documentTitle;
+
+    private String sectionPath;
+
+    private String version;
+
+    private String citationKey;
+
+    private String supportLevel;
+
     public RagCitationResponse(
             Integer sourceIndex,
             Long documentId,
@@ -60,6 +68,54 @@ public class RagCitationResponse {
                 null,
                 null,
                 null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    public RagCitationResponse(
+            Integer sourceIndex,
+            Long documentId,
+            Long chunkId,
+            Double score,
+            String contentSnippet,
+            Integer originalRank,
+            Integer rerankedRank,
+            Double originalScore,
+            Double rerankScore,
+            Integer denseRank,
+            Integer lexicalRank,
+            Double denseScore,
+            Double lexicalScore,
+            Double fusionScore,
+            Boolean denseHit,
+            Boolean lexicalHit
+    ) {
+        this(
+                sourceIndex,
+                documentId,
+                chunkId,
+                score,
+                contentSnippet,
+                originalRank,
+                rerankedRank,
+                originalScore,
+                rerankScore,
+                denseRank,
+                lexicalRank,
+                denseScore,
+                lexicalScore,
+                fusionScore,
+                denseHit,
+                lexicalHit,
                 null,
                 null,
                 null,
@@ -95,7 +151,58 @@ public class RagCitationResponse {
                 null,
                 null,
                 null,
+                null,
+                null,
+                null,
+                null,
+                null,
                 null
         );
+    }
+
+    public RagCitationResponse(
+            Integer sourceIndex,
+            Long documentId,
+            Long chunkId,
+            Double score,
+            String contentSnippet,
+            Integer originalRank,
+            Integer rerankedRank,
+            Double originalScore,
+            Double rerankScore,
+            Integer denseRank,
+            Integer lexicalRank,
+            Double denseScore,
+            Double lexicalScore,
+            Double fusionScore,
+            Boolean denseHit,
+            Boolean lexicalHit,
+            String documentTitle,
+            String sectionPath,
+            String version,
+            String citationKey,
+            String supportLevel
+    ) {
+        this.sourceIndex = sourceIndex;
+        this.documentId = documentId;
+        this.chunkId = chunkId;
+        this.score = score;
+        this.contentSnippet = contentSnippet;
+        this.originalRank = originalRank;
+        this.rerankedRank = rerankedRank;
+        this.originalScore = originalScore;
+        this.rerankScore = rerankScore;
+        this.denseRank = denseRank;
+        this.lexicalRank = lexicalRank;
+        this.denseScore = denseScore;
+        this.lexicalScore = lexicalScore;
+        this.fusionScore = fusionScore;
+        this.denseHit = denseHit;
+        this.lexicalHit = lexicalHit;
+        this.documentTitle = documentTitle;
+        this.sectionPath = sectionPath;
+        this.version = version;
+        this.citationKey = citationKey;
+        this.supportLevel = supportLevel;
     }
 }
