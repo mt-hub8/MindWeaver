@@ -6,6 +6,14 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 模糊问题澄清保护器。
+ *
+ * 它在 retrieval 前做最后一道 guard：当 query 低置信度、缺少实体或全库规模过大时，
+ * 返回 clarificationRequired，而不是继续盲目召回。
+ *
+ * 关键不变量：用户已经手动选择 collection 时不强制澄清，因为范围已经被人为收窄。
+ */
 @Service
 @RequiredArgsConstructor
 public class QueryClarificationGuard {
@@ -23,6 +31,7 @@ public class QueryClarificationGuard {
             long collectionCount
     ) {
         List<String> reasons = new ArrayList<>();
+        // 手动 collection scope 是用户给出的强约束，优先于自动澄清策略。
         boolean selectedCollection = userSelectedFilters != null && userSelectedFilters.hasCollection();
         if (!properties.isClarificationEnabled() || selectedCollection) {
             return new GuardResult(false, null, reasons);

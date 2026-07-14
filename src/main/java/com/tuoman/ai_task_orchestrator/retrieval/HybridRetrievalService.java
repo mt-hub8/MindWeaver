@@ -32,6 +32,18 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * V15.0 引入的 Hybrid Retrieval 主编排服务。
+ *
+ * 该类把一次检索拆成 dense retrieval、keyword retrieval、RRF 融合、可选 rerank
+ * 和可选 context expansion。它由 AppRetrievalService 调用，输出会继续进入
+ * GroundedContextAssembler 和 citation response。
+ *
+ * 关键不变量：
+ * - metadata filter 必须同时作用于 dense 与 keyword 两路召回；
+ * - rerank 只能重排已经通过 filter 的候选，不能重新扩大候选集；
+ * - context expansion 只能补充 parent / adjacent context，不能突破 collection、version、status 边界。
+ */
 @Service
 @RequiredArgsConstructor
 public class HybridRetrievalService {
@@ -72,6 +84,9 @@ public class HybridRetrievalService {
             boolean rerankEnabled,
             boolean expandContext
     ) {
+        // 阶段 1：解析 RetrievalFilter。
+        // 即使向量库 payload filter 能力不足，也必须保留应用层过滤，防止 TRASHED/PURGED、
+        // 错误 collection 或错误 version 的 chunk 进入最终上下文。
         RetrievalFilterService.FilterResolution resolution = retrievalFilterService.resolve(filter);
         RetrievalFilter effectiveFilter = resolution.filter();
         Set<Long> allowedDocs = resolution.allowedDocumentIds();
@@ -81,20 +96,32 @@ public class HybridRetrievalService {
         }
         warnings.add("BM25 retriever 当前为 simple keyword 实现，不是完整搜索引擎。");
 
+        // 阶段 2：双路召回。
+        // dense retrieval 适合语义相近问题；keyword retrieval 更适合类名、配置项、API path、
+        // 版本号等必须字面命中的技术查询。
         List<RetrievedChunkItem> vectorHits = searchVector(query, vectorTopK, allowedDocs, effectiveFilter);
         List<RetrievedChunkItem> keywordHits = searchKeyword(query, keywordTopK, effectiveFilter);
 
         int overlap = countOverlap(vectorHits, keywordHits);
+
+        // 阶段 3：融合候选。
+        // vector similarity 与 keyword/BM25-like score 量纲不同，不能直接比较；
+        // RRF 只依赖各自列表中的 rank，更适合把两路检索结果合并成稳定候选集。
         List<RetrievedChunkItem> merged = fuse(vectorHits, keywordHits, fusionStrategy, finalTopK);
 
         int filteredOut = vectorHits.size() + keywordHits.size() - merged.size();
         if (rerankEnabled && !merged.isEmpty()) {
+            // 阶段 4：可选 rerank。
+            // reranker 只重排已经过滤和融合后的候选，不能绕过 RetrievalFilter 重新召回。
             merged = rerank(query, merged, finalTopK);
         } else {
             merged = merged.stream().limit(finalTopK).toList();
         }
 
         if (expandContext) {
+            // 阶段 5：上下文扩展。
+            // parent / adjacent chunk 是为了让 prompt 更完整，不是原始召回命中；
+            // 因此 expanded chunk 不应计入原始 Recall，只能作为 final context 补充证据。
             ContextExpansionService.ExpansionResult expansion = contextExpansionService.expand(merged, effectiveFilter);
             merged = expansion.chunks();
         }
@@ -135,6 +162,8 @@ public class HybridRetrievalService {
     }
 
     private List<RetrievedChunkItem> searchVector(String query, int topK, Set<Long> allowedDocs, RetrievalFilter filter) {
+        // query embedding 是在线查询向量，通常不进入文档 embedding cache；
+        // 文档 chunk 的 embedding 缓存由写入链路负责，避免查询文本污染文档缓存统计。
         EmbeddingRequest embeddingRequest = new EmbeddingRequest();
         embeddingRequest.setText(query);
         embeddingRequest.setModel(embeddingProvider.model());
@@ -180,6 +209,8 @@ public class HybridRetrievalService {
     }
 
     private Map<String, String> buildMetadataEquals(RetrievalFilter filter) {
+        // 能下推到 VectorStore 的 metadata filter 先下推；下推能力不足时，
+        // RetrievalFilterService.matchesChunk 仍会在应用层做最终兜底。
         Map<String, String> metadata = new HashMap<>();
         if (filter.getVersion() != null) {
             metadata.put("version", filter.getVersion());
@@ -194,6 +225,8 @@ public class HybridRetrievalService {
     }
 
     private List<RetrievedChunkItem> searchKeyword(String query, int topK, RetrievalFilter filter) {
+        // keyword retrieval 使用同一套 RetrievalFilter 过滤候选。
+        // 技术文档中类名、配置项、命令、API path 往往不是语义相似，而是必须字面匹配。
         KeywordRetriever.KeywordRetrievalResponse response = keywordRetriever.search(query, filter, topK);
         List<RetrievedChunkItem> items = new ArrayList<>();
         for (KeywordRetriever.KeywordCandidate candidate : response.candidates()) {
@@ -248,6 +281,8 @@ public class HybridRetrievalService {
             RetrievalFusionStrategy strategy,
             int finalTopK
     ) {
+        // finalTopK 是原始召回融合后的候选上限；后续 final context 可能因为 context expansion
+        // 增加 parent / adjacent chunk，二者不能混为一个指标。
         if (strategy == RetrievalFusionStrategy.VECTOR_ONLY) {
             return vectorHits.stream().limit(finalTopK).toList();
         }

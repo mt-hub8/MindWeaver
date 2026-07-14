@@ -8,6 +8,12 @@ import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
+/**
+ * 本地 Python LLM provider。
+ *
+ * local-ai profile 通过 Java -> Python Worker -> Ollama 的链路生成文本，
+ * 让 Java 后端不直接耦合 Ollama HTTP 细节。
+ */
 public class LocalPythonLlmProvider implements LlmProvider {
 
     public static final String PROVIDER = "local-python";
@@ -18,6 +24,8 @@ public class LocalPythonLlmProvider implements LlmProvider {
 
     @Override
     public LlmGenerateResult generate(String systemPrompt, String userPrompt, LlmGenerateOptions options) {
+        // options 可以覆盖单次调用模型/温度/token，但默认模型仍来自 provider 配置。
+        // 这样 RAG Answer 和 Agent Task 可以共享同一 provider abstraction。
         long started = System.currentTimeMillis();
         String model = resolveModel(options);
 

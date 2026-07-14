@@ -5,6 +5,14 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
+/**
+ * 旧版 RAG prompt 构造器。
+ *
+ * 该类服务 legacy RAG Answer 链路：把 citation 列表拼成简单上下文 prompt。
+ * V18 Grounded Answer 使用 GroundedAnswerPromptBuilder，具备更完整的 contract 和 citation verification。
+ *
+ * 关键不变量：即使在 legacy prompt 中，也只能使用传入 citations 的内容，不应引入 context 外证据。
+ */
 @Component
 public class RagPromptBuilder {
 
@@ -22,6 +30,8 @@ public class RagPromptBuilder {
         prompt.append("回答中尽量使用 [1]、[2] 这样的引用标记指向对应来源。\n\n");
         prompt.append("上下文：\n");
 
+        // citations 是 legacy prompt 的唯一证据来源。
+        // citation 未进入这里，就不能被模型要求引用。
         for (RagCitationResponse citation : citations) {
             prompt.append("[").append(citation.getSourceIndex()).append("]\n");
             prompt.append("documentId: ").append(citation.getDocumentId()).append("\n");

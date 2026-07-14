@@ -15,6 +15,15 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * V10 模型供应商选择服务。
+ *
+ * 统一解析当前默认 LLM provider 和 Embedding provider：可以来自 application.properties，
+ * 也可以来自数据库中的供应商配置。
+ *
+ * 关键不变量：Java 业务链路只拿 ResolvedModelProvider，不直接耦合某个模型厂商；
+ * API Key 只在运行时解密使用，不应出现在对外响应中。
+ */
 @Service
 @RequiredArgsConstructor
 public class ModelProviderSelectionService {
@@ -56,6 +65,8 @@ public class ModelProviderSelectionService {
     }
 
     private ResolvedModelProvider fromPropertiesLlm() {
+        // 默认 mock profile 让本地开发和测试不依赖外部模型服务。
+        // 非 mock 的默认配置走本地 Python worker/Ollama 链路。
         if (MockLlmProvider.PROVIDER.equalsIgnoreCase(llmProperties.getProvider())) {
             return ResolvedModelProvider.builder()
                     .configId(null)
@@ -111,6 +122,8 @@ public class ModelProviderSelectionService {
     }
 
     private ResolvedModelProvider fromEntity(ModelProviderConfigEntity entity, boolean forLlm) {
+        // API Key 在 resolve 时解密，仅供 provider 调用使用。
+        // DTO 响应应只返回 hasApiKey/masked 信息，不能明文回显。
         String apiKey = entity.getApiKeyEncrypted() == null
                 ? null
                 : apiKeySecretService.decrypt(entity.getApiKeyEncrypted());

@@ -9,6 +9,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+/**
+ * V17 Query Understanding 主服务。
+ *
+ * 该类位于 retrieval 之前，把自然语言 query 转成 QueryType、versionHint、codeSymbols、
+ * configKeys、apiPaths 等结构化信号，输出给 RetrievalRoutingPolicyService。
+ *
+ * 关键不变量：Query Understanding 只能提供检索策略建议，不能覆盖用户手动选择的 collection/filter。
+ */
 @Service
 @RequiredArgsConstructor
 public class QueryUnderstandingService {
@@ -22,6 +30,8 @@ public class QueryUnderstandingService {
             Long optionalCollectionId,
             UserSelectedFilters optionalUserSelectedFilters
     ) {
+        // 用户显式选择的 collection/filter 优先级最高。
+        // 自动抽取只能补充缺失信息，不能把用户限定范围扩大到全库。
         String query = originalQuery == null ? "" : originalQuery.trim();
         UserSelectedFilters filters = optionalUserSelectedFilters;
         if (filters == null && optionalCollectionId != null) {
@@ -32,6 +42,8 @@ public class QueryUnderstandingService {
         List<String> reasons = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
 
+        // QueryType 会驱动后续 routing：代码符号、配置项、API path 更偏向 Hybrid；
+        // summary/compare 会提高 Recall 并启用 context expansion。
         QueryType type = QueryType.SINGLE_DOC_FACT;
         double confidence = 0.64;
         boolean hybrid = false;
@@ -110,6 +122,8 @@ public class QueryUnderstandingService {
             }
         }
 
+        // 低置信度不应盲目全库搜索。
+        // clarificationRequired=true 是可信 RAG 的保护分支，防止模糊问题召回无关上下文。
         boolean requiresClarification = confidence < properties.getMinConfidence();
         if (requiresClarification) {
             warnings.add("confidence_below_threshold");

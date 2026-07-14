@@ -30,6 +30,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * V2.9 引入的 RAG two-stage retrieval 兼容服务。
+ *
+ * 该类保留旧版 dense-only / hybrid / rerank 检索路径，当前由 AppRetrievalService
+ * 在 legacy 分支中适配成统一输出。新版 V15 pipeline 的主入口是 HybridRetrievalService，
+ * 但这里仍用于兼容历史配置和回归测试。
+ *
+ * 关键不变量：collection scope 和生命周期过滤必须在旧链路中继续生效；
+ * legacy retrieval 不能返回 TRASHED/PURGED 文档，也不能绕过 finalTopK / rerankTopK 约束。
+ */
 @Service
 @RequiredArgsConstructor
 public class RagTwoStageRetrievalService {
@@ -63,6 +73,8 @@ public class RagTwoStageRetrievalService {
     }
 
     public RagRetrievalOutcome retrieve(String query, int finalTopK, boolean rerankEnabled, RetrievalScope scope) {
+        // legacy 入口根据配置选择旧 hybrid 或 dense-only。
+        // 上层通过 AppRetrievalService 消化差异，避免 RAG Answer 主链路依赖具体检索实现。
         if (scope == null) {
             scope = RetrievalScope.allDocuments();
         }
@@ -73,6 +85,8 @@ public class RagTwoStageRetrievalService {
     }
 
     private RagRetrievalOutcome retrieveDenseOnly(String query, int finalTopK, boolean rerankEnabled, RetrievalScope scope) {
+        // dense-only 路径先用向量召回 candidateTopK，再可选 rerank 到 finalTopK。
+        // rerank 只能重排这些候选，不能改变 scope 或重新检索。
         int searchTopK = rerankEnabled ? resolveCandidateTopK(finalTopK) : finalTopK;
         List<DocumentSearchResultResponse> vectorResults = search(query, searchTopK, scope);
 
@@ -170,6 +184,8 @@ public class RagTwoStageRetrievalService {
     }
 
     private RagRetrievalOutcome retrieveHybrid(String query, int finalTopK, boolean rerankEnabled, RetrievalScope scope) {
+        // 旧 hybrid 路径把 vector candidates 与 lexical candidates 交给 RRF。
+        // lexical 分支仍需要经过 DocumentLifecycleFilterService，避免恢复旧链路时漏掉生命周期过滤。
         validateHybridFusionStrategy();
         int denseTopK = resolveHybridDenseTopK(finalTopK);
         int lexicalTopK = resolveHybridLexicalTopK();

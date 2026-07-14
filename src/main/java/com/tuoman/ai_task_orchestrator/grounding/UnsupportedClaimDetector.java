@@ -8,10 +8,18 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/**
+ * 未支持主张检测器。
+ *
+ * 该类扫描回答中的关键句，识别缺少 citation、引用不存在、或精确实体不在 cited chunk 中的 claim。
+ * 它补充 CitationVerificationService：前者看 claim 是否被引用，后者看引用是否来自 final context 并支持 claim。
+ */
 @Service
 public class UnsupportedClaimDetector {
 
     public UnsupportedClaimReport detect(String answer, GroundedContextBundle bundle) {
+        // 无 context 时出现确定性 claim 属于 hallucination risk。
+        // 这种情况下拒答不是失败，而是 grounded answer contract 的正确执行。
         List<String> sentences = GroundingTextUtils.sentences(answer);
         Map<String, GroundedContextChunk> contextByKey = bundle == null || bundle.getChunks() == null
                 ? Map.of()
@@ -39,6 +47,8 @@ public class UnsupportedClaimDetector {
                 issue = ClaimIssueType.INVALID_CITATION;
                 reason = "claim cites a key that is not in final context";
             } else {
+                // 精确实体检查优先关注版本号、数字、配置项、API path、类名等高风险 token。
+                // 这些内容一旦编造，用户很容易把错误答案当成可执行事实。
                 String citedText = keys.stream()
                         .map(contextByKey::get)
                         .map(GroundedContextChunk::getText)

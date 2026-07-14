@@ -7,6 +7,12 @@ import java.util.Map;
 
 @Slf4j
 @Component
+/**
+ * Mock LLM provider。
+ *
+ * 用于默认开发/测试 profile，让 RAG Answer、Agent Task 和单元测试不依赖外部模型服务。
+ * 它只模拟链路形态，不代表真实模型质量。
+ */
 public class MockLlmProvider implements LlmProvider {
 
     public static final String PROVIDER = "mock";

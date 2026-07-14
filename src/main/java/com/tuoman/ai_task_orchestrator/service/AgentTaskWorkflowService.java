@@ -31,6 +31,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Agent Task 工具工作流服务。
+ *
+ * 与普通 RAG Answer 一次性 query->answer 不同，Agent Task 拆成可审计步骤：
+ * KnowledgeSearchTool 检索证据、ContextSummaryTool 总结上下文、FINAL_REPORT 生成最终报告。
+ *
+ * 关键不变量：每一步都要记录输入、输出、状态和事件；工具调用不能突破 task 的 collection scope。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -55,6 +63,8 @@ public class AgentTaskWorkflowService {
     private final AgentTaskProperties agentTaskProperties;
 
     public void executeWorkflow(AgentTaskEntity task) {
+        // AgentTask、AgentTaskStep、AgentTaskEvent、AgentTaskCitation 分别描述：
+        // 任务总体状态、步骤状态、时间线事件、可追溯证据来源。
         Long taskId = task.getId();
         List<AgentTaskStepEntity> steps = agentTaskStepService.listSteps(taskId);
         if (steps.isEmpty()) {
@@ -67,6 +77,7 @@ public class AgentTaskWorkflowService {
         boolean noContext = false;
 
         AgentTaskStepEntity searchStep = steps.get(0);
+        // TOOL_CALL：先检索知识库，复用 RAG retrieval 的 scope 和 citation 输出。
         searchOutput = executeToolStep(task, searchStep, buildSearchInput(task), context, AgentToolNames.KNOWLEDGE_SEARCH);
         if (searchStep.getStatus() == com.tuoman.ai_task_orchestrator.enums.AgentTaskStepStatus.FAILED) {
             failTask(task, searchStep);
@@ -84,6 +95,7 @@ public class AgentTaskWorkflowService {
             return;
         }
 
+        // TOOL_CALL：对检索结果做结构化摘要，减少 FINAL_REPORT prompt 的噪声。
         AgentTaskStepEntity summaryStep = steps.get(1);
         Map<String, Object> summaryInput = buildSummaryInput(task, searchOutput);
         Map<String, Object> summaryOutput = executeToolStep(
@@ -98,6 +110,7 @@ public class AgentTaskWorkflowService {
             throw BusinessException.agentStepFailed(summaryStep.getErrorMessage());
         }
 
+        // FINAL_REPORT：基于工具输出调用 LLM 生成最终报告。
         AgentTaskStepEntity reportStep = steps.get(2);
         executeFinalReportStep(task, reportStep, searchOutput, summaryOutput, citations, context);
         if (reportStep.getStatus() == com.tuoman.ai_task_orchestrator.enums.AgentTaskStepStatus.FAILED) {
@@ -298,6 +311,7 @@ public class AgentTaskWorkflowService {
     private Map<String, Object> buildSearchInput(AgentTaskEntity task) {
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("query", task.getObjective());
+        // collectionId 从 task 传入工具，防止 Agent 工具绕过用户选择的知识库范围。
         input.put("collectionId", task.getCollectionId());
         input.put("topK", agentTaskProperties.getDefaultTopK());
         return input;

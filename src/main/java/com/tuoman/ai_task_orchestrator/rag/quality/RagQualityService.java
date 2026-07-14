@@ -11,6 +11,14 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+/**
+ * V11 单次 RAG Quality Score 入口服务。
+ *
+ * 该服务评估“一次回答”的检索、上下文、回答和引用质量；
+ * 它不同于 Knowledge Health Evaluation，后者基于 Dataset/Run/Case 做离线金标评测。
+ *
+ * 关键不变量：quality score 是诊断信息，不应反向修改检索结果、final context 或 LLM answer。
+ */
 @Service
 @RequiredArgsConstructor
 public class RagQualityService {
@@ -31,6 +39,8 @@ public class RagQualityService {
             RagGenerationMetadataResponse generation,
             RagQualityMode mode
     ) {
+        // RagQualityScoreContext 聚合本次回答的 query、answer、retrieval、generation、citation。
+        // 无上下文或无金标时保留可解释状态，不能伪造离线指标。
         RagQualityScoreContext context = RagQualityScoreContext.builder()
                 .query(query)
                 .answer(answer)
@@ -46,6 +56,8 @@ public class RagQualityService {
     }
 
     private boolean detectEmbeddingDimensionMismatch(RagRetrievalMetadataResponse retrieval) {
+        // 模型切换后 dimension 不一致会降低检索质量。
+        // 这里仅给出诊断信号，真正修复应通过 reindex，而不是在评分时修改向量。
         if (retrieval == null || retrieval.getDimension() == null) {
             return false;
         }

@@ -18,6 +18,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Agent CollectionOverview 工具。
+ *
+ * 用于给工作流提供指定 collection 的文档数、可用文档数、chunk 数和更新时间概览。
+ * 它是只读工具，不参与检索结果排序，也不能改变 collection scope。
+ */
 @Component
 @RequiredArgsConstructor
 public class CollectionOverviewTool implements AgentTool {
@@ -72,6 +78,8 @@ public class CollectionOverviewTool implements AgentTool {
     @Override
     public ToolExecutionResult execute(Map<String, Object> input, ToolExecutionContext context) {
         long started = System.nanoTime();
+        // 优先使用工具输入的 collectionId，缺省时继承 task context。
+        // 两者都为空时返回输入错误，不进行全库概览兜底。
         Long collectionId = readLong(input == null ? null : input.get("collectionId"));
         if (collectionId == null) {
             collectionId = context.collectionId();

@@ -18,6 +18,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Agent KnowledgeSearch 工具。
+ *
+ * 该工具把 Agent Task 的 objective 转成知识库检索，复用 RAG retrieval 输出 citations。
+ * 它必须继承 task collection scope，不能因为 Agent 执行而绕过普通 RAG 的范围约束。
+ */
 @Component
 @RequiredArgsConstructor
 public class KnowledgeSearchTool implements AgentTool {
@@ -80,6 +86,8 @@ public class KnowledgeSearchTool implements AgentTool {
         }
         int topK = readInt(input.get("topK"), agentTaskProperties.getDefaultTopK());
 
+        // collection scope 先解析再检索。
+        // 如果 collection 无可问文档，返回 noContext 而不是全库兜底搜索。
         CollectionAskScope askScope = resolveAskScope(collectionId);
         if (askScope.shouldSkipRetrieval()) {
             return ToolExecutionResult.noContext(buildNoContextOutput(askScope.noContextMessage()), elapsed(started));

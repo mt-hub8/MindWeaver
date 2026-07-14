@@ -11,6 +11,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * V14 Knowledge Health 检索指标计算器。
+ *
+ * 基于 Gold Test Set 中的 expectedDocIds、expectedChunkIds、negativeDocIds，
+ * 计算 Recall@K、HitRate@K、MRR@K、NDCG@K、ContextPrecision@K 以及隔离泄漏指标。
+ */
 @Component
 public class RagHealthRetrievalMetricsCalculator {
 
@@ -49,6 +55,8 @@ public class RagHealthRetrievalMetricsCalculator {
             boolean hasDocExpected,
             int k
     ) {
+        // Recall@K = TopK 命中的相关 chunk/doc 数 / 期望相关 chunk/doc 总数。
+        // 衡量“该找回的证据是否被找回”；缺少 gold label 时必须 UNKNOWN。
         if (!hasChunkExpected && !hasDocExpected) {
             return HealthMetricValue.unavailable("RECALL_AT_K", "Recall@K（召回率）", "缺少 expected_chunk_ids 或 expected_doc_ids");
         }
@@ -72,6 +80,8 @@ public class RagHealthRetrievalMetricsCalculator {
             boolean hasChunkExpected,
             boolean hasDocExpected
     ) {
+        // HitRate@K = TopK 中是否至少命中一个相关结果。
+        // 它不关心命中多少，只判断本次检索是否“摸到正确证据”。
         if (!hasChunkExpected && !hasDocExpected) {
             return HealthMetricValue.unavailable("HIT_RATE_AT_K", "HitRate@K（命中率）", "缺少 expected_chunk_ids 或 expected_doc_ids");
         }
@@ -91,6 +101,8 @@ public class RagHealthRetrievalMetricsCalculator {
             boolean hasChunkExpected,
             boolean hasDocExpected
     ) {
+        // MRR@K = 1 / 第一个相关结果的排名；TopK 内未命中为 0。
+        // 第一个正确结果越靠前，用户越容易在 context 中看到关键证据。
         if (!hasChunkExpected && !hasDocExpected) {
             return HealthMetricValue.unavailable("MRR_AT_K", "MRR@K（平均倒数排名）", "缺少 expected_chunk_ids 或 expected_doc_ids");
         }
@@ -112,6 +124,8 @@ public class RagHealthRetrievalMetricsCalculator {
             boolean hasChunkExpected,
             int k
     ) {
+        // NDCG@K = DCG / IDCG，其中 DCG 对靠前命中给更高折扣收益。
+        // 它衡量相关 chunk 的排序质量，而不只是是否出现。
         if (!hasChunkExpected) {
             return HealthMetricValue.unavailable("NDCG_AT_K", "NDCG@K（归一化折损累计增益）", "缺少 expected_chunk_ids");
         }
@@ -138,6 +152,8 @@ public class RagHealthRetrievalMetricsCalculator {
             boolean hasDocExpected,
             int k
     ) {
+        // ContextPrecision@K = TopK 中相关 chunk/doc 数 / TopK 返回数。
+        // 它衡量进入上下文的噪声比例，和 Recall@K 形成“召回 vs 精度”的平衡。
         if (!hasChunkExpected && !hasDocExpected) {
             return HealthMetricValue.unavailable(
                     "CONTEXT_PRECISION_AT_K",
@@ -163,6 +179,8 @@ public class RagHealthRetrievalMetricsCalculator {
             Long caseCollectionId,
             Map<String, Object> metadataFilter
     ) {
+        // CrossCollectionLeakRate = TopK 中 wrong collection 结果数 / TopK 返回数。
+        // 这是最终检索结果层面的污染率，区别于向量审计中的 CrossCollectionVectorLeakRate。
         Long expectedCollection = caseCollectionId;
         if (expectedCollection == null && metadataFilter.get("collection_id") != null) {
             expectedCollection = parseLong(metadataFilter.get("collection_id"));
@@ -186,6 +204,8 @@ public class RagHealthRetrievalMetricsCalculator {
     }
 
     private HealthMetricValue wrongVersionLeak(List<EvaluationRetrievedChunk> top, Map<String, Object> metadataFilter) {
+        // WrongVersionLeakRate = TopK 中 wrong version 结果数 / TopK 返回数。
+        // 版本过滤缺失时必须 UNKNOWN，不能默认当作 0 污染。
         Object version = metadataFilter.get("version");
         if (version == null || String.valueOf(version).isBlank()) {
             return HealthMetricValue.unavailable(

@@ -18,6 +18,15 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+/**
+ * 基于数据库表的精确余弦向量库实现。
+ *
+ * 该实现适合本地开发、测试和小规模数据：向量保存在 DocumentChunkEmbeddingEntity，
+ * 搜索时在 JVM 中计算 cosine similarity，并应用 metadata/status filter。
+ *
+ * 关键不变量：即使是本地实现，也必须过滤 TRASHED/PURGED 和 metadataEquals，
+ * 否则测试环境会掩盖生产向量库中的隔离问题。
+ */
 public class ExactCosineVectorStore implements VectorStore {
 
     public static final String PROVIDER = "exact";
@@ -81,6 +90,8 @@ public class ExactCosineVectorStore implements VectorStore {
                 .stream()
                 .collect(Collectors.toMap(DocumentChunkEntity::getId, Function.identity()));
 
+        // 先按 provider/model/dimension 和 metadata 过滤，再计算排序。
+        // TRASHED/PURGED 在向量层直接排除，避免进入 finalTopK、citation 和 prompt context。
         List<ScoredVector> scored = candidates.stream()
                 .filter(candidate -> matchesDimension(candidate, request.dimension()))
                 .map(candidate -> toScoredVector(candidate, chunksById.get(candidate.getDocumentChunkId()), request))
@@ -179,6 +190,8 @@ public class ExactCosineVectorStore implements VectorStore {
 
     @Override
     public VectorStoreOperationResult deleteByFilter(VectorDeleteFilter filter) {
+        // 删除必须带 collection 或 document scope。
+        // 这条限制防止运维误把本地向量表当成全库临时缓存清空。
         if (filter == null || (filter.getCollectionId() == null && filter.getDocumentId() == null)) {
             throw new IllegalArgumentException("deleteByFilter 必须指定 collectionId 或 documentId");
         }

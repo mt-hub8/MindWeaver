@@ -5,6 +5,12 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
+/**
+ * V18 Grounded Answer prompt 构造器。
+ *
+ * 它把 GroundedAnswerContract、QueryUnderstandingResult 和 GroundedContextBundle 组合成 LLM prompt。
+ * 这里的目标不是让模型“自由回答”，而是约束模型只基于 final context 输出可校验回答。
+ */
 @Component
 public class GroundedAnswerPromptBuilder {
 
@@ -16,6 +22,8 @@ public class GroundedAnswerPromptBuilder {
             GroundedAnswerContract contract,
             QueryUnderstandingResult understanding
     ) {
+        // 无 context 时也构造拒答 prompt，避免 LLM 使用外部知识补答案。
+        // no context / low confidence 的拒答是可信 RAG 的正常业务分支。
         if (bundle == null || bundle.isEmpty()) {
             return buildRefusalPrompt(query, contract);
         }
@@ -39,6 +47,8 @@ public class GroundedAnswerPromptBuilder {
         prompt.append("\n用户问题：\n").append(query == null ? "" : query).append("\n\n");
         appendUnderstanding(prompt, understanding);
         prompt.append("【资料】\n");
+        // prompt 中的 citationKey 与 bundle 中的 chunk 一一对应。
+        // 模型不能引用不在这里出现的 citation，否则后续校验会失败。
         for (GroundedContextChunk chunk : bundle.getChunks()) {
             prompt.append(chunk.getCitationKey()).append("\n");
             prompt.append("文档：").append(value(chunk.getDocumentTitle())).append("\n");

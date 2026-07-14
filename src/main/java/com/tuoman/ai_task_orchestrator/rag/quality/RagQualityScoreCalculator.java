@@ -16,12 +16,22 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * RAG 单次回答质量评分计算器。
+ *
+ * overallScore = retrievalScore、contextScore、answerScore、citationScore 的加权和；
+ * BALANCED、PRECISE、COMPREHENSIVE 通过 RagQualityWeights 调整四类分数的权重。
+ *
+ * 启发式评分只用于解释和排障，不能宣称等价于事实真值。
+ */
 @Component
 public class RagQualityScoreCalculator {
 
     private static final String NO_CONTEXT_ANSWER = "根据当前检索到的文档内容，无法确定。";
 
     public RagQualityScoreResult calculate(RagQualityScoreContext context) {
+        // 权重模式反映用户偏好：PRECISE 更重引用/上下文精度，
+        // COMPREHENSIVE 更重召回和上下文覆盖，BALANCED 用于默认问答。
         RagQualityWeights weights = RagQualityWeights.forMode(context.getMode());
 
         int retrievalScore = calculateRetrievalScore(context);
@@ -29,6 +39,8 @@ public class RagQualityScoreCalculator {
         int answerScore = calculateAnswerScore(context);
         int citationScore = calculateCitationScore(context);
 
+        // overallScore = retrieval*w1 + context*w2 + answer*w3 + citation*w4。
+        // 分项得分全部保留，方便 UI 展示“哪里差”，而不是只给一个不可解释总分。
         int overallScore = clamp(
                 (int) Math.round(
                         retrievalScore * weights.getRetrieval()
@@ -57,6 +69,8 @@ public class RagQualityScoreCalculator {
     }
 
     int calculateRetrievalScore(RagQualityScoreContext context) {
+        // 有离线标注指标时优先使用 Recall@K、HitRate@K、MRR、NDCG。
+        // 没有金标时只能用本次检索元数据和 citation 分数做启发式估计。
         if (hasLabeledRetrievalMetrics(context)) {
             return clamp(averagePercent(
                     context.getRecallAtK(),
@@ -71,6 +85,7 @@ public class RagQualityScoreCalculator {
         int returned = safeInt(retrieval != null ? retrieval.getReturned() : null);
         int topK = Math.max(1, safeInt(retrieval != null ? retrieval.getTopK() : null));
 
+        // 无 context 时不能伪造高检索分；低分表示证据不足，不表示系统异常。
         if (finalContextCount <= 0) {
             return 15;
         }
@@ -92,6 +107,8 @@ public class RagQualityScoreCalculator {
     }
 
     int calculateContextScore(RagQualityScoreContext context) {
+        // ContextPrecision@K 存在时优先作为上下文质量指标；
+        // 否则使用 citation score、上下文数量和 query-context overlap 做启发式估计。
         if (context.getContextPrecisionAtK() != null || context.getPrecisionAtK() != null) {
             return clamp(averagePercent(context.getContextPrecisionAtK(), context.getPrecisionAtK()));
         }
@@ -130,6 +147,8 @@ public class RagQualityScoreCalculator {
     }
 
     int calculateAnswerScore(RagQualityScoreContext context) {
+        // answerScore 只衡量回答是否与 query/context 形态匹配。
+        // 它不能证明回答事实正确，事实约束由 citation verification 和 grounding score 补充。
         String answer = safeText(context.getAnswer());
         String query = safeText(context.getQuery());
         RagGenerationMetadataResponse generation = context.getGeneration();
@@ -164,6 +183,8 @@ public class RagQualityScoreCalculator {
     }
 
     int calculateCitationScore(RagQualityScoreContext context) {
+        // citationScore 衡量引用是否存在且可追溯到 document/chunk/snippet。
+        // 引用是否真正支持 claim 由 V18 CitationVerificationService 进一步判断。
         List<RagCitationResponse> citations = context.getCitations();
         if (citations == null || citations.isEmpty()) {
             return context.getAnswer() != null && !context.getAnswer().isBlank() ? 20 : 10;

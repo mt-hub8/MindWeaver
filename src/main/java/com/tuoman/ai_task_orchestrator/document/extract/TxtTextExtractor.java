@@ -6,6 +6,11 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
 
+/**
+ * TXT 文本提取器。
+ *
+ * 该 extractor 只做 UTF-8 bytes -> String，不做 chunk 切分或语义清洗。
+ */
 @Component
 public class TxtTextExtractor implements DocumentTextExtractor {
 

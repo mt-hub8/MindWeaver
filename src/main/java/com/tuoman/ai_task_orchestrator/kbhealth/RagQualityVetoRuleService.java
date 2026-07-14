@@ -7,6 +7,12 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Knowledge Health Veto Rule 服务。
+ *
+ * 加权平均可能掩盖严重风险，例如跨 collection 泄漏、错误版本污染或低 faithfulness。
+ * Veto Rule 用硬上限保护总分，确保关键可信约束被破坏时不能拿到过高分。
+ */
 @Service
 public class RagQualityVetoRuleService {
 
@@ -14,6 +20,7 @@ public class RagQualityVetoRuleService {
         List<VetoRuleApplied> applied = new ArrayList<>();
         int capped = originalScore;
 
+        // collection/version leak 属于安全边界问题，优先级高于普通召回质量。
         Double crossLeak = raw(metrics, "CROSS_COLLECTION_LEAK_RATE");
         if (crossLeak != null && crossLeak > 0.30) {
             capped = Math.min(capped, 70);

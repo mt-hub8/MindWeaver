@@ -33,6 +33,14 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
 
+/**
+ * 批量上传主编排服务。
+ *
+ * V13 引入 UploadBatch / UploadBatchItem 两层状态机：batch 描述整批任务的汇总进度，
+ * item 描述单个文件从暂存、去重、排队到 ingestion task 的处理结果。
+ *
+ * 关键不变量：单个 item 失败不能立刻让整批失败；retry/cancel 也不能删除已经成功导入的文档或向量。
+ */
 @Service
 @RequiredArgsConstructor
 public class UploadBatchService {
@@ -76,6 +84,8 @@ public class UploadBatchService {
             String batchName,
             DuplicatePolicy duplicatePolicy
     ) {
+        // 阶段 1：创建 batch 和 item。
+        // CREATED 表示元数据刚落库，QUEUED 表示已准备交给 runner 分批提交 ingestion。
         if (!batchIngestionProperties.isEnabled()) {
             throw BusinessException.validationError("批量导入功能未启用");
         }
@@ -86,6 +96,7 @@ public class UploadBatchService {
             throw BusinessException.validationError("单批最多上传 " + batchIngestionProperties.getMaxFilesPerBatch() + " 个文件");
         }
 
+        // 默认 SKIP 偏向去重安全；USE_EXISTING 会复用已有文档，IMPORT_ANYWAY 才会显式允许重复导入。
         DuplicatePolicy policy = duplicatePolicy == null ? DuplicatePolicy.SKIP : duplicatePolicy;
 
         UploadBatchEntity batch = new UploadBatchEntity();
@@ -110,6 +121,7 @@ public class UploadBatchService {
         }
         refreshBatchCounts(savedBatch.getId());
 
+        // runner 控制并发和批次推进，避免在上传请求里一次性提交所有文件造成 worker/向量库尖峰。
         batchItemIngestionRunnerProvider.getObject().processBatch(savedBatch.getId());
 
         UploadBatchEntity refreshed = uploadBatchRepository.findById(savedBatch.getId()).orElseThrow();
@@ -152,6 +164,8 @@ public class UploadBatchService {
         );
         item.setStagingFilePath(stagingPath.toString());
 
+        // 文件级重复基于原始 bytes hash，能在解析文本前快速跳过完全相同文件。
+        // 文本级重复会在 ingestion handler 中基于 textHash 再判断，覆盖“不同文件同内容”的情况。
         DuplicateDetectionService.FileDuplicateDecision decision =
                 duplicateDetectionService.evaluateFileDuplicate(fileHash, policy);
         if (decision.duplicate() && decision.skip() && !decision.importAnyway()) {
@@ -196,6 +210,8 @@ public class UploadBatchService {
             return;
         }
 
+        // item 重试依赖 staging file 重新提取文本，而不是复用上次失败时的中间对象。
+        // 这样失败恢复只重放摄入链路，不把 retryCount 传播到 vector identity。
         byte[] bytes = batchStagingService.readStagingFile(item.getStagingFilePath());
         String text = documentTextExtractorRegistry.extractFromBytes(
                 bytes,
@@ -212,6 +228,7 @@ public class UploadBatchService {
         uploadBatchItemRepository.save(item);
 
         try {
+            // batch 复用普通异步 ingestion 入口，确保 parser、chunk、embedding、vector write 的顺序一致。
             DocumentIngestionSubmitResponse response = documentIngestionService.submitIngestion(
                     item.getOriginalFilename(),
                     item.getContentType(),
@@ -268,6 +285,7 @@ public class UploadBatchService {
     public void markTextDuplicateSkipped(Long batchItemId, Long duplicateDocumentId) {
         UploadBatchItemEntity item = uploadBatchItemRepository.findById(batchItemId)
                 .orElseThrow(() -> BusinessException.invalidRequest("批量导入条目不存在"));
+        // 文本级重复表示无需再生成 embedding/vector；如果继续写入，会制造同内容重复向量。
         item.setStatus(UploadBatchItemStatus.SKIPPED_DUPLICATE_TEXT);
         item.setDuplicateOfDocumentId(duplicateDocumentId);
         item.setSkipReason("检测到相同文本内容，已跳过重复 embedding。");
@@ -311,6 +329,8 @@ public class UploadBatchService {
             if (item.getRetryCount() >= batchIngestionProperties.getMaxRetryCount()) {
                 continue;
             }
+            // batch retry 只重新推进失败 item。
+            // retryCount 是运维诊断字段，不能参与去重、chunkUid 或 vectorId 计算。
             item.setRetryCount(item.getRetryCount() + 1);
             item.setStatus(UploadBatchItemStatus.PENDING);
             item.setFailureCode(null);
@@ -328,6 +348,8 @@ public class UploadBatchService {
     @Transactional
     public UploadBatchSummaryResponse cancelBatch(Long batchId) {
         UploadBatchEntity batch = findBatchOrThrow(batchId);
+        // cancel 只阻止尚未进入 ingestion 的 item。
+        // 已成功完成的文档保持存在，避免“取消批次”变成隐式回滚和向量删除。
         batch.setStatus(UploadBatchStatus.CANCEL_REQUESTED);
         uploadBatchRepository.save(batch);
 
@@ -392,6 +414,8 @@ public class UploadBatchService {
     }
 
     private void finalizeBatchIfReady(Long batchId) {
+        // finalize 只在所有 item 进入终态后决定 batch 终态：
+        // 全成功为 COMPLETED，部分失败为 PARTIAL_FAILED，全部失败为 FAILED，取消请求收敛为 CANCELED。
         refreshBatchCounts(batchId);
         UploadBatchEntity batch = findBatchOrThrow(batchId);
         List<UploadBatchItemEntity> items = uploadBatchItemRepository.findByBatchIdOrderByIdAsc(batchId);

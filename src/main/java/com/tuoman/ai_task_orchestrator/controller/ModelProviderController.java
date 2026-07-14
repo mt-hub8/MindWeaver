@@ -21,6 +21,12 @@ import java.util.List;
 @RestController
 @RequestMapping("/model-providers")
 @RequiredArgsConstructor
+/**
+ * 模型供应商配置 HTTP 入口。
+ *
+ * 管理 V10 provider 配置、默认 LLM/Embedding 选择和连接测试；
+ * API Key 不能明文返回，连接测试也不应改变默认 provider。
+ */
 public class ModelProviderController {
 
     private final ModelProviderConfigService modelProviderConfigService;

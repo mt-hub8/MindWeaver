@@ -14,6 +14,12 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+/**
+ * 批量导入 item 调度器。
+ *
+ * 该类负责把 PENDING item 按配置并发数推进到 DocumentIngestionService，
+ * 让 batch 可以在多个 ingestion task 完成后继续补位，而不是一次性打满 worker。
+ */
 @Service
 @RequiredArgsConstructor
 public class BatchItemIngestionRunner {
@@ -40,6 +46,7 @@ public class BatchItemIngestionRunner {
                 batchId,
                 UploadBatchItemStatus.PENDING
         );
+        // activeCount 同时统计 QUEUED 和 PROCESSING，避免 MQ 已排队但尚未开始的任务被重复提交。
         int concurrency = Math.max(1, batchIngestionProperties.getDocumentParseConcurrency());
         long activeCount = uploadBatchItemRepository.countByBatchIdAndStatus(batchId, UploadBatchItemStatus.QUEUED)
                 + uploadBatchItemRepository.countByBatchIdAndStatus(batchId, UploadBatchItemStatus.PROCESSING);
@@ -51,6 +58,7 @@ public class BatchItemIngestionRunner {
                     || latestBatch.getStatus() == UploadBatchStatus.CANCELED) {
                 break;
             }
+            // 每提交一个 item 前重新读取 batch 状态，确保 cancel 请求能尽快停止后续排队。
             uploadBatchService.queueItemForIngestion(item, latestBatch);
             submitted++;
             if (submitted >= slots) {

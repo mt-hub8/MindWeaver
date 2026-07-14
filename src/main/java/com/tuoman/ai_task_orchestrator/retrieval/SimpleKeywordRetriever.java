@@ -13,6 +13,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+/**
+ * 轻量 keyword retriever 实现。
+ *
+ * 这是 V15 Hybrid Retrieval 的本地字面召回补充，不等价于完整搜索引擎或标准 BM25。
+ * 它按标题、sectionPath、正文和技术符号命中进行启发式打分，输出给 RRF 与 dense 结果融合。
+ *
+ * 关键约束：每个候选 chunk 都必须通过 RetrievalFilterService.matchesChunk，
+ * 不能为了命中关键词绕过 collection、version、status 或 TRASHED/PURGED 过滤。
+ */
 @Component
 @RequiredArgsConstructor
 public class SimpleKeywordRetriever implements KeywordRetriever {
@@ -27,6 +36,8 @@ public class SimpleKeywordRetriever implements KeywordRetriever {
 
     @Override
     public KeywordRetrievalResponse search(String query, RetrievalFilter filter, int topK) {
+        // keyword retrieval 以 allowedDocs 为硬范围，再逐 chunk 应用 matchesChunk。
+        // 这样两路召回的过滤语义保持一致，避免只在 dense 一路做 metadata pre-filter。
         long startedAt = System.nanoTime();
         if (query == null || query.isBlank()) {
             return new KeywordRetrievalResponse(List.of(), 0L);
@@ -83,6 +94,8 @@ public class SimpleKeywordRetriever implements KeywordRetriever {
     }
 
     private double scoreChunk(String query, List<String> tokens, DocumentChunkEntity chunk) {
+        // 这里是可解释的启发式 keyword score：完整 query 命中、标题命中、路径命中和正文 token 命中
+        // 分别加权。该分数只用于 keyword 内部排序，后续不会直接与 vector similarity 比较。
         String content = chunk.getContent() == null ? "" : chunk.getContent().toLowerCase(Locale.ROOT);
         String section = chunk.getSectionPath() == null ? "" : chunk.getSectionPath().toLowerCase(Locale.ROOT);
         String title = chunk.getSectionTitle() == null ? "" : chunk.getSectionTitle().toLowerCase(Locale.ROOT);

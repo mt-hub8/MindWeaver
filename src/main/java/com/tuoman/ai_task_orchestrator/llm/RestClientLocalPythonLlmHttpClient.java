@@ -9,6 +9,12 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.time.Duration;
 
+/**
+ * 本地 Python LLM worker HTTP client。
+ *
+ * Java 后端只调用 /generate；Python worker 负责再去访问 Ollama 或其他本地 runtime。
+ * 这样本地 AI runtime 细节不会扩散到 RAG/Agent 业务服务。
+ */
 @Component
 public class RestClientLocalPythonLlmHttpClient implements LocalPythonLlmHttpClient {
 

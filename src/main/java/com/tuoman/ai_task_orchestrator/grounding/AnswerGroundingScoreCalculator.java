@@ -2,6 +2,14 @@ package com.tuoman.ai_task_orchestrator.grounding;
 
 import org.springframework.stereotype.Component;
 
+/**
+ * Answer Grounding Score 计算器。
+ *
+ * GroundingScore 衡量单次回答是否遵守 grounded answer contract：
+ * citation coverage、citation accuracy、unsupported claim rate、context usage 和 refusal correctness。
+ *
+ * 该分数是诊断信息，不应反向修改检索结果或 citation verification 结果。
+ */
 @Component
 public class AnswerGroundingScoreCalculator {
 
@@ -22,6 +30,8 @@ public class AnswerGroundingScoreCalculator {
         if (bundle == null || bundle.isEmpty()) {
             contextUsage = 0.0;
         }
+        // score = coverage*25 + accuracy*30 + (1-unsupportedRate)*25 + contextUsage*10 + refusalCorrectness*10。
+        // 这是启发式可解释评分，不等价于人工事实真值。
         int score = clamp((int) Math.round(
                 citationCoverage * 25
                         + citationAccuracy * 30

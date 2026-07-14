@@ -10,6 +10,12 @@ import org.springframework.stereotype.Component;
 @Component
 @Primary
 @RequiredArgsConstructor
+/**
+ * LLM 运行时路由器。
+ *
+ * 根据 V10 ModelProviderSelectionService 的默认配置，把 generate 调用分发到 mock、
+ * local Python/Ollama 或 OpenAI-compatible provider。
+ */
 public class RoutingLlmProvider implements LlmProvider {
 
     private final ModelProviderSelectionService selectionService;
@@ -22,6 +28,8 @@ public class RoutingLlmProvider implements LlmProvider {
 
     @Override
     public LlmGenerateResult generate(String systemPrompt, String userPrompt, LlmGenerateOptions options) {
+        // 每次生成前解析默认 provider，但不在这里修改默认配置。
+        // 供应商切换由配置服务负责，生成链路只消费当前解析结果。
         ResolvedModelProvider resolved = selectionService.resolveDefaultLlm();
         selectionService.ensureEnabled(resolved);
         LlmGenerateOptions effective = options != null ? options : new LlmGenerateOptions();

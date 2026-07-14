@@ -15,6 +15,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Agent Task 创建服务。
+ *
+ * AgentTask 从 PENDING 入队，worker 拉取后进入 RUNNING，最终进入 COMPLETED 或 FAILED。
+ * 创建时会生成固定 step plan，并记录事件，实际执行交给异步 AgentTaskExecutor。
+ */
 @Service
 @RequiredArgsConstructor
 public class AgentTaskService {
@@ -47,6 +53,8 @@ public class AgentTaskService {
             collectionName = collection.getName();
         }
 
+        // collectionId 是 Agent Task 的知识库 scope。
+        // 后续工具调用必须继承该 scope，不能绕过用户选择的 collection。
         AgentTaskEntity task = new AgentTaskEntity();
         task.setTitle(request.getTitle().trim());
         task.setObjective(request.getObjective().trim());
@@ -56,6 +64,8 @@ public class AgentTaskService {
         AgentTaskEntity saved = agentTaskRepository.save(task);
 
         agentTaskEventRecorder.recordTaskCreated(saved.getId());
+        // 固定计划：TOOL_CALL(KnowledgeSearch) -> TOOL_CALL(ContextSummary) -> FINAL_REPORT。
+        // 先落 step 再入队，便于前端展示任务计划和失败定位。
         agentTaskStepService.createFixedPlan(saved.getId());
         agentTaskEventRecorder.recordStepPlanCreated(saved.getId());
 

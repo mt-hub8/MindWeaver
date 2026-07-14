@@ -12,6 +12,12 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * RAG 质量诊断服务。
+ *
+ * 根据四个分项分数和运行元数据生成可解释 issue/suggestion，
+ * 用于告诉用户是知识库缺内容、检索范围不对、引用不足，还是模型/索引配置风险。
+ */
 @Service
 public class RagQualityDiagnosisService {
 
@@ -28,6 +34,8 @@ public class RagQualityDiagnosisService {
         boolean citationsEmpty = context.getCitations() == null || context.getCitations().isEmpty();
         String answer = context.getAnswer() == null ? "" : context.getAnswer().trim();
 
+        // NO_CONTEXT 是可信 RAG 的正常分支：系统没有证据时应提示补充资料或调整范围，
+        // 而不是把空上下文回答包装成高质量结果。
         if (finalContextCount <= 0) {
             addIssue(issues, "NO_CONTEXT", "未检索到可用上下文", "系统未找到可用于回答的知识片段。",
                     "CRITICAL", "retrievalScore", "检索质量分显著降低");
@@ -75,6 +83,8 @@ public class RagQualityDiagnosisService {
                     "无上下文时应返回“不知道”，避免生成看似确定的答案。", "GENERATION");
         }
 
+        // dimension mismatch 是模型切换后的索引风险信号。
+        // 建议 reindex，但诊断服务本身不能执行破坏性修复。
         if (context.isEmbeddingDimensionMismatch()) {
             addIssue(issues, "EMBEDDING_MODEL_SWITCH_RISK", "Embedding 模型可能不一致",
                     "当前 embedding 模型可能与已有索引不一致，检索质量可能下降。", "WARNING", "retrievalScore", "检索稳定性风险");

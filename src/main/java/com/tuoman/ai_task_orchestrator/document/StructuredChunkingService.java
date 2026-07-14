@@ -11,6 +11,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
+/**
+ * V15.0 引入的结构化 chunking 服务。
+ *
+ * 它在基础字符切分之上补充 sectionPath、sectionTitle、chunkType、hash、
+ * parentChunkIndex 和 previous/next 关系。输出给 DocumentService 持久化，
+ * 后续用于 Hybrid Retrieval、metadata pre-filter、context expansion 和 citation 展示。
+ *
+ * 设计目的：技术文档不是纯长文本，标题、代码块、表格、列表和章节层级会影响检索质量；
+ * 结构化 chunk 能让召回和上下文回填更可解释。
+ */
 @Service
 @RequiredArgsConstructor
 public class StructuredChunkingService {
@@ -24,6 +34,8 @@ public class StructuredChunkingService {
     private final ChunkHashService chunkHashService;
 
     public List<StructuredChunkResult> chunk(String content) {
+        // 阶段 1：先复用基础 chunker 得到稳定的文本片段。
+        // 阶段 2：再为每个片段补充结构化 metadata，避免检索层自行猜测章节关系。
         if (content == null || content.isBlank()) {
             return List.of();
         }
@@ -42,6 +54,7 @@ public class StructuredChunkingService {
                     : base.getHeadingPath();
 
             if (sectionPath != null && !sectionPath.equals(currentSection)) {
+                // 同一 section 内的后续 chunk 记录 parent，用于 parent context expansion。
                 currentSection = sectionPath;
                 parentIndexForSection = i;
             }
@@ -80,6 +93,8 @@ public class StructuredChunkingService {
     }
 
     private ChunkType detectChunkType(String content) {
+        // chunkType 是检索诊断和未来路由的轻量信号。
+        // 例如 CODE_BLOCK / TABLE / LIST 往往比普通 TEXT 更需要 keyword retrieval 保底。
         if (content == null || content.isBlank()) {
             return ChunkType.UNKNOWN;
         }

@@ -15,6 +15,15 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * V16 向量索引 generation 状态机服务。
+ *
+ * BUILDING 表示新索引正在构建，ACTIVE 表示当前可检索，RETIRED 表示被新索引替换，
+ * FAILED 表示构建失败且不能参与检索。
+ *
+ * 关键不变量：reindex 不能直接覆盖旧 vector；新 generation 只有完整构建并激活后，
+ * 才能替换旧 ACTIVE generation。
+ */
 @Service
 @RequiredArgsConstructor
 public class VectorGenerationService {
@@ -32,6 +41,8 @@ public class VectorGenerationService {
             String embeddingModel,
             Integer embeddingDimension
     ) {
+        // 初始导入没有显式 reindex 流程时，确保存在 generation=1 的 ACTIVE 记录。
+        // 后续检索会通过 active generation filter 避免新旧向量混召回。
         Optional<VectorIndexGenerationEntity> existing = findActive(documentId, collectionId);
         if (existing.isPresent()) {
             return existing.get();
@@ -60,6 +71,8 @@ public class VectorGenerationService {
             String embeddingModel,
             Integer embeddingDimension
     ) {
+        // BUILDING generation 允许写入和校验，但不应参与普通 retrieval。
+        // 这让 reindex 可以在后台完成，不影响旧 ACTIVE generation 对外服务。
         VectorIndexGenerationEntity entity = new VectorIndexGenerationEntity();
         entity.setCollectionId(collectionId);
         entity.setDocumentId(documentId);
@@ -76,6 +89,8 @@ public class VectorGenerationService {
 
     @Transactional
     public VectorIndexGenerationEntity activateGeneration(Long collectionId, Long documentId, Long generation) {
+        // 激活新 generation 时先把旧 ACTIVE 标为 RETIRED，再激活 BUILDING。
+        // 如果构建阶段失败，此方法不会执行，旧 ACTIVE generation 继续提供检索。
         VectorIndexGenerationEntity building = generationRepository
                 .findByDocumentIdAndGeneration(documentId, generation)
                 .orElseThrow(() -> BusinessException.vectorGenerationInvalid("BUILDING generation 不存在"));
@@ -99,6 +114,8 @@ public class VectorGenerationService {
 
     @Transactional
     public void markGenerationFailed(Long documentId, Long generation, String message) {
+        // FAILED 只标记新 generation 的构建失败，不能级联修改旧 ACTIVE generation。
+        // 这是 reindex 可回滚性的核心约束。
         generationRepository.findByDocumentIdAndGeneration(documentId, generation).ifPresent(entity -> {
             entity.setStatus(VectorGenerationStatus.FAILED);
             entity.setSummaryMessage(message);

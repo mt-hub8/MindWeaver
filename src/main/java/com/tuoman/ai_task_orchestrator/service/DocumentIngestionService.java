@@ -24,6 +24,15 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 
+/**
+ * 文档异步摄入入口服务。
+ *
+ * V13 的 batch ingestion 之后，普通上传和批量导入都会先创建 DocumentEntity
+ * 与 DocumentIngestionTaskEntity，再把耗时的 chunk、embedding、vector write 交给 MQ worker。
+ *
+ * 关键不变量：这里创建的是可追踪任务，不是最终可检索文档；只有后续异步链路完成后，
+ * DocumentStatus 才能从 UPLOADED/CHUNKED 进入 READY。
+ */
 @Service
 @RequiredArgsConstructor
 public class DocumentIngestionService {
@@ -48,6 +57,8 @@ public class DocumentIngestionService {
 
     @Transactional
     public DocumentIngestionSubmitResponse submitUpload(MultipartFile file) {
+        // 普通上传入口只同步完成文件校验和文本提取。
+        // 后续结构化切分、embedding 和 vector 写入必须异步执行，避免上传请求被模型/向量库耗时阻塞。
         var fileType = documentFileValidator.validate(file);
         String text = documentTextExtractorRegistry.extract(file, fileType);
         if (text == null || text.isBlank()) {
@@ -81,9 +92,13 @@ public class DocumentIngestionService {
             throw BusinessException.validationError("提取的文档文本不能为空");
         }
 
+        // fileHash 用于文件级去重，textHash 用于内容级去重。
+        // 二者都属于摄入诊断信息，不应参与 vector identity；否则 retryCount 或批次差异会制造重复向量。
         String fileHash = fileHashService.hashBytes(fileBytes);
         String textHash = fileHashService.hashText(text);
 
+        // 先持久化 DocumentEntity，再创建 ingestion task。
+        // 此时文档仅表示“已接收”，还不能进入检索 final context。
         DocumentEntity document = documentService.createDocumentEntityFromMeta(
                 originalFilename,
                 contentType,
@@ -108,6 +123,8 @@ public class DocumentIngestionService {
         task.setBatchItemId(batchItemId);
         DocumentIngestionTaskEntity savedTask = documentIngestionTaskRepository.save(task);
 
+        // 事件记录让前端和排障流程能看到任务从 created -> queued -> processing -> terminal 的完整轨迹。
+        // 即使后续 MQ publish 失败，也能把失败归因停在 TEXT_EXTRACTED 阶段。
         documentIngestionEventRecorder.recordTaskCreated(
                 savedTask.getId(),
                 savedDocument.getOriginalFilename(),

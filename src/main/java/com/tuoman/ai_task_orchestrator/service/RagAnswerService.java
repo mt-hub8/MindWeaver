@@ -54,6 +54,19 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+/**
+ * RAG Answer 主编排服务。
+ *
+ * 该类负责把一次用户提问串成完整可信回答链路：
+ * Query Understanding -> Retrieval Routing -> Retrieval -> Grounded Context
+ * -> LLM generation -> Citation Verification -> RagQualityScore。
+ *
+ * 关键约束：
+ * - collection / version / status filter 不能在链路中丢失，否则会造成跨知识库或错误版本污染；
+ * - citations 必须来自 final context，grounded answer 不能引用不在 context 中的 chunk；
+ * - no context / low confidence 时拒答是可信 RAG 的正常分支，不应视为异常；
+ * - quality score 和 grounding score 只提供诊断，不应反向修改检索结果。
+ */
 @Service
 @RequiredArgsConstructor
 public class RagAnswerService {
@@ -115,16 +128,34 @@ public class RagAnswerService {
             throw BusinessException.validationError("request must not be null");
         }
 
+        // 阶段 1：参数归一化。
+        // topK 在入口处收敛到安全范围，避免后续检索、rerank、上下文组装使用不一致的数量边界。
         int topK = normalizeTopK(request.getTopK());
+
+        // 阶段 2：collection scope 解析。
+        // 用户显式选择的 collection 是硬约束，后续 Query Understanding 和 Retrieval Routing 只能补充，
+        // 不能把这个范围丢掉或扩大成盲目全库搜索。
         CollectionAskScope askScope = resolveAskScope(request.getCollectionId());
         UserSelectedFilters userSelectedFilters = UserSelectedFilters.ofCollection(request.getCollectionId());
+
+        // 阶段 3：Query Understanding。
+        // 自然语言问题在这里被转换为 queryType、versionHint、statusHint、codeSymbols 等结构化信号，
+        // 后续 routing 会基于这些信号决定 filter、rerank 和 context expansion。
         QueryUnderstandingResult understanding = queryUnderstandingService.understand(
                 request.getQuery(),
                 request.getCollectionId(),
                 userSelectedFilters
         );
         QueryRewriteResult rewrite = queryRewriteService.rewrite(understanding);
+
+        // 阶段 4：Retrieval Routing。
+        // routingDecision 是检索策略和 metadata pre-filter 的统一承载点。
+        // collection / version / status filter 必须沿着后续链路传递，避免召回 TRASHED、PURGED 或错误版本内容。
         RetrievalRoutingDecision routingDecision = retrievalRoutingPolicyService.route(understanding, userSelectedFilters);
+
+        // 阶段 5：Clarification Guard。
+        // clarificationRequired=true 表示问题或范围还不够确定，此时不能继续盲目全库搜索；
+        // 返回澄清问题比生成低置信答案更符合可信 RAG 的边界。
         QueryClarificationGuard.GuardResult guardResult = queryClarificationGuard.evaluate(
                 understanding,
                 routingDecision,
@@ -166,6 +197,9 @@ public class RagAnswerService {
             return withQualityScore(buildNoContextResponse(askScope.noContextMessage(), topK, askScope, queryDiagnostics), request);
         }
 
+        // 阶段 6：AppRetrievalService 检索。
+        // 统一检索入口会屏蔽 legacy / hybrid pipeline 差异，但不能绕过 routingDecision 中的 RetrievalFilter。
+        // 返回的 chunks 既要用于 citations，也要能被 GroundedContextAssembler 组装成 final context。
         RetrievalScope retrievalScope = toRetrievalScope(request.getCollectionId(), askScope);
         AppRetrievalService.UnifiedRetrievalOutcome unifiedOutcome = appRetrievalService.retrieve(
                 rewrite.getKeywordQuery() == null || rewrite.getKeywordQuery().isBlank() ? request.getQuery() : rewrite.getKeywordQuery(),
@@ -186,6 +220,10 @@ public class RagAnswerService {
                 unifiedOutcome.diagnostics(),
                 unifiedOutcome.v15Pipeline()
         );
+
+        // 阶段 7：GroundedContextBundle 组装。
+        // final context 是答案可引用证据的唯一来源；TRASHED / PURGED 文档不能进入这里。
+        // 后续 citationKey 会绑定到 final context，避免模型引用未提供给它的 chunk。
         AnswerContractMode contractMode = AnswerContractMode.defaultMode();
         GroundedAnswerContract contract = new GroundedAnswerContract(contractMode);
         GroundedContextBundle contextBundle = groundedContextAssembler.assemble(
@@ -198,6 +236,9 @@ public class RagAnswerService {
         );
         citations = enrichCitations(citations, contextBundle);
 
+        // 阶段 8：无上下文分支。
+        // 没有可用 context 时拒答不是失败，而是明确告诉调用方当前知识库无法支撑回答。
+        // grounding / quality diagnostics 仍会返回，便于定位是检索为空、范围过窄还是证据不足。
         if (citations.isEmpty() || contextBundle.isEmpty()) {
             String answer = askScope.collectionId() != null
                     ? "当前所选分组下未检索到可用于回答的文档片段。"
@@ -219,6 +260,9 @@ public class RagAnswerService {
             return withQualityScore(buildNoContextResponse(answer, topK, askScope, retrieval, queryDiagnostics, grounding), request);
         }
 
+        // 阶段 9：RefusalPolicy 生成前拒答。
+        // low confidence、版本缺失或 STRICT 证据不足时，拒答优先于让 LLM 猜测。
+        // 这条分支仍保留 grounding diagnostics，用于说明为什么没有进入生成阶段。
         RefusalDecision preGenerationRefusal = refusalPolicyService.decideBeforeGeneration(
                 contextBundle,
                 understanding,
@@ -244,6 +288,8 @@ public class RagAnswerService {
             ), request);
         }
 
+        // 阶段 10：GroundedAnswerPromptBuilder 构造 prompt。
+        // prompt 只允许使用 final context 中的证据；citations 必须能回到 contextBundle 中的 citationKey。
         String prompt = groundedAnswerPromptBuilder.buildPrompt(request.getQuery(), contextBundle, contract, understanding);
         if (routingDecision.isNoAnswerRisk()) {
             prompt = prompt + "\n\n如果上下文没有依据，请明确说明未找到依据。";
@@ -252,6 +298,8 @@ public class RagAnswerService {
         LlmRequest llmRequest = new LlmRequest();
         llmRequest.setPrompt(prompt);
 
+        // 阶段 11：LLM generate。
+        // LLM 只负责在受约束 prompt 下生成文本，不负责扩大检索范围或修正 filter。
         LlmResponse llmResponse = llmClient.generate(llmRequest);
         if (llmResponse == null || !llmResponse.isSuccess() || llmResponse.getContent() == null || llmResponse.getContent().isBlank()) {
             String message = llmResponse == null || llmResponse.getErrorMessage() == null
@@ -271,14 +319,23 @@ public class RagAnswerService {
                 llmResponse.getPromptTokenCount(),
                 llmResponse.getCompletionTokenCount()
         );
+        // 阶段 12：CitationVerification。
+        // 验证答案中的引用是否存在于 final context，并检查引用是否仍满足 routing filter。
+        // grounded answer 不能引用 context 外的 chunk，否则引用校验和用户信任都会失效。
         CitationVerificationResult verification = citationVerificationService.verify(
                 llmResponse.getContent(),
                 contextBundle,
                 routingDecision.getFilter(),
                 understanding
         );
+
+        // 阶段 13：UnsupportedClaimDetector。
+        // 这里检查关键 claim 是否缺 citation，或 citation 是否无法支撑符号、版本、数字等强约束信息。
         UnsupportedClaimReport unsupportedClaimReport = unsupportedClaimDetector.detect(llmResponse.getContent(), contextBundle);
         RefusalDecision postVerificationRefusal = refusalPolicyService.decideAfterVerification(verification, contractMode);
+
+        // 阶段 14：AnswerGroundingScore。
+        // grounding score 是对答案可信度的诊断，不回写检索结果，也不改变已返回的 citations。
         AnswerGroundingScore groundingScore = answerGroundingScoreCalculator.calculate(
                 contextBundle,
                 verification,
@@ -293,6 +350,10 @@ public class RagAnswerService {
                 .refusalDecision(postVerificationRefusal)
                 .groundingScore(groundingScore)
                 .build();
+
+        // 阶段 15：response 组装。
+        // 最终响应同时返回答案、citations、retrieval metadata、generation metadata 和 diagnostics，
+        // 便于前端展示，也便于后续排查检索污染、引用失败或质量评分偏低的问题。
         return withQualityScore(new RagAnswerResponse(
                 llmResponse.getContent(),
                 citations,
@@ -305,6 +366,8 @@ public class RagAnswerService {
     }
 
     private RagAnswerResponse withQualityScore(RagAnswerResponse response, RagAnswerRequest request) {
+        // RagQualityScore 是最后追加的诊断视图，只读取 answer / citations / metadata。
+        // 它不应反向修改 retrieval outcome 或 grounding outcome，避免评分逻辑影响主链路结果。
         RagQualityMode mode = RagQualityMode.fromRequest(request.getQualityMode());
         return new RagAnswerResponse(
                 response.getAnswer(),

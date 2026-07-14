@@ -10,6 +10,13 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * 本地启发式 reranker。
+ *
+ * 该实现根据 sectionTitle、sectionPath、version 和正文完整命中给候选加权，
+ * 用于没有外部 rerank 模型时提升技术文档的可解释排序。它只处理传入候选，
+ * 不访问新的检索范围。
+ */
 @Component
 @RequiredArgsConstructor
 public class SimpleHeuristicReranker implements Reranker {
@@ -20,6 +27,8 @@ public class SimpleHeuristicReranker implements Reranker {
 
     @Override
     public RerankResponse rerank(RerankRequest request) {
+        // rerank score 是原始分数加小幅启发式 boost。
+        // boost 只改变候选相对顺序，不应被理解为事实可信度或 citation 支撑度。
         long startedAt = System.nanoTime();
         String query = request.query() == null ? "" : request.query().toLowerCase(Locale.ROOT);
         List<ScoredCandidate> scored = new ArrayList<>();

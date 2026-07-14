@@ -10,6 +10,12 @@ import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
+/**
+ * OpenAI-compatible LLM provider。
+ *
+ * 该适配器把统一的 LlmProvider 调用转换成 OpenAI Chat Completions 风格协议，
+ * 支持 OpenAI-compatible 和自定义兼容供应商。
+ */
 public class OpenAiCompatibleLlmProvider {
 
     public static final String PROVIDER = "openai-compatible";
@@ -35,6 +41,7 @@ public class OpenAiCompatibleLlmProvider {
         ));
 
         try {
+            // config 中的 API Key 由 HTTP client 使用，不应在 LlmGenerateResult metadata 中明文返回。
             OpenAiChatResponse response = httpClient.createChatCompletion(request, config);
             String content = extractContent(response);
             if (content == null || content.isBlank()) {

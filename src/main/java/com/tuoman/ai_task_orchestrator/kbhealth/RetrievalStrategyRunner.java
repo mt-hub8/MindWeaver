@@ -30,6 +30,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Knowledge Health 检索策略执行器。
+ *
+ * 同一个 evaluation case 可以用 VECTOR_ONLY、BM25_ONLY、HYBRID、HYBRID_RRF_RERANK 等策略运行，
+ * 再交给统一指标计算器比较 baseline 与 candidate 是否真的提升。
+ *
+ * 关键不变量：评测策略也必须保留 collection/version metadata filter；
+ * 否则指标提升可能来自跨库或错版本污染，而不是真正优化。
+ */
 @Component
 @RequiredArgsConstructor
 public class RetrievalStrategyRunner {
@@ -64,6 +73,8 @@ public class RetrievalStrategyRunner {
             Long runCollectionId,
             Map<String, Object> runMetadataFilter
     ) {
+        // Dataset/Case 提供 gold labels；Run 提供策略和过滤配置。
+        // 这里只产出 retrieved chunks 和 latency，不在此处计算最终分数。
         if (strategy == null) {
             throw BusinessException.validationError("strategy must not be null");
         }
@@ -79,6 +90,7 @@ public class RetrievalStrategyRunner {
         List<EvaluationRetrievedChunk> rawChunks;
         List<String> warnings = new ArrayList<>();
 
+        // 所有策略都通过同一 EvaluationRetrievedChunk 结构输出，保证后续 Recall@K/MRR/NDCG 可比较。
         switch (strategy) {
             case VECTOR_ONLY -> rawChunks = vectorOnly(evalCase.getQuery(), candidateK, scopedDocs);
             case BM25_ONLY -> rawChunks = viaHybridPipeline(
@@ -112,6 +124,7 @@ public class RetrievalStrategyRunner {
             warnings.add("collection_id=" + collectionId + " 下无可检索文档，结果可能为空（应用层过滤）");
         }
 
+        // 指标只看 TopK；context expansion 产生的额外上下文不应被计入原始 Recall。
         List<EvaluationRetrievedChunk> limited = rawChunks.stream().limit(topK).toList();
         Set<Long> expectedChunks = new HashSet<>(JsonFieldCodec.readLongList(evalCase.getExpectedChunkIdsJson()));
         Set<Long> expectedDocs = new HashSet<>(JsonFieldCodec.readLongList(evalCase.getExpectedDocIdsJson()));

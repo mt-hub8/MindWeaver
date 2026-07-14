@@ -11,6 +11,15 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * V16 向量身份生成服务。
+ *
+ * stableVectorKey 表示“同一个 collection/document/chunk/model/dimension”的稳定业务身份；
+ * vectorId 在 stableVectorKey 基础上追加 generation，用于让新旧索引并存而不互相覆盖。
+ *
+ * 关键不变量：vector_id 不能随机生成，也不能省略 collectionId、chunkUid、model、dimension 或 generation；
+ * 否则会在 retry、reindex 或模型切换时制造重复向量或跨库污染。
+ */
 @Service
 @RequiredArgsConstructor
 public class VectorIdentityService {
@@ -48,9 +57,12 @@ public class VectorIdentityService {
             throw BusinessException.vectorIdentityInvalid("generation 必须大于 0");
         }
 
+        // contentHash/metadataHash 用于审计内容漂移，不决定 vectorId。
+        // 这样同一个 chunk 在同一 generation 内可幂等 upsert，同时 audit 仍能发现 payload 不一致。
         String contentHash = content == null || content.isBlank() ? "" : chunkHashService.hash(content);
         String metadataHash = metadataCanonical == null ? "" : sha256Hex(metadataCanonical);
 
+        // stableVectorKey 不包含 generation：它回答“这是哪个业务 chunk 的哪种 embedding”。
         String stableVectorKey = sha256Hex(join(
                 safe(collectionId),
                 safe(documentId),
@@ -59,6 +71,7 @@ public class VectorIdentityService {
                 safe(embeddingDimension)
         ));
 
+        // vectorId 包含 generation：reindex 构建新 generation 时不会覆盖旧 ACTIVE 向量。
         String vectorId = sha256Hex(join(
                 stableVectorKey,
                 safe(generation)

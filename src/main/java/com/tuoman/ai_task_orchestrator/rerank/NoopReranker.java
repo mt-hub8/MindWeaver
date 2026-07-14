@@ -5,6 +5,12 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * no-op reranker。
+ *
+ * 用于关闭真实重排或在本地测试中保持候选顺序。它保留原始 rank 和 score，
+ * 只做 finalTopK 截断，确保 rerank 开关不会改变检索过滤语义。
+ */
 @Component
 public class NoopReranker implements Reranker {
 

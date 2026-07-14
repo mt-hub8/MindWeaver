@@ -10,13 +10,13 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Reciprocal Rank Fusion (RRF).
- * <p>
- * For each candidate list, a chunk contributes {@code 1 / (k + rank)} to its fusion score,
- * where {@code rank} is 1-based position in that list and {@code k} is a smoothing constant
- * (default 60, per Cormack et al.).
- * <p>
- * When the same chunk appears in both dense and lexical lists, both contributions are summed.
+ * V15.0 引入的 Reciprocal Rank Fusion (RRF) 实现。
+ *
+ * 公式：score = sum(1 / (k + rank_i))，rank_i 是候选在 dense 或 lexical 列表中的
+ * 1-based 排名。相同 chunk 同时出现在两路结果中时，两路贡献相加。
+ *
+ * 选择 RRF 的原因：vector similarity 与 keyword/BM25-like score 量纲不同，直接相加会
+ * 让某一路分数尺度主导排序；RRF 只依赖各自列表内排名，更适合稳定融合。
  */
 @Component
 public class RrfFusionRanker implements FusionRanker {

@@ -10,6 +10,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
+/**
+ * 批量导入暂存文件服务。
+ *
+ * batch item 需要可重试，因此上传时先把原始 bytes 落到 staging 目录。
+ * 后续 retry 会从这里重新读取文件，重放文本提取和 ingestion，而不是依赖内存中的 MultipartFile。
+ */
 @Service
 @RequiredArgsConstructor
 public class BatchStagingService {
@@ -28,6 +34,7 @@ public class BatchStagingService {
 
     public Path saveStagingFile(Long batchId, Long itemId, String originalFilename, byte[] bytes) {
         Path batchDir = resolveBatchDir(batchId);
+        // 文件名只做文件系统安全化，不参与重复检测；重复检测依赖 fileHash/textHash。
         String safeName = sanitizeFilename(originalFilename);
         Path target = batchDir.resolve(itemId + "_" + safeName);
         try {

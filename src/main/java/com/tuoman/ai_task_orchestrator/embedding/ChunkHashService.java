@@ -6,6 +6,12 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
+/**
+ * Chunk 内容哈希服务。
+ *
+ * hash 用于 embedding cache 和向量审计中的 contentHash。
+ * 它不是 vectorId：vectorId 还必须包含 collection、chunkUid、model、dimension 和 generation。
+ */
 @Service
 public class ChunkHashService {
 
@@ -17,6 +23,8 @@ public class ChunkHashService {
             throw new IllegalArgumentException("chunk content must not be blank");
         }
 
+        // 只规范化换行和首尾空白，避免平台换行差异造成重复 embedding。
+        // 不做语义改写，防止不同 chunk 被错误合并。
         String normalized = normalize(content);
         return sha256Hex(normalized);
     }

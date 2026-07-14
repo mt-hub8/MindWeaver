@@ -24,6 +24,12 @@ import java.util.List;
 @RestController
 @RequestMapping("/documents")
 @RequiredArgsConstructor
+/**
+ * 文档管理 HTTP 入口。
+ *
+ * 覆盖普通文档上传、查询、搜索和生命周期相关操作；
+ * 复杂摄入、chunk、embedding、vector write 由 service/worker 层完成。
+ */
 public class DocumentController {
 
     private final DocumentService documentService;

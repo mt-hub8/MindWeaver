@@ -25,6 +25,12 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
+/**
+ * V12 文档 Trash / Restore / Purge 生命周期服务。
+ *
+ * ACTIVE 表示可检索，TRASHED 表示进入垃圾箱且默认不参与检索，PURGED 表示永久删除。
+ * Restore 只恢复生命周期状态；Purge 才执行原文、chunk、embedding、vector、membership 的物理清理。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -65,6 +71,8 @@ public class DocumentTrashService {
         LocalDateTime now = LocalDateTime.now(clock);
         LocalDateTime purgeAfter = now.plusDays(trashProperties.getRetentionDays());
 
+        // TRASHED 不立即物理删除 vector。
+        // 这样用户 restore 时不需要重新 embedding，但检索链路必须通过 status filter 排除。
         document.setLifecycleStatus(DocumentLifecycleStatus.TRASHED);
         document.setDeletedAt(now);
         document.setTrashedAt(now);
@@ -73,6 +81,7 @@ public class DocumentTrashService {
         documentRepository.save(document);
 
         documentIngestionEventRecorder.recordDocumentTrashed(documentId, purgeAfter);
+        // 同步向量 payload/status，确保 finalTopK、citation、prompt context 都不会包含 TRASHED 文档。
         vectorLifecycleSyncService.syncTrash(documentId);
         log.info("Document moved to trash, documentId={}, purgeAfter={}", documentId, purgeAfter);
 
@@ -97,6 +106,8 @@ public class DocumentTrashService {
         }
 
         LocalDateTime now = LocalDateTime.now(clock);
+        // restore 只把 lifecycle 恢复为 ACTIVE。
+        // 因为 TRASHED 期间向量未物理删除，所以通常不需要重新 embedding。
         document.setLifecycleStatus(DocumentLifecycleStatus.ACTIVE);
         document.setPurgeAfter(null);
         document.setPurgeStatus(DocumentPurgeStatus.NONE);
@@ -136,6 +147,8 @@ public class DocumentTrashService {
             throw BusinessException.documentPurgeNotAllowed("当前状态不允许永久删除");
         }
 
+        // PURGED 是不可恢复删除，必须先进入 PURGING 并记录失败状态。
+        // 如果清理 vector/storage 失败，不能把文档标成已永久删除。
         document.setPurgeStatus(DocumentPurgeStatus.PURGING);
         documentRepository.save(document);
         documentIngestionEventRecorder.recordDocumentPurging(documentId);

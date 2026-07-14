@@ -3,6 +3,12 @@ package com.tuoman.ai_task_orchestrator.embedding;
 import java.util.Comparator;
 import java.util.List;
 
+/**
+ * OpenAI-compatible embedding provider。
+ *
+ * 该实现只依赖 OpenAI 风格的 embeddings HTTP 协议，因此可用于 OpenAI、本地兼容网关
+ * 或其他兼容服务；业务层仍只看到 EmbeddingProvider 契约。
+ */
 public class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvider {
 
     public static final String PROVIDER = "openai";
@@ -93,6 +99,8 @@ public class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvider {
     }
 
     private void validateVector(List<Double> vector) {
+        // 返回维度必须与配置一致。
+        // 维度漂移会破坏 vector identity 和向量库 schema，不能静默接受。
         if (vector == null || vector.isEmpty()) {
             throw new EmbeddingProviderException("OpenAI-compatible embedding vector must not be empty");
         }

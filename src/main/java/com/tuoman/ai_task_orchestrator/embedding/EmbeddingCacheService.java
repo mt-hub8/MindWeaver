@@ -10,6 +10,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * 文档 chunk embedding 缓存服务。
+ *
+ * cache key = chunkHash + provider + model + dimension，用于避免同一内容重复生成文档向量。
+ * query embedding 通常不走这里，因为查询文本短、变化大，并且不应污染文档向量缓存统计。
+ */
 @Service
 @RequiredArgsConstructor
 public class EmbeddingCacheService {
@@ -49,6 +55,8 @@ public class EmbeddingCacheService {
             throw new IllegalArgumentException("providerForCompute must not be null");
         }
 
+        // chunkHash 基于规范化后的 chunk 内容，忽略换行格式差异。
+        // provider/model/dimension 必须同时参与 key，模型切换后不能复用旧向量。
         String chunkHash = chunkHashService.hash(chunkContent);
         Optional<EmbeddingCacheEntity> cached = embeddingCacheRepository
                 .findByChunkHashAndProviderAndModelAndDimension(chunkHash, provider, model, dimension);
@@ -63,6 +71,8 @@ public class EmbeddingCacheService {
         request.setText(chunkContent);
         request.setModel(model);
 
+        // cache miss 才调用真实 provider；返回后再次校验 provider/model/dimension，
+        // 避免 provider 配置漂移写入错误维度的缓存。
         EmbeddingResponse response = providerForCompute.embed(request);
 
         validateEmbeddingResponse(response, provider, model, dimension);
@@ -79,6 +89,8 @@ public class EmbeddingCacheService {
             embeddingCacheMetricsService.recordWrite(provider, model, dimension);
             return toCachedResult(saved, chunkHash, false, response.getDistanceMetric());
         } catch (DataIntegrityViolationException exception) {
+            // 并发摄入同一 chunk 时，唯一键冲突代表另一个事务已写入缓存。
+            // 这里转为读取已有记录，保持幂等而不是重新生成 embedding。
             embeddingCacheMetricsService.recordConflict(provider, model, dimension);
             return embeddingCacheRepository
                     .findByChunkHashAndProviderAndModelAndDimension(chunkHash, provider, model, dimension)

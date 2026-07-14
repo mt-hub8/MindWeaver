@@ -13,6 +13,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/rag")
 @RequiredArgsConstructor
+/**
+ * RAG Answer HTTP 入口。
+ *
+ * Controller 只负责接收用户问题并交给 RagAnswerService；
+ * Query Understanding、Retrieval Routing、Grounded Answer 和 Quality Score 都在 service 层编排。
+ */
 public class RagAnswerController {
 
     private final RagAnswerService ragAnswerService;

@@ -19,6 +19,12 @@ import java.util.List;
 @RestController
 @RequestMapping("/documents/ingestions")
 @RequiredArgsConstructor
+/**
+ * 异步文档摄入 HTTP 入口。
+ *
+ * 用于提交 ingestion task、查询任务进度和触发重试；
+ * 请求返回的是任务状态，不代表文档已经 READY 或可检索。
+ */
 public class DocumentIngestionController {
 
     private final DocumentIngestionTaskService documentIngestionTaskService;

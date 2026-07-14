@@ -37,6 +37,14 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * V16 向量一致性审计服务。
+ *
+ * audit 是只读诊断：对 VectorStore、chunk 表、embedding record、document lifecycle 和 generation 做对账，
+ * 输出 Duplicate、Orphan、Missing、Wrong Generation、Purged Residue 等问题。
+ *
+ * 关键不变量：audit 不删除数据；cleanup 另有显式入口和 scope，避免诊断操作变成破坏性操作。
+ */
 @Service
 @RequiredArgsConstructor
 public class VectorConsistencyAuditService {
@@ -61,6 +69,8 @@ public class VectorConsistencyAuditService {
 
     @Transactional
     public VectorAuditRunEntity runAudit(VectorAuditScopeType scopeType, Long collectionId, Long documentId) {
+        // 审计 run 本身也有状态机：RUNNING -> COMPLETED。
+        // 即使发现 CRITICAL issue，也只记录 issue，不直接修复向量库。
         VectorAuditRunEntity run = new VectorAuditRunEntity();
         run.setScopeType(scopeType);
         run.setCollectionId(collectionId);
@@ -75,6 +85,7 @@ public class VectorConsistencyAuditService {
                 ? vectorGenerationService.getActiveGeneration(documentId)
                 : Optional.empty();
 
+        // 按问题类型分别对账，便于 health controller 和后续 cleanup 明确处理范围。
         issues.addAll(findDuplicateIssues(run.getId(), vectors, collectionId));
         issues.addAll(findOrphanIssues(run.getId(), vectors, collectionId));
         issues.addAll(findMissingIssues(run.getId(), scopeType, collectionId, documentId, vectors, activeGeneration.orElse(null)));
@@ -141,6 +152,8 @@ public class VectorConsistencyAuditService {
     }
 
     private List<VectorAuditIssueEntity> findDuplicateIssues(Long runId, List<VectorStoreDocument> vectors, Long collectionId) {
+        // Duplicate Vector：同一 stableVectorKey 出现多个向量。
+        // 这通常说明曾经使用随机 insert 或 retry 写入没有幂等覆盖。
         Map<String, List<VectorStoreDocument>> grouped = vectors.stream()
                 .filter(vector -> vector.stableVectorKey() != null)
                 .collect(Collectors.groupingBy(VectorStoreDocument::stableVectorKey));
@@ -157,6 +170,8 @@ public class VectorConsistencyAuditService {
     }
 
     private List<VectorAuditIssueEntity> findOrphanIssues(Long runId, List<VectorStoreDocument> vectors, Long collectionId) {
+        // Orphan Vector：向量还在，但对应 chunk 已不存在。
+        // 它会在检索时返回无法组装 citation 的候选。
         Set<Long> chunkIds = documentChunkRepository.findAll().stream().map(DocumentChunkEntity::getId).collect(Collectors.toSet());
         List<VectorAuditIssueEntity> issues = new ArrayList<>();
         for (VectorStoreDocument vector : vectors) {
@@ -177,6 +192,8 @@ public class VectorConsistencyAuditService {
             List<VectorStoreDocument> vectors,
             Long activeGeneration
     ) {
+        // Missing Vector：ACTIVE chunk 没有对应向量。
+        // chunk count 和 vector count 对账能发现摄入中断或写入失败。
         Set<String> vectorKeys = vectors.stream()
                 .map(VectorStoreDocument::stableVectorKey)
                 .filter(Objects::nonNull)
@@ -196,6 +213,8 @@ public class VectorConsistencyAuditService {
     }
 
     private List<VectorAuditIssueEntity> findCrossCollectionIssues(Long runId, List<VectorStoreDocument> vectors, Long collectionId) {
+        // CrossCollectionVectorLeakRate 关注向量 payload 的 collection 泄漏；
+        // Knowledge Health 的 CrossCollectionLeakRate 关注最终检索结果是否跨 collection。
         if (collectionId == null) {
             return List.of();
         }
@@ -216,6 +235,8 @@ public class VectorConsistencyAuditService {
             Long collectionId,
             Long activeGeneration
     ) {
+        // Wrong Generation Vector：检索范围中混入非 ACTIVE generation 的向量。
+        // 它会让用户同时看到旧版本和新版本内容。
         if (activeGeneration == null) {
             return List.of();
         }
@@ -262,6 +283,8 @@ public class VectorConsistencyAuditService {
     }
 
     private List<VectorAuditIssueEntity> findPurgedResidueIssues(Long runId, List<VectorStoreDocument> vectors, Long collectionId) {
+        // Purged Vector Residue：PURGED 文档仍残留向量。
+        // 这是永久删除语义被破坏的信号，严重度高于 TRASHED 可见。
         List<VectorAuditIssueEntity> issues = new ArrayList<>();
         for (VectorStoreDocument vector : vectors) {
             DocumentEntity document = vector.documentId() == null
@@ -334,6 +357,8 @@ public class VectorConsistencyAuditService {
     }
 
     private AuditSummary buildSummary(List<VectorStoreDocument> vectors, List<VectorAuditIssueEntity> issues) {
+        // VectorDuplicateRate/VectorOrphanRate/VectorMissingRate 都是诊断指标。
+        // 它们帮助定位索引健康问题，不应在审计阶段反向修改检索结果。
         int totalVectors = vectors.size();
         int duplicate = countType(issues, VectorAuditIssueType.DUPLICATE_VECTOR);
         int orphan = countType(issues, VectorAuditIssueType.ORPHAN_VECTOR);

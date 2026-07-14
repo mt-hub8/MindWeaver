@@ -24,6 +24,12 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * 向量清理服务。
+ *
+ * cleanup 是破坏性操作，和 VectorConsistencyAuditService 的只读诊断刻意分离。
+ * 所有清理入口都必须带 collection、document 或 generation scope，禁止无范围全库删除。
+ */
 @Service
 @RequiredArgsConstructor
 public class VectorCleanupService {
@@ -41,6 +47,8 @@ public class VectorCleanupService {
     private final VectorIndexGenerationRepository vectorIndexGenerationRepository;
 
     public VectorCleanupResult cleanupDocumentVectors(Long collectionId, Long documentId) {
+        // document scope 删除用于 PURGED 或显式清理。
+        // collectionId 必填，避免同 documentId 在不同 namespace 下被误删。
         if (collectionId == null || documentId == null) {
             throw new IllegalArgumentException("collectionId and documentId are required");
         }
@@ -65,6 +73,8 @@ public class VectorCleanupService {
     }
 
     public VectorCleanupResult cleanupGenerationVectors(Long collectionId, Long generation) {
+        // generation scope 通常用于新 generation 激活后清理 RETIRED 向量。
+        // BUILDING/ACTIVE 不应通过这个入口随意删除。
         if (collectionId == null || generation == null) {
             throw new IllegalArgumentException("collectionId and generation are required");
         }
@@ -99,6 +109,8 @@ public class VectorCleanupService {
     }
 
     public VectorCleanupResult cleanupPurgedDocumentResidue() {
+        // PURGED 表示永久删除，因此 residual vector 必须清理。
+        // TRASHED 不走这里，因为恢复文档时应尽量避免重新 embedding。
         List<String> warnings = new ArrayList<>();
         int deleted = 0;
         for (DocumentEntity document : documentRepository.findAll()) {
@@ -123,6 +135,8 @@ public class VectorCleanupService {
     }
 
     public VectorCleanupResult cleanupOrphanVectors(Long collectionId) {
+        // Orphan cleanup 只清理 chunk 已不存在的向量。
+        // 它必须限定 collection，防止一次操作跨知识库删除。
         if (collectionId == null) {
             throw new IllegalArgumentException("collectionId is required");
         }
@@ -149,6 +163,8 @@ public class VectorCleanupService {
     }
 
     public VectorCleanupResult cleanupPollutedVectors(Long collectionId) {
+        // Polluted cleanup 处理 payload.collection_id 与目标 collection 不一致的向量。
+        // 这是对 audit 结果的显式修复动作，不应由 audit 自动触发。
         if (collectionId == null) {
             throw new IllegalArgumentException("collectionId is required");
         }

@@ -30,6 +30,14 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * V14 RAG Evaluation Dataset 服务。
+ *
+ * Dataset 是一组评测 Case 的容器；Case 保存 query、expectedDocIds、expectedChunkIds、
+ * negativeDocIds、metadataFilter 和 expectedAnswerPoints 等 gold labels。
+ *
+ * Gold Test Set 重要在于它让检索/生成优化可以被重复比较，而不是只凭单次体感判断。
+ */
 @Service
 @RequiredArgsConstructor
 public class RagEvaluationDatasetService {
@@ -76,6 +84,8 @@ public class RagEvaluationDatasetService {
 
     @Transactional
     public ImportRagEvaluationCasesResponse importCases(Long datasetId, ImportRagEvaluationCasesRequest request) {
+        // 导入 case 时保留 expected ids、negative ids 和 metadata filter。
+        // 这些字段决定后续 Recall@K、WrongVersionLeakRate、CitationAccuracy 等指标是否可计算。
         RagEvaluationDatasetEntity dataset = findDatasetOrThrow(datasetId);
         if (request == null || request.getPayload() == null || request.getPayload().isBlank()) {
             throw BusinessException.validationError("payload is required");

@@ -12,6 +12,14 @@ import java.util.List;
 @Component
 @Primary
 @RequiredArgsConstructor
+/**
+ * 运行时 Embedding provider 路由器。
+ *
+ * V10 模型供应商配置之后，默认 embedding 可以指向 mock、Ollama/local worker、
+ * OpenAI-compatible 或自定义 OpenAI-compatible provider。
+ *
+ * 关键约束：这里决定“用哪个模型生成向量”，模型或 dimension 改变后，已有文档通常需要 reindex。
+ */
 public class RoutingEmbeddingProvider implements EmbeddingProvider {
 
     private final ModelProviderSelectionService selectionService;
@@ -33,6 +41,8 @@ public class RoutingEmbeddingProvider implements EmbeddingProvider {
 
     @Override
     public List<EmbeddingResponse> embedBatch(List<EmbeddingRequest> requests) {
+        // 每次调用都解析当前默认 provider，但只做路由，不修改默认配置。
+        // connection test 和 provider 切换由 model provider service 负责。
         ResolvedModelProvider resolved = selectionService.resolveDefaultEmbedding();
         selectionService.ensureEnabled(resolved);
 

@@ -28,6 +28,16 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * 文档元数据与 chunk 持久化服务。
+ *
+ * 它位于上传 / ingestion 链路中游：Controller 或 DocumentIngestionService 先创建
+ * DocumentEntity，本服务负责创建文档记录、结构化切分、维护 DocumentStatus 和 generation。
+ * chunk 结果会交给 DocumentEmbeddingService 继续生成 embedding 与 vector。
+ *
+ * 状态语义：UPLOADED 表示已创建元数据；CHUNKED 表示结构化 chunk 已落库；
+ * READY 表示 embedding/vector 完成可检索；FAILED 表示摄入链路失败或被重复检测终止。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -47,6 +57,8 @@ public class DocumentService {
 
     @Transactional(noRollbackFor = BusinessException.class)
     public DocumentUploadResponse uploadDocument(MultipartFile file) {
+        // legacy 同步上传路径：创建文档后立即 chunk。
+        // 新的异步 ingestion 会把解析、chunk、embedding、vector write 拆成可追踪任务。
         validateLegacyUploadFile(file);
 
         DocumentEntity savedDocument = documentRepository.save(createDocumentEntity(file));
@@ -70,6 +82,8 @@ public class DocumentService {
     }
 
     public DocumentEntity createDocumentEntityFromMeta(String originalFilename, String contentType, long fileSize) {
+        // 文档初始状态只表示“已接收”，不能被检索。
+        // 只有后续 chunk、embedding 和 vector write 全部完成后，状态才会进入 READY。
         DocumentEntity document = new DocumentEntity();
         document.setOriginalFilename(originalFilename);
         document.setContentType(contentType);
@@ -88,6 +102,9 @@ public class DocumentService {
     }
 
     public int chunkAndPersistForGeneration(DocumentEntity document, String content, int generation) {
+        // Structured Chunking 保留 sectionPath、chunkType、parent/previous/next 关系。
+        // 这些结构化字段会被 Hybrid Retrieval、Query Understanding 和 context expansion 使用，
+        // 比固定字符切分更适合技术文档、手册和版本化知识库。
         chunkMetadataService.applyDocumentMetadata(document);
         List<StructuredChunkResult> chunks = structuredChunkingService.chunk(content);
         List<DocumentChunkEntity> chunkEntities = new ArrayList<>();
@@ -131,6 +148,8 @@ public class DocumentService {
 
     @Transactional
     public void completeReindexGeneration(Long documentId, int newGeneration, int chunkCount) {
+        // reindex 成功后才切换 currentGeneration，并把旧 chunk 标记为 SUPERSEDED。
+        // 这样旧 ACTIVE generation 在新索引构建失败时仍可继续服务检索。
         DocumentEntity document = findDocumentOrThrow(documentId);
         documentChunkRepository.supersedeChunksBeforeGeneration(documentId, newGeneration);
         document.setCurrentGeneration(newGeneration);
@@ -144,6 +163,8 @@ public class DocumentService {
 
     @Transactional
     public void cleanupFailedReindexGeneration(Long documentId, int generation) {
+        // reindex 失败只清理失败 generation 的 chunk，不能破坏当前可用 generation。
+        // 这是保证重建索引失败不影响线上检索的核心回滚边界。
         documentChunkRepository.deleteByDocumentIdAndGeneration(documentId, generation);
         DocumentEntity document = findDocumentOrThrow(documentId);
         int currentGeneration = document.getCurrentGeneration() == null ? 1 : document.getCurrentGeneration();
@@ -170,6 +191,8 @@ public class DocumentService {
 
     @Transactional
     public void clearChunksForRetry(Long documentId) {
+        // retry 普通 ingestion 时回到 UPLOADED，重新走 chunk -> embedding -> vector write。
+        // 这里不用于 reindex generation，避免把可用旧 generation 一起删除。
         DocumentEntity document = findDocumentOrThrow(documentId);
         documentChunkRepository.deleteByDocumentId(documentId);
         document.setStatus(DocumentStatus.UPLOADED);

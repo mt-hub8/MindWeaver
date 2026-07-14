@@ -19,6 +19,18 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * RAG Answer 链路的统一检索入口。
+ *
+ * 该类负责屏蔽 legacy retrieval、V15 hybrid retrieval、routingDecision 之间的差异，
+ * 对上保持稳定的 UnifiedRetrievalOutcome，让 RagAnswerService 可以只关心
+ * chunks、diagnostics 和是否使用新 pipeline。
+ *
+ * 关键约束：
+ * - Query Understanding / RoutingDecision 之后生成的 RetrievalFilter 不能被绕过；
+ * - collection、version、status、scoped document 等范围约束必须合并进实际检索；
+ * - 返回结果要能同时服务 GroundedContextAssembler 和 citation response。
+ */
 @Service
 @RequiredArgsConstructor
 public class AppRetrievalService {
@@ -45,6 +57,8 @@ public class AppRetrievalService {
             RetrievalRoutingDecision routingDecision
     ) {
         if (useV15Pipeline()) {
+            // V15 pipeline 接收 routingDecision 中的 filter 和 strategy。
+            // 这里统一合并请求 collection 与 scope，避免调用方绕过 RetrievalFilter 造成跨集合或错误版本召回。
             RetrievalFilter routedFilter = routingDecision == null ? null : routingDecision.getFilter();
             RetrievalFilter filter = mergeScope(routedFilter, collectionId, scope);
             boolean rerankEnabled = routingDecision == null
@@ -57,6 +71,9 @@ public class AppRetrievalService {
             int vectorTopK = routingDecision == null ? pipelineProperties.getVectorTopK() : routingDecision.getVectorTopK();
             int keywordTopK = routingDecision == null ? pipelineProperties.getKeywordTopK() : routingDecision.getKeywordTopK();
             int finalTopK = routingDecision == null ? topK : routingDecision.getFinalTopK();
+
+            // HybridRetrievalService 执行 dense、keyword、fusion、rerank 和 context expansion。
+            // AppRetrievalService 只做入口适配，不在这里重新解释 filter，避免两套过滤语义分叉。
             HybridRetrievalService.HybridRetrievalOutcome hybridOutcome = hybridRetrievalService.retrieve(
                     query,
                     filter,
@@ -73,6 +90,8 @@ public class AppRetrievalService {
                     true
             );
         }
+        // legacy 分支保留旧检索能力，但对 RagAnswerService 暴露相同 outcome 形状。
+        // 上层不应依赖具体 pipeline，否则 citation 和 grounded context 组装会被检索实现细节污染。
         return new UnifiedRetrievalOutcome(
                 legacyRetrievalService.retrieve(query, topK, scope),
                 null,
@@ -89,6 +108,8 @@ public class AppRetrievalService {
     }
 
     private RetrievalFilter mergeScope(RetrievalFilter routedFilter, Long requestCollectionId, RetrievalScope scope) {
+        // 用户显式选择的 collection 与 scope 是硬边界；routing filter 可以补充 version/status/docType，
+        // 但不能让 scopedDocumentIds、collectionId 这类安全范围在进入检索前丢失。
         Long collectionId = routedFilter != null && routedFilter.getCollectionId() != null
                 ? routedFilter.getCollectionId()
                 : requestCollectionId;
@@ -111,6 +132,8 @@ public class AppRetrievalService {
             int topK,
             boolean rerankEnabled
     ) {
+        // 这里把 V15 hybrid item 转成旧 RagRetrievalOutcome 形状。
+        // 转换只做结构适配，保留 chunkId/documentId/content/score，确保后续 context 和 citations 可追溯。
         List<RagRetrievedChunk> chunks = new ArrayList<>();
         for (HybridRetrievalService.RetrievedChunkItem item : hybridOutcome.chunks()) {
             chunks.add(new RagRetrievedChunk(

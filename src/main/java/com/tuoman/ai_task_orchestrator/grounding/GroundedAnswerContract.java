@@ -7,6 +7,14 @@ import java.util.List;
 
 @Getter
 @JsonInclude(JsonInclude.Include.NON_NULL)
+/**
+ * V18 Grounded Answer Contract。
+ *
+ * Contract 描述回答生成必须遵守的边界：只用 final context、关键结论带 citation、
+ * context 不足时拒答、不能引用不在 final context 中的 chunk。
+ *
+ * STRICT 要求更强 citation，BALANCED 是默认可信问答模式，EXPLORATORY 允许轻度推断但必须标注。
+ */
 public class GroundedAnswerContract {
 
     private final AnswerContractMode mode;

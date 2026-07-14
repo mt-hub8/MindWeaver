@@ -13,6 +13,14 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Collection 级向量污染审计服务。
+ *
+ * 它复用 VectorConsistencyAuditService 的只读 audit 结果，生成面向单个知识库的污染摘要：
+ * CrossCollectionVectorLeakRate、Orphan、Missing、Wrong Generation、Purged Residue 等。
+ *
+ * 关键不变量：这里只做诊断和建议，不执行 cleanup；删除向量必须走带 scope 的 VectorCleanupService。
+ */
 @Service
 @RequiredArgsConstructor
 public class CollectionPollutionAuditService {
@@ -22,6 +30,8 @@ public class CollectionPollutionAuditService {
     private final KnowledgeCollectionRepository knowledgeCollectionRepository;
 
     public CollectionPollutionAuditReport auditCollection(Long collectionId) {
+        // collection health 关注向量索引是否污染指定知识库；
+        // 它不同于 Knowledge Health，后者评估最终检索/生成质量。
         if (collectionId == null) {
             throw BusinessException.invalidRequest("collectionId 不能为空");
         }

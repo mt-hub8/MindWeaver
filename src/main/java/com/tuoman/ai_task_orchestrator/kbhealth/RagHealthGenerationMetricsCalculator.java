@@ -9,6 +9,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+/**
+ * V14 Knowledge Health 生成质量指标计算器。
+ *
+ * 这些指标面向离线评测 run：使用 expectedAnswerPoints、expected citations 和 NO_ANSWER case
+ * 判断生成答案覆盖度、引用准确率、faithfulness、拒答准确率和相关性。
+ */
 @Component
 public class RagHealthGenerationMetricsCalculator {
 
@@ -46,6 +52,8 @@ public class RagHealthGenerationMetricsCalculator {
     }
 
     private HealthMetricValue citationAccuracy(RagEvaluationCaseEntity evalCase, List<String> citationChunkIds) {
+        // CitationAccuracy = 命中 expectedChunkIds 的 citation 数 / citation 总数。
+        // 缺少 expected doc/chunk 时 UNKNOWN；不能用无标签 case 编造引用准确率。
         List<Long> expectedChunks = JsonFieldCodec.readLongList(evalCase.getExpectedChunkIdsJson());
         List<Long> expectedDocs = JsonFieldCodec.readLongList(evalCase.getExpectedDocIdsJson());
         List<Long> negativeDocs = JsonFieldCodec.readLongList(evalCase.getNegativeDocIdsJson());
@@ -80,6 +88,8 @@ public class RagHealthGenerationMetricsCalculator {
     }
 
     private HealthMetricValue faithfulness(String answer, List<String> citations, List<EvaluationRetrievedChunk> retrieved) {
+        // Faithfulness 衡量回答是否有上下文和 citation 支撑。
+        // 当前实现是启发式信号，不等价于人工事实核验。
         if (answer == null || answer.isBlank()) {
             return HealthMetricValue.of("FAITHFULNESS", "Faithfulness（忠实性）", 0.0, true);
         }
@@ -101,6 +111,8 @@ public class RagHealthGenerationMetricsCalculator {
     }
 
     private HealthMetricValue refusalAccuracy(RagEvaluationCaseEntity evalCase, String answer) {
+        // RefusalAccuracy 只适用于 NO_ANSWER case。
+        // 非 NO_ANSWER case 没有拒答金标，因此返回 UNKNOWN。
         if (evalCase.getQueryType() != RagEvaluationQueryType.NO_ANSWER) {
             return HealthMetricValue.unavailable("REFUSAL_ACCURACY", "RefusalAccuracy（拒答准确率）", "非 NO_ANSWER 类型 case");
         }

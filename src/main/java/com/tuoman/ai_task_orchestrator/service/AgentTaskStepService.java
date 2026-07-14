@@ -14,6 +14,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Agent Task Step 状态服务。
+ *
+ * Step 承载 TOOL_CALL、LLM_GENERATION/FINAL_REPORT 等执行单元的输入、输出、耗时和错误。
+ * 它让 Agent Task 的多步过程可恢复、可展示、可审计。
+ */
 @Service
 @RequiredArgsConstructor
 public class AgentTaskStepService {
@@ -24,6 +30,8 @@ public class AgentTaskStepService {
 
     @Transactional
     public List<AgentTaskStepEntity> createFixedPlan(Long taskId) {
+        // 固定计划避免 LLM planner 随意发明工具链。
+        // 规则型 workflow 的边界清晰，便于记录每一步是否成功。
         if (agentTaskStepRepository.existsByTaskId(taskId)) {
             return agentTaskStepRepository.findByTaskIdOrderByStepOrderAsc(taskId);
         }
@@ -82,6 +90,7 @@ public class AgentTaskStepService {
             String traceId,
             long durationMs
     ) {
+        // step 失败时保留 traceId；task 终态由 workflow/executor 汇总设置。
         step.setStatus(AgentTaskStepStatus.FAILED);
         step.setCompletedAt(LocalDateTime.now());
         step.setDurationMs(durationMs);

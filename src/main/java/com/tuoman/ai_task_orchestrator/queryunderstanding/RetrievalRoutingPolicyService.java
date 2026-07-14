@@ -10,6 +10,15 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * V17 检索路由策略服务。
+ *
+ * 输入 QueryUnderstandingResult 和 UserSelectedFilters，输出 RetrievalRoutingDecision：
+ * 包含检索策略、TopK、context expansion、clarification guard 和 RetrievalFilter。
+ *
+ * 关键不变量：RoutingDecision 可以选择 Vector/Hybrid/Rerank/Expansion，
+ * 但不能绕过或丢弃 RetrievalFilter。
+ */
 @Service
 @RequiredArgsConstructor
 public class RetrievalRoutingPolicyService {
@@ -22,6 +31,8 @@ public class RetrievalRoutingPolicyService {
     public RetrievalRoutingDecision route(QueryUnderstandingResult understanding, UserSelectedFilters userSelectedFilters) {
         List<String> reasons = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
+        // QueryType 决定检索策略：精确符号偏向 Hybrid，摘要类问题提高 Recall，
+        // 模糊问题触发 clarification，避免低置信度全库盲搜。
         QueryType type = understanding.getQueryType();
         RetrievalRoutingStrategy strategy = RetrievalRoutingStrategy.VECTOR_WITH_METADATA_FILTER;
         int vectorTopK = Math.max(pipelineProperties.getVectorTopK(), 20);
@@ -76,6 +87,8 @@ public class RetrievalRoutingPolicyService {
             reasons.add("query contains exact lexical signals; hybrid retrieval preferred.");
         }
 
+        // filter 是 routing 的输出契约，会继续传给 AppRetrievalService 和 HybridRetrievalService。
+        // 后续 rerank/context expansion 只能在 filter 约束内工作。
         RetrievalFilter filter = buildFilter(understanding, userSelectedFilters, type);
         return RetrievalRoutingDecision.builder()
                 .strategy(strategy)
@@ -99,6 +112,7 @@ public class RetrievalRoutingPolicyService {
             UserSelectedFilters userSelectedFilters,
             QueryType type
     ) {
+        // 手动 filter 优先于自动理解结果，避免系统误判扩大用户选择的知识库范围。
         Long collectionId = userSelectedFilters == null ? understanding.getCollectionHint() : userSelectedFilters.getCollectionId();
         String version = userSelectedFilters != null && userSelectedFilters.getVersion() != null
                 ? userSelectedFilters.getVersion()
@@ -108,6 +122,7 @@ public class RetrievalRoutingPolicyService {
                 : understanding.getStatusHint();
         boolean includeDeprecated = status == ChunkMetadataStatus.DEPRECATED
                 || (type == QueryType.VERSION_SPECIFIC && containsDeprecatedSignal(understanding.getOriginalQuery()));
+        // LATEST_VERSION 默认过滤 DEPRECATED；VERSION_SPECIFIC 可在用户明确要求时包含 deprecated。
         ChunkMetadataStatus effectiveStatus = type == QueryType.LATEST_VERSION && status == null
                 ? ChunkMetadataStatus.ACTIVE
                 : status;

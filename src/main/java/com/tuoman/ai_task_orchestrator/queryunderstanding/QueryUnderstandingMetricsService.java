@@ -9,6 +9,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Query Understanding 评测指标服务。
+ *
+ * 用于 Knowledge Health Evaluation 中衡量 QueryType、filter、version 和 collection routing 是否命中预期。
+ * 缺少 gold label 时返回 UNKNOWN，而不是编造准确率。
+ */
 @Service
 public class QueryUnderstandingMetricsService {
 
@@ -18,6 +24,8 @@ public class QueryUnderstandingMetricsService {
             RetrievalRoutingDecision decision
     ) {
         List<HealthMetricValue> metrics = new ArrayList<>();
+        // 没有期望 QueryType 时，指标不可用。
+        // UNKNOWN 比 0 分更准确，因为这里没有事实标签可比较。
         if (evalCase.getQueryType() == null) {
             metrics.add(HealthMetricValue.unavailable("QUERY_TYPE_ACCURACY", "QueryTypeAccuracy", "UNKNOWN"));
         } else {

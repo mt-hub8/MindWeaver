@@ -12,6 +12,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Agent ContextSummary 工具。
+ *
+ * 它把 KnowledgeSearchTool 的 matchedChunks 压缩成 keyPoints/limitations，
+ * 为 FINAL_REPORT 提供更稳定的中间上下文。
+ */
 @Component
 @RequiredArgsConstructor
 public class ContextSummaryTool implements AgentTool {

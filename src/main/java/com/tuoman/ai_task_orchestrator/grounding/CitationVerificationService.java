@@ -13,6 +13,14 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/**
+ * V18 Citation Verification 服务。
+ *
+ * 检索正确不等于回答可信：LLM 仍可能错引、漏引或把 context 外的信息写进答案。
+ * 该服务在生成后检查 citation key 是否来自 final context，并用启发式方法判断引用是否支持对应 claim。
+ *
+ * 关键约束：citation 必须来自 final context；启发式 verification 不能宣称等价于人工事实核验。
+ */
 @Service
 public class CitationVerificationService {
 
@@ -28,6 +36,8 @@ public class CitationVerificationService {
             RetrievalFilter filter,
             QueryUnderstandingResult understanding
     ) {
+        // 只用 final context 建立 citation 索引。
+        // 检索候选但未进入 bundle 的 chunk 不能被答案引用。
         Map<String, GroundedContextChunk> contextByKey = bundle == null || bundle.getChunks() == null
                 ? Map.of()
                 : bundle.getChunks().stream().collect(Collectors.toMap(GroundedContextChunk::getCitationKey, Function.identity()));
@@ -41,6 +51,8 @@ public class CitationVerificationService {
         int unsupported = 0;
         int invalid = 0;
 
+        // EXACT/PARTIAL/WEAK/UNSUPPORTED 表示启发式支持强度。
+        // UNKNOWN 用于无法判断的场景，不应被当作事实正确。
         for (String key : uniqueKeys) {
             GroundedContextChunk context = contextByKey.get(key);
             if (context == null) {
@@ -107,6 +119,8 @@ public class CitationVerificationService {
             RetrievalFilter filter,
             QueryUnderstandingResult understanding
     ) {
+        // scope 校验先于文本重叠。
+        // collection/version filter 被破坏时，即使文本相似，也不能算有效 citation。
         if (!scopeValid(context, filter, understanding)) {
             return SupportLevel.UNSUPPORTED;
         }
@@ -121,6 +135,8 @@ public class CitationVerificationService {
         if (claimKeywords.isEmpty()) {
             return SupportLevel.UNKNOWN;
         }
+        // 轻量启发式：引用句关键词在 cited chunk 中的覆盖率越高，支持级别越强。
+        // 这能发现明显错引，但不能替代人工事实核验。
         double ratio = (double) overlap / claimKeywords.size();
         if (ratio >= 0.55) {
             return SupportLevel.EXACT;

@@ -9,6 +9,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * 文档文本提取器注册表。
+ *
+ * 上传和 batch retry 都通过这里按文件扩展名选择 TXT/Markdown/PDF extractor，
+ * 保证普通上传与批量导入使用同一套 parser 入口。
+ */
 @Component
 public class DocumentTextExtractorRegistry {
 
@@ -34,6 +40,7 @@ public class DocumentTextExtractorRegistry {
     }
 
     public String extractFromBytes(byte[] bytes, String originalFilename, String contentType) {
+        // batch item retry 没有 MultipartFile，因此从 staging bytes 构造内存文件后复用同一提取链路。
         DocumentFileType fileType = resolveFileType(originalFilename);
         MultipartFile file = new InMemoryMultipartFile(
                 "file",

@@ -9,6 +9,14 @@ import org.springframework.stereotype.Service;
 
 import java.util.Optional;
 
+/**
+ * 批量导入重复检测服务。
+ *
+ * 文件级重复使用 fileHash，适合识别完全相同上传文件；
+ * 文本级重复使用 textHash，适合识别不同格式或文件名但内容相同的文档。
+ *
+ * 关键约束：TRASHED 文档不会被当作可复用 ACTIVE 文档，否则会把垃圾箱内容重新带回检索范围。
+ */
 @Service
 @RequiredArgsConstructor
 public class DuplicateDetectionService {
@@ -19,6 +27,8 @@ public class DuplicateDetectionService {
         if (fileHash == null || fileHash.isBlank()) {
             return FileDuplicateDecision.notDuplicate();
         }
+        // 只有 ACTIVE 文档才允许 SKIP 或 USE_EXISTING。
+        // TRASHED 命中会提示恢复或重新导入，避免绕过文档生命周期过滤。
         Optional<DocumentEntity> active = documentRepository.findFirstByFileHashAndLifecycleStatus(
                 fileHash,
                 DocumentLifecycleStatus.ACTIVE
@@ -43,6 +53,7 @@ public class DuplicateDetectionService {
         if (textHash == null || textHash.isBlank()) {
             return Optional.empty();
         }
+        // 文本级重复只在 ACTIVE 范围内查找，避免 TRASHED/PURGED 内容影响新的摄入决策。
         return documentRepository.findFirstByTextHashAndLifecycleStatusAndIdNot(
                 textHash,
                 DocumentLifecycleStatus.ACTIVE,

@@ -24,6 +24,12 @@ import java.util.List;
 @RestController
 @RequestMapping("/documents/batches")
 @RequiredArgsConstructor
+/**
+ * 批量导入 HTTP 入口。
+ *
+ * 负责创建 UploadBatch、查看 batch/item 进度、重试失败项和取消批次；
+ * 单个文件的实际摄入仍复用 DocumentIngestionService。
+ */
 public class BatchUploadController {
 
     private final UploadBatchService uploadBatchService;

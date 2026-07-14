@@ -27,6 +27,12 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * V10 模型供应商配置服务。
+ *
+ * 管理 mock、Ollama/local-ai、OpenAI-compatible 和自定义 OpenAI-compatible 配置，
+ * 同时提供当前默认模型状态和 embedding dimension 风险提示。
+ */
 @Service
 @RequiredArgsConstructor
 public class ModelProviderConfigService {
@@ -66,6 +72,8 @@ public class ModelProviderConfigService {
 
     @Transactional(readOnly = true)
     public ModelProviderCurrentStatusResponse currentStatus() {
+        // embedding dimension 与已索引向量不一致时提示 reindex。
+        // 模型切换本身不应自动改写旧向量，否则会造成新旧维度混用。
         ResolvedModelProvider llm = selectionService.resolveDefaultLlm();
         ResolvedModelProvider embedding = selectionService.resolveDefaultEmbedding();
 

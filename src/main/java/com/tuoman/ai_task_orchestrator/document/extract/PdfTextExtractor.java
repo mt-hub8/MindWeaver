@@ -9,6 +9,12 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 
+/**
+ * PDF 文本提取器。
+ *
+ * 当前版本只支持可提取文本的 PDF；扫描件/OCR 不在这里处理。
+ * 解析失败会让 ingestion task 失败并记录错误，而不是生成空 chunk。
+ */
 @Component
 public class PdfTextExtractor implements DocumentTextExtractor {
 

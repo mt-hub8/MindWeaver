@@ -7,6 +7,12 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+/**
+ * Grounded Answer 拒答策略服务。
+ *
+ * 拒答不是异常，而是可信 RAG 在 no context、低置信度、模糊 query、STRICT 无证据等情况下
+ * 应当返回的正常业务分支。
+ */
 @Service
 public class RefusalPolicyService {
 
@@ -18,12 +24,15 @@ public class RefusalPolicyService {
             RetrievalRoutingDecision routingDecision,
             AnswerContractMode mode
     ) {
+        // clarificationRequired=true 时不能继续盲目全库搜索或生成答案。
+        // 这里直接拒答/澄清，避免把范围不明的问题交给 LLM 自行补全。
         if (routingDecision != null && routingDecision.isClarificationRequired()) {
             return refuse(RefusalReasonCode.QUERY_AMBIGUOUS, "当前问题比较模糊，建议补充检索范围。");
         }
         if (understanding != null && understanding.getQueryType() == QueryType.AMBIGUOUS) {
             return refuse(RefusalReasonCode.QUERY_AMBIGUOUS, "当前问题比较模糊，建议补充知识库分组、版本或文档类型。");
         }
+        // final context 为空时不调用 LLM 编答案；返回可解释拒答是可信系统的正常结果。
         if (bundle == null || bundle.isEmpty()) {
             if (understanding != null && understanding.getVersionHint() != null) {
                 return refuse(RefusalReasonCode.VERSION_NOT_FOUND, "未找到匹配该版本的可引用资料。");
@@ -54,6 +63,8 @@ public class RefusalPolicyService {
     }
 
     public RefusalDecision decideAfterVerification(CitationVerificationResult verification, AnswerContractMode mode) {
+        // 生成后拒答处理“答案写出来了，但引用全部无效”的情况。
+        // 这比直接返回带错误 citation 的答案更可信。
         if (verification == null) {
             return RefusalDecision.allow();
         }

@@ -13,6 +13,14 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * Query metadata 规则抽取器。
+ *
+ * 负责从 query 和用户显式 filter 中抽取 versionHint、docTypeHint、statusHint、
+ * codeSymbols、configKeys、apiPaths 等检索过滤和 routing 信号。
+ *
+ * 这里刻意使用可解释规则而非黑盒 planner，便于评测 FilterExtractionAccuracy 和排查误路由。
+ */
 @Service
 public class QueryMetadataExtractor {
 
@@ -33,6 +41,8 @@ public class QueryMetadataExtractor {
         List<String> tags = detectTags(safeQuery);
         List<String> timeHints = detectTimeHints(lower);
 
+        // 用户手动 filter 覆盖自动抽取结果。
+        // 例如用户选定版本后，query rewrite/routing 都必须保留该 version filter。
         if (userSelectedFilters != null) {
             if (userSelectedFilters.getVersion() != null) {
                 version = normalizeVersion(userSelectedFilters.getVersion());

@@ -21,6 +21,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+/**
+ * 单文档重新索引入口服务。
+ *
+ * Reindex 与普通 ingestion 的区别在于它为同一文档构建新的 generation，
+ * 成功前不能覆盖旧 generation，失败时旧 READY 文档仍应保持可检索。
+ *
+ * 输出是一个 REINDEX 类型的 DocumentIngestionTask，实际 chunk、embedding、vector 写入
+ * 仍由异步 DocumentIngestionTaskHandler 执行。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -43,6 +52,8 @@ public class DocumentReindexService {
         DocumentEntity document = documentRepository.findById(documentId)
                 .orElseThrow(BusinessException::documentNotFound);
 
+        // TRASHED/PURGED 文档不能重建索引。
+        // 否则可能把生命周期已排除的内容重新写回 active vector index。
         if (document.getLifecycleStatus() != null
                 && document.getLifecycleStatus() != DocumentLifecycleStatus.ACTIVE) {
             throw BusinessException.documentDeletedCannotReindex();
@@ -60,6 +71,8 @@ public class DocumentReindexService {
             throw BusinessException.documentReindexAlreadyRunning();
         }
 
+        // targetGeneration 单调递增，避免新旧向量共用同一个 vector identity。
+        // 只有异步链路完成并校验后，Document.currentGeneration 才会切到这个版本。
         int targetGeneration = document.getCurrentGeneration() == null ? 2 : document.getCurrentGeneration() + 1;
 
         DocumentIngestionTaskEntity task = new DocumentIngestionTaskEntity();

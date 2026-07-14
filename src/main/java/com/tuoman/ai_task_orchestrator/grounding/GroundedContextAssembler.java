@@ -21,6 +21,16 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/**
+ * V18 GroundedContextBundle 组装器。
+ *
+ * 检索结果进入 LLM 前必须被整理成结构化 final context：每个 chunk 都有 citationKey、
+ * chunkId、documentId、collectionId、version 和 sectionPath，供 prompt、citation verification、
+ * quality score 共用。
+ *
+ * 关键不变量：grounded answer 只能引用 final context 中的 chunk；
+ * citationKey 不能指向未进入 bundle 的候选。
+ */
 @Service
 @RequiredArgsConstructor
 public class GroundedContextAssembler {
@@ -39,10 +49,13 @@ public class GroundedContextAssembler {
             Integer contextBudget,
             AnswerContractMode mode
     ) {
+        // contextBudget 控制进入 prompt 的最终证据体积。
+        // finalTopK 决定候选数量，finalContextChunks 决定真正能被 LLM 和 citation 使用的上下文。
         int budget = contextBudget == null || contextBudget < 500 ? DEFAULT_CONTEXT_BUDGET : contextBudget;
         List<RagRetrievedChunk> source = retrievedChunks == null ? List.of() : retrievedChunks;
         Map<Long, DocumentChunkEntity> chunkMap = loadChunks(source);
         Map<Long, DocumentEntity> documentMap = loadDocuments(source, chunkMap);
+        // 按 normalizedContentHash 去重，避免 parent/adjacent expansion 或两路检索把相同文本重复塞进 prompt。
         Map<String, RagRetrievedChunk> deduped = new LinkedHashMap<>();
         for (RagRetrievedChunk chunk : source) {
             String key = dedupeKey(chunk, chunkMap.get(chunk.chunkId()));
@@ -82,6 +95,8 @@ public class GroundedContextAssembler {
             if (finalText.isBlank()) {
                 continue;
             }
+            // citationKey 在这里生成，并且只分配给 final context。
+            // 后续回答引用 [n] 时，CitationVerificationService 只能在这个 bundle 内查找。
             String citationKey = "[" + citationIndex + "]";
             GroundedContextChunk contextChunk = GroundedContextChunk.builder()
                     .chunkId(retrieved.chunkId())

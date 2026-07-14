@@ -18,6 +18,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Agent Task 事件记录器。
+ *
+ * 事件是 task/step 状态之外的时间线：创建、入队、开始、工具调用、最终报告、失败等。
+ * 使用 REQUIRES_NEW 是为了在工作流失败时仍保留排障线索。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor

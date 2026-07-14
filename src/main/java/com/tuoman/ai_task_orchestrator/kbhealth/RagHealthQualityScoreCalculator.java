@@ -9,6 +9,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Knowledge Health 质量总分计算器。
+ *
+ * 将离线评测指标按 profile 加权汇总。不同 profile 用于比较 baseline 与 candidate：
+ * PRECISE 重精度和污染控制，COMPREHENSIVE 重召回，GENERATION_TRUST 重生成可信度。
+ *
+ * 缺失指标不参与权重分母，保持 UNKNOWN 语义，而不是把缺失当作 0 分。
+ */
 @Component
 public class RagHealthQualityScoreCalculator {
 
@@ -18,6 +26,8 @@ public class RagHealthQualityScoreCalculator {
         double weightedSum = 0.0;
         double weightTotal = 0.0;
 
+        // 只对 available 指标计入总分。
+        // 这让 Run Compare 能区分“真的变差”和“没有标签无法判断”。
         for (Map.Entry<String, Double> entry : weights.entrySet()) {
             String code = entry.getKey();
             double weight = entry.getValue();
@@ -39,6 +49,8 @@ public class RagHealthQualityScoreCalculator {
     }
 
     private double normalizeForScoring(String code, double raw) {
+        // 泄漏类指标越低越好，因此转成 (1 - leakRate) * 100。
+        // 其他指标默认 raw 是 0..1，转为百分制。
         if ("CROSS_COLLECTION_LEAK_RATE".equals(code) || "WRONG_VERSION_LEAK_RATE".equals(code)) {
             return (1.0 - raw) * 100;
         }

@@ -13,6 +13,15 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * VectorStore payload 构造器。
+ *
+ * payload 是检索时 metadata pre-filter 的依据，必须携带 collection、document、generation、
+ * lifecycle status、结构化 chunk metadata 等字段，供 Hybrid/Vector retrieval 和 audit 共用。
+ *
+ * 关键不变量：payload 不能只是展示信息；它是防止跨 collection、错误版本、TRASHED/PURGED
+ * 内容进入 final context 的工程边界。
+ */
 @Component
 public class VectorPayloadBuilder {
 
@@ -46,6 +55,8 @@ public class VectorPayloadBuilder {
             throw BusinessException.vectorPayloadInvalid("vector_generation 必须大于 0");
         }
 
+        // status 来自 Document lifecycle 优先于 chunk metadata。
+        // TRASHED/PURGED 必须向量侧可见，否则 finalTopK、citation 和 prompt context 会被污染。
         String status = resolveStatus(document, chunk);
         Map<String, String> payload = new LinkedHashMap<>();
         payload.put("vector_id", identity.getVectorId());
@@ -73,6 +84,8 @@ public class VectorPayloadBuilder {
     }
 
     public String canonicalMetadata(Map<String, String> payload) {
+        // canonicalMetadata 固定 key 排序，用于生成可重复 metadata_hash。
+        // 它服务于 audit，不应该因为 Map 遍历顺序不同而产生虚假漂移。
         return payload.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> entry.getKey() + "=" + entry.getValue())
@@ -80,6 +93,8 @@ public class VectorPayloadBuilder {
     }
 
     public void validateVectorLength(int actualLength, Integer expectedDimension) {
+        // embeddingDimension 是 vector identity 和向量库 schema 的一部分。
+        // 模型切换后维度不一致必须显式 reindex，不能在写入时静默纠正。
         if (expectedDimension == null || actualLength != expectedDimension) {
             throw BusinessException.vectorDimensionMismatch(
                     "向量长度 " + actualLength + " 与 embedding_dimension " + expectedDimension + " 不一致"

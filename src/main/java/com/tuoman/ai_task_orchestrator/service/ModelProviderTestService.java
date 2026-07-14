@@ -13,6 +13,12 @@ import org.springframework.web.client.RestClient;
 
 import java.time.LocalDateTime;
 
+/**
+ * 模型供应商连接测试服务。
+ *
+ * connection test 只验证目标服务是否可达、API Key 是否有效，
+ * 不修改默认 provider，也不触发 reindex。
+ */
 @Service
 @RequiredArgsConstructor
 public class ModelProviderTestService {
@@ -83,6 +89,7 @@ public class ModelProviderTestService {
             LocalDateTime testedAt,
             long started
     ) {
+        // API Key 只用于本次请求头，不写回明文，也不返回给前端。
         if (entity.getBaseUrl() == null || entity.getBaseUrl().isBlank()) {
             return failed(entity, testedAt, started, "缺少 Base URL");
         }

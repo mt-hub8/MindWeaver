@@ -2,6 +2,15 @@ package com.tuoman.ai_task_orchestrator.vectorstore;
 
 import java.util.List;
 
+/**
+ * 向量存储统一接口。
+ *
+ * ExactCosineVectorStore 用数据库表模拟向量库，QdrantVectorStore 对接外部 Qdrant。
+ * 上层 ingestion/retrieval/audit 只依赖该接口，避免业务代码耦合具体向量库实现。
+ *
+ * 关键不变量：搜索、删除、扫描都应尽量带 collection/document/generation/status filter；
+ * 无范围删除或扫描会破坏知识库隔离。
+ */
 public interface VectorStore {
 
     void upsert(List<VectorStoreDocument> documents);
@@ -26,6 +35,8 @@ public interface VectorStore {
     }
 
     default VectorStoreOperationResult deleteByDocumentIdScoped(Long collectionId, Long documentId) {
+        // 默认实现只能退化为 documentId 删除；生产级实现应覆盖为 collection scoped 删除。
+        // 这也是 cleanup service 强制传 collectionId 的原因。
         if (collectionId == null || documentId == null) {
             throw new IllegalArgumentException("collectionId and documentId are required");
         }

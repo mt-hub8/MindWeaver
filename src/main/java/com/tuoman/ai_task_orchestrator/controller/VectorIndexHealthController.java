@@ -25,6 +25,12 @@ import java.util.List;
 @RestController
 @RequestMapping("/vector-index")
 @RequiredArgsConstructor
+/**
+ * Vector Index Health HTTP 入口。
+ *
+ * 暴露向量索引 summary、audit 和 cleanup 能力；
+ * audit 是只读诊断，cleanup 是显式带 scope 的破坏性操作。
+ */
 public class VectorIndexHealthController {
 
     private final VectorIndexSummaryService summaryService;

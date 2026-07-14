@@ -52,6 +52,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * V14 RAG Evaluation Run 服务。
+ *
+ * Run 将某个 Dataset 中的 enabled Case 按指定 retrieval strategy 和 scoring profile 执行，
+ * 为每个 Case 生成 CaseResult，再汇总为 Knowledge Health 报告。
+ *
+ * 关键不变量：Run Compare 只有在同一 Dataset/Case 上比较 baseline 与 candidate 才有意义；
+ * 指标缺失必须保留 UNKNOWN，不能编造成 0 或 1。
+ */
 @Service
 @RequiredArgsConstructor
 public class RagEvaluationRunService {
@@ -90,6 +99,8 @@ public class RagEvaluationRunService {
 
     @Transactional
     public RagEvaluationRunResponse createAndExecuteRun(CreateRagEvaluationRunRequest request) {
+        // 状态机：RUNNING 表示 case 正在执行；全部 case 结束后才进入 COMPLETED/FAILED。
+        // 单个 case 失败会记录 CaseResult，便于定位失败样本。
         if (request == null || request.getDatasetId() == null) {
             throw BusinessException.validationError("datasetId is required");
         }

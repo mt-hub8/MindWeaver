@@ -25,6 +25,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+/**
+ * Agent Task 查询服务。
+ *
+ * 负责把 AgentTask、AgentTaskStep、AgentTaskEvent、AgentTaskCitation 组装成前端可读响应。
+ * 它只读任务执行轨迹，不推进状态机，也不重新执行工具。
+ */
 @Service
 @RequiredArgsConstructor
 public class AgentTaskQueryService {

@@ -15,6 +15,11 @@ import java.util.List;
 @RestController
 @RequestMapping("/retrieval")
 @RequiredArgsConstructor
+/**
+ * 检索索引重建 HTTP 入口。
+ *
+ * 对外暴露 reindex 请求和状态查询；真正的 generation 构建、激活和清理由 vectorindex/service 层处理。
+ */
 public class RetrievalReindexController {
 
     private final RetrievalReindexService retrievalReindexService;

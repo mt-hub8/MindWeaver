@@ -6,6 +6,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * 缓存管理服务。
+ *
+ * Embedding cache 是可再生性能缓存，不是知识库事实来源。
+ * 清理缓存不会删除 Document、Chunk 或 VectorStore 中的向量，只会让后续摄入重新计算缺失缓存。
+ */
 @Service
 @RequiredArgsConstructor
 public class CacheManagementService {

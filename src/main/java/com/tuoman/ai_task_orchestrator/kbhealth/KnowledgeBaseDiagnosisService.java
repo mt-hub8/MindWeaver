@@ -7,6 +7,14 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Knowledge Health 诊断服务。
+ *
+ * 将离线指标转成知识库层面的 issue/suggestion：低召回、排序靠后、上下文噪声、
+ * 跨 collection 泄漏、错版本污染、引用/faithfulness 风险等。
+ *
+ * Vector Index Health 关注向量索引对账；Knowledge Health 关注最终检索和生成质量。
+ */
 @Service
 public class KnowledgeBaseDiagnosisService {
 
@@ -15,6 +23,8 @@ public class KnowledgeBaseDiagnosisService {
     }
 
     public DiagnosisResult diagnose(List<HealthMetricValue> metrics, int chunksMissingMetadata) {
+        // 诊断只解释指标，不修改 dataset、run 或索引。
+        // 缺失 metadata 会单独提示，因为它会直接削弱 filter 和污染率评测的可信度。
         List<DiagnosisIssue> issues = new ArrayList<>();
         List<DiagnosisSuggestion> suggestions = new ArrayList<>();
 

@@ -31,6 +31,16 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 文档 chunk embedding 与 vector 写入服务。
+ *
+ * 它接收已经 CHUNKED 的文档，逐 chunk 计算或复用 embedding cache，
+ * 再通过 IdempotentVectorUpsertService 写入 VectorStore 和 DB embedding record。
+ * 查询侧 search 只生成 query embedding，不写入文档 embedding cache。
+ *
+ * 关键不变量：vector_id 由 collection/document/chunk/model/dimension/generation 等稳定信息决定；
+ * 重试和 batch retry 不能生成重复 vector，generation filter 不能丢失。
+ */
 @Service
 @RequiredArgsConstructor
 public class DocumentEmbeddingService {
@@ -66,6 +76,8 @@ public class DocumentEmbeddingService {
 
     @Transactional
     public DocumentEmbeddingResponse embedDocumentGeneration(Long documentId, int generation, boolean replaceExistingVectors) {
+        // 普通 ingestion 会使用当前 generation；reindex 会传入目标 generation。
+        // replaceExistingVectors=true 只适用于旧式全量替换，generation reindex 不能直接覆盖旧 vector。
         DocumentEntity document = findDocumentOrThrow(documentId);
         Long collectionId = resolvePrimaryCollectionId(documentId);
 
@@ -106,6 +118,8 @@ public class DocumentEmbeddingService {
 
         int embeddedCount = 0;
         for (DocumentChunkEntity chunk : chunks) {
+            // chunk 内容 hash 在 EmbeddingCacheService 内参与缓存命中。
+            // cache 只复用 embedding 计算结果，真正写入仍经过幂等 upsert 和 namespace guard。
             CachedEmbeddingResult cached = embeddingCacheService.getOrCompute(
                     chunk.getContent(),
                     embeddingProviderName,
@@ -146,6 +160,8 @@ public class DocumentEmbeddingService {
 
     @Transactional(readOnly = true)
     public List<DocumentSearchResultResponse> search(DocumentSearchRequest request) {
+        // 查询 embedding 是一次性检索输入，通常不进入文档 embedding cache。
+        // search 必须带 active vector_generation，避免 reindex 期间新旧向量混召回。
         if (request == null || request.getQuery() == null || request.getQuery().isBlank()) {
             throw BusinessException.invalidRequest("query must not be blank");
         }

@@ -17,6 +17,12 @@ import java.util.List;
 @RestController
 @RequestMapping("/agent/tasks")
 @RequiredArgsConstructor
+/**
+ * Agent Task HTTP 入口。
+ *
+ * 创建异步 Agent Task、查询任务、步骤、事件和 citation；
+ * 工具工作流由 AgentTaskExecutor / AgentTaskWorkflowService 在后台执行。
+ */
 public class AgentTaskController {
 
     private final AgentTaskService agentTaskService;

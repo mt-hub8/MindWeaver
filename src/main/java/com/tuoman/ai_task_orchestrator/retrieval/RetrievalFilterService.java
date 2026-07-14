@@ -16,6 +16,16 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * 检索链路的过滤边界。
+ *
+ * 该类把 collection scope、文档生命周期、chunk metadata、version、docType 等约束
+ * 统一解析成可执行的过滤条件，供 HybridRetrievalService、KeywordRetriever 和
+ * ContextExpansionService 复用。
+ *
+ * 关键不变量：TRASHED / PURGED 默认不可检索；context expansion、rerank、keyword retrieval
+ * 都不能绕过这里的 matchesChunk 判断。
+ */
 @Service
 @RequiredArgsConstructor
 public class RetrievalFilterService {
@@ -27,6 +37,8 @@ public class RetrievalFilterService {
     private final DocumentChunkRepository documentChunkRepository;
 
     public FilterResolution resolve(RetrievalFilter filter) {
+        // 当前实现保留 application-side filter 兜底。
+        // 即使未来 VectorStore 支持更多 payload filter，下游仍应以这里解析出的 allowedDocumentIds 为边界。
         if (filter == null) {
             filter = RetrievalFilter.empty();
         }
@@ -36,6 +48,8 @@ public class RetrievalFilterService {
     }
 
     public boolean matchesChunk(DocumentChunkEntity chunk, DocumentEntity document, RetrievalFilter filter) {
+        // 这是最终安全闸门：任何进入 final context 的 chunk 都应通过同一套生命周期和 metadata 校验。
+        // 不允许为了提高召回绕过 TRASHED、PURGED、collection、version 或 status 约束。
         if (chunk == null) {
             return false;
         }
@@ -81,6 +95,8 @@ public class RetrievalFilterService {
     }
 
     public Set<Long> resolveAllowedDocumentIds(RetrievalFilter filter) {
+        // scopedDocumentIds 来自用户选择的 collection 或上层路由，是检索范围的硬边界。
+        // 自动推断的 filter 只能收窄范围，不能把用户显式选择扩大成全库。
         Set<Long> ids = new HashSet<>();
         if (filter.getScopedDocumentIds() != null && !filter.getScopedDocumentIds().isEmpty()) {
             ids.addAll(filter.getScopedDocumentIds());

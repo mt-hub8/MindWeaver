@@ -28,6 +28,15 @@ import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 
+/**
+ * 摄入任务查询与重试服务。
+ *
+ * 该类维护 DocumentIngestionTask 的用户可见状态机：PENDING、PROCESSING、COMPLETED、FAILED。
+ * 它不直接执行 chunk/embedding/vector write，而是把可重试任务重新投递给异步 handler。
+ *
+ * 关键不变量：retryCount 只描述任务尝试次数，不能进入 vector identity；
+ * 重试前必须清理失败 generation 的临时 chunk，避免旧失败产物参与新一轮写入。
+ */
 @Service
 @RequiredArgsConstructor
 public class DocumentIngestionTaskService {
@@ -70,6 +79,8 @@ public class DocumentIngestionTaskService {
             throw BusinessException.ingestionMaxRetryExceeded();
         }
 
+        // retry 恢复的是 ingestion 状态机，不改变 Document 的业务身份。
+        // 后续 vectorId 仍由 collection/document/chunk/model/dimension/generation 决定，不能因 retry 生成新身份。
         task.setRetryCount(task.getRetryCount() + 1);
         task.setStatus(IngestionTaskStatus.PENDING);
         task.setStep(IngestionTaskStep.TEXT_EXTRACTED);
@@ -81,6 +92,7 @@ public class DocumentIngestionTaskService {
         task.setCompletedAt(null);
         documentIngestionTaskRepository.save(task);
 
+        // 清掉失败尝试留下的 chunk，避免下一次处理把同一 generation 的残留 chunk 误认为有效上下文。
         documentService.clearChunksForRetry(task.getDocumentId());
 
         documentIngestionEventRecorder.recordRetryRequested(taskId, task.getRetryCount());
@@ -253,6 +265,8 @@ public class DocumentIngestionTaskService {
             Long taskId,
             Throwable throwable
     ) {
+        // 失败标记使用独立事务写入，确保即使外层 ingestion 事务回滚，
+        // 用户仍能看到任务停在哪个阶段以及对应错误信息。
         progressService.updateTask(taskId, task -> {
             task.setStatus(IngestionTaskStatus.FAILED);
             task.setStep(IngestionTaskStep.FAILED);

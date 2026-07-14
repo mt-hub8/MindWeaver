@@ -8,6 +8,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Agent 工具注册表。
+ *
+ * Workflow 通过 toolName 查找工具，避免直接依赖具体实现类。
+ * 这也是控制 Agent 能调用哪些工具的白名单边界。
+ */
 @Component
 public class AgentToolRegistry {
 

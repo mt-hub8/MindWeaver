@@ -11,6 +11,12 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.IntStream;
 
+/**
+ * Qdrant 向量库适配器。
+ *
+ * 该类只负责把统一的 VectorStoreDocument / VectorSearchRequest 映射到 Qdrant API；
+ * collection、generation、status 等隔离语义来自上游 payload 和 mapper，不应在这里被绕过。
+ */
 public class QdrantVectorStore implements VectorStore {
 
     public static final String PROVIDER = "qdrant";
@@ -47,6 +53,8 @@ public class QdrantVectorStore implements VectorStore {
             return;
         }
 
+        // Qdrant collection schema 绑定 dimension，同批写入必须同维度。
+        // 模型切换导致维度变化时，应通过 reindex 建新索引，而不是混写。
         int dimension = validateSameDimension(safeDocuments);
         initializeCollectionIfNeeded(dimension);
 

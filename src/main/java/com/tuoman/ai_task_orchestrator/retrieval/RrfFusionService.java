@@ -15,6 +15,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * RRF 融合适配服务。
+ *
+ * HybridRetrievalService 使用它把 vector rank list 和 keyword rank list 统一交给
+ * FusionRanker。RRF 只依赖 rank，不直接比较 vector similarity 与 keyword score，
+ * 因此适合融合量纲不同的两类召回结果。
+ */
 @Service
 public class RrfFusionService {
 
@@ -25,6 +32,8 @@ public class RrfFusionService {
     }
 
     public List<FusedScore> fuse(List<RankedChunkRef> vectorRanked, List<RankedChunkRef> keywordRanked, int k) {
+        // 这里做结构适配：dense / lexical 的原始 score 会被保留作诊断，
+        // 但最终排序由 RRF rank contribution 决定。
         List<DenseCandidate> dense = new ArrayList<>();
         for (RankedChunkRef ref : vectorRanked) {
             dense.add(new DenseCandidate(ref.rank(), ref.documentId(), ref.sectionPath(), ref.chunkId(), ref.content(), ref.score()));
@@ -51,6 +60,8 @@ public class RrfFusionService {
     }
 
     public double scoreForRanks(int vectorRank, int keywordRank, int k) {
+        // RRF 公式：score = sum(1 / (k + rank_i))。
+        // 同一 chunk 同时命中 dense 和 keyword 时，两路贡献累加；未命中的一路不贡献分数。
         double score = 0.0;
         if (vectorRank > 0) {
             score += 1.0 / (k + vectorRank);

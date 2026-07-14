@@ -9,6 +9,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+/**
+ * lexical overlap reranker。
+ *
+ * 该实现把 query/content token overlap 与原始检索分数做加权组合，
+ * 适合本地环境下验证 rerank 链路。它是启发式排序信号，不等价于相关性真值。
+ */
 @Component
 public class LexicalOverlapReranker implements Reranker {
 
@@ -57,6 +63,8 @@ public class LexicalOverlapReranker implements Reranker {
     }
 
     double combinedScore(String query, RerankCandidate candidate) {
+        // 这里的 vectorScore 已经来自过滤后的候选；lexicalScore 只补充字面重合度。
+        // 组合分数只用于重排，不应反向修改原始 vector / hybrid retrieval 结果。
         double lexicalScore = lexicalOverlapScore(query, candidate.content());
         double vectorScore = candidate.originalScore() == null ? 0.0 : candidate.originalScore();
         return LEXICAL_WEIGHT * lexicalScore + VECTOR_WEIGHT * vectorScore;

@@ -13,6 +13,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * 文档生命周期检索过滤服务。
+ *
+ * 该类为 legacy vector search 和 lexical search 提供统一过滤：
+ * TRASHED/PURGED 文档、不可检索 chunk 不能进入最终候选。
+ *
+ * 关键不变量：过滤必须同时作用于 dense 和 keyword 两路召回，否则 Hybrid Retrieval 会重新引入已删除内容。
+ */
 @Service
 @RequiredArgsConstructor
 public class DocumentLifecycleFilterService {
@@ -56,6 +64,8 @@ public class DocumentLifecycleFilterService {
             List<DocumentSearchResultResponse> results,
             Set<Long> allowedDocumentIds
     ) {
+        // finalTopK、citation 和 prompt context 的前置安全网。
+        // 即使向量库 payload 过滤漏掉，应用层也必须排除 TRASHED/PURGED。
         if (results == null || results.isEmpty()) {
             return List.of();
         }
@@ -105,6 +115,8 @@ public class DocumentLifecycleFilterService {
             List<LexicalCandidate> candidates,
             Set<Long> allowedDocumentIds
     ) {
+        // keyword retrieval 同样必须走生命周期过滤。
+        // 否则被删除文档会通过 BM25/lexical 分支绕回 Hybrid 结果。
         if (candidates == null || candidates.isEmpty()) {
             return List.of();
         }
