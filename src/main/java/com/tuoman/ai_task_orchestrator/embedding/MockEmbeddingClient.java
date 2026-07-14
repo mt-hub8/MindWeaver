@@ -9,6 +9,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Component
+/**
+ * V2.2 mock embedding provider。
+ *
+ * 用哈希词袋生成确定性向量，帮助验证 chunk -> embedding -> VectorStore -> search 闭环。
+ * 它不具备真实语义理解能力，因此 benchmark 结果只能用于链路回归，不能代表生产检索质量。
+ */
 public class MockEmbeddingClient implements EmbeddingClient, EmbeddingProvider {
 
     public static final String PROVIDER = "mock";
@@ -48,6 +54,8 @@ public class MockEmbeddingClient implements EmbeddingClient, EmbeddingProvider {
     }
 
     private List<Double> buildVector(String text) {
+        // 稳定哈希向量保证同一文本在测试中得到同一 embedding。
+        // 这让向量检索、cache 和评测用例可以在无模型环境下复现。
         double[] values = new double[DIMENSION];
         List<String> tokens = tokenize(text);
 

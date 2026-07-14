@@ -7,6 +7,12 @@ import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
+/**
+ * Task MQ 生产者。
+ *
+ * 消息只携带 taskId，表示“请尝试执行这个任务”。
+ * 任务输入、状态和幂等判断都回到数据库读取，避免 MQ payload 成为第二份事实来源。
+ */
 public class TaskDispatchProducer {
 
     private final RabbitTemplate rabbitTemplate;

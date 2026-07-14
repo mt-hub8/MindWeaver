@@ -26,6 +26,15 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+/**
+ * V5.0 知识库分组管理服务。
+ *
+ * 负责 collection 创建、文档加入/移出和详情查询。它的输出会被 DocumentService、
+ * CollectionScopeService、RAG Answer 和 Agent Task 用来展示或解析检索范围。
+ *
+ * 关键不变量：加入分组不代表文档可检索；TRASHED/PURGED 或未 READY 文档仍必须被
+ * scope/lifecycle filter 排除。
+ */
 public class CollectionService {
 
     private final KnowledgeCollectionRepository knowledgeCollectionRepository;
@@ -81,6 +90,8 @@ public class CollectionService {
 
     @Transactional
     public CollectionAssignmentResponse assignDocument(Long collectionId, Long documentId) {
+        // membership 只表达“属于该分组”，不改变文档生命周期或索引状态。
+        // 垃圾箱中文档可以保留关系，但不会进入问答上下文。
         findCollectionOrThrow(collectionId);
         DocumentEntity document = documentRepository.findById(documentId)
                 .orElseThrow(BusinessException::documentNotFound);

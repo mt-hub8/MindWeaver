@@ -10,6 +10,12 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+/**
+ * Task MQ 消费者。
+ *
+ * RabbitMQ 至少一次投递可能带来重复消息，因此 Consumer 只把 taskId 交给
+ * TaskExecutionService，真正的幂等 claim 和状态检查在 service 层完成。
+ */
 public class TaskDispatchConsumer {
 
     private final TaskExecutionService taskExecutionService;

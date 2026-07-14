@@ -19,6 +19,12 @@ import java.util.List;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+/**
+ * V0.8/V1.x Task attempt 记录服务。
+ *
+ * task 表保存聚合后的当前状态，task_attempt 保存每次执行尝试的 worker、模型、token、
+ * latency 和错误。它让 retry、幂等消费和 LLM 调用排障有可追溯历史。
+ */
 public class TaskAttemptService {
 
     private final TaskAttemptRepository taskAttemptRepository;
@@ -27,6 +33,8 @@ public class TaskAttemptService {
 
     @Transactional
     public TaskAttemptEntity createRunningAttempt(Long taskId) {
+        // attemptNo 按同一 task 递增，用来解释“第几次执行尝试”。
+        // 它是审计字段，不应作为 taskId 或 vector identity 的一部分。
         int nextAttemptNo = taskAttemptRepository.findMaxAttemptNoByTaskId(taskId).orElse(0) + 1;
 
         TaskAttemptEntity attempt = new TaskAttemptEntity();

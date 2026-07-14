@@ -15,6 +15,12 @@ import java.util.List;
 @RestController
 @RequestMapping("/collections")
 @RequiredArgsConstructor
+/**
+ * V5.0 knowledge collection HTTP 入口。
+ *
+ * collection 让个人知识库可以按主题分组，并在 RAG/Agent 检索时限定范围。
+ * Controller 只管理分组和 membership；检索范围解析由 CollectionScopeService 统一处理。
+ */
 public class CollectionController {
 
     private final CollectionService collectionService;

@@ -10,6 +10,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+/**
+ * V2.4.4 benchmark evidence 映射器。
+ *
+ * benchmark corpus 中使用 [EVIDENCE:id] 标记人工证据，再在切分后映射到真实 chunkId。
+ * 这样 fixed/adaptive chunking 或不同 VectorStore 可以在同一 Gold Test Set 上比较。
+ *
+ * 约束：evidence marker 只服务离线评测，不能进入线上 RAG prompt 或业务检索逻辑。
+ */
 public final class BenchmarkEvidenceMapper {
 
     private static final Pattern EVIDENCE_MARKER_PATTERN = Pattern.compile("\\[EVIDENCE:([a-zA-Z0-9\\-_]+)]");
@@ -21,6 +29,8 @@ public final class BenchmarkEvidenceMapper {
             List<String> expectedEvidenceIds,
             List<DocumentChunkEntity> chunks
     ) {
+        // 每个 evidence id 必须唯一映射到一个真实 chunk。
+        // 多个或零个匹配都说明 benchmark corpus 与当前 chunking 结果不一致，应显式失败。
         if (expectedEvidenceIds == null || expectedEvidenceIds.isEmpty()) {
             throw new IllegalArgumentException("expectedEvidenceIds must not be empty");
         }

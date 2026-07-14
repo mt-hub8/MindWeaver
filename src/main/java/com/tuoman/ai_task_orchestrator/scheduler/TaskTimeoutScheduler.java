@@ -15,6 +15,12 @@ import java.util.List;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+/**
+ * V0.10 timeout 调度器。
+ *
+ * 后台扫描超时 RUNNING 任务，防止执行线程卡死导致任务永久停留在运行中。
+ * 它只能失败仍处于 RUNNING 的任务，不能覆盖已成功或已取消的终态。
+ */
 public class TaskTimeoutScheduler {
 
     private final TaskRepository taskRepository;

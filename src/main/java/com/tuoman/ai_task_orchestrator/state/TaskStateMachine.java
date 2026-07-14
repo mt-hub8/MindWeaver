@@ -8,6 +8,12 @@ import java.util.Map;
 import java.util.Set;
 
 @Component
+/**
+ * V0.3 Task 状态机。
+ *
+ * Task 当前状态是调度、查询、重试、取消共同依赖的事实来源。
+ * SUCCESS、FAILED、CANCELLED 是终态，普通执行线程不能再把它们改回 RUNNING。
+ */
 public class TaskStateMachine {
 
     private static final Map<TaskStatus, Set<TaskStatus>> ALLOWED_TRANSITIONS = Map.of(

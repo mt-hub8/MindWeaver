@@ -17,6 +17,12 @@ import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
+/**
+ * Task outbox 派发服务。
+ *
+ * 负责 claim due outbox、解析 payload、发送 RabbitMQ 消息并记录 SENT/FAILED。
+ * outbox 状态和 MQ 消息都不是 Task 当前状态事实来源；Consumer 仍必须回查 task。
+ */
 public class TaskOutboxDispatchService {
 
     private static final int LOCK_STALE_SECONDS = 60;
@@ -35,6 +41,8 @@ public class TaskOutboxDispatchService {
 
     @Transactional
     public Optional<TaskOutboxEntity> claimDueOutbox(Long outboxId) {
+        // 多实例 scheduler 可能同时扫描到同一 outbox。
+        // claim 必须是原子更新，失败即视为其他 dispatcher 已接管。
         LocalDateTime now = LocalDateTime.now();
         int claimed = taskOutboxRepository.claimOutbox(
                 outboxId,
@@ -78,6 +86,8 @@ public class TaskOutboxDispatchService {
 
     @Transactional
     public void markFailed(Long outboxId, Exception exception) {
+        // MQ 投递失败只让 outbox 延迟重试，不直接修改 Task 状态。
+        // Task 是否执行仍由后续成功投递和 Consumer claim 决定。
         taskOutboxRepository.markFailed(
                 outboxId,
                 TaskOutboxStatus.PROCESSING,

@@ -18,6 +18,16 @@ import java.util.Map;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+/**
+ * V0.6/V1.x Task 后台执行服务。
+ *
+ * Consumer 进入这里后，先通过 TaskService 原子 claim 任务，再创建 attempt、渲染
+ * Prompt Template、经 ModelRouter 选择模型并调用 LlmClient。输出、usage 和 chunks
+ * 最终写回 Task/Attempt/OutputChunk。
+ *
+ * 关键不变量：执行线程写终态前必须重新检查 task 是否仍 RUNNING，避免取消、
+ * 超时或重复消费被后完成的线程覆盖。
+ */
 public class TaskExecutionService {
 
     private static final String DEFAULT_TEMPLATE_CODE = "default_task_prompt";
@@ -42,6 +52,8 @@ public class TaskExecutionService {
         LlmResponse response = null;
 
         try {
+            // 阶段 1：原子 claim。
+            // 重复 MQ 消息、重复 retry 或已取消任务都会在这里自然退出。
             boolean started = taskService.tryStartTaskExecution(taskId, "Task execution started");
             if (!started) {
                 log.info("task_execution_claim_conflict taskId={}", taskId);
@@ -58,6 +70,8 @@ public class TaskExecutionService {
                     attempt.getStatus()
             );
 
+            // 阶段 2：模拟执行延迟并检查协作式取消。
+            // 这保留 V0.6 mock execution 的闭环，也验证 V0.10 cancel/timeout 竞态。
             boolean completed = simulateExecutionDelay(taskId);
             if (!completed) {
                 taskAttemptService.markCancelled(attempt.getId(), "Task execution cancelled");
@@ -70,6 +84,8 @@ public class TaskExecutionService {
                 return;
             }
 
+            // 阶段 3：读取任务输入，渲染 Prompt Template，并通过 ModelRouter 选择模型。
+            // Prompt 渲染失败属于任务失败，不能跳过模板直接拼接 prompt。
             TaskDetailResponse task = taskService.getTaskById(taskId);
             String prompt = task.getPrompt();
             String selectedModel = modelRouter.route(task.getRequestedModel());
@@ -96,6 +112,8 @@ public class TaskExecutionService {
             request.setPrompt(renderedPrompt);
             request.setModel(selectedModel);
 
+            // 阶段 4：调用 LlmClient。
+            // V1.0 的 LLM abstraction 让执行链路不直接绑定 mock、本地或外部模型厂商。
             log.info("Calling LlmClient, taskId={}, attemptId={}, attemptNo={}, model={}",
                     taskId,
                     attempt.getId(),
@@ -125,6 +143,8 @@ public class TaskExecutionService {
                 );
             }
 
+            // 阶段 5：根据 LLM 结果写 SUCCESS / RETRY_PENDING / FAILED。
+            // quality 或 usage metadata 只是诊断信息，不应绕过状态机直接改结果。
             if (response == null || !response.isSuccess()) {
                 String errorMessage = response == null ? "LLM response is null" : response.getErrorMessage();
                 taskAttemptService.markFailed(attempt.getId(), errorMessage, response, renderedPrompt, DEFAULT_TEMPLATE_CODE);
@@ -198,6 +218,8 @@ public class TaskExecutionService {
     }
 
     private void handleTaskExecutionFailure(Long taskId, TaskAttemptEntity attempt, String errorMessage) {
+        // 失败处理先尊重 cancel/timeout 等外部终态，再决定是否进入 retry。
+        // 这样异常路径不会把用户取消的任务重新排入队列。
         if (taskService.isTaskCancelled(taskId)) {
             if (attempt != null) {
                 taskAttemptService.markCancelled(attempt.getId(), "Task execution cancelled");

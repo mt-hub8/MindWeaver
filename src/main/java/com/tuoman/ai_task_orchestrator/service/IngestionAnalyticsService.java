@@ -30,6 +30,12 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+/**
+ * V3.5 ingestion 性能和失败分析服务。
+ *
+ * 基于 ingestion task/event 聚合成功率、失败原因、阶段耗时和慢任务。
+ * 这些结果只用于诊断摄入链路，不应改变文档状态、重试策略或 vector 写入结果。
+ */
 public class IngestionAnalyticsService {
 
     private static final int TOP_FAILURE_LIMIT = 5;
@@ -50,6 +56,8 @@ public class IngestionAnalyticsService {
 
     @Transactional(readOnly = true)
     public IngestionAnalyticsResponse getAnalytics(String windowParam) {
+        // 统计窗口只限制诊断样本范围。
+        // 指标缺失时保持 null/空列表，而不是伪造阶段耗时或失败原因。
         IngestionAnalyticsWindow window = IngestionAnalyticsWindow.parse(windowParam);
         LocalDateTime now = LocalDateTime.now();
         List<DocumentIngestionTaskEntity> tasks = loadTasks(window, now);
@@ -168,6 +176,8 @@ public class IngestionAnalyticsService {
     }
 
     static List<IngestionFailureReasonResponse> buildTopFailureReasons(List<DocumentIngestionEventEntity> failedEvents) {
+        // failure analytics 是归类和排序，不吞异常。
+        // 原始失败仍保存在 task/event 中，便于用户追踪具体 traceId。
         Map<String, Integer> counts = new HashMap<>();
         Map<String, String> sampleMessages = new HashMap<>();
         for (DocumentIngestionEventEntity event : failedEvents) {

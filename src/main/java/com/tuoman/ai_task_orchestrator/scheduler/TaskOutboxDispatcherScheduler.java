@@ -17,6 +17,12 @@ import java.util.Optional;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+/**
+ * Task outbox 后台扫描器。
+ *
+ * V0.5 的 MQ 派发从同步发送演进为定时扫描 outbox，提升创建任务与消息投递的一致性。
+ * 这里只负责投递触发信号，不执行任务本身。
+ */
 public class TaskOutboxDispatcherScheduler {
 
     private static final int BATCH_SIZE = 20;

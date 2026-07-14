@@ -16,6 +16,12 @@ import java.util.List;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+/**
+ * V0.8 retry 调度器。
+ *
+ * 扫描到期的 RETRY_PENDING 任务并重新创建 dispatch outbox。
+ * retry 不创建新 Task，也不能改变 taskId；它只是把同一任务重新送回执行链路。
+ */
 public class TaskRetryScheduler {
 
     private final TaskRepository taskRepository;
@@ -43,6 +49,8 @@ public class TaskRetryScheduler {
 
     @Transactional
     public void reserveRetryTaskAndCreateOutbox(Long taskId) {
+        // reserve 会临时推迟 nextRetryAt，防止多个 scheduler 同时为同一 retry 创建 outbox。
+        // 这与 Consumer 端的 atomic claim 共同构成重复执行保护。
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime reservedUntil = now.plusSeconds(30);
         int reserved = taskRepository.reserveRetryDispatch(

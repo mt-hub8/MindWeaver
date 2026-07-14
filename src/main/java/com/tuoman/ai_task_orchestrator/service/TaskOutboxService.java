@@ -9,6 +9,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+/**
+ * V0.5 之后的 Task transactional outbox 写入服务。
+ *
+ * 创建 Task 时在同一个数据库事务中写入 outbox，后续由 scheduler 异步投递 MQ。
+ * 这样可以避免“Task 已提交但 MQ 发送失败”造成任务永远没人执行。
+ */
 public class TaskOutboxService {
 
     public static final String AGGREGATE_TYPE_TASK = "TASK";

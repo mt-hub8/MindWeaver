@@ -12,6 +12,12 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+/**
+ * V1.4 Task 输出分片服务。
+ *
+ * 长 LLM 输出持久化为有序 chunks，方便查询和未来 streaming/polling 扩展。
+ * output chunk 是任务结果展示结构，不是文档 RAG chunk，也不会参与 embedding。
+ */
 public class TaskOutputChunkService {
 
     private static final int CHUNK_SIZE = 30;

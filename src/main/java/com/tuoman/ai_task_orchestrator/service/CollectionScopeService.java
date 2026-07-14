@@ -19,6 +19,12 @@ import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
+/**
+ * V5.0 scoped retrieval 范围解析服务。
+ *
+ * 把用户选择的 collectionId 转换为 RAG/Agent 可用的 RetrievalScope。
+ * 它同时检查 membership、生命周期和是否存在可检索 chunk，避免空分组或全删除分组退化为全库搜索。
+ */
 public class CollectionScopeService {
 
     private final CollectionService collectionService;
@@ -33,6 +39,8 @@ public class CollectionScopeService {
             return CollectionAskScope.notApplicable();
         }
 
+        // 用户显式选择 collection 时，scope 优先级高于任何自动推断。
+        // 如果该分组不可问，返回 noContext 原因，而不是偷偷扩大到全部文档。
         KnowledgeCollectionEntity collection = collectionService.findCollectionOrThrow(collectionId);
         List<Long> memberDocumentIds = documentCollectionRepository.findDocumentIdsByCollectionId(collectionId);
         Set<Long> memberIds = new HashSet<>(memberDocumentIds);
@@ -92,6 +100,8 @@ public class CollectionScopeService {
 
     @Transactional(readOnly = true)
     public RetrievalScope resolveRetrievalScope(Long collectionId) {
+        // RetrievalScope 是 AppRetrievalService / Agent Tool 的统一输入。
+        // allowedDocumentIds 为空表示该 collection 无可检索内容，而不是“不过滤”。
         CollectionAskScope askScope = resolveForAsk(collectionId);
         if (collectionId == null) {
             return RetrievalScope.allDocuments();

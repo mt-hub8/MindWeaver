@@ -9,10 +9,11 @@ import org.springframework.web.client.RestClientResponseException;
 import java.time.Duration;
 
 /**
- * 本地 Python embedding worker HTTP client。
+ * V2.5.2/V8.0 本地 Python embedding worker HTTP client。
  *
  * local-ai profile 下，文档 embedding 通过 Java -> Python Worker -> Ollama 生成。
  * 返回维度会在 EmbeddingCacheService 和 VectorNamespaceGuard 中继续校验。
+ * 这里不做静默 fallback，因为错误 embedding 写入会污染后续检索和 reindex。
  */
 @Component
 public class RestClientLocalEmbeddingWorkerClient implements LocalEmbeddingWorkerClient {

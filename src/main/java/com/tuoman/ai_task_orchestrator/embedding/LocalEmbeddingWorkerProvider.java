@@ -3,6 +3,15 @@ package com.tuoman.ai_task_orchestrator.embedding;
 import java.util.Comparator;
 import java.util.List;
 
+/**
+ * V2.5.2/V8.0 本地 embedding worker provider。
+ *
+ * Java 通过 HTTP client 调用 Python worker，worker 再连接本地 runtime/Ollama。
+ * 业务层只看到 EmbeddingProvider 契约，避免文档摄入和检索代码直接依赖某个模型运行时。
+ *
+ * 关键不变量：worker 返回的 provider/model/dimension 必须与配置兼容；
+ * dimension mismatch 必须失败，不能自动纠正后写入 vector index。
+ */
 public class LocalEmbeddingWorkerProvider implements EmbeddingProvider {
 
     public static final String PROVIDER = "local-worker";
@@ -38,6 +47,8 @@ public class LocalEmbeddingWorkerProvider implements EmbeddingProvider {
 
     @Override
     public List<EmbeddingResponse> embedBatch(List<EmbeddingRequest> requests) {
+        // batch 请求保持输入顺序，worker 响应按 index 排序还原。
+        // 这保证 chunk 与 embedding 一一对应，避免向量写入错配。
         if (requests == null || requests.isEmpty()) {
             return List.of();
         }
@@ -100,6 +111,8 @@ public class LocalEmbeddingWorkerProvider implements EmbeddingProvider {
     }
 
     private void validateResponse(LocalEmbeddingWorkerResponse response, int expectedCount) {
+        // 本地 runtime 可以是 Python worker 或 Ollama，但维度和模型身份必须明确。
+        // 模型切换导致维度变化时，应通过 reindex 处理，而不是混写旧索引。
         if (response == null || response.getData() == null || response.getData().isEmpty()) {
             throw new EmbeddingProviderException("Local embedding worker response data must not be empty");
         }

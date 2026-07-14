@@ -22,6 +22,13 @@ import java.util.List;
 @RestController
 @RequestMapping("/tasks")
 @RequiredArgsConstructor
+/**
+ * V0.x Task 编排 HTTP 入口。
+ *
+ * V0.1/V0.2 从创建和查询任务开始，后续版本在同一资源上扩展取消、attempt
+ * 和 output chunks。Controller 只暴露用户可见 API，状态机、事件、MQ 派发
+ * 和 LLM 执行都由 service/worker 层维护。
+ */
 public class TaskController {
 
     private final TaskService taskService;

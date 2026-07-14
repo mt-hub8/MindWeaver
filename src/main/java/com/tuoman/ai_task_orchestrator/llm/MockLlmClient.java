@@ -3,6 +3,12 @@ package com.tuoman.ai_task_orchestrator.llm;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
+/**
+ * V1.0 mock LLM client。
+ *
+ * 用确定性响应验证 Task 异步执行、Prompt Template、usage metadata 和 output chunks 链路。
+ * mock 输出只代表链路可运行，不代表真实模型质量或事实正确性。
+ */
 public class MockLlmClient implements LlmClient {
 
     private static final String DEFAULT_MODEL = "mock-llm";
@@ -11,6 +17,8 @@ public class MockLlmClient implements LlmClient {
 
     @Override
     public LlmResponse generate(LlmRequest request) {
+        // 模拟 usage 和 latency，便于 V1.2 元数据持久化测试。
+        // 这些数值是诊断占位，不应用于真实成本统计。
         long startTime = System.currentTimeMillis();
 
         if (request == null) {

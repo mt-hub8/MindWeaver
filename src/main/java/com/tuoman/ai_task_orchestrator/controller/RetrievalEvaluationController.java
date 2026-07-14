@@ -12,6 +12,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/evaluations")
 @RequiredArgsConstructor
+/**
+ * V2.4 retrieval evaluation HTTP 入口。
+ *
+ * 该接口用于离线评测一组 query/case 的检索质量，输出 Recall@K、MRR、NDCG 等指标。
+ * 它不参与线上问答路径，也不应因为评测结果直接修改检索配置或候选结果。
+ */
 public class RetrievalEvaluationController {
 
     private final RetrievalEvaluationService retrievalEvaluationService;

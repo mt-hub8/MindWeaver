@@ -9,10 +9,11 @@ import java.util.Map;
 @Component
 @RequiredArgsConstructor
 /**
- * 本地 Python LLM provider。
+ * V8.0 本地 Python LLM provider。
  *
  * local-ai profile 通过 Java -> Python Worker -> Ollama 的链路生成文本，
- * 让 Java 后端不直接耦合 Ollama HTTP 细节。
+ * 让 Java 后端不直接耦合 Ollama HTTP 细节。RAG Answer 和 Agent Task
+ * 共享 LlmProvider 契约，因此模型运行时不可用时必须显式失败，不能伪造回答。
  */
 public class LocalPythonLlmProvider implements LlmProvider {
 

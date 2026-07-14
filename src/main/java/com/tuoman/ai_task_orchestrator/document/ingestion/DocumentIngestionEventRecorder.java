@@ -22,6 +22,14 @@ import java.util.UUID;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+/**
+ * V3.4 ingestion event 记录器。
+ *
+ * 为文档摄入、reindex 和后续 lifecycle 操作写入可展示时间线。
+ * 事件采用独立事务，尽量保证即使主流程失败，用户也能看到失败阶段、errorCode 和 traceId。
+ *
+ * 约束：event 是审计/排障历史，不是当前状态事实来源；不要在 metadata 中记录敏感原文。
+ */
 public class DocumentIngestionEventRecorder {
 
     private final DocumentIngestionEventRepository documentIngestionEventRepository;

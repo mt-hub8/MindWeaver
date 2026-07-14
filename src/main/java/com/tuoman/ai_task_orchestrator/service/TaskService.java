@@ -23,6 +23,15 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 @Slf4j
+/**
+ * V0.x Task 生命周期核心服务。
+ *
+ * 该类承载早期 Task CRUD、状态机事件、失败重试、取消超时和 V1 LLM 元数据落库。
+ * Task 表保存当前事实状态，task_event 保存历史时间线，task_outbox 负责异步派发。
+ *
+ * 关键不变量：终态任务不能被后台线程覆盖；创建任务只登记和入队，不代表执行完成；
+ * retry/cancel/timeout 都必须通过状态机和事件记录收敛。
+ */
 public class TaskService {
 
     private static final String TIMEOUT_ERROR_MESSAGE = "任务执行超时";
@@ -45,6 +54,8 @@ public class TaskService {
 
     @Transactional
     public CreateTaskResponse createTask(CreateTaskRequest request) {
+        // V0.1 创建任务只生成 PENDING 任务和事件；V0.5 之后通过 outbox 异步派发。
+        // 这里不能直接执行 LLM，否则 HTTP 请求会重新耦合耗时任务执行。
         TaskEntity task = new TaskEntity();
         task.setPrompt(request.getPrompt());
         task.setRequestedModel(request.getModel());
@@ -103,6 +114,8 @@ public class TaskService {
 
     @Transactional
     public boolean tryStartTaskExecution(Long taskId, String message) {
+        // V0.9 幂等消费的原子 claim 边界。
+        // 只有 PENDING/RETRY_PENDING 能进入 RUNNING，重复 MQ 消息会在这里被拒绝。
         TaskEntity task = findTaskOrThrow(taskId);
         TaskStatus targetStatus = TaskStatus.RUNNING;
         int timeoutSeconds = task.getTimeoutSeconds() == null ? 30 : task.getTimeoutSeconds();
@@ -186,6 +199,8 @@ public class TaskService {
             String renderedPrompt,
             String promptTemplateCode
     ) {
+        // 成功写回必须限定 RUNNING -> SUCCESS。
+        // 如果用户已取消或超时线程已失败该任务，后台执行线程不能再覆盖终态。
         int updated = taskRepository.markSucceededIfRunning(
                 taskId,
                 TaskStatus.SUCCESS,
@@ -216,6 +231,8 @@ public class TaskService {
 
     @Transactional
     public boolean tryMarkTaskRetryPending(Long taskId, String errorMessage) {
+        // V0.8 retry 是对同一 Task 的恢复，不是创建新任务。
+        // retryCount 描述执行尝试次数，不能改变 Task 身份或输出查询入口。
         String normalizedErrorMessage = normalizeErrorMessage(errorMessage);
         LocalDateTime nextRetryAt = LocalDateTime.now().plusSeconds(10);
         int updated = taskRepository.markRetryPendingIfRunning(
@@ -265,6 +282,8 @@ public class TaskService {
 
     @Transactional
     public TaskDetailResponse cancelTask(Long taskId, String message) {
+        // V0.10 cancel 是正常业务分支。
+        // RUNNING 任务只能协作式取消，最终写回仍依赖执行线程的状态检查。
         TaskEntity task = findTaskOrThrow(taskId);
         TaskStatus currentStatus = task.getStatus();
 
@@ -309,6 +328,8 @@ public class TaskService {
 
     @Transactional
     public boolean tryMarkTaskTimedOut(Long taskId) {
+        // timeout scheduler 只能失败仍处于 RUNNING 的任务。
+        // 已 SUCCESS/CANCELLED 的任务不能被超时扫描反向改写。
         int updated = taskRepository.markTimedOutIfRunning(
                 taskId,
                 TaskStatus.FAILED,
@@ -353,6 +374,8 @@ public class TaskService {
             TaskStatus toStatus,
             String message
     ) {
+        // task_event 是审计和排障时间线，不是状态机事实来源。
+        // 当前状态仍以 TaskEntity.status 为准，事件必须跟随状态变化记录。
         TaskEventEntity event = new TaskEventEntity();
         event.setTaskId(taskId);
         event.setEventType(eventType);

@@ -21,6 +21,12 @@ import java.util.stream.IntStream;
 
 @Service
 @RequiredArgsConstructor
+/**
+ * V2.4 检索评测执行服务。
+ *
+ * 对每个 case 调用真实检索链路，再把 retrievedChunkIds 与 expectedChunkIds 比较。
+ * evaluation 是离线诊断入口：它可以暴露召回和排序问题，但不能改变线上 retrieval 策略。
+ */
 public class RetrievalEvaluationService {
 
     private static final List<Integer> DEFAULT_TOP_K_VALUES = List.of(1, 3, 5);
@@ -36,6 +42,8 @@ public class RetrievalEvaluationService {
     public RetrievalEvaluationResponse evaluate(RetrievalEvaluationRequest request) {
         validateRequest(request);
 
+        // 阶段 1：统一 topK，并按最大 K 执行一次检索。
+        // 这样同一 case 的 Recall@1/@3/@5 来自同一排序列表，便于公平比较。
         List<Integer> topKValues = normalizeTopKValues(request.getTopKValues());
         int maxK = topKValues.getLast();
 
@@ -59,6 +67,8 @@ public class RetrievalEvaluationService {
             List<Integer> topKValues,
             int maxK
     ) {
+        // Gold labels 是评测事实来源。
+        // 检索返回内容只用于计算指标和展示 evidence preview，不能反向改写 expectedChunkIds。
         List<Long> expectedChunkIds = distinctExpectedChunkIds(evaluationCase);
         List<DocumentSearchResultResponse> searchResults = search(documentId, evaluationCase.getQuery(), maxK);
         Set<Long> expectedSet = new LinkedHashSet<>(expectedChunkIds);

@@ -6,6 +6,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Component
+/**
+ * V2.1/V2.1.1 早期文档切分器。
+ *
+ * 先按 Markdown 标题形成 section，再按段落、句子、标点递归拆分，最后退化为固定长度。
+ * 输出的 headingPath、offset 和 chunkIndex 是后续 embedding、retrieval evaluation 和 citation 的基础。
+ *
+ * 约束：chunk 边界会影响召回与引用，切分算法不能为了“凑长度”改变原文顺序或语义。
+ */
 public class DocumentChunker {
 
     public static final String CHUNK_STRATEGY = "RECURSIVE_TEXT";
@@ -23,6 +31,8 @@ public class DocumentChunker {
             return List.of();
         }
 
+        // 阶段 1：先保留 Markdown 标题结构。
+        // 早期 fixed chunk 只能按长度切，adaptive/recursive chunking 则尽量让证据保持在语义段落内。
         List<TextRange> ranges = new ArrayList<>();
         for (TextRange section : splitByMarkdownHeadings(content)) {
             splitRecursively(content, section.start(), section.end(), section.headingPath(), 0, chunkSizeChars, ranges);
@@ -33,6 +43,8 @@ public class DocumentChunker {
         int previousContentEnd = -1;
 
         for (TextRange range : ranges) {
+            // 阶段 2：给相邻 chunk 加 overlap。
+            // overlap 改善跨边界问题，但不能被当作新的独立事实来源。
             int contentStart = range.start();
             int contentEnd = range.end();
             String rangeContent = content.substring(contentStart, contentEnd);

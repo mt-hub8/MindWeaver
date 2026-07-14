@@ -14,6 +14,12 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+/**
+ * V3.4 ingestion timeline 查询服务。
+ *
+ * 事件时间线用于解释文档摄入卡在 parser、chunk、embedding 还是 vector write。
+ * 它是诊断历史，不是当前状态事实来源；当前状态仍以 DocumentIngestionTask 为准。
+ */
 public class DocumentIngestionEventService {
 
     private final DocumentIngestionTaskService documentIngestionTaskService;

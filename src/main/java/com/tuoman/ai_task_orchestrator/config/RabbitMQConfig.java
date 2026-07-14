@@ -14,6 +14,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
+/**
+ * RabbitMQ 基础设施配置。
+ *
+ * V0.5 引入的异步任务派发、后续文档 ingestion 和 Agent Task 都复用同一个 exchange。
+ * queue/routing-key 是触发后台 worker 的基础设施约定，不承载业务事实状态。
+ */
 public class RabbitMQConfig {
 
     public static final String TASK_EXCHANGE = "task.exchange";
