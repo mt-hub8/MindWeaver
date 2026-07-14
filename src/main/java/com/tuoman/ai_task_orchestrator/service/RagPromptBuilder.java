@@ -8,7 +8,7 @@ import java.util.List;
 /**
  * 旧版 RAG prompt 构造器。
  *
- * 该类服务 legacy RAG Answer 链路：把 citation 列表拼成简单上下文 prompt。
+ * V2.3 早期 RAG Answer 通过该类把 citation 列表拼成简单上下文 prompt。
  * V18 Grounded Answer 使用 GroundedAnswerPromptBuilder，具备更完整的 contract 和 citation verification。
  *
  * 关键不变量：即使在 legacy prompt 中，也只能使用传入 citations 的内容，不应引入 context 外证据。

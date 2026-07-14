@@ -14,7 +14,7 @@ import org.springframework.web.client.RestClient;
 import java.time.LocalDateTime;
 
 /**
- * 模型供应商连接测试服务。
+ * V8.0/V10 模型供应商连接测试服务。
  *
  * connection test 只验证目标服务是否可达、API Key 是否有效，
  * 不修改默认 provider，也不触发 reindex。
@@ -64,6 +64,8 @@ public class ModelProviderTestService {
             LocalDateTime testedAt,
             long started
     ) {
+        // Ollama 测试只访问 tags/health 类轻量接口。
+        // 这里不做真实生成，避免连接测试被误认为模型质量评测。
         if (entity.getBaseUrl() == null || entity.getBaseUrl().isBlank()) {
             return failed(entity, testedAt, started, "缺少 Ollama Base URL");
         }

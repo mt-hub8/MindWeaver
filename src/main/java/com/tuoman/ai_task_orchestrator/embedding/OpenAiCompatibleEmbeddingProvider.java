@@ -4,10 +4,11 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * OpenAI-compatible embedding provider。
+ * V2.5 real embedding provider 的 OpenAI-compatible 实现。
  *
  * 该实现只依赖 OpenAI 风格的 embeddings HTTP 协议，因此可用于 OpenAI、本地兼容网关
  * 或其他兼容服务；业务层仍只看到 EmbeddingProvider 契约。
+ * 返回维度必须和配置一致，模型切换后已有向量通常需要 reindex。
  */
 public class OpenAiCompatibleEmbeddingProvider implements EmbeddingProvider {
 

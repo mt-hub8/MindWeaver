@@ -16,6 +16,12 @@ import java.util.List;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+/**
+ * V2.6.9 embedding cache 指标服务。
+ *
+ * 记录 hit/miss/write/conflict，用来解释缓存是否减少了 provider 调用。
+ * 这些指标只反映计算复用和并发写入情况，不等价于 retrieval quality 或答案可信度。
+ */
 public class EmbeddingCacheMetricsService {
 
     private final EmbeddingCacheMetricRepository embeddingCacheMetricRepository;
@@ -199,6 +205,8 @@ public class EmbeddingCacheMetricsService {
     }
 
     private void runSafely(Runnable action) {
+        // cache metrics 是诊断信息，更新失败不能影响文档摄入主链路。
+        // 真正的 embedding/vector 写入失败仍会在上层抛出。
         try {
             action.run();
         } catch (RuntimeException exception) {

@@ -13,6 +13,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/runtime")
 @RequiredArgsConstructor
+/**
+ * V8.0 local-ai runtime HTTP 入口。
+ *
+ * 暴露运行状态和手动连接测试，帮助用户确认 Python Worker / Ollama / provider 配置。
+ * 这些接口只做诊断，不改变默认模型供应商或索引状态。
+ */
 public class RuntimeStatusController {
 
     private final RuntimeStatusService runtimeStatusService;

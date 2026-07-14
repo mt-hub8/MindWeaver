@@ -57,6 +57,10 @@ import java.util.List;
 /**
  * RAG Answer 主编排服务。
  *
+ * V2.3/V2.7 打通了“检索 -> prompt -> LLM -> citation”的早期 RAG Answer API，
+ * 后续 V17/V18 在同一主链路上接入 Query Understanding、Retrieval Routing、
+ * Grounded Answer 和 Citation Verification。
+ *
  * 该类负责把一次用户提问串成完整可信回答链路：
  * Query Understanding -> Retrieval Routing -> Retrieval -> Grounded Context
  * -> LLM generation -> Citation Verification -> RagQualityScore。

@@ -27,6 +27,15 @@ import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
+/**
+ * V2.6.2 VectorStore benchmark runner。
+ *
+ * 在同一 dataset、同一 embedding provider 和同一批 chunks 上，对比 baseline 与 candidate
+ * VectorStore 的 retrieval metrics 和 search latency。它服务离线验证，不参与线上检索。
+ *
+ * 关键约束：benchmark 可以比较策略差异，但不能把一次本地结果解释成生产性能结论，
+ * 也不能写回业务配置或改变线上 VectorStore。
+ */
 public class VectorStoreBenchmarkRunner {
 
     private final DocumentRepository documentRepository;
@@ -80,6 +89,8 @@ public class VectorStoreBenchmarkRunner {
             VectorStore vectorStore,
             EmbeddingProvider embeddingProvider
     ) {
+        // 每一侧都临时组装独立 DocumentEmbeddingService。
+        // 这样 baseline/candidate 只替换 VectorStore，实现公平对比，其余 ingestion/search 契约保持一致。
         LatencyMeasuringVectorStore measuringVectorStore = new LatencyMeasuringVectorStore(vectorStore);
         DocumentEmbeddingService documentEmbeddingService = new DocumentEmbeddingService(
                 documentRepository,

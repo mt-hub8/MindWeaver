@@ -20,6 +20,12 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+/**
+ * V8.0 local-ai runtime 状态服务。
+ *
+ * 汇总当前 profile、LLM/Embedding provider、Python Worker、Ollama 和 VectorStore 状态。
+ * 这是运行诊断接口，不会切换 provider，也不会触发 reindex。
+ */
 public class RuntimeStatusService {
 
     private static final String DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
@@ -39,6 +45,8 @@ public class RuntimeStatusService {
     private final ObjectMapper objectMapper;
 
     public RuntimeStatusResponse getStatus() {
+        // default mock profile 是开发测试兜底；local-ai profile 才会依赖 Python Worker + Ollama。
+        // 状态探测失败只影响诊断展示，不应伪造模型可用或修改默认配置。
         String activeProfile = resolveActiveProfile();
         boolean mockEmbedding = isMockEmbedding();
         boolean mockLlm = isMockLlm();

@@ -27,6 +27,9 @@ import java.util.List;
 /**
  * 文档管理 HTTP 入口。
  *
+ * V2.1 从这里暴露文档上传、chunk 查询、embedding 和 search；V3.2 之后 `/upload`
+ * 走异步 ingestion，形成 upload-to-ask 产品闭环。
+ *
  * 覆盖普通文档上传、查询、搜索和生命周期相关操作；
  * 复杂摄入、chunk、embedding、vector write 由 service/worker 层完成。
  */

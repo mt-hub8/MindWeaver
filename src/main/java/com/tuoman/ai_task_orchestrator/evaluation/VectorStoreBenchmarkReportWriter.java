@@ -18,6 +18,12 @@ import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
+/**
+ * V2.6.7 Qdrant benchmark 结果写出器。
+ *
+ * 将本地手工 benchmark 的 dataset、provider、vector store、metrics 和 latency 写成 JSON/Markdown。
+ * 产物用于复盘和面试展示，不是线上配置，也不是生产 SLA 证明。
+ */
 public class VectorStoreBenchmarkReportWriter {
 
     public static final String DEFAULT_BENCHMARK_NAME = "exact-vs-qdrant";
@@ -59,6 +65,7 @@ public class VectorStoreBenchmarkReportWriter {
             VectorStoreBenchmarkResponse response,
             VectorStoreBenchmarkCaptureMetadata metadata
     ) {
+        // 报告必须记录环境和 dataset，否则不同机器、不同 embedding provider 或不同 topK 的结果不可比较。
         Map<String, Object> document = new LinkedHashMap<>();
         document.put("benchmarkName", metadata.benchmarkName());
         document.put("generatedAt", metadata.generatedAt().toString());

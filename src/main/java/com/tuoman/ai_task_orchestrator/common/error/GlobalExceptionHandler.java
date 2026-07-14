@@ -21,6 +21,15 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @RestControllerAdvice
+/**
+ * V2.2.x production hardening 的统一异常出口。
+ *
+ * 业务异常、参数校验、外部 embedding/vector store 错误和未捕获异常都会被映射成统一
+ * ApiErrorResponse。这样前端、脚本和测试都能依赖稳定的 code/message/traceId，
+ * 而不是解析不同异常栈。
+ *
+ * 关键约束：统一错误响应只改变错误表达方式，不吞掉业务失败，也不把内部异常细节直接暴露给用户。
+ */
 public class GlobalExceptionHandler {
 
     private static final String TRACE_ID_HEADER = "X-Request-Id";
@@ -143,6 +152,8 @@ public class GlobalExceptionHandler {
             String message,
             WebRequest request
     ) {
+        // traceId 优先沿用调用方传入的 X-Request-Id。
+        // 没有传入时生成新的 UUID，便于把 API 错误和服务端日志关联起来。
         ApiErrorResponse body = new ApiErrorResponse(
                 Instant.now().toString(),
                 status.value(),

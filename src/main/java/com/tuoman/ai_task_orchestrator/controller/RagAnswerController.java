@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * RAG Answer HTTP 入口。
  *
+ * V2.7 的目标是让上传文档后的用户可以通过 API/最小 UI 发起提问，并得到 answer + citations。
  * Controller 只负责接收用户问题并交给 RagAnswerService；
  * Query Understanding、Retrieval Routing、Grounded Answer 和 Quality Score 都在 service 层编排。
  */

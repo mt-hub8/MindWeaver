@@ -13,6 +13,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * benchmark 专用 VectorStore 装饰器。
+ *
+ * 只统计 search latency，并把 upsert/delete/scan 原样委托给真实 VectorStore。
+ * 它不能改变检索结果，否则 baseline/candidate 对比会失真。
+ */
 public class LatencyMeasuringVectorStore implements VectorStore {
 
     private final VectorStore delegate;
@@ -34,6 +40,8 @@ public class LatencyMeasuringVectorStore implements VectorStore {
 
     @Override
     public List<VectorSearchResult> search(VectorSearchRequest request) {
+        // latency 包含 Java 调用、序列化、HTTP/Docker 等本地环境成本。
+        // 因此只适合相同环境下的相对比较，不应作为生产性能结论。
         long start = System.nanoTime();
         try {
             return delegate.search(request);

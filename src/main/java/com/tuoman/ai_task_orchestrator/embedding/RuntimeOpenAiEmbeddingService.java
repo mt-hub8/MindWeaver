@@ -9,6 +9,12 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
+/**
+ * 运行时 OpenAI-compatible embedding 调用服务。
+ *
+ * 用于数据库模型供应商配置解析后的动态 embedding 调用，不依赖 application.properties
+ * 中的静态 provider。它仍然只生成 embedding，不负责写 vector，也不负责自动 reindex。
+ */
 public class RuntimeOpenAiEmbeddingService {
 
     public static final String PROVIDER = "openai-compatible";
@@ -23,6 +29,8 @@ public class RuntimeOpenAiEmbeddingService {
         if (requests == null || requests.isEmpty()) {
             return List.of();
         }
+        // 动态 provider 配置必须在调用前校验完整性。
+        // API Key 只在内存中用于本次请求，不进入响应或日志。
         validateConfig(config);
         List<String> inputs = requests.stream()
                 .map(r -> r == null || r.getText() == null ? "" : r.getText())
@@ -75,6 +83,8 @@ public class RuntimeOpenAiEmbeddingService {
     }
 
     private void validateResponse(OpenAiEmbeddingResponse response, int expectedCount, EmbeddingProperties.OpenAi properties) {
+        // 响应数量必须和输入数量一致，避免 chunk 与 embedding 错位。
+        // 维度一致性会在后续 cache/vector 写入边界继续校验。
         if (response == null || response.getData() == null || response.getData().isEmpty()) {
             throw new EmbeddingProviderException("OpenAI-compatible embedding response data must not be empty");
         }

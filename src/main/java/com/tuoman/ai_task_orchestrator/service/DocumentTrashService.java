@@ -28,6 +28,9 @@ import java.util.List;
 /**
  * V12 文档 Trash / Restore / Purge 生命周期服务。
  *
+ * 该类也承载了 V4.0 知识库生命周期管理的历史演进：早期 soft delete / reindex
+ * 要求已删除文档不参与 Ask/RAG，新版在此基础上扩展为 TRASHED/PURGED。
+ *
  * ACTIVE 表示可检索，TRASHED 表示进入垃圾箱且默认不参与检索，PURGED 表示永久删除。
  * Restore 只恢复生命周期状态；Purge 才执行原文、chunk、embedding、vector、membership 的物理清理。
  */

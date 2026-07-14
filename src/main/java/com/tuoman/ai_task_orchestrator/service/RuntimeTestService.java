@@ -12,6 +12,12 @@ import org.springframework.stereotype.Service;
 
 @Service
 @RequiredArgsConstructor
+/**
+ * V8.0 local-ai runtime 手动连接测试服务。
+ *
+ * 通过当前激活的 EmbeddingProvider 和 LlmProvider 发起最小探测请求。
+ * 测试结果只用于确认本地 worker/provider 是否可用，不会修改默认 provider，也不会写入业务数据。
+ */
 public class RuntimeTestService {
 
     private static final String EMBEDDING_PROBE_TEXT = "连接测试";
@@ -23,6 +29,8 @@ public class RuntimeTestService {
     private final LlmProvider llmProvider;
 
     public RuntimeTestResponse testEmbedding() {
+        // 连接测试生成的是一次性 query-like embedding，不进入文档 embedding cache。
+        // 维度返回给用户用于判断是否需要 reindex 已有文档。
         long start = System.currentTimeMillis();
         try {
             EmbeddingRequest request = new EmbeddingRequest();
@@ -52,6 +60,7 @@ public class RuntimeTestService {
     }
 
     public RuntimeTestResponse testLlm() {
+        // LLM 探测使用短 prompt 和低 token 上限，避免连接测试产生昂贵或长时间生成。
         long start = System.currentTimeMillis();
         try {
             LlmGenerateOptions options = new LlmGenerateOptions();

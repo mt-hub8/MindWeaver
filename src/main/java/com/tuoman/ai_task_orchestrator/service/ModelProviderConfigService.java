@@ -188,6 +188,8 @@ public class ModelProviderConfigService {
 
     @Transactional
     public ModelProviderTestResultResponse testConnection(Long id) {
+        // connection test 只更新 lastTestStatus/lastTestMessage。
+        // 它不能自动设为默认 provider，也不能因为 embedding 模型变化自动 reindex。
         ModelProviderConfigEntity entity = findEntity(id);
         ModelProviderTestResultResponse result = testService.test(entity);
         entity.setLastTestStatus(result.getStatus());
