@@ -5,6 +5,8 @@ import com.tuoman.ai_task_orchestrator.dto.AgentTaskEventResponse;
 import com.tuoman.ai_task_orchestrator.dto.AgentTaskSummaryResponse;
 import com.tuoman.ai_task_orchestrator.dto.CreateAgentTaskRequest;
 import com.tuoman.ai_task_orchestrator.dto.CreateAgentTaskResponse;
+import com.tuoman.ai_task_orchestrator.dto.MemoryResponse;
+import com.tuoman.ai_task_orchestrator.dto.SaveAgentTaskMemoryRequest;
 import com.tuoman.ai_task_orchestrator.service.AgentTaskQueryService;
 import com.tuoman.ai_task_orchestrator.service.AgentTaskService;
 import jakarta.validation.Valid;
@@ -48,5 +50,14 @@ public class AgentTaskController {
     @GetMapping("/{taskId}/events")
     public List<AgentTaskEventResponse> listEvents(@PathVariable Long taskId) {
         return agentTaskQueryService.listEvents(taskId);
+    }
+
+    @PostMapping("/{taskId}/memory-summary")
+    @ResponseStatus(HttpStatus.CREATED)
+    public MemoryResponse saveSummaryAsMemory(
+            @PathVariable Long taskId,
+            @Valid @RequestBody SaveAgentTaskMemoryRequest request
+    ) {
+        return agentTaskService.saveSummaryAsMemory(taskId, request);
     }
 }

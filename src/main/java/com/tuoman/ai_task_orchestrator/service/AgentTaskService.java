@@ -5,13 +5,21 @@ import com.tuoman.ai_task_orchestrator.agent.AgentTaskEventRecorder;
 import com.tuoman.ai_task_orchestrator.common.error.BusinessException;
 import com.tuoman.ai_task_orchestrator.dto.CreateAgentTaskRequest;
 import com.tuoman.ai_task_orchestrator.dto.CreateAgentTaskResponse;
+import com.tuoman.ai_task_orchestrator.dto.MemoryRequest;
+import com.tuoman.ai_task_orchestrator.dto.MemoryResponse;
+import com.tuoman.ai_task_orchestrator.dto.SaveAgentTaskMemoryRequest;
 import com.tuoman.ai_task_orchestrator.entity.AgentTaskEntity;
 import com.tuoman.ai_task_orchestrator.entity.KnowledgeCollectionEntity;
 import com.tuoman.ai_task_orchestrator.enums.AgentTaskStatus;
+import com.tuoman.ai_task_orchestrator.enums.MemoryScope;
+import com.tuoman.ai_task_orchestrator.enums.MemorySourceType;
+import com.tuoman.ai_task_orchestrator.enums.MemoryType;
+import com.tuoman.ai_task_orchestrator.enums.MemoryVisibility;
 import com.tuoman.ai_task_orchestrator.mq.AgentTaskMessage;
 import com.tuoman.ai_task_orchestrator.mq.AgentTaskMessagePublisher;
 import com.tuoman.ai_task_orchestrator.repository.AgentTaskRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +43,12 @@ public class AgentTaskService {
 
     private final AgentTaskStepService agentTaskStepService;
 
+    @Autowired(required = false)
+    private AgentProfileService agentProfileService;
+
+    @Autowired(required = false)
+    private MemoryService memoryService;
+
     @Transactional
     public CreateAgentTaskResponse createTask(CreateAgentTaskRequest request) {
         if (request == null) {
@@ -52,6 +66,9 @@ public class AgentTaskService {
             KnowledgeCollectionEntity collection = collectionService.findCollectionOrThrow(request.getCollectionId());
             collectionName = collection.getName();
         }
+        if (request.getAgentProfileId() != null && agentProfileService != null) {
+            agentProfileService.getEnabledProfile(request.getAgentProfileId());
+        }
 
         // collectionId 是 Agent Task 的知识库 scope。
         // 后续工具调用必须继承该 scope，不能绕过用户选择的 collection。
@@ -60,6 +77,7 @@ public class AgentTaskService {
         task.setObjective(request.getObjective().trim());
         task.setCollectionId(request.getCollectionId());
         task.setCollectionName(collectionName);
+        task.setAgentProfileId(request.getAgentProfileId());
         task.setStatus(AgentTaskStatus.PENDING);
         AgentTaskEntity saved = agentTaskRepository.save(task);
 
@@ -96,5 +114,38 @@ public class AgentTaskService {
                 AgentTaskDisplayTexts.displayStatus(saved.getStatus()),
                 "AI 任务已创建，系统将在后台按固定工具流程检索知识库、总结上下文并生成最终报告。"
         );
+    }
+
+    @Transactional
+    public MemoryResponse saveSummaryAsMemory(Long taskId, SaveAgentTaskMemoryRequest request) {
+        if (request == null || !request.isConfirmed()) {
+            throw BusinessException.validationError("保存任务总结为记忆前必须由用户确认");
+        }
+        if (memoryService == null) {
+            throw BusinessException.internalError("记忆服务不可用");
+        }
+        AgentTaskEntity task = agentTaskRepository.findById(taskId)
+                .orElseThrow(BusinessException::agentTaskNotFound);
+        if (task.getStatus() != AgentTaskStatus.COMPLETED
+                || task.getResult() == null
+                || task.getResult().isBlank()) {
+            throw BusinessException.validationError("只有已完成且有结果的任务可以保存总结");
+        }
+        MemoryRequest memory = new MemoryRequest();
+        memory.setTitle(request.getTitle() == null || request.getTitle().isBlank()
+                ? "任务总结：" + task.getTitle()
+                : request.getTitle().trim());
+        memory.setContent(task.getResult());
+        memory.setMemoryType(MemoryType.TASK_RESULT);
+        memory.setMemoryScope(MemoryScope.TASK);
+        memory.setVisibility(MemoryVisibility.PRIVATE);
+        memory.setSourceType(MemorySourceType.AGENT_TASK);
+        memory.setSourceId(String.valueOf(taskId));
+        memory.setTaskId(taskId);
+        memory.setAgentProfileId(task.getAgentProfileId());
+        memory.setConfidence(request.getConfidence() == null ? 0.8 : request.getConfidence());
+        memory.setImportance(request.getImportance() == null ? 60 : request.getImportance());
+        memory.setMetadataJson("{\"userConfirmed\":true}");
+        return memoryService.createMemory(memory);
     }
 }

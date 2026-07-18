@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>记忆中心 · MindWeaver</title>
+    <link rel="stylesheet" href="/mindweaver.css?v=v19">
+    <link rel="stylesheet" href="/app-shell.css?v=v19">
+    <link rel="stylesheet" href="/memory.css?v=v19">
+</head>
+<body class="mw-page" data-page="memory-center">
+<div class="mw-app-shell app-shell">
+    <aside id="app-sidebar-mount" data-active="memory-center" aria-label="主导航"></aside>
+    <main class="mw-main-panel main-panel">
+        <div class="mw-page-content content-container">
+            <header class="mw-page-header page-header">
+                <div>
+                    <h1 class="mw-page-title page-title">记忆中心</h1>
+                    <p class="mw-page-description page-subtitle">查看、编辑和控制短事实、偏好、约束、决策与任务摘要。长文档仍然属于知识库。</p>
+                </div>
+            </header>
+
+            <section class="mw-card card">
+                <div class="memory-toolbar">
+                    <div>
+                        <h2 class="mw-card-title">记忆总览</h2>
+                        <p class="muted">记忆默认不会自动保存所有对话；关闭后只停止上下文读取，不会删除数据。</p>
+                    </div>
+                    <div class="memory-actions">
+                        <button class="mw-button mw-button-secondary" id="memory-toggle">加载中…</button>
+                        <button class="mw-button mw-button-primary" id="new-memory">新增记忆</button>
+                    </div>
+                </div>
+                <div class="mw-stat-grid summary-stat-grid" id="memory-stats">
+                    <div class="mw-stat-card"><span class="mw-stat-label">总记忆数</span><span class="mw-stat-value" data-stat="total">-</span></div>
+                    <div class="mw-stat-card"><span class="mw-stat-label">用户记忆</span><span class="mw-stat-value" data-stat="USER">-</span></div>
+                    <div class="mw-stat-card"><span class="mw-stat-label">项目记忆</span><span class="mw-stat-value" data-stat="PROJECT">-</span></div>
+                    <div class="mw-stat-card"><span class="mw-stat-label">Agent 记忆</span><span class="mw-stat-value" data-stat="AGENT">-</span></div>
+                    <div class="mw-stat-card"><span class="mw-stat-label">共享记忆</span><span class="mw-stat-value" data-stat="SHARED">-</span></div>
+                    <div class="mw-stat-card"><span class="mw-stat-label">冲突记忆</span><span class="mw-stat-value" data-stat="CONFLICTED">-</span></div>
+                    <div class="mw-stat-card"><span class="mw-stat-label">低置信度记忆</span><span class="mw-stat-value" data-stat="lowConfidence">-</span></div>
+                    <div class="mw-stat-card"><span class="mw-stat-label">过期记忆</span><span class="mw-stat-value" data-stat="expired">-</span></div>
+                </div>
+            </section>
+
+            <section class="mw-card card">
+                <h2 class="mw-card-title">记忆列表</h2>
+                <div class="memory-filters">
+                    <input class="mw-input" id="filter-keyword" placeholder="搜索标题、内容或 memory key">
+                    <select class="mw-input" id="filter-type"><option value="">全部类型</option></select>
+                    <select class="mw-input" id="filter-scope"><option value="">全部作用域</option></select>
+                    <select class="mw-input" id="filter-agent"><option value="">全部 Agent</option></select>
+                    <select class="mw-input" id="filter-status"><option value="">全部状态</option></select>
+                    <select class="mw-input" id="filter-source"><option value="">全部来源</option></select>
+                    <button class="mw-button mw-button-secondary" id="refresh-memory">刷新</button>
+                </div>
+                <div id="memory-list" class="memory-list"><div class="memory-empty">正在加载记忆…</div></div>
+            </section>
+
+            <section class="mw-card card">
+                <div class="memory-toolbar">
+                    <div>
+                        <h2 class="mw-card-title">Memory Diagnostics</h2>
+                        <p class="muted">检查过期记忆、冲突记忆、低置信度记忆、重复记忆、孤儿 Agent 记忆与陈旧项目状态。</p>
+                    </div>
+                    <button class="mw-button mw-button-secondary" id="refresh-diagnostics">重新诊断</button>
+                </div>
+                <div id="diagnostics-list" class="diagnostics-grid"></div>
+                <h3>优化建议</h3>
+                <ul id="diagnostics-suggestions"></ul>
+            </section>
+        </div>
+    </main>
+</div>
+
+<dialog id="memory-dialog" class="memory-dialog">
+    <form id="memory-form" class="memory-dialog-body">
+        <div class="memory-toolbar">
+            <h2 id="memory-dialog-title">新增记忆</h2>
+            <button type="button" class="mw-button mw-button-secondary" id="close-memory-dialog">取消</button>
+        </div>
+        <input type="hidden" id="memory-id">
+        <div class="memory-form-grid">
+            <label class="wide">标题<input class="mw-input" id="memory-title" maxlength="256" required></label>
+            <label class="wide">内容<textarea class="mw-input" id="memory-content" maxlength="8000" required></textarea></label>
+            <label>记忆类型<select class="mw-input" id="memory-type" required></select></label>
+            <label>作用域<select class="mw-input" id="memory-scope" required></select></label>
+            <label>来源<select class="mw-input" id="memory-source" required></select></label>
+            <label>可见性<select class="mw-input" id="memory-visibility"><option>PRIVATE</option><option>SHARED</option><option>SYSTEM</option></select></label>
+            <label>Agent<select class="mw-input" id="memory-agent"><option value="">不绑定</option></select></label>
+            <label>Project ID<input class="mw-input" id="memory-project" type="number" min="1"></label>
+            <label>Task ID<input class="mw-input" id="memory-task" type="number" min="1"></label>
+            <label>Memory Key<input class="mw-input" id="memory-key" maxlength="200" placeholder="偏好记忆必填，用于去重"></label>
+            <label>可信度（0-1）<input class="mw-input" id="memory-confidence" type="number" min="0" max="1" step="0.05" value="1" required></label>
+            <label>重要性（0-100）<input class="mw-input" id="memory-importance" type="number" min="0" max="100" value="50" required></label>
+            <label>过期时间<input class="mw-input" id="memory-expires" type="datetime-local"></label>
+            <label class="wide">Metadata JSON<textarea class="mw-input" id="memory-metadata" placeholder='{"tag":"example"}'></textarea></label>
+        </div>
+        <p id="memory-form-error" class="muted"></p>
+        <div class="memory-actions">
+            <button type="submit" class="mw-button mw-button-primary">保存记忆</button>
+        </div>
+    </form>
+</dialog>
+
+<script src="/app-nav.js?v=v19"></script>
+<script src="/memory-center.js?v=v19"></script>
+</body>
+</html>

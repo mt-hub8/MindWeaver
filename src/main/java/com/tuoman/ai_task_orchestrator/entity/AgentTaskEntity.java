@@ -29,6 +29,9 @@ public class AgentTaskEntity {
     @Column(name = "collection_name", length = 128)
     private String collectionName;
 
+    @Column(name = "agent_profile_id")
+    private Long agentProfileId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
     private AgentTaskStatus status;

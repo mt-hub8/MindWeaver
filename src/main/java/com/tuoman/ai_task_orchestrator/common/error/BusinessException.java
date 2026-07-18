@@ -307,4 +307,20 @@ public class BusinessException extends RuntimeException {
     public static BusinessException vectorUpsertFailed(String message) {
         return new BusinessException(ErrorCode.VECTOR_UPSERT_FAILED, HttpStatus.INTERNAL_SERVER_ERROR, message);
     }
+
+    public static BusinessException memoryNotFound() {
+        return new BusinessException(ErrorCode.MEMORY_NOT_FOUND, HttpStatus.NOT_FOUND, "记忆不存在");
+    }
+
+    public static BusinessException memoryInvalid(String message) {
+        return new BusinessException(ErrorCode.MEMORY_INVALID, HttpStatus.BAD_REQUEST, message);
+    }
+
+    public static BusinessException agentProfileNotFound() {
+        return new BusinessException(ErrorCode.AGENT_PROFILE_NOT_FOUND, HttpStatus.NOT_FOUND, "智能体角色不存在");
+    }
+
+    public static BusinessException agentProfileDuplicated() {
+        return new BusinessException(ErrorCode.AGENT_PROFILE_DUPLICATED, HttpStatus.CONFLICT, "Agent Key 已存在");
+    }
 }

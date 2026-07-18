@@ -18,4 +18,6 @@ public class CreateAgentTaskRequest {
     private String objective;
 
     private Long collectionId;
+
+    private Long agentProfileId;
 }

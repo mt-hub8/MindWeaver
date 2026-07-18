@@ -64,6 +64,9 @@
 - **向量索引健康（V16.0）** — 稳定 **vector_id** 幂等 upsert、**generation** 代际隔离、trash/purge 向量同步、batch retry 防重复；**CrossCollectionVectorLeakRate（跨集合向量污染率）** 等存储层审计；页面 `/vector-index-health.html`。
 - **查询理解与检索路由（V17.0）** — 自动识别版本、最新方案、文档类型、代码符号、配置项和 API 路径；根据 query type 选择 Vector / Hybrid RRF / Rerank / parent-adjacent context；模糊问题触发澄清提示，防止全库盲搜；Ask 页面展示查询理解、检索路由和改写后的查询。
 - **可信回答生成（V18.0）** — 建立 Grounded Answer Contract、可追踪 final context、chunk/section 级 citation、引用校验、上下文不足拒答、未支持主张检测和 Answer Grounding Score；Ask 页面展示可信回答状态、引用校验与未支持主张。
+- **记忆中心（V19.0）** — 在 `/memory-center.html` 查看、手动新增、编辑、软删除、归档、恢复和诊断短事实、偏好、约束、决策与任务摘要；每条记忆都带作用域、来源、可信度和重要性，支持随时关闭上下文读取。
+- **智能体角色（V19.0）** — 在 `/agent-profiles.html` 管理角色职责与 system instruction；内置产品经理、架构师、RAG 工程和风险审查四个 Agent Profile。
+- **Agent 私有记忆与共享记忆（V19.0）** — Agent 私有记忆按 `agent_profile_id` 隔离，不能被其他 Agent 默认读取；只有用户显式 share 后才进入 Shared Memory。
 - **AI 任务编排** — 提交目标后自动生成检索、总结与最终报告。
 - **工具执行过程** — 查看每一步工具输入、输出与事件时间线。
 - **模型设置** — 查看运行模式、Worker / Ollama 连接状态，支持连接测试。
@@ -88,6 +91,8 @@
 | 检索设置 | `/retrieval-settings.html` | 结构化切分、混合检索、RRF、重排序、查询理解设置、重新索引（V15.0/V17.0） |
 | 向量索引健康 | `/vector-index-health.html` | 向量重复/污染/残留审计与清理（V16.0） |
 | AI 任务 | `/agent-tasks.html` | 提交任务，查看报告与执行过程 |
+| 记忆中心 | `/memory-center.html` | 管理、筛选、关闭和诊断 User / Project / Agent / Task / Shared Memory（V19.0） |
+| 智能体角色 | `/agent-profiles.html` | 管理 Agent Profile、角色说明、私有记忆与共享记忆（V19.0） |
 | 模型设置 | `/model-settings.html` | 管理**模型供应商**、默认 LLM/Embedding、**测试连接**（V10.0） |
 | 系统设置 | `/settings.html` | 运行模式、本地数据目录规划等只读信息 |
 | 文档处理分析 | `/ingestion-analytics.html` | 查看摄入成功率、耗时与失败原因（偏工程向） |
@@ -318,8 +323,9 @@ Worker 测试使用 mock HTTP，**不调用真实 Ollama**。
 | **V16.0** | 向量索引隔离与去重防污染强化：稳定 vector_id、幂等 upsert、generation 代际、vector audit、cleanup |
 | **V17.0** | 查询理解与检索路由（当前）：自动识别版本、doc_type、代码符号、配置项、API 路径；动态选择 retrieval strategy；防止模糊问题全库盲搜 |
 | **V18.0** | 可信回答生成与引用校验（当前）：Grounded Answer Contract、citation verification、unsupported claim detection、context-insufficient refusal、AnswerGroundingScore |
-| **V19.0** | Skill System MVP |
-| **V19.0** | 多 Agent 圆桌 |
+| **V19.0** | 记忆机制底座与智能体角色档案：可控 Memory、作用域隔离、Agent Profile、Memory Context、诊断与管理页面 |
+| **V20.0** | 基于 V19 Agent Profile / Agent Memory / Shared Memory 的多智能体编排 |
+| **后续** | Skill System MVP；不与 V19 Memory Foundation 混做 |
 
 ---
 
@@ -403,6 +409,7 @@ Java（Spring Boot）擅长可靠的业务服务、事务、异步任务与 API 
 | V16.0 Vector Index Isolation & Deduplication | [vector-index-isolation-and-deduplication-hardening.md](docs/manual/vector-index-isolation-and-deduplication-hardening.md) |
 | V17.0 Query Understanding & Retrieval Routing | [query-understanding-and-retrieval-routing.md](docs/manual/query-understanding-and-retrieval-routing.md) |
 | V18.0 Grounded Answer Contract & Citation Verification | [grounded-answer-contract-and-citation-verification.md](docs/manual/grounded-answer-contract-and-citation-verification.md) |
+| V19.0 Memory Foundation & Agent Profiles | [memory-foundation-and-agent-profiles.md](docs/manual/memory-foundation-and-agent-profiles.md) |
 | 本地开发环境 | [docs/local-dev.md](docs/local-dev.md) |
 | API 示例 | [docs/api-examples.md](docs/api-examples.md) |
 | 面试 deep-dive | [docs/interview](docs/interview) |

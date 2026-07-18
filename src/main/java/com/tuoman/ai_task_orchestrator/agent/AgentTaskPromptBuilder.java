@@ -1,6 +1,7 @@
 package com.tuoman.ai_task_orchestrator.agent;
 
 import com.tuoman.ai_task_orchestrator.dto.AgentTaskCitationResponse;
+import com.tuoman.ai_task_orchestrator.memory.MemoryContextBundle;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -17,6 +18,15 @@ public class AgentTaskPromptBuilder {
                 不要使用工具结果之外的信息编造内容。如果信息不足，需要明确说明。
                 输出必须使用中文，并按指定结构组织答案。
                 """;
+    }
+
+    public String buildFinalReportSystemPrompt(String profileInstruction) {
+        if (profileInstruction == null || profileInstruction.isBlank()) {
+            return buildFinalReportSystemPrompt();
+        }
+        return buildFinalReportSystemPrompt()
+                + "\n\n【Agent Profile】\n"
+                + profileInstruction.trim();
     }
 
     @SuppressWarnings("unchecked")
@@ -65,6 +75,28 @@ public class AgentTaskPromptBuilder {
                 在正文中使用 [1]、[2] 等引用标记对应上下文编号。
                 """);
         return prompt.toString();
+    }
+
+    public String buildFinalReportUserPrompt(
+            String objective,
+            String scopeLabel,
+            Map<String, Object> knowledgeSearchOutput,
+            Map<String, Object> contextSummaryOutput,
+            List<AgentTaskCitationResponse> citations,
+            String memoryPromptSection,
+            MemoryContextBundle memoryContext
+    ) {
+        String base = buildFinalReportUserPrompt(
+                objective,
+                scopeLabel,
+                knowledgeSearchOutput,
+                contextSummaryOutput,
+                citations
+        );
+        String memory = memoryPromptSection == null || memoryPromptSection.isBlank()
+                ? "【长期记忆】\n（本次没有可用记忆）\n"
+                : memoryPromptSection;
+        return memory + "\n【知识库资料】\n" + base;
     }
 
     public String buildSystemPrompt() {

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能体角色 · MindWeaver</title>
+    <link rel="stylesheet" href="/mindweaver.css?v=v19">
+    <link rel="stylesheet" href="/app-shell.css?v=v19">
+    <link rel="stylesheet" href="/memory.css?v=v19">
+</head>
+<body class="mw-page" data-page="agent-profiles">
+<div class="mw-app-shell app-shell">
+    <aside id="app-sidebar-mount" data-active="agent-profiles" aria-label="主导航"></aside>
+    <main class="mw-main-panel main-panel">
+        <div class="mw-page-content content-container">
+            <header class="mw-page-header page-header">
+                <div>
+                    <h1 class="mw-page-title page-title">智能体角色</h1>
+                    <p class="mw-page-description page-subtitle">管理角色职责、system instruction、启用状态和独立记忆边界。</p>
+                </div>
+                <button class="mw-button mw-button-primary" id="new-profile">新建角色</button>
+            </header>
+            <p class="memory-note">V19 只建立 Agent Profile 与记忆隔离。多智能体协作将在后续阶段使用这些角色档案。</p>
+            <section class="mw-card card">
+                <h2 class="mw-card-title">默认角色与自定义角色</h2>
+                <div id="profile-grid" class="profile-grid"><div class="memory-empty">正在加载角色…</div></div>
+            </section>
+        </div>
+    </main>
+</div>
+
+<dialog id="profile-dialog" class="memory-dialog">
+    <form id="profile-form" class="memory-dialog-body">
+        <div class="memory-toolbar">
+            <h2 id="profile-dialog-title">新建角色</h2>
+            <button type="button" class="mw-button mw-button-secondary" id="close-profile-dialog">取消</button>
+        </div>
+        <input type="hidden" id="profile-id">
+        <div class="memory-form-grid">
+            <label>Agent Key<input class="mw-input" id="profile-key" maxlength="100" required></label>
+            <label>名称<input class="mw-input" id="profile-name" maxlength="128" required></label>
+            <label>角色名<input class="mw-input" id="profile-role" maxlength="128" required></label>
+            <label>默认记忆作用域<select class="mw-input" id="profile-scope"><option value="AGENT">Agent 私有</option><option value="SHARED">共享</option></select></label>
+            <label class="wide">职责<textarea class="mw-input" id="profile-description"></textarea></label>
+            <label class="wide">System Instruction<textarea class="mw-input" id="profile-instruction" required></textarea></label>
+            <label class="wide">Metadata JSON<textarea class="mw-input" id="profile-metadata"></textarea></label>
+        </div>
+        <p id="profile-error" class="muted"></p>
+        <button type="submit" class="mw-button mw-button-primary">保存角色</button>
+    </form>
+</dialog>
+
+<script src="/app-nav.js?v=v19"></script>
+<script src="/agent-profiles.js?v=v19"></script>
+</body>
+</html>

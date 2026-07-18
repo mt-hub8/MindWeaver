@@ -23,6 +23,12 @@ import com.tuoman.ai_task_orchestrator.grounding.UnsupportedClaimReport;
 import com.tuoman.ai_task_orchestrator.llm.LlmClient;
 import com.tuoman.ai_task_orchestrator.llm.LlmRequest;
 import com.tuoman.ai_task_orchestrator.llm.LlmResponse;
+import com.tuoman.ai_task_orchestrator.memory.MemoryContextAssembler;
+import com.tuoman.ai_task_orchestrator.memory.MemoryContextBundle;
+import com.tuoman.ai_task_orchestrator.memory.MemoryContextItem;
+import com.tuoman.ai_task_orchestrator.enums.MemoryScope;
+import com.tuoman.ai_task_orchestrator.enums.MemorySourceType;
+import com.tuoman.ai_task_orchestrator.enums.MemoryType;
 import com.tuoman.ai_task_orchestrator.rag.quality.RagQualityMode;
 import com.tuoman.ai_task_orchestrator.rag.quality.RagQualityService;
 import com.tuoman.ai_task_orchestrator.config.RetrievalPipelineProperties;
@@ -53,6 +59,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Set;
@@ -134,11 +141,15 @@ class RagAnswerServiceTest {
     @Mock
     private AnswerGroundingScoreCalculator answerGroundingScoreCalculator;
 
+    @Mock
+    private MemoryContextAssembler memoryContextAssembler;
+
     @InjectMocks
     private RagAnswerService ragAnswerService;
 
     @BeforeEach
     void setUpProviderMetadata() {
+        ReflectionTestUtils.setField(ragAnswerService, "memoryContextAssembler", memoryContextAssembler);
         lenient().when(appRetrievalService.useV15Pipeline()).thenReturn(false);
         lenient().when(ragQualityService.evaluate(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new RagQualityScoreResponse(
@@ -234,6 +245,26 @@ class RagAnswerServiceTest {
                         .level("可信")
                         .heuristic(true)
                         .build());
+        MemoryContextBundle memoryBundle = MemoryContextBundle.builder()
+                .memories(List.of(MemoryContextItem.builder()
+                        .memoryId(900L)
+                        .title("回答偏好")
+                        .content("使用简洁中文")
+                        .memoryType(MemoryType.PREFERENCE)
+                        .memoryScope(MemoryScope.USER)
+                        .sourceType(MemorySourceType.MANUAL)
+                        .confidence(1.0)
+                        .importance(80)
+                        .reason("测试")
+                        .build()))
+                .usedMemoryCount(1)
+                .skippedMemoryCount(0)
+                .warnings(List.of())
+                .build();
+        lenient().when(memoryContextAssembler.assemble(any(), any(), any(), any(), any(), any()))
+                .thenReturn(memoryBundle);
+        lenient().when(memoryContextAssembler.toPromptSection(any()))
+                .thenReturn("【长期记忆】\n- 使用简洁中文\n");
     }
 
     @Test
@@ -268,8 +299,15 @@ class RagAnswerServiceTest {
         assertThat(response.getGrounding().getCitationVerification()).isNotNull();
         assertThat(response.getGrounding().getUnsupportedClaimReport()).isNotNull();
         assertThat(response.getGrounding().getGroundingScore().getGroundingScore()).isEqualTo(90);
+        assertThat(response.getMemoryContext().getUsedMemoryCount()).isEqualTo(1);
         verify(groundedAnswerPromptBuilder).buildPrompt(eq(request.getQuery()), any(), any(), any());
-        verify(llmClient).generate(any(LlmRequest.class));
+        ArgumentCaptor<LlmRequest> requestCaptor = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(llmClient).generate(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().getPrompt())
+                .contains("【长期记忆】")
+                .contains("【知识库资料】");
+        assertThat(response.getCitations()).allMatch(citation -> citation.getChunkId() != null);
+        verify(memoryContextAssembler).assemble(eq(request.getQuery()), any(), any(), any(), any(), any());
     }
 
     @Test

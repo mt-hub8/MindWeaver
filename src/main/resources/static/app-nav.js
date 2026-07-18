@@ -6,6 +6,8 @@
         { key: "collections", nav: "collections", href: "/collections.html", label: "知识库分组", icon: "▦" },
         { key: "ask", nav: "ask", href: "/ask.html", label: "知识库问答", icon: "◎" },
         { key: "agent-tasks", nav: "agent-tasks", href: "/agent-tasks.html", label: "AI 任务", icon: "✦" },
+        { key: "memory-center", nav: "memory-center", href: "/memory-center.html", label: "记忆中心", icon: "◉" },
+        { key: "agent-profiles", nav: "agent-profiles", href: "/agent-profiles.html", label: "智能体角色", icon: "♙" },
         { key: "model-settings", nav: "model-settings", href: "/model-settings.html", label: "模型设置", icon: "⚙" },
         { key: "quality", nav: "quality", href: "/quality.html", label: "质量诊断", icon: "◇" },
         { key: "knowledge-health", nav: "knowledge-health", href: "/knowledge-health.html", label: "知识库体检", icon: "♥" },

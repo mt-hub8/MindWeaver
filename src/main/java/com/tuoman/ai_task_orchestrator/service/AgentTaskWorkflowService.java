@@ -19,10 +19,13 @@ import com.tuoman.ai_task_orchestrator.enums.AgentTaskStepType;
 import com.tuoman.ai_task_orchestrator.llm.LlmGenerateOptions;
 import com.tuoman.ai_task_orchestrator.llm.LlmGenerateResult;
 import com.tuoman.ai_task_orchestrator.llm.LlmProvider;
+import com.tuoman.ai_task_orchestrator.memory.MemoryContextAssembler;
+import com.tuoman.ai_task_orchestrator.memory.MemoryContextBundle;
 import com.tuoman.ai_task_orchestrator.repository.AgentTaskCitationRepository;
 import com.tuoman.ai_task_orchestrator.repository.AgentTaskRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -61,6 +64,12 @@ public class AgentTaskWorkflowService {
     private final LlmProvider llmProvider;
 
     private final AgentTaskProperties agentTaskProperties;
+
+    @Autowired(required = false)
+    private AgentProfileService agentProfileService;
+
+    @Autowired(required = false)
+    private MemoryContextAssembler memoryContextAssembler;
 
     public void executeWorkflow(AgentTaskEntity task) {
         // AgentTask、AgentTaskStep、AgentTaskEvent、AgentTaskCitation 分别描述：
@@ -208,13 +217,17 @@ public class AgentTaskWorkflowService {
         agentTaskEventRecorder.recordFinalReportStarted(task.getId());
 
         long started = System.nanoTime();
-        String systemPrompt = agentTaskPromptBuilder.buildFinalReportSystemPrompt();
+        String profileInstruction = resolveProfileInstruction(task);
+        MemoryContextBundle memoryContext = assembleMemoryContext(task);
+        String systemPrompt = agentTaskPromptBuilder.buildFinalReportSystemPrompt(profileInstruction);
         String userPrompt = agentTaskPromptBuilder.buildFinalReportUserPrompt(
                 task.getObjective(),
                 context.scopeLabel(),
                 searchOutput,
                 summaryOutput,
-                citations
+                citations,
+                memoryContextAssembler == null ? null : memoryContextAssembler.toPromptSection(memoryContext),
+                memoryContext
         );
 
         LlmGenerateOptions options = new LlmGenerateOptions();
@@ -423,5 +436,26 @@ public class AgentTaskWorkflowService {
 
     private long elapsed(long started) {
         return (System.nanoTime() - started) / 1_000_000;
+    }
+
+    private String resolveProfileInstruction(AgentTaskEntity task) {
+        if (task.getAgentProfileId() == null || agentProfileService == null) {
+            return null;
+        }
+        return agentProfileService.findEntity(task.getAgentProfileId()).getSystemInstruction();
+    }
+
+    private MemoryContextBundle assembleMemoryContext(AgentTaskEntity task) {
+        if (memoryContextAssembler == null) {
+            return MemoryContextBundle.empty(null);
+        }
+        return memoryContextAssembler.assemble(
+                task.getObjective(),
+                null,
+                task.getAgentProfileId(),
+                task.getId(),
+                null,
+                null
+        );
     }
 }

@@ -7,6 +7,10 @@ import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
+import com.tuoman.ai_task_orchestrator.enums.MemoryScope;
+
+import java.util.Set;
+
 @Getter
 @Setter
 public class RagAnswerRequest {
@@ -22,4 +26,16 @@ public class RagAnswerRequest {
     private Long collectionId;
 
     private String qualityMode;
+
+    private Long projectId;
+
+    private Long agentProfileId;
+
+    private Long taskId;
+
+    private Set<MemoryScope> memoryScopes;
+
+    @Min(value = 1, message = "memoryLimit must be greater than or equal to 1")
+    @Max(value = 20, message = "memoryLimit must be less than or equal to 20")
+    private Integer memoryLimit;
 }

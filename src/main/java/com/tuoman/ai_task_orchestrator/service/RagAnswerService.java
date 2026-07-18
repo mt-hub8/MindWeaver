@@ -26,6 +26,8 @@ import com.tuoman.ai_task_orchestrator.grounding.UnsupportedClaimReport;
 import com.tuoman.ai_task_orchestrator.llm.LlmClient;
 import com.tuoman.ai_task_orchestrator.llm.LlmRequest;
 import com.tuoman.ai_task_orchestrator.llm.LlmResponse;
+import com.tuoman.ai_task_orchestrator.memory.MemoryContextAssembler;
+import com.tuoman.ai_task_orchestrator.memory.MemoryContextBundle;
 import com.tuoman.ai_task_orchestrator.config.RetrievalPipelineProperties;
 import com.tuoman.ai_task_orchestrator.retrieval.CollectionAskScope;
 import com.tuoman.ai_task_orchestrator.retrieval.RetrievalDiagnostics;
@@ -50,6 +52,7 @@ import com.tuoman.ai_task_orchestrator.vectorstore.VectorStore;
 import com.tuoman.ai_task_orchestrator.vectorstore.VectorStoreProperties;
 import com.tuoman.ai_task_orchestrator.vectorstore.qdrant.QdrantVectorStore;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -127,6 +130,9 @@ public class RagAnswerService {
 
     private final AnswerGroundingScoreCalculator answerGroundingScoreCalculator;
 
+    @Autowired(required = false)
+    private MemoryContextAssembler memoryContextAssembler;
+
     public RagAnswerResponse answer(RagAnswerRequest request) {
         if (request == null) {
             throw BusinessException.validationError("request must not be null");
@@ -151,6 +157,10 @@ public class RagAnswerService {
                 userSelectedFilters
         );
         QueryRewriteResult rewrite = queryRewriteService.rewrite(understanding);
+
+        // Memory 与知识库资料是两条独立上下文通道。记忆只影响偏好、约束和项目背景，
+        // 不会进入 GroundedContextBundle，也不会生成或替代知识库 citation。
+        MemoryContextBundle memoryContext = assembleMemoryContext(request);
 
         // 阶段 4：Retrieval Routing。
         // routingDecision 是检索策略和 metadata pre-filter 的统一承载点。
@@ -189,7 +199,11 @@ public class RagAnswerService {
                     guardedDecision,
                     String.join(",", guardResult.reasons())
             );
-            return withQualityScore(buildClarificationResponse(guardResult.clarificationQuestion(), topK, askScope, diagnostics), request);
+            return withQualityScore(
+                    buildClarificationResponse(guardResult.clarificationQuestion(), topK, askScope, diagnostics),
+                    request,
+                    memoryContext
+            );
         }
         QueryUnderstandingDiagnostics queryDiagnostics = QueryUnderstandingDiagnostics.from(
                 understanding,
@@ -198,7 +212,11 @@ public class RagAnswerService {
                 null
         );
         if (askScope.shouldSkipRetrieval()) {
-            return withQualityScore(buildNoContextResponse(askScope.noContextMessage(), topK, askScope, queryDiagnostics), request);
+            return withQualityScore(
+                    buildNoContextResponse(askScope.noContextMessage(), topK, askScope, queryDiagnostics),
+                    request,
+                    memoryContext
+            );
         }
 
         // 阶段 6：AppRetrievalService 检索。
@@ -261,7 +279,11 @@ public class RagAnswerService {
                     understanding,
                     refusal
             );
-            return withQualityScore(buildNoContextResponse(answer, topK, askScope, retrieval, queryDiagnostics, grounding), request);
+            return withQualityScore(
+                    buildNoContextResponse(answer, topK, askScope, retrieval, queryDiagnostics, grounding),
+                    request,
+                    memoryContext
+            );
         }
 
         // 阶段 9：RefusalPolicy 生成前拒答。
@@ -289,12 +311,17 @@ public class RagAnswerService {
                     retrieval,
                     queryDiagnostics,
                     grounding
-            ), request);
+            ), request, memoryContext);
         }
 
         // 阶段 10：GroundedAnswerPromptBuilder 构造 prompt。
         // prompt 只允许使用 final context 中的证据；citations 必须能回到 contextBundle 中的 citationKey。
         String prompt = groundedAnswerPromptBuilder.buildPrompt(request.getQuery(), contextBundle, contract, understanding);
+        if (memoryContextAssembler != null) {
+            prompt = memoryContextAssembler.toPromptSection(memoryContext)
+                    + "\n【知识库资料】\n"
+                    + prompt;
+        }
         if (routingDecision.isNoAnswerRisk()) {
             prompt = prompt + "\n\n如果上下文没有依据，请明确说明未找到依据。";
         }
@@ -365,11 +392,16 @@ public class RagAnswerService {
                 generation,
                 null,
                 queryDiagnostics,
-                grounding
-        ), request);
+                grounding,
+                memoryContext
+        ), request, memoryContext);
     }
 
-    private RagAnswerResponse withQualityScore(RagAnswerResponse response, RagAnswerRequest request) {
+    private RagAnswerResponse withQualityScore(
+            RagAnswerResponse response,
+            RagAnswerRequest request,
+            MemoryContextBundle memoryContext
+    ) {
         // RagQualityScore 是最后追加的诊断视图，只读取 answer / citations / metadata。
         // 它不应反向修改 retrieval outcome 或 grounding outcome，避免评分逻辑影响主链路结果。
         RagQualityMode mode = RagQualityMode.fromRequest(request.getQualityMode());
@@ -387,7 +419,22 @@ public class RagAnswerService {
                         mode
                 ),
                 response.getQueryUnderstanding(),
-                response.getGrounding()
+                response.getGrounding(),
+                memoryContext
+        );
+    }
+
+    private MemoryContextBundle assembleMemoryContext(RagAnswerRequest request) {
+        if (memoryContextAssembler == null) {
+            return MemoryContextBundle.empty(null);
+        }
+        return memoryContextAssembler.assemble(
+                request.getQuery(),
+                request.getProjectId(),
+                request.getAgentProfileId(),
+                request.getTaskId(),
+                request.getMemoryScopes(),
+                request.getMemoryLimit()
         );
     }
 
