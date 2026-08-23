@@ -15,3 +15,4 @@ that names the superseded record and updates the affected acceptance tests.
 | [0008](0008-migration-cutover-and-rollback.md) | Neutral migration package and verified cutover |
 | [0009](0009-windows-vault-runtime.md) | Handle-identified, exclusively locked Windows Vault runtime |
 | [0010](0010-sqlite-driver-qualification.md) | Evidence-gated SQLite driver qualification |
+| [0011](0011-salvage-first-vertical-slices.md) | Salvage Java and Go code before proving thin vertical slices |
