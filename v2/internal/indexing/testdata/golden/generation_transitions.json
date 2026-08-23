@@ -1,0 +1,137 @@
+{
+  "document_id": "doc-001",
+  "source_artifact_id": "blob-text-001",
+  "source_text_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "chunker_fingerprint": "markdown-deterministic/v1:max=800,overlap=80",
+  "index_fingerprint": "lexical/v1:unicode-simple",
+  "chunk_manifest_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "index_manifest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "scenarios": [
+    {
+      "name": "initial_success_and_redelivery",
+      "operations": [
+        {"kind": "reserve", "number": 1},
+        {"kind": "reserve", "number": 1},
+        {"kind": "start", "number": 1},
+        {"kind": "start", "number": 1},
+        {"kind": "progress", "number": 1, "chunks": 2, "indexed": 2},
+        {"kind": "progress", "number": 1, "chunks": 2, "indexed": 2},
+        {"kind": "ready", "number": 1},
+        {"kind": "ready", "number": 1},
+        {"kind": "activate", "number": 1},
+        {"kind": "activate", "number": 1}
+      ],
+      "want_revision": 6,
+      "want_active": 1,
+      "want_generations": [
+        {"number": 1, "state": "ACTIVE", "revision": 5, "chunks": 2, "indexed": 2}
+      ]
+    },
+    {
+      "name": "reindex_failure_preserves_old_active",
+      "operations": [
+        {"kind": "reserve", "number": 1},
+        {"kind": "start", "number": 1},
+        {"kind": "progress", "number": 1, "chunks": 2, "indexed": 2},
+        {"kind": "ready", "number": 1},
+        {"kind": "activate", "number": 1},
+        {"kind": "reserve", "number": 2},
+        {"kind": "start", "number": 2},
+        {"kind": "progress", "number": 2, "chunks": 3, "indexed": 1},
+        {"kind": "fail", "number": 2},
+        {"kind": "activate", "number": 2, "expected_active": 1, "want_error": "READY_TO_ACTIVATE"}
+      ],
+      "want_revision": 10,
+      "want_active": 1,
+      "want_generations": [
+        {"number": 1, "state": "ACTIVE", "revision": 5, "chunks": 2, "indexed": 2},
+        {"number": 2, "state": "FAILED", "revision": 4, "chunks": 3, "indexed": 1}
+      ]
+    },
+    {
+      "name": "mid_build_cancel_preserves_old_active",
+      "operations": [
+        {"kind": "reserve", "number": 1},
+        {"kind": "start", "number": 1},
+        {"kind": "progress", "number": 1, "chunks": 2, "indexed": 2},
+        {"kind": "ready", "number": 1},
+        {"kind": "activate", "number": 1},
+        {"kind": "reserve", "number": 2},
+        {"kind": "start", "number": 2},
+        {"kind": "cancel", "number": 2}
+      ],
+      "want_revision": 9,
+      "want_active": 1,
+      "want_generations": [
+        {"number": 1, "state": "ACTIVE", "revision": 5, "chunks": 2, "indexed": 2},
+        {"number": 2, "state": "CANCELLED", "revision": 3, "chunks": 0, "indexed": 0}
+      ]
+    },
+    {
+      "name": "reindex_cutover_is_one_aggregate_transition",
+      "operations": [
+        {"kind": "reserve", "number": 1},
+        {"kind": "start", "number": 1},
+        {"kind": "progress", "number": 1, "chunks": 2, "indexed": 2},
+        {"kind": "ready", "number": 1},
+        {"kind": "activate", "number": 1},
+        {"kind": "reserve", "number": 2},
+        {"kind": "start", "number": 2},
+        {"kind": "progress", "number": 2, "chunks": 3, "indexed": 3},
+        {"kind": "ready", "number": 2},
+        {"kind": "activate", "number": 2, "expected_active": 1}
+      ],
+      "want_revision": 11,
+      "want_active": 2,
+      "want_generations": [
+        {"number": 1, "state": "RETIRED", "revision": 6, "chunks": 2, "indexed": 2},
+        {"number": 2, "state": "ACTIVE", "revision": 5, "chunks": 3, "indexed": 3}
+      ]
+    },
+    {
+      "name": "incomplete_manifest_cannot_activate",
+      "operations": [
+        {"kind": "reserve", "number": 1},
+        {"kind": "start", "number": 1},
+        {"kind": "progress", "number": 1, "chunks": 2, "indexed": 1},
+        {"kind": "ready", "number": 1, "want_error": "fully indexed"},
+        {"kind": "activate", "number": 1, "want_error": "READY_TO_ACTIVATE"}
+      ],
+      "want_revision": 4,
+      "want_active": 0,
+      "want_generations": [
+        {"number": 1, "state": "BUILDING", "revision": 3, "chunks": 2, "indexed": 1}
+      ]
+    },
+    {
+      "name": "same_count_different_manifest_is_rejected",
+      "operations": [
+        {"kind": "reserve", "number": 1},
+        {"kind": "start", "number": 1},
+        {"kind": "progress", "number": 1, "chunks": 2, "indexed": 2},
+        {"kind": "progress", "number": 1, "chunks": 2, "indexed": 2, "chunk_manifest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "want_error": "chunk manifest changed"}
+      ],
+      "want_revision": 4,
+      "want_active": 0,
+      "want_generations": [
+        {"number": 1, "state": "BUILDING", "revision": 3, "chunks": 2, "indexed": 2}
+      ]
+    },
+    {
+      "name": "failed_sequence_is_terminal_and_not_reused",
+      "operations": [
+        {"kind": "reserve", "number": 1},
+        {"kind": "start", "number": 1},
+        {"kind": "fail", "number": 1},
+        {"kind": "start", "number": 1, "want_error": "cannot start"},
+        {"kind": "reserve", "number": 2}
+      ],
+      "want_revision": 5,
+      "want_active": 0,
+      "want_generations": [
+        {"number": 1, "state": "FAILED", "revision": 3, "chunks": 0, "indexed": 0},
+        {"number": 2, "state": "RESERVED", "revision": 1, "chunks": 0, "indexed": 0}
+      ]
+    }
+  ]
+}

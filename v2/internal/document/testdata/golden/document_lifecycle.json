@@ -1,0 +1,172 @@
+{
+  "initial": {
+    "protocol": "document/v1",
+    "id": "doc-001",
+    "revision": 1,
+    "lifecycle": "ACTIVE",
+    "active_generation": 0,
+    "lineage": {
+      "source": {
+        "id": "blob-source-001",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size_bytes": 42,
+        "media_type": "text/markdown"
+      },
+      "text": {
+        "id": "blob-text-001",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "size_bytes": 39,
+        "media_type": "text/plain; charset=utf-8"
+      },
+      "extractor": "markdown/plaintext@1:lf+nfc"
+    }
+  },
+  "steps": [
+    {
+      "name": "initial_generation_becomes_retrievable",
+      "command": {"kind": "ACTIVATE_GENERATION", "generation": 1},
+      "retrievable": true,
+      "want": {
+        "protocol": "document/v1",
+        "id": "doc-001",
+        "revision": 2,
+        "lifecycle": "ACTIVE",
+        "active_generation": 1,
+        "lineage": {
+          "source": {"id": "blob-source-001", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size_bytes": 42, "media_type": "text/markdown"},
+          "text": {"id": "blob-text-001", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "size_bytes": 39, "media_type": "text/plain; charset=utf-8"},
+          "extractor": "markdown/plaintext@1:lf+nfc"
+        }
+      }
+    },
+    {
+      "name": "activation_redelivery_is_idempotent",
+      "command": {"kind": "ACTIVATE_GENERATION", "generation": 1},
+      "retrievable": true,
+      "want": {
+        "protocol": "document/v1",
+        "id": "doc-001",
+        "revision": 2,
+        "lifecycle": "ACTIVE",
+        "active_generation": 1,
+        "lineage": {
+          "source": {"id": "blob-source-001", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size_bytes": 42, "media_type": "text/markdown"},
+          "text": {"id": "blob-text-001", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "size_bytes": 39, "media_type": "text/plain; charset=utf-8"},
+          "extractor": "markdown/plaintext@1:lf+nfc"
+        }
+      }
+    },
+    {
+      "name": "trash_hides_without_deleting_generation",
+      "command": {"kind": "TRASH"},
+      "retrievable": false,
+      "want": {
+        "protocol": "document/v1",
+        "id": "doc-001",
+        "revision": 3,
+        "lifecycle": "TRASHED",
+        "active_generation": 1,
+        "lineage": {
+          "source": {"id": "blob-source-001", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size_bytes": 42, "media_type": "text/markdown"},
+          "text": {"id": "blob-text-001", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "size_bytes": 39, "media_type": "text/plain; charset=utf-8"},
+          "extractor": "markdown/plaintext@1:lf+nfc"
+        }
+      }
+    },
+    {
+      "name": "trashed_document_cannot_cut_over",
+      "command": {"kind": "ACTIVATE_GENERATION", "generation": 2},
+      "want_error": "lifecycle"
+    },
+    {
+      "name": "restore_reuses_retained_generation",
+      "command": {"kind": "RESTORE"},
+      "retrievable": true,
+      "want": {
+        "protocol": "document/v1",
+        "id": "doc-001",
+        "revision": 4,
+        "lifecycle": "ACTIVE",
+        "active_generation": 1,
+        "lineage": {
+          "source": {"id": "blob-source-001", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size_bytes": 42, "media_type": "text/markdown"},
+          "text": {"id": "blob-text-001", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "size_bytes": 39, "media_type": "text/plain; charset=utf-8"},
+          "extractor": "markdown/plaintext@1:lf+nfc"
+        }
+      }
+    },
+    {
+      "name": "reindex_cutover_advances_generation",
+      "command": {"kind": "ACTIVATE_GENERATION", "generation": 2, "expected_generation": 1},
+      "retrievable": true,
+      "want": {
+        "protocol": "document/v1",
+        "id": "doc-001",
+        "revision": 5,
+        "lifecycle": "ACTIVE",
+        "active_generation": 2,
+        "lineage": {
+          "source": {"id": "blob-source-001", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size_bytes": 42, "media_type": "text/markdown"},
+          "text": {"id": "blob-text-001", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "size_bytes": 39, "media_type": "text/plain; charset=utf-8"},
+          "extractor": "markdown/plaintext@1:lf+nfc"
+        }
+      }
+    },
+    {
+      "name": "purge_requires_trash",
+      "command": {"kind": "PURGE"},
+      "want_error": "lifecycle"
+    },
+    {
+      "name": "trash_before_purge",
+      "command": {"kind": "TRASH"},
+      "retrievable": false,
+      "want": {
+        "protocol": "document/v1",
+        "id": "doc-001",
+        "revision": 6,
+        "lifecycle": "TRASHED",
+        "active_generation": 2,
+        "lineage": {
+          "source": {"id": "blob-source-001", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size_bytes": 42, "media_type": "text/markdown"},
+          "text": {"id": "blob-text-001", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "size_bytes": 39, "media_type": "text/plain; charset=utf-8"},
+          "extractor": "markdown/plaintext@1:lf+nfc"
+        }
+      }
+    },
+    {
+      "name": "purge_removes_active_generation_pointer",
+      "command": {"kind": "PURGE"},
+      "retrievable": false,
+      "want": {
+        "protocol": "document/v1",
+        "id": "doc-001",
+        "revision": 7,
+        "lifecycle": "PURGED",
+        "active_generation": 0,
+        "lineage": {
+          "source": {"id": "blob-source-001", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size_bytes": 42, "media_type": "text/markdown"},
+          "text": {"id": "blob-text-001", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "size_bytes": 39, "media_type": "text/plain; charset=utf-8"},
+          "extractor": "markdown/plaintext@1:lf+nfc"
+        }
+      }
+    },
+    {
+      "name": "purge_redelivery_is_idempotent",
+      "command": {"kind": "PURGE"},
+      "retrievable": false,
+      "want": {
+        "protocol": "document/v1",
+        "id": "doc-001",
+        "revision": 7,
+        "lifecycle": "PURGED",
+        "active_generation": 0,
+        "lineage": {
+          "source": {"id": "blob-source-001", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size_bytes": 42, "media_type": "text/markdown"},
+          "text": {"id": "blob-text-001", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "size_bytes": 39, "media_type": "text/plain; charset=utf-8"},
+          "extractor": "markdown/plaintext@1:lf+nfc"
+        }
+      }
+    }
+  ]
+}
