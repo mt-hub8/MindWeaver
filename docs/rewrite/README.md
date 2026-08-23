@@ -70,6 +70,10 @@ The binding architecture decisions live in [`adr/`](./adr/README.md). A package
 or API that conflicts with an accepted ADR must be changed or the ADR must be
 superseded explicitly; implementation convenience is not an exception.
 
+End-to-end completion is tracked in
+[`acceptance-ledger.md`](./acceptance-ledger.md). A green unit test does not close
+a row that requires crash, migration, security, or clean-machine evidence.
+
 ## Definition of complete
 
 The rewrite is complete only when every retained legacy capability has a closed
