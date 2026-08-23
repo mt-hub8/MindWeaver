@@ -1,6 +1,6 @@
 # ADR 0006: Retrieval evidence and citations
 
-- Status: Accepted
+- Status: Superseded in part by ADR 0012
 - Date: 2026-08-23
 
 ## Decision

@@ -1,6 +1,6 @@
 # ADR 0008: Migration, cutover, and rollback
 
-- Status: Accepted
+- Status: Superseded in part by ADR 0012
 - Date: 2026-08-23
 
 ## Decision

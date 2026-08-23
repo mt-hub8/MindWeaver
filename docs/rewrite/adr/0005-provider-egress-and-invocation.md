@@ -1,6 +1,6 @@
 # ADR 0005: Provider egress and invocation
 
-- Status: Accepted
+- Status: Superseded in part by ADR 0012
 - Date: 2026-08-23
 
 ## Decision
