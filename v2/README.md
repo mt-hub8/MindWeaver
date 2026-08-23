@@ -1,15 +1,27 @@
-# MindWeaver v2 platform and data kernel
+# MindWeaver Go rewrite
 
-This directory is an independently extractable Go module. It does not import,
-modify, or build the legacy Java application.
+`v2/` is an independently buildable Go replacement for the legacy Java
+application. The target is a single-user, loopback-only local knowledge
+workbench backed by one Vault. It does not import or execute Java, MySQL,
+RabbitMQ, or Python workers.
 
-- Module: `github.com/mt-hub8/MindWeaver/v2`
-- Configuration contract: `mindweaver.v1.json` (`schema_version: 1`)
-- Shared boundaries: `platform`, `platform/apperror`, `platform/event`, `job`
-- Dependency policy: standard library only until a SQLite driver ADR and proof
-  are accepted
+The rewrite follows a salvage-first rule: old Java behavior and already-written
+Go code are retained only when they prove user value and close a real vertical
+workflow. See the repository-level
+[Go salvage review](../docs/rewrite/go-salvage-review.md).
 
-## Run
+## Current state
+
+The command-line bootstrap can print its version and create/check the small
+versioned configuration. SQLite and Blob production stores are the first real
+vertical-slice foundations under construction. There is not yet a released
+server or usable document workflow, and this README deliberately does not claim
+otherwise.
+
+The isolated `spikes/sqlite` module is dependency qualification evidence, not a
+production storage implementation.
+
+## Run the bootstrap
 
 ```powershell
 $env:MW_GO = 'C:\path\to\go.exe'
@@ -18,14 +30,11 @@ $env:MW_GO = 'C:\path\to\go.exe'
 & $env:MW_GO run ./cmd/mindweaver config check -file mindweaver.v1.json
 ```
 
-The CLI refuses unknown configuration fields, unsupported schema versions, and
-overwriting an existing configuration file.
+Relative Vault paths are resolved next to the configuration file so the same
+configuration cannot silently select a different Vault when launched from a
+shortcut or another working directory.
 
-## Verify fully offline
-
-The verification entry points force `GOTOOLCHAIN=local`, `GOPROXY=off`,
-`GOSUMDB=off`, and read-only module resolution. They format-check, test, vet,
-and build without external services.
+## Verify
 
 ```powershell
 ./scripts/ci.ps1 -Go C:\path\to\go.exe
@@ -37,12 +46,18 @@ MW_GO=/path/to/go ./scripts/ci.sh
 MW_GO=/path/to/go ./scripts/verify-standalone.sh
 ```
 
-The nested `.github/workflows/ci.yml` becomes an active workflow when `v2/` is
-extracted as its own repository. In the current monorepo, the scripts are the
-authoritative CI entry points.
+The scripts format-check, test, vet, and build. Module downloads are disabled in
+these verification commands, so dependencies must already be present in the Go
+module cache. The nested `.github/workflows/ci.yml` becomes active after `v2/`
+is extracted into its own repository.
 
-## Transaction boundary
+## First product gate
 
-The public `job.Store` contract supports short optimistic writes. The intended
-execution sequence is: claim in a short transaction, call an external provider
-outside any transaction, then finalize with another short compare-and-swap.
+The next milestone is not another protocol package. It is one public workflow:
+
+```text
+upload -> immutable blob -> durable ingestion job -> SQLite chunks/FTS5 -> search
+```
+
+It is accepted only when the same result survives process restart and failure
+tests prove that half-built revisions never become searchable.

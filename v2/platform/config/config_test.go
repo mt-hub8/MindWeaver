@@ -12,9 +12,10 @@ import (
 	"github.com/mt-hub8/MindWeaver/v2/platform/config"
 )
 
-func TestWriteNewAndLoadRoundTrip(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "nested", config.DefaultFileName)
-	want := config.Default(filepath.Join(t.TempDir(), "vault"))
+func TestWriteLoadAndResolveVault(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "config", config.DefaultFileName)
+	want := config.Default(filepath.Join("..", "vault"))
 
 	if err := config.WriteNew(context.Background(), path, want); err != nil {
 		t.Fatalf("WriteNew() error = %v", err)
@@ -26,12 +27,12 @@ func TestWriteNewAndLoadRoundTrip(t *testing.T) {
 	if got != want {
 		t.Fatalf("Load() = %#v, want %#v", got, want)
 	}
-	info, err := os.Stat(path)
+	resolved, err := config.ResolveVault(path, got)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("ResolveVault() error = %v", err)
 	}
-	if info.Size() == 0 {
-		t.Fatal("configuration file is empty")
+	if wantPath := filepath.Join(root, "vault"); resolved != wantPath {
+		t.Fatalf("ResolveVault() = %q, want %q", resolved, wantPath)
 	}
 }
 
@@ -49,12 +50,11 @@ func TestWriteNewRefusesOverwrite(t *testing.T) {
 
 func TestLoadRejectsUnknownFieldsAndTrailingValues(t *testing.T) {
 	tests := map[string]string{
-		"unknown field":  `{"schema_version":1,"vault":{"root":"vault","typo":true},"storage":{"driver":"sqlite","database_file":"data/db","busy_timeout":"1s","max_open_conns":1,"max_idle_conns":1,"connection_ttl":"0s"},"runtime":{"lock_file":"lock"}}`,
-		"trailing value": `{"schema_version":1,"vault":{"root":"vault"},"storage":{"driver":"sqlite","database_file":"data/db","busy_timeout":"1s","max_open_conns":1,"max_idle_conns":1,"connection_ttl":"0s"},"runtime":{"lock_file":"lock"}} {}`,
+		"unknown field":  `{"schema_version":1,"vault":{"root":"vault","typo":true}}`,
+		"trailing value": `{"schema_version":1,"vault":{"root":"vault"}} {}`,
 	}
 	for name, body := range tests {
 		t.Run(name, func(t *testing.T) {
-			body = strings.ReplaceAll(body, `\"`, `"`)
 			path := filepath.Join(t.TempDir(), "config.json")
 			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 				t.Fatal(err)
@@ -67,13 +67,11 @@ func TestLoadRejectsUnknownFieldsAndTrailingValues(t *testing.T) {
 	}
 }
 
-func TestValidateRejectsEscapingPathsAndWrongVersion(t *testing.T) {
-	cfg := config.Default("vault")
-	cfg.Storage.DatabaseFile = filepath.Join("..", "outside.db")
-	if err := cfg.Validate(); apperror.CodeOf(err) != "config.database_file_invalid" {
+func TestValidateRejectsEmptyRootAndWrongVersion(t *testing.T) {
+	cfg := config.Default("   ")
+	if err := cfg.Validate(); apperror.CodeOf(err) != "config.vault_root_required" {
 		t.Fatalf("Validate() error = %v", err)
 	}
-
 	cfg = config.Default("vault")
 	cfg.SchemaVersion++
 	if err := cfg.Validate(); apperror.CodeOf(err) != "config.unsupported_version" {
@@ -97,17 +95,19 @@ func TestIOHonorsAlreadyCanceledContext(t *testing.T) {
 	}
 }
 
-func TestExampleUsesPortableDurationEncoding(t *testing.T) {
-	cfg := config.Default("vault")
+func TestEncodingContainsOnlyRealChoices(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	if err := config.WriteNew(context.Background(), path, cfg); err != nil {
+	if err := config.WriteNew(context.Background(), path, config.Default("vault")); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"busy_timeout": "5s"`) {
-		t.Fatalf("unexpected duration encoding: %s", data)
+	text := string(data)
+	for _, absent := range []string{"max_open_conns", "database_file", "lock_file", "busy_timeout"} {
+		if strings.Contains(text, absent) {
+			t.Fatalf("implementation option %q leaked into config: %s", absent, text)
+		}
 	}
 }

@@ -107,7 +107,7 @@ func exitCode(err error) int {
 }
 
 func printUsage(writer io.Writer) error {
-	_, err := fmt.Fprintln(writer, `MindWeaver v2 platform kernel
+	_, err := fmt.Fprintln(writer, `MindWeaver local workbench (Go rewrite)
 
 Usage:
   mindweaver version
