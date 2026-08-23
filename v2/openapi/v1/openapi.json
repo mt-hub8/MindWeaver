@@ -589,7 +589,7 @@
         "properties": {
           "id": { "$ref": "#/components/schemas/Identifier" },
           "conversationId": { "$ref": "#/components/schemas/Identifier" },
-          "status": { "type": "string", "enum": ["created", "policy_check", "queued", "running", "streaming", "succeeded", "refused", "cancelled", "failed"] },
+          "status": { "type": "string", "enum": ["created", "authorized", "running", "streaming", "cancel_requested", "succeeded", "refused", "cancelled", "failed"] },
           "version": { "type": "integer", "minimum": 1 },
           "providerId": { "type": "string" },
           "modelId": { "type": "string" },
@@ -605,7 +605,7 @@
         "additionalProperties": false,
         "required": ["class", "retryable"],
         "properties": {
-          "class": { "type": "string", "enum": ["policy", "capability", "authentication", "rate_limit", "timeout", "transport", "provider", "invalid_response", "cancelled", "internal"] },
+          "class": { "type": "string", "enum": ["policy_denied", "invalid_request", "unsupported", "authentication", "authorization", "rate_limited", "timeout", "unavailable", "provider_error", "protocol_error", "internal"] },
           "retryable": { "type": "boolean" },
           "safeMessage": { "type": "string", "maxLength": 500 }
         }
