@@ -64,6 +64,12 @@ repository only after migration and release qualification pass.
 - Java receives no new product features; only export, migration, or critical data
   safety fixes are allowed.
 
+## Accepted decisions
+
+The binding architecture decisions live in [`adr/`](./adr/README.md). A package
+or API that conflicts with an accepted ADR must be changed or the ADR must be
+superseded explicitly; implementation convenience is not an exception.
+
 ## Definition of complete
 
 The rewrite is complete only when every retained legacy capability has a closed
