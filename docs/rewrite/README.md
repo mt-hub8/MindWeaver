@@ -20,24 +20,34 @@ repository only after migration and release qualification pass.
 - Text, Markdown, and text-based PDF are the initial document formats.
 - No account, collaboration, cloud synchronization, or implicit LAN mode.
 
+The first release is salvage-first, not a Java parity rewrite. Its product slice
+is canonical documents and lifecycle, true M:N collections, simple controlled
+retrieval, Ask with refusal and same-context citations, local/cloud provider
+configuration with authorized egress and durable message outcomes, conversation,
+secure local UI/session, Vault backup/restore, and legacy migration. Agent,
+Profile, Memory, Batch, Notification, Evaluation, Qdrant, reindex, advanced
+retrieval/rerank/query understanding, cache/storage consoles, and advanced index
+repair are absent until separately rebuilt from zero and accepted.
+
 ## Architectural invariants
 
-1. SQLite is authoritative for state, membership, lifecycle, and the active
-   document generation.
+1. SQLite is authoritative for first-release state, membership, and lifecycle.
 2. Immutable blobs are authoritative for imported source bytes.
-3. FTS, chunks, embeddings, vector indexes, and caches are rebuildable derived
-   data.
-4. Every asynchronous operation uses one durable job protocol with atomic claim,
-   fencing, bounded retry, cancellation, and recovery.
+3. FTS and chunks are rebuildable first-release derivatives. Embeddings, vector
+   indexes, and caches belong to later independently accepted slices.
+4. Core background work uses one durable job protocol that prevents concurrent
+   duplicate execution and makes retry, cancellation, restart, and final failure
+   visible.
 5. External I/O never runs inside a database transaction.
-6. Ask, Agent, and Evaluation use one retrieval engine and one immutable
-   retrieval snapshot model.
-7. A citation can reference only an AnswerContext item actually sent to the
-   model.
-8. Strict refusal changes the returned answer; it is not diagnostic metadata.
-9. Reindex atomically switches one document and cannot mutate another document.
-10. Purge cannot succeed until all planned in-Vault copies are verified removed
-    or irreversibly redacted.
+6. Core Search and Ask use the same scoped SQLite FTS path; later entrants must
+   conform to its lifecycle and collection rules before promotion.
+7. A citation can reference only a stable source chunk supplied for that answer.
+8. No-hit and structurally invalid citation cases refuse or show an explicit
+   limitation label; the product does not claim semantic truth verification.
+9. Reindex is not a first-release capability; a later slice must prove that it
+   cannot mutate another document before promotion.
+10. Explicit delete removes known in-scope DB/FTS rows and reference-aware blobs;
+    any failed deletion remains failed and visible.
 11. Backup contents are defined by a SQLite snapshot manifest and immutable blob
     hashes.
 12. V1 exposes one production implementation per capability. Alternative
@@ -48,15 +58,17 @@ repository only after migration and release qualification pass.
 | Workstream | Owned surface |
 | --- | --- |
 | Platform and data kernel | runtime, configuration, storage, jobs, recovery, backup, purge foundations |
-| Knowledge pipeline | documents, collections, ingestion, chunking, generations, lexical/vector retrieval |
+| Knowledge pipeline | documents, collections, ingestion, deterministic chunking, SQLite FTS retrieval |
 | RAG and product | providers, egress, answers, citations, conversations, API/UI, migration, advanced AI capabilities |
 | Integration control | architecture decisions, interface arbitration, commit integration, end-to-end gates, release qualification |
 
 ## Delivery discipline
 
 - Deliver vertical user workflows, not isolated repository/service layers.
-- Every persisted state transition and its event commit in the same transaction.
-- Every write endpoint is idempotent and every mutable root is versioned.
+- Every persisted state transition is atomic, and visible progress never leads
+  durable completion.
+- Retried core upload and Ask operations do not duplicate work; mutable core
+  roots reject stale revisions where concurrent browser edits are possible.
 - Tests are offline by default and never use user data or a developer machine's
   database/model service.
 - A feature flag cannot conceal an incomplete invariant or preserve duplicate
@@ -74,10 +86,20 @@ End-to-end completion is tracked in
 [`acceptance-ledger.md`](./acceptance-ledger.md). A green unit test does not close
 a row that requires crash, migration, security, or clean-machine evidence.
 
+Gate 0 legacy coverage is tracked in the machine-readable
+[`legacy-inventory.csv`](./legacy-inventory.csv), with its human review in
+[`legacy-inventory-summary.md`](./legacy-inventory-summary.md). The binding
+salvage decisions and their evidence are in
+[`legacy-salvage-review.md`](./legacy-salvage-review.md). Run
+`docs/rewrite/scripts/validate-legacy-inventory.ps1` whenever a legacy artifact,
+feature disposition, salvage decision, migration rule, or acceptance binding
+changes.
+
 ## Definition of complete
 
-The rewrite is complete only when every retained legacy capability has a closed
-traceability row, all canonical data migrates with a machine-readable verification
-report, release and disaster-recovery gates pass, Go is the sole writer, `v2/`
-builds from a clean standalone checkout, and the Java repository is archived with
-a supported migration exit.
+The lean rewrite is complete when every `CORE` capability has a closed
+traceability row, all in-scope canonical data migrates with a machine-readable
+verification report, core release and disaster-recovery gates pass, Go is the
+sole writer, `v2/` builds from a clean standalone checkout, and the Java
+repository is archived with a supported migration exit. `LATER` and `ARCHIVE`
+acceptance rows preserve traceability but cannot block this release.
