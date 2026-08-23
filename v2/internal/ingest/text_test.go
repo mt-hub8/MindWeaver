@@ -1,0 +1,180 @@
+package ingest
+
+import (
+	"context"
+	"errors"
+	"io"
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
+
+func TestDetectTextFormat(t *testing.T) {
+	t.Parallel()
+	tests := map[string]TextFormat{
+		"notes.TXT":      FormatText,
+		"readme.md":      FormatMarkdown,
+		"draft.markdown": FormatMarkdown,
+	}
+	for name, want := range tests {
+		name, want := name, want
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got, err := DetectTextFormat(name)
+			if err != nil || got != want {
+				t.Fatalf("DetectTextFormat(%q) = %q, %v; want %q", name, got, err, want)
+			}
+		})
+	}
+	if _, err := DetectTextFormat("manual.pdf"); !errors.Is(err, ErrUnsupportedFormat) {
+		t.Fatalf("PDF error = %v; want ErrUnsupportedFormat", err)
+	}
+}
+
+func TestReadTextNormalizesBOMAndLineEndings(t *testing.T) {
+	t.Parallel()
+	got, err := ReadText(context.Background(), strings.NewReader("\ufeff标题\r\n第一行\r第二行\n"), 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "标题\n第一行\n第二行\n"; got != want {
+		t.Fatalf("text = %q; want %q", got, want)
+	}
+}
+
+func TestReadTextRejectsInvalidInputs(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		data string
+		max  int64
+		want error
+	}{
+		{name: "too large", data: "12345", max: 4, want: ErrSourceTooLarge},
+		{name: "invalid UTF-8", data: string([]byte{0xff}), max: 1, want: ErrInvalidUTF8},
+		{name: "NUL", data: "a\x00b", max: 3, want: ErrBinaryText},
+		{name: "empty", data: " \n\t", max: 3, want: ErrEmptyText},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := ReadText(context.Background(), strings.NewReader(test.data), test.max)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("error = %v; want %v", err, test.want)
+			}
+		})
+	}
+}
+
+func TestReadTextAcceptsExactLimit(t *testing.T) {
+	t.Parallel()
+	got, err := ReadText(context.Background(), strings.NewReader("知识库"), int64(len("知识库")))
+	if err != nil || got != "知识库" {
+		t.Fatalf("ReadText = %q, %v", got, err)
+	}
+}
+
+func TestReadTextStopsReaderWithoutProgress(t *testing.T) {
+	t.Parallel()
+	_, err := ReadText(context.Background(), zeroReader{}, 128)
+	if !errors.Is(err, io.ErrNoProgress) {
+		t.Fatalf("error = %v; want io.ErrNoProgress", err)
+	}
+}
+
+func TestReadTextRejectsUnboundedLimit(t *testing.T) {
+	t.Parallel()
+	_, err := ReadText(context.Background(), strings.NewReader("text"), MaxTextSourceBytes+1)
+	if err == nil {
+		t.Fatal("ReadText accepted a limit above MaxTextSourceBytes")
+	}
+}
+
+func TestChunkTextIsRuneSafeBoundedAndDeterministic(t *testing.T) {
+	t.Parallel()
+	text := "第一段讲本地知识库。\n第二段包含 MindWeaver 搜索能力。\n第三段用于验证稳定分块。"
+	first, err := ChunkText(text, 18, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := ChunkText(text, 18, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) < 2 || len(first) != len(second) {
+		t.Fatalf("unexpected chunk counts: %d and %d", len(first), len(second))
+	}
+	for index := range first {
+		got := first[index]
+		if got != second[index] {
+			t.Fatalf("chunk %d is not deterministic: %#v != %#v", index, got, second[index])
+		}
+		if got.Ordinal != index {
+			t.Fatalf("chunk %d ordinal = %d", index, got.Ordinal)
+		}
+		if utf8.RuneCountInString(got.Text) > 18 {
+			t.Fatalf("chunk %d has %d runes: %q", index, utf8.RuneCountInString(got.Text), got.Text)
+		}
+		if len(got.Digest) != 64 {
+			t.Fatalf("chunk %d digest length = %d", index, len(got.Digest))
+		}
+	}
+}
+
+func TestChunkTextHardBoundaryMakesProgress(t *testing.T) {
+	t.Parallel()
+	chunks, err := ChunkText("abcdefghij", 4, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) != 3 {
+		t.Fatalf("chunk count = %d; want 3", len(chunks))
+	}
+	if chunks[0].Text != "abcd" || chunks[len(chunks)-1].Text != "ghij" {
+		t.Fatalf("unexpected boundary chunks: %#v", chunks)
+	}
+}
+
+func TestChunkTextValidation(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		max, overlap int
+		want         error
+	}{
+		{max: 0, overlap: 0},
+		{max: 4, overlap: -1},
+		{max: 4, overlap: 2},
+		{max: MaxChunkRunes + 1, overlap: 0},
+	} {
+		if _, err := ChunkText("content", test.max, test.overlap); err == nil {
+			t.Fatalf("ChunkText(%d, %d) unexpectedly succeeded", test.max, test.overlap)
+		}
+	}
+	if _, err := ChunkText(" \n", 4, 0); !errors.Is(err, ErrEmptyText) {
+		t.Fatalf("empty error = %v; want ErrEmptyText", err)
+	}
+}
+
+func TestChunkTextRejectsAllocationAmplification(t *testing.T) {
+	t.Parallel()
+	text := strings.Repeat("a", MaxTextChunks+1)
+	if _, err := ChunkText(text, 1, 0); !errors.Is(err, ErrChunkLimit) {
+		t.Fatalf("error = %v; want ErrChunkLimit", err)
+	}
+}
+
+func TestChunkTextRejectsBypassedReaderLimits(t *testing.T) {
+	t.Parallel()
+	if _, err := ChunkText(string([]byte{0xff}), 32, 0); !errors.Is(err, ErrInvalidUTF8) {
+		t.Fatalf("invalid UTF-8 error = %v; want ErrInvalidUTF8", err)
+	}
+	tooLarge := strings.Repeat("a", int(MaxTextSourceBytes)+1)
+	if _, err := ChunkText(tooLarge, MaxChunkRunes, 0); !errors.Is(err, ErrSourceTooLarge) {
+		t.Fatalf("oversize error = %v; want ErrSourceTooLarge", err)
+	}
+}
+
+type zeroReader struct{}
+
+func (zeroReader) Read([]byte) (int, error) { return 0, nil }

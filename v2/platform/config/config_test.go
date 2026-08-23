@@ -67,6 +67,25 @@ func TestLoadRejectsUnknownFieldsAndTrailingValues(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsDuplicateKeysAtEveryDepth(t *testing.T) {
+	tests := map[string]string{
+		"root":   `{"schema_version":1,"schema_version":1,"vault":{"root":"vault"}}`,
+		"nested": `{"schema_version":1,"vault":{"root":"first","root":"second"}}`,
+	}
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := config.Load(context.Background(), path)
+			if apperror.CodeOf(err) != "config.duplicate_key" {
+				t.Fatalf("Load() error = %v; want config.duplicate_key", err)
+			}
+		})
+	}
+}
+
 func TestValidateRejectsEmptyRootAndWrongVersion(t *testing.T) {
 	cfg := config.Default("   ")
 	if err := cfg.Validate(); apperror.CodeOf(err) != "config.vault_root_required" {

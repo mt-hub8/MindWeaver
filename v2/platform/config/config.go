@@ -21,6 +21,8 @@ const (
 	maxConfigBytes       = 64 << 10
 )
 
+var errDuplicateJSONKey = errors.New("duplicate JSON object key")
+
 // Config contains only choices the first release actually lets a user make.
 // Database names, locking and connection policy are implementation details of
 // the Vault and deliberately do not appear here.
@@ -103,6 +105,15 @@ func Load(ctx context.Context, path string) (Config, error) {
 	if err := ctx.Err(); err != nil {
 		return Config{}, err
 	}
+	if err := rejectDuplicateKeys(data); err != nil {
+		code := "config.invalid_json"
+		message := "configuration is not valid versioned JSON"
+		if errors.Is(err, errDuplicateJSONKey) {
+			code = "config.duplicate_key"
+			message = "configuration contains a duplicate object key"
+		}
+		return Config{}, apperror.Wrap(err, apperror.KindInvalid, code, op, message)
+	}
 
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -121,6 +132,67 @@ func Load(ctx context.Context, path string) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func rejectDuplicateKeys(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	return scanJSONValue(decoder)
+}
+
+func scanJSONValue(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delimiter, composite := token.(json.Delim)
+	if !composite {
+		return nil
+	}
+	switch delimiter {
+	case '{':
+		seen := make(map[string]struct{})
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return errors.New("JSON object key is not a string")
+			}
+			if _, exists := seen[key]; exists {
+				return fmt.Errorf("%w: %q", errDuplicateJSONKey, key)
+			}
+			seen[key] = struct{}{}
+			if err := scanJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+	case '[':
+		for decoder.More() {
+			if err := scanJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+	default:
+		return errors.New("invalid JSON delimiter")
+	}
+	end, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if end != matchingDelimiter(delimiter) {
+		return errors.New("mismatched JSON delimiter")
+	}
+	return nil
+}
+
+func matchingDelimiter(open json.Delim) json.Delim {
+	if open == '{' {
+		return '}'
+	}
+	return ']'
 }
 
 // WriteNew durably creates a config and never overwrites an existing one.
