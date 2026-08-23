@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "vault": {
+    "root": "./vault"
+  },
+  "storage": {
+    "driver": "sqlite",
+    "database_file": "data/mindweaver.db",
+    "busy_timeout": "5s",
+    "max_open_conns": 1,
+    "max_idle_conns": 1,
+    "connection_ttl": "0s"
+  },
+  "runtime": {
+    "lock_file": ".mindweaver.lock"
+  }
+}

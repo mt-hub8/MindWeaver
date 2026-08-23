@@ -1,2 +1,8 @@
 __pycache__/
 *.py[cod]
+/.build/
+/mindweaver
+/mindweaver.exe
+/mindweaver.v1.json
+/vault/
+*.tmp
