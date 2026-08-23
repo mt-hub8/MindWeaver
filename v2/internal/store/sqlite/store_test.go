@@ -24,8 +24,8 @@ func TestOpenReopenAndEveryPhysicalConnectionPragmas(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, "SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrationCount != 2 {
-		t.Fatalf("migration count = %d, want 2", migrationCount)
+	if migrationCount != 3 {
+		t.Fatalf("migration count = %d, want 3", migrationCount)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatalf("close before reopen: %v", err)
@@ -109,6 +109,7 @@ func TestAllProductTimeColumnsUseIntegerMicroseconds(t *testing.T) {
 		"chunks":               {"created_at"},
 		"collections":          {"created_at", "updated_at"},
 		"collection_documents": {"added_at"},
+		"document_ingestions":  {"created_at"},
 		"jobs":                 {"run_after", "lease_expires_at", "created_at", "updated_at"},
 		"settings":             {"updated_at"},
 	}
