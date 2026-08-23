@@ -3,7 +3,6 @@ package transport
 
 import (
 	"fmt"
-	"net/http"
 	"strings"
 )
 
@@ -30,8 +29,36 @@ const (
 	CodeInferenceFailed               ErrorCode = "INFERENCE_FAILED"
 	CodeContextInsufficient           ErrorCode = "CONTEXT_INSUFFICIENT"
 	CodeCitationInvalid               ErrorCode = "CITATION_INVALID"
+	CodeOutcomeUncertain              ErrorCode = "OUTCOME_UNCERTAIN"
+	CodeResourceLimit                 ErrorCode = "RESOURCE_LIMIT"
+	CodeCorrupt                       ErrorCode = "CORRUPT"
+	CodeVaultLocked                   ErrorCode = "VAULT_LOCKED"
+	CodeRuntimeQuiescing              ErrorCode = "RUNTIME_QUIESCING"
+	CodeUIBuildIncompatible           ErrorCode = "UI_BUILD_INCOMPATIBLE"
 	CodeInternal                      ErrorCode = "INTERNAL"
 	CodeServiceUnavailable            ErrorCode = "SERVICE_UNAVAILABLE"
+)
+
+// UserAction is a stable recovery hint for clients. It is deliberately coarser
+// than UI copy so transports can remain compatible as the interface evolves.
+type UserAction string
+
+const (
+	ActionFixRequest       UserAction = "fix_request"
+	ActionReauthenticate   UserAction = "reauthenticate"
+	ActionRefreshSession   UserAction = "refresh_session"
+	ActionRefreshResource  UserAction = "refresh_resource"
+	ActionRefreshStatus    UserAction = "refresh_status"
+	ActionRetryLater       UserAction = "retry_later"
+	ActionChangeProvider   UserAction = "change_provider"
+	ActionReviewPolicy     UserAction = "review_policy"
+	ActionAddContext       UserAction = "add_context"
+	ActionReduceRequest    UserAction = "reduce_request"
+	ActionRepairData       UserAction = "repair_data"
+	ActionUnlockVault      UserAction = "unlock_vault"
+	ActionReloadUI         UserAction = "reload_ui"
+	ActionRestartRuntime   UserAction = "restart_runtime"
+	ActionUseNewRequestKey UserAction = "use_new_request_key"
 )
 
 // Violation describes one invalid request member without echoing its value.
@@ -46,29 +73,42 @@ type Violation struct {
 // Cause, stack traces, provider payloads, prompts, and credentials deliberately
 // are not represented here.
 type Problem struct {
-	Type       string      `json:"type"`
-	Title      string      `json:"title"`
-	Status     int         `json:"status"`
-	Detail     string      `json:"detail,omitempty"`
-	Instance   string      `json:"instance,omitempty"`
-	Code       ErrorCode   `json:"code"`
-	RequestID  string      `json:"requestId"`
-	Retryable  bool        `json:"retryable"`
+	Type       string     `json:"type"`
+	Title      string     `json:"title"`
+	Status     int        `json:"status"`
+	Detail     string     `json:"detail,omitempty"`
+	Instance   string     `json:"instance,omitempty"`
+	Code       ErrorCode  `json:"code"`
+	RequestID  string     `json:"requestId"`
+	Retryable  bool       `json:"retryable"`
+	UserAction UserAction `json:"userAction,omitempty"`
+	// RetryAfter is a whole number of seconds. It is present only when the
+	// server has a concrete retry window, not merely because Retryable is true.
+	RetryAfter int         `json:"retryAfter,omitempty"`
 	Violations []Violation `json:"violations,omitempty"`
 }
 
 // NewProblem builds a safe client-facing problem. Detail is intentionally
 // supplied by the caller rather than derived from an error chain.
 func NewProblem(status int, code ErrorCode, title, safeDetail, requestID string) Problem {
+	recovery := recoveryByCode[code]
 	return Problem{
-		Type:      "https://mindweaver.local/problems/" + strings.ToLower(strings.ReplaceAll(string(code), "_", "-")),
-		Title:     title,
-		Status:    status,
-		Detail:    safeDetail,
-		Code:      code,
-		RequestID: requestID,
-		Retryable: status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable,
+		Type:       "https://mindweaver.local/problems/" + strings.ToLower(strings.ReplaceAll(string(code), "_", "-")),
+		Title:      title,
+		Status:     status,
+		Detail:     safeDetail,
+		Code:       code,
+		RequestID:  requestID,
+		Retryable:  recovery.Retryable,
+		UserAction: recovery.UserAction,
 	}
+}
+
+// WithRetryAfter attaches a server-provided retry delay without changing the
+// stable retry classification. Invalid values are rejected by Validate.
+func (p Problem) WithRetryAfter(seconds int) Problem {
+	p.RetryAfter = seconds
+	return p
 }
 
 // Validate rejects malformed problems before an adapter serializes them.
@@ -84,6 +124,19 @@ func (p Problem) Validate() error {
 	}
 	if strings.TrimSpace(p.RequestID) == "" {
 		return fmt.Errorf("problem requestId is required")
+	}
+	recovery, known := recoveryByCode[p.Code]
+	if !known {
+		return fmt.Errorf("problem code %q has no recovery semantics", p.Code)
+	}
+	if p.Retryable != recovery.Retryable {
+		return fmt.Errorf("problem retryable does not match semantics for %q", p.Code)
+	}
+	if p.UserAction != "" && !knownUserActions[p.UserAction] {
+		return fmt.Errorf("unknown problem userAction %q", p.UserAction)
+	}
+	if p.RetryAfter < 0 || (p.RetryAfter > 0 && !p.Retryable) {
+		return fmt.Errorf("problem retryAfter requires a positive retryable error")
 	}
 	for i, violation := range p.Violations {
 		if strings.TrimSpace(violation.Field) == "" || strings.TrimSpace(violation.Rule) == "" {
@@ -112,6 +165,64 @@ var knownErrorCodes = map[ErrorCode]bool{
 	CodeInferenceFailed:               true,
 	CodeContextInsufficient:           true,
 	CodeCitationInvalid:               true,
+	CodeOutcomeUncertain:              true,
+	CodeResourceLimit:                 true,
+	CodeCorrupt:                       true,
+	CodeVaultLocked:                   true,
+	CodeRuntimeQuiescing:              true,
+	CodeUIBuildIncompatible:           true,
 	CodeInternal:                      true,
 	CodeServiceUnavailable:            true,
+}
+
+type recoverySemantics struct {
+	Retryable  bool
+	UserAction UserAction
+}
+
+var recoveryByCode = map[ErrorCode]recoverySemantics{
+	CodeInvalidArgument:               {UserAction: ActionFixRequest},
+	CodeValidationFailed:              {UserAction: ActionFixRequest},
+	CodeUnauthenticated:               {UserAction: ActionReauthenticate},
+	CodeForbidden:                     {},
+	CodeCSRFFailed:                    {UserAction: ActionRefreshSession},
+	CodeOriginNotAllowed:              {UserAction: ActionRefreshSession},
+	CodeNotFound:                      {},
+	CodeConflict:                      {UserAction: ActionRefreshStatus},
+	CodePreconditionRequired:          {UserAction: ActionRefreshResource},
+	CodePreconditionFailed:            {UserAction: ActionRefreshResource},
+	CodeIdempotencyKeyReused:          {UserAction: ActionUseNewRequestKey},
+	CodeRateLimited:                   {Retryable: true, UserAction: ActionRetryLater},
+	CodeProviderUnavailable:           {Retryable: true, UserAction: ActionRetryLater},
+	CodeProviderCapabilityUnsupported: {UserAction: ActionChangeProvider},
+	CodeEgressDenied:                  {UserAction: ActionReviewPolicy},
+	CodeInferenceFailed:               {UserAction: ActionChangeProvider},
+	CodeContextInsufficient:           {UserAction: ActionAddContext},
+	CodeCitationInvalid:               {UserAction: ActionAddContext},
+	CodeOutcomeUncertain:              {UserAction: ActionRefreshStatus},
+	CodeResourceLimit:                 {UserAction: ActionReduceRequest},
+	CodeCorrupt:                       {UserAction: ActionRepairData},
+	CodeVaultLocked:                   {UserAction: ActionUnlockVault},
+	CodeRuntimeQuiescing:              {Retryable: true, UserAction: ActionRetryLater},
+	CodeUIBuildIncompatible:           {UserAction: ActionReloadUI},
+	CodeInternal:                      {UserAction: ActionRestartRuntime},
+	CodeServiceUnavailable:            {Retryable: true, UserAction: ActionRetryLater},
+}
+
+var knownUserActions = map[UserAction]bool{
+	ActionFixRequest:       true,
+	ActionReauthenticate:   true,
+	ActionRefreshSession:   true,
+	ActionRefreshResource:  true,
+	ActionRefreshStatus:    true,
+	ActionRetryLater:       true,
+	ActionChangeProvider:   true,
+	ActionReviewPolicy:     true,
+	ActionAddContext:       true,
+	ActionReduceRequest:    true,
+	ActionRepairData:       true,
+	ActionUnlockVault:      true,
+	ActionReloadUI:         true,
+	ActionRestartRuntime:   true,
+	ActionUseNewRequestKey: true,
 }

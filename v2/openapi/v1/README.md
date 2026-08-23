@@ -13,6 +13,8 @@ Compatibility rules:
   document the currently emitted closed shape.
 - Breaking changes require `/api/v2` and a separate contract directory.
 - Every error response uses `application/problem+json` and the `Problem` schema.
+- `retryable` is determined by stable error semantics, not by HTTP status alone;
+  optional `userAction` and `retryAfter` fields guide client recovery.
 - Browser writes require both `X-CSRF-Token` and `Idempotency-Key`. Updates to an
   existing resource additionally require a strong `If-Match` ETag.
 - The bootstrap token is accepted only in the JSON request body. It must never be

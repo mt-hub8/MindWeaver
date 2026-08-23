@@ -260,6 +260,7 @@
           "409": { "$ref": "#/components/responses/Conflict" },
           "412": { "$ref": "#/components/responses/PreconditionFailed" },
           "428": { "$ref": "#/components/responses/PreconditionRequired" },
+          "502": { "$ref": "#/components/responses/BadGateway" },
           "503": { "$ref": "#/components/responses/ServiceUnavailable" }
         }
       }
@@ -467,6 +468,10 @@
       "TooManyRequests": {
         "description": "Rate limited",
         "headers": { "Retry-After": { "schema": { "type": "integer", "minimum": 1 } } },
+        "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } }
+      },
+      "BadGateway": {
+        "description": "Upstream provider returned an invalid or unavailable response",
         "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } }
       },
       "ServiceUnavailable": {
@@ -703,10 +708,20 @@
           "instance": { "type": "string", "format": "uri-reference" },
           "code": {
             "type": "string",
-            "enum": ["INVALID_ARGUMENT", "VALIDATION_FAILED", "UNAUTHENTICATED", "FORBIDDEN", "CSRF_FAILED", "ORIGIN_NOT_ALLOWED", "NOT_FOUND", "CONFLICT", "PRECONDITION_REQUIRED", "PRECONDITION_FAILED", "IDEMPOTENCY_KEY_REUSED", "RATE_LIMITED", "PROVIDER_UNAVAILABLE", "PROVIDER_CAPABILITY_UNSUPPORTED", "EGRESS_DENIED", "INFERENCE_FAILED", "CONTEXT_INSUFFICIENT", "CITATION_INVALID", "INTERNAL", "SERVICE_UNAVAILABLE"]
+            "enum": ["INVALID_ARGUMENT", "VALIDATION_FAILED", "UNAUTHENTICATED", "FORBIDDEN", "CSRF_FAILED", "ORIGIN_NOT_ALLOWED", "NOT_FOUND", "CONFLICT", "PRECONDITION_REQUIRED", "PRECONDITION_FAILED", "IDEMPOTENCY_KEY_REUSED", "RATE_LIMITED", "PROVIDER_UNAVAILABLE", "PROVIDER_CAPABILITY_UNSUPPORTED", "EGRESS_DENIED", "INFERENCE_FAILED", "CONTEXT_INSUFFICIENT", "CITATION_INVALID", "OUTCOME_UNCERTAIN", "RESOURCE_LIMIT", "CORRUPT", "VAULT_LOCKED", "RUNTIME_QUIESCING", "UI_BUILD_INCOMPATIBLE", "INTERNAL", "SERVICE_UNAVAILABLE"]
           },
           "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
           "retryable": { "type": "boolean" },
+          "userAction": {
+            "type": "string",
+            "description": "Stable recovery hint; UI copy is selected locally and must not branch on detail.",
+            "enum": ["fix_request", "reauthenticate", "refresh_session", "refresh_resource", "refresh_status", "retry_later", "change_provider", "review_policy", "add_context", "reduce_request", "repair_data", "unlock_vault", "reload_ui", "restart_runtime", "use_new_request_key"]
+          },
+          "retryAfter": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Whole seconds to wait when a retryable error has a concrete retry window."
+          },
           "violations": { "type": "array", "items": { "$ref": "#/components/schemas/Violation" } }
         }
       },

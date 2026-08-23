@@ -49,8 +49,18 @@ class OpenAPIContractTest(unittest.TestCase):
                 "CITATION_INVALID",
                 "IDEMPOTENCY_KEY_REUSED",
                 "PRECONDITION_FAILED",
+                "OUTCOME_UNCERTAIN",
+                "RESOURCE_LIMIT",
+                "CORRUPT",
+                "VAULT_LOCKED",
+                "RUNTIME_QUIESCING",
+                "UI_BUILD_INCOMPATIBLE",
             }.issubset(codes)
         )
+
+        properties = problem["properties"]
+        self.assertIn("userAction", properties)
+        self.assertIn("retryAfter", properties)
 
     def test_all_error_bodies_are_problem_json(self):
         for path, method, operation in self.operations():

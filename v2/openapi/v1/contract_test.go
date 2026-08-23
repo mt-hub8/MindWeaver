@@ -111,10 +111,16 @@ func TestProblemCodesAreStableAndSortedForReview(t *testing.T) {
 		}
 		seen[code] = true
 	}
-	for _, required := range []string{"EGRESS_DENIED", "CONTEXT_INSUFFICIENT", "CITATION_INVALID", "IDEMPOTENCY_KEY_REUSED", "PRECONDITION_FAILED"} {
+	for _, required := range []string{"EGRESS_DENIED", "CONTEXT_INSUFFICIENT", "CITATION_INVALID", "IDEMPOTENCY_KEY_REUSED", "PRECONDITION_FAILED", "OUTCOME_UNCERTAIN", "RESOURCE_LIMIT", "CORRUPT", "VAULT_LOCKED", "RUNTIME_QUIESCING", "UI_BUILD_INCOMPATIBLE"} {
 		if !seen[required] {
 			t.Errorf("required problem code %q missing", required)
 		}
+	}
+	if _, exists := properties["userAction"]; !exists {
+		t.Error("Problem.userAction recovery hint missing")
+	}
+	if _, exists := properties["retryAfter"]; !exists {
+		t.Error("Problem.retryAfter recovery hint missing")
 	}
 }
 
