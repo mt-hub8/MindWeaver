@@ -13,3 +13,5 @@ that names the superseded record and updates the affected acceptance tests.
 | [0006](0006-retrieval-evidence-and-citations.md) | One retrieval snapshot and exact answer context |
 | [0007](0007-loopback-api-and-browser-session.md) | Versioned loopback API with bootstrap session |
 | [0008](0008-migration-cutover-and-rollback.md) | Neutral migration package and verified cutover |
+| [0009](0009-windows-vault-runtime.md) | Handle-identified, exclusively locked Windows Vault runtime |
+| [0010](0010-sqlite-driver-qualification.md) | Evidence-gated SQLite driver qualification |
