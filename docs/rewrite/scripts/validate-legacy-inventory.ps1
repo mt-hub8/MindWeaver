@@ -595,6 +595,21 @@ foreach ($entry in $gaps.GetEnumerator()) {
 
 function Decision {
     param([string]$Id, [string]$Disposition, [string]$Target, [string]$Migration, [string]$Evidence)
+    # ADR 0013 makes v1 provider disposition uniform regardless of which
+    # legacy controller, table, key, or implementation exposed the value. No
+    # legacy provider value becomes live configuration and no credential-store
+    # package exists. Keeping the override here prevents category-specific
+    # discovery rules from silently recreating the superseded broad provider
+    # scope.
+    if ($Id -eq "MW-PRO-001") {
+        $Target = "internal/ollama;migration/neutral report"
+        $Migration = "Do not port legacy provider behavior or values. V1 exposes only explicit non-secret literal-loopback Ollama configuration; migration emits a content-free reconfiguration requirement."
+    }
+    if ($Id -eq "MW-CFG-001" -and $Target -like "*credential-store*") {
+        $Target = "platform/config;migration/neutral exceptions"
+        $Migration = "Never export or import secret values; only explicitly supported non-secret v1 settings may be entered through the new application."
+    }
+    $Target = $Target.Replace("internal/provider/ollama", "internal/ollama")
     return [pscustomobject][ordered]@{
         disposition_id = $Id
         disposition = $Disposition

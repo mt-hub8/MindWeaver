@@ -16,15 +16,16 @@ repository only after migration and release qualification pass.
 - Single user and one active Vault per process.
 - Windows 10/11 x64 is the first Tier-1 platform.
 - Offline-first; Ollama is the default optional model runtime.
-- Cloud providers require explicit configuration and egress consent.
+- V1 model integration is optional loopback Ollama; cloud credentials and
+  provider expansion require a separately accepted slice.
 - Text, Markdown, and text-based PDF are the initial document formats.
 - No account, collaboration, cloud synchronization, or implicit LAN mode.
 
 The first release is salvage-first, not a Java parity rewrite. Its product slice
-is canonical documents and lifecycle, true M:N collections, simple controlled
-retrieval, Ask with refusal and same-context citations, local/cloud provider
-configuration with authorized egress and durable message outcomes, conversation,
-secure local UI/session, Vault backup/restore, and legacy migration. Agent,
+is canonical documents and lifecycle, true M:N collections, controlled keyword
+retrieval, Ask with refusal and same-context citations, optional loopback Ollama
+with durable message outcomes, conversation, secure local UI/session, plaintext
+Vault backup/restore, and legacy migration. Agent,
 Profile, Memory, Batch, Notification, Evaluation, Qdrant, reindex, advanced
 retrieval/rerank/query understanding, cache/storage consoles, and advanced index
 repair are absent until separately rebuilt from zero and accepted.
@@ -52,6 +53,8 @@ repair are absent until separately rebuilt from zero and accepted.
     hashes.
 12. V1 exposes one production implementation per capability. Alternative
     backends remain experimental until they pass the same conformance suite.
+13. V1 Vault and backup files are not application-encrypted. Integrity and
+    recovery guarantees must never be described as confidentiality.
 
 ## Workstreams
 

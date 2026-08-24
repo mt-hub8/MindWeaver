@@ -32,8 +32,8 @@ traceability without expanding the first Go release.
 | RET-002 | Future fusion/rerank/expansion stages preserve score provenance and fingerprint | LATER | NO | NOT_IMPLEMENTED | deterministic conformance suite before promotion |
 | RET-003 | Core Chinese SQLite FTS tokenization and bounded result quality are measured | CORE | YES | NOT_IMPLEMENTED | representative lexical corpus and latency report |
 | EMB-001 | A future embedding/vector slice proves model, capacity, lifecycle and backend conformance | LATER | NO | NOT_IMPLEMENTED | representative corpus and backend suite before promotion |
-| PRV-001 | Each message records the chosen provider configuration version while credentials remain non-exportable | CORE | YES | NOT_IMPLEMENTED | update/probe/credential rotation integration test |
-| PRV-002 | Egress dials only approved IPs and reauthorizes redirect without ambient proxy | CORE | YES | NOT_IMPLEMENTED | hostile DNS/redirect/proxy server suite |
+| PRV-001 | Each message records the chosen versioned, non-secret loopback Ollama configuration; no credential surface exists | CORE | YES | NOT_IMPLEMENTED | configure/probe/invoke/restart source-binding integration test |
+| PRV-002 | Ollama dials only a fixed literal loopback address and rejects DNS names, ambient proxy, and redirect authority changes | CORE | YES | NOT_IMPLEMENTED | DNS-name rejection, resolver canary, redirect and proxy suite |
 | INV-001 | A provider call has bounded timeout/cancel behavior and ends in one durable user-visible success or failure | CORE | YES | NOT_IMPLEMENTED | local fake-provider timeout, cancel, restart and result tests |
 | INV-002 | A future enhanced invocation protocol classifies ambiguous transmitted requests without unsafe automatic replay | LATER | NO | NOT_IMPLEMENTED | crash-window and duplicate-cost suite before promotion |
 | RAG-001 | Ask uses scoped SQLite FTS and stores the final source chunk IDs with the answer | CORE | YES | NOT_IMPLEMENTED | lexical Ask persistence and source-change tests |

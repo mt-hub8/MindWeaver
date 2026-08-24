@@ -111,9 +111,10 @@ and reports pass.
 - Legacy task, agent, scheduler, outbox, and Rabbit delivery state never enters
   the Go Job state machine. Completed history may be archived; unresolved work
   is reported and requires an explicit user decision.
-- Provider secrets are never written to the inventory or neutral export in
-  plaintext. Non-secret provider settings translate explicitly; credentials
-  require authorized secure rebinding or re-entry.
+- Provider secrets and settings never become live Go configuration. The neutral
+  package records only a content-free requirement to configure and freshly
+  probe loopback Ollama; credentials and cloud-provider values are neither
+  exported nor imported.
 - PID files, Python environments/bytecode, and broker delivery metadata are not
   migrated. Legacy report files are checksummed and labeled archival, and cannot
   satisfy Go acceptance evidence.
@@ -142,10 +143,9 @@ and reports pass.
 6. Default and Docker profiles name different MySQL databases and ports. The
    exporter must require explicit read-only source selection/fingerprinting and
    may not guess which schema contains the user's data.
-7. Encrypted provider keys are recoverable only when the legacy
-   `app.security.secret-key` or `MODEL_PROVIDER_SECRET_KEY` is still available.
-   Missing keys require credential re-entry; ciphertext/plaintext must not leak
-   into reports.
+7. Encrypted provider keys and their legacy master keys are outside the v1 live
+   migration scope. The exporter never decrypts or emits them; reports contain
+   only bounded content-free classification, never ciphertext or plaintext.
 8. `pom.xml` requires Java 21, while the Windows check script says JDK 17+.
    Java 17 compatibility is unproven; the conflict is archived and must not be
    copied into Go release prerequisites.

@@ -23,7 +23,7 @@ Statuses:
 | MW-RAG-002 | Citations | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | answer citations | every citation resolves to a source chunk supplied for that answer |
 | MW-RAG-003 | Honest refusal and labeling | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | answer policy | no-hit and structurally invalid citation cases refuse or carry an explicit limitation label |
 | MW-CON-001 | Conversation history | KEEP_SEMANTICS | CORE_REBUILD_FROM_ZERO | CORE | conversation/message/answer | immutable answer provenance and purge behavior |
-| MW-PRO-001 | Model providers | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | versioned providers/egress | real adapter probe, chosen-config source binding, SSRF/key isolation |
+| MW-PRO-001 | Optional local Ollama | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | internal/ollama with versioned non-secret config | real loopback probe/invocation, chosen-config source binding and bounded no-proxy egress |
 | MW-JOB-001 | Ordinary Task/outbox | DROP | DROP | DROP | unified durable job | no separate task executor or RabbitMQ path |
 | MW-AGT-001 | Agent tasks | REDESIGN | LATER_FROM_ZERO | LATER | agent run on unified job | atomic steps, read-only tools first, budgets, cancellation, crash recovery |
 | MW-AGT-002 | Agent profiles | REDESIGN | LATER_FROM_ZERO | LATER | agent/profile | versioned profile updates, deletion lineage and memory-scope enforcement |
@@ -37,7 +37,7 @@ Statuses:
 | MW-TRS-002 | Permanent delete | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | document deletion | delete known in-scope DB/FTS rows and reference-aware blobs; failures never report success |
 | MW-BKP-001 | Backup/restore | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | backup coordinator | DB snapshot + blob manifest; restore on a clean machine |
 | MW-UI-001 | Static management UI | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | embedded web UI | API contract, browser security, accessibility and recovery workflows |
-| MW-CFG-001 | Legacy properties, profiles and secrets | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | platform/config and credential store | explicit field translation, unknown-key rejection and no plaintext secret export |
+| MW-CFG-001 | Versioned local configuration | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | platform/config | explicit allowlist, unknown/duplicate rejection; legacy and cloud secrets are never exported or imported |
 | MW-RUN-001 | Local launch, shutdown and environment scripts | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | single-process runtime and signed Windows package | one executable owns the Vault; install/start/stop/uninstall pass clean-machine tests |
 | MW-STO-001 | Storage summary and cache controls | REDESIGN | LATER_FROM_ZERO | LATER | storage diagnostics and repair plans | authoritative/derived bytes are distinguished and destructive actions emit verified receipts |
 | MW-CCH-001 | Embedding and retrieval caches | REBUILD | LATER_FROM_ZERO | LATER | derived cache/index stores | canonical inputs and fingerprints are migrated; cache rows are regenerated, never trusted as canonical |

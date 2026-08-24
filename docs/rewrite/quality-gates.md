@@ -10,11 +10,13 @@
 ## Gate 1: technical feasibility
 
 - SQLite driver/CGO, WAL, backup, job claim, disk-full, and crash behavior measured.
-- Chinese lexical search selected from representative quality and performance data.
+- One production keyword-retrieval boundary is explicitly selected and passes
+  versioned minimum recall, scope-isolation, capacity, and latency thresholds;
+  rejected semantic candidates stay absent.
 - PDF parsing compared with existing corpus and isolated from the main process.
-- Local vector storage has certified capacity tiers and a hard warning boundary.
-- Provider timeout, cancellation, streaming, malformed responses, and model digest verified.
-- Windows locking, sleep/resume, credentials, install, and update replacement verified.
+- Loopback Ollama timeout, cancellation, malformed responses, and bounded output verified.
+- Windows locking, sleep/resume, signed MSI install, upgrade, rollback, and
+  uninstall verified. No credential store or built-in updater is implied.
 
 ## Gate 2: standalone walking skeleton
 
@@ -33,13 +35,13 @@
 ## Gate 4: knowledge lifecycle
 
 - TXT, Markdown, and supported PDF import flows close success, failure, retry,
-  cancellation, crash, reindex, trash, restore, and purge paths.
+  cancellation, crash, trash, restore, and purge paths.
 - No old, failed, trashed, purging, or foreign-scope generation is retrievable.
-- Reindex of document A cannot mutate document B.
+- Reindex remains absent until a later accepted slice proves its isolation.
 
 ## Gate 5: RAG correctness
 
-- Search, Ask, Agent, and Evaluation use one retrieval snapshot contract.
+- Search and Ask use the same scoped production keyword query.
 - Empty scope remains empty and scope leak is zero in the certified corpus.
 - Strict citations all belong to exact AnswerContext items.
 - Refusal changes the final answer.
@@ -56,8 +58,8 @@
 ## Gate 7: migration
 
 - Read-only export and idempotent import succeed twice on the largest real Vault.
-- File hashes, document lifecycle, collection membership, conversation, memory, and
-  quarantine differences are fully reported.
+- File hashes, document lifecycle, collection membership, and quarantine
+  differences are fully reported. Unsupported legacy state never becomes live.
 - Derived indexes are rebuilt rather than copied from inconsistent legacy stores.
 
 ## Gate 8: release qualification

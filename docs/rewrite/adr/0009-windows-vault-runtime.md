@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-08-23
+- Narrowed by: ADR 0013 removes the unconsumed key hierarchy, named-pipe
+  activation protocol, and built-in updater from the first-release CORE
 
 ## Context
 
@@ -121,4 +123,3 @@ second best-effort Windows-only ownership model.
 - [Named-pipe security](https://learn.microsoft.com/en-us/windows/win32/ipc/named-pipe-security-and-access-rights)
 - [Windows Installer per-user package authoring](https://learn.microsoft.com/en-us/windows/win32/msi/single-package-authoring)
 - [WinVerifyTrust](https://learn.microsoft.com/en-us/windows/win32/api/wintrust/nf-wintrust-winverifytrust)
-

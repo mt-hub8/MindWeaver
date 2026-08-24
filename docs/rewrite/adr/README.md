@@ -13,7 +13,8 @@ that names the superseded record and updates the affected acceptance tests.
 | [0006](0006-retrieval-evidence-and-citations.md) | Citation provenance retained; snapshot ledger superseded by 0012 |
 | [0007](0007-loopback-api-and-browser-session.md) | Versioned loopback API with bootstrap session |
 | [0008](0008-migration-cutover-and-rollback.md) | Verified cutover retained; migration scope narrowed by 0012 |
-| [0009](0009-windows-vault-runtime.md) | Handle-identified, exclusively locked Windows Vault runtime |
+| [0009](0009-windows-vault-runtime.md) | Handle-identified Windows Vault runtime; narrowed by 0013 |
 | [0010](0010-sqlite-driver-qualification.md) | Evidence-gated SQLite driver qualification |
 | [0011](0011-salvage-first-vertical-slices.md) | Salvage Java and Go code before proving thin vertical slices |
 | [0012](0012-lean-local-core.md) | Replace speculative protocols with observable local vertical slices |
+| [0013](0013-lean-windows-delivery.md) | Keep locked Vault, loopback session, and signed MSI; defer unused key, activation, and updater systems |
