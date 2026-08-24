@@ -114,6 +114,9 @@ func Load(ctx context.Context, path string) (Config, error) {
 		}
 		return Config{}, apperror.Wrap(err, apperror.KindInvalid, code, op, message)
 	}
+	if err := validateExactSchema(data); err != nil {
+		return Config{}, apperror.Wrap(err, apperror.KindInvalid, "config.invalid_schema", op, "configuration fields are incomplete or not canonical")
+	}
 
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -132,6 +135,38 @@ func Load(ctx context.Context, path string) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func validateExactSchema(data []byte) error {
+	root, err := exactObject(data, "configuration", []string{"schema_version", "vault"})
+	if err != nil {
+		return err
+	}
+	_, err = exactObject(root["vault"], "vault", []string{"root"})
+	return err
+}
+
+func exactObject(data []byte, label string, required []string) (map[string]json.RawMessage, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(data, &object); err != nil || object == nil {
+		return nil, fmt.Errorf("%s must be an object", label)
+	}
+	allowed := make(map[string]struct{}, len(required))
+	for _, field := range required {
+		allowed[field] = struct{}{}
+	}
+	for field := range object {
+		if _, ok := allowed[field]; !ok {
+			return nil, fmt.Errorf("%s contains unknown field %q", label, field)
+		}
+	}
+	for _, field := range required {
+		value, ok := object[field]
+		if !ok || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return nil, fmt.Errorf("%s requires non-null field %q", label, field)
+		}
+	}
+	return object, nil
 }
 
 func rejectDuplicateKeys(data []byte) error {
@@ -221,13 +256,19 @@ func WriteNew(ctx context.Context, path string, cfg Config) (err error) {
 		return apperror.Wrap(err, apperror.KindUnavailable, "config.create_failed", op, "configuration file could not be created")
 	}
 	complete := false
+	closed := false
 	defer func() {
-		closeErr := file.Close()
-		if err == nil && closeErr != nil {
-			err = apperror.Wrap(closeErr, apperror.KindUnavailable, "config.close_failed", op, "configuration file could not be finalized")
+		if !closed {
+			err = errors.Join(err, wrapConfigIO(file.Close(), "configuration file could not be closed"))
 		}
 		if !complete {
-			_ = os.Remove(path)
+			removeErr := os.Remove(path)
+			if removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+				removeErr = fmt.Errorf("configuration residue remains at %s: %w", path, removeErr)
+			} else {
+				removeErr = nil
+			}
+			err = errors.Join(err, removeErr, wrapConfigIO(syncConfigParent(filepath.Dir(path)), "configuration parent cleanup could not be synchronized"))
 		}
 	}()
 
@@ -240,6 +281,21 @@ func WriteNew(ctx context.Context, path string, cfg Config) (err error) {
 	if err := file.Sync(); err != nil {
 		return apperror.Wrap(err, apperror.KindUnavailable, "config.sync_failed", op, "configuration file could not be synchronized")
 	}
+	if err := file.Close(); err != nil {
+		closed = true
+		return apperror.Wrap(err, apperror.KindUnavailable, "config.close_failed", op, "configuration file could not be finalized")
+	}
+	closed = true
+	if err := syncConfigParent(filepath.Dir(path)); err != nil {
+		return apperror.Wrap(err, apperror.KindUnavailable, "config.parent_sync_failed", op, "configuration directory could not be synchronized")
+	}
 	complete = true
 	return nil
+}
+
+func wrapConfigIO(err error, message string) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", message, err)
 }

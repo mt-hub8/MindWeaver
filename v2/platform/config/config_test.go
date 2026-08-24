@@ -50,8 +50,14 @@ func TestWriteNewRefusesOverwrite(t *testing.T) {
 
 func TestLoadRejectsUnknownFieldsAndTrailingValues(t *testing.T) {
 	tests := map[string]string{
-		"unknown field":  `{"schema_version":1,"vault":{"root":"vault","typo":true}}`,
-		"trailing value": `{"schema_version":1,"vault":{"root":"vault"}} {}`,
+		"unknown field":                  `{"schema_version":1,"vault":{"root":"vault","typo":true}}`,
+		"trailing value":                 `{"schema_version":1,"vault":{"root":"vault"}} {}`,
+		"case alias":                     `{"SCHEMA_VERSION":1,"vault":{"root":"vault"}}`,
+		"case alias alongside canonical": `{"schema_version":1,"SCHEMA_VERSION":999,"vault":{"root":"vault"}}`,
+		"missing version":                `{"vault":{"root":"vault"}}`,
+		"null vault":                     `{"schema_version":1,"vault":null}`,
+		"nested case alias":              `{"schema_version":1,"vault":{"ROOT":"vault"}}`,
+		"missing nested root":            `{"schema_version":1,"vault":{}}`,
 	}
 	for name, body := range tests {
 		t.Run(name, func(t *testing.T) {
