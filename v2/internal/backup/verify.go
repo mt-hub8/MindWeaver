@@ -139,6 +139,19 @@ func (failure *classifiedFailure) Is(target error) bool {
 	return failure != nil && errors.Is(failure.cause, target)
 }
 
+// FailureClassOf returns the stable, path-free class carried by a public
+// backup error. It returns an empty class for nil.
+func FailureClassOf(err error) FailureClass {
+	if err == nil {
+		return ""
+	}
+	var classified *classifiedFailure
+	if errors.As(err, &classified) {
+		return classified.class
+	}
+	return classifyBackupFailure(err)
+}
+
 type operationFailure struct {
 	class FailureClass
 	err   error
@@ -263,6 +276,23 @@ func cleanupVerifyScratch(
 		return result, failVerify(FailureInvalid, err)
 	}
 	defer func() { resultErr = errors.Join(resultErr, capability.Close()) }()
+	return cleanupVerifyScratchRoot(ctx, capability, limit, scratchGuard, residueGuard)
+}
+
+func cleanupVerifyScratchRoot(
+	ctx context.Context,
+	capability *retainedDirectory,
+	limit int,
+	scratchGuard func(*retainedDirectory) error,
+	residueGuard residueRecoveryGuard,
+) (result ScratchCleanupSummary, resultErr error) {
+	if ctx == nil || capability == nil || capability.root == nil ||
+		limit < 1 || limit > maxResiduePageSize {
+		return result, failVerify(FailureInvalid, errors.New("backup: invalid retained verification scratch cleanup input"))
+	}
+	if err := ensureResidueRecoverySupported(); err != nil {
+		return result, err
+	}
 	if err := validateVerifyScratchParent(capability); err != nil {
 		return result, err
 	}

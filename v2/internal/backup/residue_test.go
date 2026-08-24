@@ -81,6 +81,7 @@ func TestResidueReceiptWriteIsCompleteAndWireFormatCanonical(t *testing.T) {
 const (
 	residueHelperModeEnv   = "MW_BACKUP_RESIDUE_HELPER_MODE"
 	residueHelperParentEnv = "MW_BACKUP_RESIDUE_HELPER_PARENT"
+	residueHelperKindEnv   = "MW_BACKUP_RESIDUE_HELPER_KIND"
 )
 
 func TestResidueForcedExitHelper(t *testing.T) {
@@ -93,9 +94,13 @@ func TestResidueForcedExitHelper(t *testing.T) {
 	if err != nil {
 		os.Exit(80)
 	}
+	prefix := stagingPrefix
+	if os.Getenv(residueHelperKindEnv) == "restore" {
+		prefix = restorePrefix
+	}
 	switch mode {
 	case "temp":
-		_, _ = createStagingDirectoryWithHooks(parent, stagingPrefix, "destination", stagingCreationHooks{
+		_, _ = createStagingDirectoryWithHooks(parent, prefix, "destination", stagingCreationHooks{
 			afterReceiptTempCreate: func(file *os.File) error {
 				_, _ = file.Write([]byte("{\"partial\":"))
 				os.Exit(90)
@@ -103,26 +108,26 @@ func TestResidueForcedExitHelper(t *testing.T) {
 			},
 		})
 	case "receipt":
-		_, _ = createStagingDirectoryWithHooks(parent, stagingPrefix, "destination", stagingCreationHooks{
+		_, _ = createStagingDirectoryWithHooks(parent, prefix, "destination", stagingCreationHooks{
 			afterReceiptDurable: func(*stagingDirectory) error { os.Exit(91); return nil },
 		})
 	case "directory":
-		_, _ = createStagingDirectoryWithHooks(parent, stagingPrefix, "destination", stagingCreationHooks{
+		_, _ = createStagingDirectoryWithHooks(parent, prefix, "destination", stagingCreationHooks{
 			afterDirectoryDurable: func(*stagingDirectory) error { os.Exit(92); return nil },
 		})
 	case "binding":
-		_, _ = createStagingDirectoryWithHooks(parent, stagingPrefix, "destination", stagingCreationHooks{
+		_, _ = createStagingDirectoryWithHooks(parent, prefix, "destination", stagingCreationHooks{
 			afterBindingDurable: func(*stagingDirectory) error { os.Exit(95); return nil },
 		})
 	case "copy":
-		staging, createErr := createStagingDirectory(parent, stagingPrefix, "destination")
+		staging, createErr := createStagingDirectory(parent, prefix, "destination")
 		if createErr == nil {
 			_ = staging.directory.root.MkdirAll("partial", 0o700)
 			_ = staging.directory.root.WriteFile("partial/payload", []byte("copy interrupted"), 0o600)
 			os.Exit(93)
 		}
 	case "rename":
-		staging, createErr := createStagingDirectory(parent, stagingPrefix, "destination")
+		staging, createErr := createStagingDirectory(parent, prefix, "destination")
 		if createErr == nil {
 			_ = staging.directory.root.WriteFile("owned", []byte("renamed destination"), 0o600)
 			expected := staging.directory.identity
@@ -241,6 +246,141 @@ func TestForcedExitResiduesAreListedAndExplicitlyRecovered(t *testing.T) {
 			}
 		})
 	}
+}
+
+func runRestoreResidueForcedExit(t *testing.T, parentPath, mode string, exitCode int) {
+	t.Helper()
+	command := exec.Command(os.Args[0], "-test.run=^TestResidueForcedExitHelper$")
+	command.Env = append(os.Environ(),
+		residueHelperModeEnv+"="+mode,
+		residueHelperParentEnv+"="+parentPath,
+		residueHelperKindEnv+"=restore",
+	)
+	err := command.Run()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != exitCode {
+		t.Fatalf("restore %s helper exit = %v, want %d", mode, err, exitCode)
+	}
+}
+
+func TestStartupRestoreResidueRecoveryRecoversOnlyExactForcedExitResidues(t *testing.T) {
+	t.Run("bounded staging recovery", func(t *testing.T) {
+		parentPath := t.TempDir()
+		runRestoreResidueForcedExit(t, parentPath, "binding", 95)
+		runRestoreResidueForcedExit(t, parentPath, "copy", 93)
+
+		recovery, err := NewStartupRestoreResidueRecovery(parentPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer recovery.Close()
+
+		page, err := recovery.List(t.Context(), 1)
+		if err != nil || !page.Truncated || len(page.Items) != 1 ||
+			page.Items[0].Kind != "restore" || page.Items[0].State != ResidueStateStaging {
+			t.Fatalf("first startup restore residue page = %+v, %v", page, err)
+		}
+		listed := page.Items[0]
+		stale := listed
+		stale.Identity += "-stale"
+		outcome, err := recovery.Recover(t.Context(), stale)
+		if err == nil || outcome.Succeeded || outcome.Failure != FailureInvalid ||
+			!errors.Is(err, ErrResidueConflict) {
+			t.Fatalf("stale startup restore recovery = %+v, %v", outcome, err)
+		}
+		assertPathFreeBackupError(t, err, parentPath, listed.StagingName)
+
+		outcome, err = recovery.Recover(t.Context(), listed)
+		if err != nil || !outcome.Succeeded || outcome.Failure != "" || outcome.CleanupRequired {
+			t.Fatalf("exact startup restore recovery = %+v, %v", outcome, err)
+		}
+		page, err = recovery.List(t.Context(), 1)
+		if err != nil || page.Truncated || len(page.Items) != 1 ||
+			page.Items[0].Kind != "restore" || page.Items[0].State != ResidueStateStaging {
+			t.Fatalf("second startup restore residue page = %+v, %v", page, err)
+		}
+		outcome, err = recovery.Recover(t.Context(), page.Items[0])
+		if err != nil || !outcome.Succeeded {
+			t.Fatalf("second startup restore recovery = %+v, %v", outcome, err)
+		}
+		page, err = recovery.List(t.Context(), 1)
+		if err != nil || page.Truncated || len(page.Items) != 0 {
+			t.Fatalf("startup restore residues remain = %+v, %v", page, err)
+		}
+	})
+
+	t.Run("receipt only", func(t *testing.T) {
+		parentPath := t.TempDir()
+		runRestoreResidueForcedExit(t, parentPath, "receipt", 91)
+		recovery, err := NewStartupRestoreResidueRecovery(parentPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer recovery.Close()
+		page, err := recovery.List(t.Context(), 1)
+		if err != nil || len(page.Items) != 1 || page.Items[0].State != ResidueStateReceiptOnly {
+			t.Fatalf("receipt-only restore residue = %+v, %v", page, err)
+		}
+		outcome, err := recovery.Recover(t.Context(), page.Items[0])
+		if err != nil || !outcome.Succeeded {
+			t.Fatalf("receipt-only startup recovery = %+v, %v", outcome, err)
+		}
+	})
+
+	t.Run("prebinding conflict", func(t *testing.T) {
+		parentPath := t.TempDir()
+		runRestoreResidueForcedExit(t, parentPath, "directory", 92)
+		recovery, err := NewStartupRestoreResidueRecovery(parentPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer recovery.Close()
+		page, err := recovery.List(t.Context(), 1)
+		if err != nil || len(page.Items) != 1 || page.Items[0].State != ResidueStateConflict {
+			t.Fatalf("prebinding startup residue = %+v, %v", page, err)
+		}
+		listed := page.Items[0]
+		outcome, err := recovery.Recover(t.Context(), listed)
+		if err == nil || outcome.Succeeded || outcome.Failure != FailureInvalid ||
+			!errors.Is(err, ErrResidueConflict) {
+			t.Fatalf("prebinding startup recovery = %+v, %v", outcome, err)
+		}
+		assertPathFreeBackupError(t, err, parentPath, listed.StagingName)
+		after, listErr := recovery.List(t.Context(), 1)
+		if listErr != nil || len(after.Items) != 1 || after.Items[0] != listed {
+			t.Fatalf("conflict recovery changed evidence = %+v, %v", after, listErr)
+		}
+	})
+
+	t.Run("publication uncertain", func(t *testing.T) {
+		parentPath := t.TempDir()
+		runRestoreResidueForcedExit(t, parentPath, "rename", 94)
+		recovery, err := NewStartupRestoreResidueRecovery(parentPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer recovery.Close()
+		page, err := recovery.List(t.Context(), 1)
+		if err != nil || len(page.Items) != 1 ||
+			page.Items[0].State != ResidueStatePublicationUncertain {
+			t.Fatalf("publication-uncertain startup residue = %+v, %v", page, err)
+		}
+		listed := page.Items[0]
+		outcome, err := recovery.Recover(t.Context(), listed)
+		if err == nil || outcome.Succeeded || outcome.Failure != FailurePublicationUncertain ||
+			!errors.Is(err, ErrPublicationUncertain) {
+			t.Fatalf("publication-uncertain startup recovery = %+v, %v", outcome, err)
+		}
+		assertPathFreeBackupError(t, err, parentPath, listed.DestinationName)
+		after, listErr := recovery.List(t.Context(), 1)
+		if listErr != nil || len(after.Items) != 1 || after.Items[0] != listed {
+			t.Fatalf("uncertain recovery changed evidence = %+v, %v", after, listErr)
+		}
+		data, readErr := os.ReadFile(filepath.Join(parentPath, "destination", "owned"))
+		if readErr != nil || string(data) != "renamed destination" {
+			t.Fatalf("uncertain destination changed = %q, %v", data, readErr)
+		}
+	})
 }
 
 func TestPartialReceiptTempNeverBecomesAuthorityOrBlocksListing(t *testing.T) {

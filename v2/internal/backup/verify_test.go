@@ -654,6 +654,27 @@ func TestVerifyCleanupNeverDeletesReplacementScratch(t *testing.T) {
 	if err != nil || len(page.Items) != 1 || page.Items[0].State != ResidueStateConflict {
 		t.Fatalf("replacement scratch evidence = %+v, %v", page, err)
 	}
+	if err := fixture.coordinator.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	recovery, err := NewStartupVerifyScratchRecovery(scratchParent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer recovery.Close()
+	cleanup, err := recovery.Cleanup(t.Context(), 1)
+	if err == nil || cleanup.Examined != 1 || cleanup.Removed != 0 ||
+		!errors.Is(err, ErrCleanupResidual) || !errors.Is(err, ErrResidueConflict) ||
+		FailureClassOf(err) != FailureCleanupRequired {
+		t.Fatalf("startup replacement cleanup = %+v, %v", cleanup, err)
+	}
+	assertPathFreeBackupError(t, err, scratchParent, replacementCanary)
+	if data, err := os.ReadFile(replacementCanary); err != nil || string(data) != "must survive" {
+		t.Fatalf("startup cleanup changed replacement scratch: %q, %v", data, err)
+	}
 }
 
 const (
@@ -679,7 +700,7 @@ func TestVerifyForcedExitHelper(t *testing.T) {
 	os.Exit(98)
 }
 
-func TestCleanupVerifyScratchRecoversBoundForcedExitAndExposesTruncation(t *testing.T) {
+func TestStartupVerifyScratchRecoveryRecoversForcedExitAndExposesTruncation(t *testing.T) {
 	fixture := newBackupFixture(t)
 	fixture.addDocument(t, "verify-kill", "verify crash scratch recovery")
 	backupPath := filepath.Join(fixture.root, "kill-source")
@@ -705,16 +726,27 @@ func TestCleanupVerifyScratchRecoversBoundForcedExitAndExposesTruncation(t *test
 	}
 	runForcedExit()
 	runForcedExit()
+	if err := fixture.coordinator.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.database.Close(); err != nil {
+		t.Fatal(err)
+	}
 	page, err := ListResidues(t.Context(), scratchParent, 10)
 	if err != nil || len(page.Items) != 2 || page.Items[0].Kind != "verify" || page.Items[1].Kind != "verify" ||
-		page.Items[0].State != ResidueStateStaging {
+		page.Items[0].State != ResidueStateStaging || page.Items[1].State != ResidueStateStaging {
 		t.Fatalf("Verify crash residue = %+v, %v", page, err)
 	}
-	cleanup, err := fixture.coordinator.CleanupVerifyScratch(t.Context(), scratchParent, 1)
+	recovery, err := NewStartupVerifyScratchRecovery(scratchParent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer recovery.Close()
+	cleanup, err := recovery.Cleanup(t.Context(), 1)
 	if err != nil || cleanup.Examined != 1 || cleanup.Removed != 1 || !cleanup.Truncated {
 		t.Fatalf("Verify crash cleanup = %+v, %v", cleanup, err)
 	}
-	cleanup, err = fixture.coordinator.CleanupVerifyScratch(t.Context(), scratchParent, 1)
+	cleanup, err = recovery.Cleanup(t.Context(), 1)
 	if err != nil || cleanup.Examined != 1 || cleanup.Removed != 1 || cleanup.Truncated {
 		t.Fatalf("Verify second crash cleanup = %+v, %v", cleanup, err)
 	}
@@ -747,10 +779,16 @@ func TestCleanupVerifyScratchNeverDeletesAnotherResidueKind(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := newVerifyCoordinatorForTest(t).CleanupVerifyScratch(t.Context(), parentPath, 1)
-	if err == nil || result.Examined != 1 || result.Removed != 0 {
+	recovery, err := NewStartupVerifyScratchRecovery(parentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer recovery.Close()
+	result, err := recovery.Cleanup(t.Context(), 1)
+	if err == nil || result.Examined != 1 || result.Removed != 0 || FailureClassOf(err) != FailureInvalid {
 		t.Fatalf("cross-kind scratch cleanup = %+v, %v", result, err)
 	}
+	assertPathFreeBackupError(t, err, parentPath, canary)
 	if data, err := os.ReadFile(canary); err != nil || string(data) != "must survive" {
 		t.Fatalf("cross-kind scratch cleanup changed backup residue: %q, %v", data, err)
 	}
