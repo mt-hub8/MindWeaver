@@ -358,6 +358,49 @@ func (s *Store) RecoverExpired(ctx context.Context, retryAfter time.Duration) (i
 	return count, nil
 }
 
+// RecoverInterruptedAtStartup converges every RUNNING job left by a previous
+// process, even when its lease deadline is still in the future. It is safe only
+// during staged startup while the caller holds the Vault's exclusive OS lock
+// and before any worker is started. User cancellation wins, exhausted attempts
+// fail, and remaining work returns to QUEUED. Repeating the call is idempotent.
+func (s *Store) RecoverInterruptedAtStartup(ctx context.Context, retryAfter time.Duration) (int64, error) {
+	if retryAfter < 0 {
+		return 0, errors.New("sqlite: startup recovery retry delay must not be negative")
+	}
+	now := s.nowMicros()
+	retryAt := now + retryAfter.Microseconds()
+	if retryAt < now {
+		return 0, errors.New("sqlite: startup recovery retry delay overflows product time")
+	}
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE jobs
+		SET status = CASE
+				WHEN cancel_requested = 1 THEN 'cancelled'
+				WHEN attempt < max_attempts THEN 'queued'
+				ELSE 'failed'
+			END,
+			run_after = CASE
+				WHEN cancel_requested = 0 AND attempt < max_attempts THEN ?
+				ELSE run_after
+			END,
+			lease_owner = NULL, lease_token = NULL, lease_expires_at = NULL,
+			error_code = CASE
+				WHEN cancel_requested = 1 THEN NULL
+				ELSE 'PROCESS_INTERRUPTED'
+			END,
+			updated_at = max(?, updated_at)
+		WHERE status = 'running'
+	`, retryAt, now)
+	if err != nil {
+		return 0, fmt.Errorf("sqlite: recover interrupted startup jobs: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("sqlite: inspect startup-recovered jobs: %w", err)
+	}
+	return count, nil
+}
+
 const jobColumns = `
 	id, kind, payload_json, status, attempt, max_attempts, run_after,
 	lease_owner, lease_token, lease_expires_at, cancel_requested, error_code,

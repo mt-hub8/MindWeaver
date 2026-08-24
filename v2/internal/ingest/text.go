@@ -17,9 +17,17 @@ import (
 )
 
 const (
-	// MaxTextSourceBytes is the first-release extraction ceiling. Upload and
-	// worker code share it so a persisted job cannot request an unbounded read.
-	MaxTextSourceBytes int64 = 32 << 20
+	// DefaultChunkRunes and DefaultChunkOverlap are the single production
+	// chunking profile shared by admission proof and the worker.
+	DefaultChunkRunes   = 1200
+	DefaultChunkOverlap = 100
+	// MaxTextSourceBytes is the public text admission ceiling. With the default
+	// profile the smallest possible forward step is 1200/2+1-100 = 501 runes.
+	// A worst-case 4 MiB ASCII source therefore creates at most
+	// 1+ceil((4194304-1200)/501) = 8371 chunks, below MaxTextChunks. Every valid
+	// multibyte UTF-8 source of the same byte size has no more runes, while each
+	// 1200-rune chunk is at most 4800 bytes, below SQLite's 64 KiB row bound.
+	MaxTextSourceBytes int64 = 4 << 20
 	// MaxChunkRunes and MaxTextChunks cap both individual records and total
 	// allocation. Together with the overlap ratio they prevent configuration
 	// mistakes from amplifying one bounded source into an unbounded chunk set.
@@ -44,17 +52,22 @@ type TextFormat string
 const (
 	FormatText     TextFormat = "text"
 	FormatMarkdown TextFormat = "markdown"
+	// FormatPDF is accepted by filename detection but parsed only through the
+	// separately isolated pdfextract helper.
+	FormatPDF TextFormat = "pdf"
 )
 
-// DetectTextFormat accepts only an explicit TXT or Markdown filename. PDF is
-// intentionally handled by a separately qualified parser and must not silently
-// fall back to treating arbitrary bytes as text.
+// DetectTextFormat accepts only an explicit TXT, Markdown, or PDF filename.
+// Callers must route PDF to the separately qualified parser and must never
+// silently treat arbitrary PDF bytes as text.
 func DetectTextFormat(name string) (TextFormat, error) {
 	switch strings.ToLower(filepath.Ext(strings.TrimSpace(name))) {
 	case ".txt":
 		return FormatText, nil
 	case ".md", ".markdown":
 		return FormatMarkdown, nil
+	case ".pdf":
+		return FormatPDF, nil
 	default:
 		return "", ErrUnsupportedFormat
 	}

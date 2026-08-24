@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,8 +10,19 @@ import (
 	"time"
 
 	"github.com/mt-hub8/MindWeaver/v2/internal/blob"
+	"github.com/mt-hub8/MindWeaver/v2/internal/ingest"
+	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract"
 	store "github.com/mt-hub8/MindWeaver/v2/internal/store/sqlite"
 )
+
+type fixedPDFExtractor struct {
+	result pdfextract.Result
+	err    error
+}
+
+func (extractor fixedPDFExtractor) Extract(context.Context, string) (pdfextract.Result, error) {
+	return extractor.result, extractor.err
+}
 
 func TestUploadRunSearchCollectionsAndReopen(t *testing.T) {
 	ctx := t.Context()
@@ -125,6 +137,45 @@ func TestUploadRunSearchCollectionsAndReopen(t *testing.T) {
 	}
 }
 
+func TestPDFUploadUsesIsolatedExtractorContract(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	blobs, err := blob.OpenStore(filepath.Join(root, "blobs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := store.Open(ctx, filepath.Join(root, "mindweaver.db"), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	service, err := newWithPDFExtractor(database, blobs, fixedPDFExtractor{result: pdfextract.Result{
+		Text: "PDF 中的可靠知识库内容可以被检索。", Pages: 1,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upload, err := service.Upload(ctx, UploadRequest{
+		IdempotencyKey: "pdf-upload-1", Title: "PDF 文档", Filename: "source.pdf",
+		Source: strings.NewReader("%PDF-1.4\nsynthetic immutable bytes"),
+	})
+	if err != nil {
+		t.Fatalf("Upload PDF: %v", err)
+	}
+	job, err := service.RunOne(ctx, "pdf-worker", time.Minute)
+	if err != nil || job.Status != store.JobSucceeded {
+		t.Fatalf("RunOne = %#v, %v", job, err)
+	}
+	document, err := service.GetDocument(ctx, upload.DocumentID)
+	if err != nil || document.MediaType != "application/pdf" || document.ActiveRevisionID == "" {
+		t.Fatalf("document = %#v, %v", document, err)
+	}
+	hits, err := service.Search(ctx, "可靠知识库", 10)
+	if err != nil || len(hits) != 1 || hits[0].DocumentID != upload.DocumentID {
+		t.Fatalf("Search = %#v, %v", hits, err)
+	}
+}
+
 func TestTamperedSourceFailsJobWithoutActivatingRevision(t *testing.T) {
 	ctx := t.Context()
 	root := t.TempDir()
@@ -210,6 +261,59 @@ func TestTextUploadProgressAndQueuedCancellation(t *testing.T) {
 	}
 }
 
+func TestInterruptedClaimRetriesUnlessUserCancellationWins(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		userCancel bool
+		want       store.JobStatus
+		wantCode   string
+	}{
+		{name: "runtime shutdown retries", want: store.JobQueued, wantCode: "WORK_CANCELLED"},
+		{name: "user cancellation wins", userCancel: true, want: store.JobCancelled},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := t.Context()
+			root := t.TempDir()
+			blobs, err := blob.OpenStore(filepath.Join(root, "blobs"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			database, err := store.Open(ctx, filepath.Join(root, "mindweaver.db"), store.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer database.Close()
+			service, err := New(database, blobs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			upload, err := service.Upload(ctx, UploadRequest{
+				IdempotencyKey: "interrupted-upload", Title: "Interrupted", Filename: "interrupted.txt",
+				Source: strings.NewReader("interrupted work remains safely retryable"),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			claimed, err := database.ClaimDocumentIngestion(ctx, store.ClaimParams{Owner: "runtime-worker", LeaseDuration: time.Minute})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.userCancel {
+				if err := database.Cancel(ctx, upload.JobID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			job, failErr := service.failClaim(context.Background(), claimed, "WORK_CANCELLED", context.Canceled)
+			if !errors.Is(failErr, context.Canceled) {
+				t.Fatalf("failClaim error = %v", failErr)
+			}
+			if job.Status != test.want || job.ErrorCode != test.wantCode || job.LeaseToken != "" {
+				t.Fatalf("interrupted job = %#v", job)
+			}
+		})
+	}
+}
+
 func TestUploadRejectsUnboundedOrUnsupportedMetadata(t *testing.T) {
 	ctx := t.Context()
 	root := t.TempDir()
@@ -225,15 +329,21 @@ func TestUploadRejectsUnboundedOrUnsupportedMetadata(t *testing.T) {
 	service, _ := New(database, blobs)
 
 	for name, request := range map[string]UploadRequest{
-		"long title":    {IdempotencyKey: "a", Title: strings.Repeat("x", maxTitleBytes+1), Filename: "a.txt", Source: strings.NewReader("x")},
-		"path filename": {IdempotencyKey: "b", Title: "title", Filename: `..\a.txt`, Source: strings.NewReader("x")},
-		"PDF":           {IdempotencyKey: "c", Title: "title", Filename: "a.pdf", Source: strings.NewReader("x")},
-		"long key":      {IdempotencyKey: strings.Repeat("k", maxIdempotencyKeyBytes+1), Title: "title", Filename: "a.txt", Source: strings.NewReader("x")},
+		"long title":      {IdempotencyKey: "a", Title: strings.Repeat("x", maxTitleBytes+1), Filename: "a.txt", Source: strings.NewReader("x")},
+		"path filename":   {IdempotencyKey: "b", Title: "title", Filename: `..\a.txt`, Source: strings.NewReader("x")},
+		"unsupported":     {IdempotencyKey: "c", Title: "title", Filename: "a.zip", Source: strings.NewReader("x")},
+		"PDF unavailable": {IdempotencyKey: "pdf-no-helper", Title: "title", Filename: "a.pdf", Source: strings.NewReader("%PDF-1.4")},
+		"long key":        {IdempotencyKey: strings.Repeat("k", maxIdempotencyKeyBytes+1), Title: "title", Filename: "a.txt", Source: strings.NewReader("x")},
+		"oversized source": {IdempotencyKey: "oversized", Title: "title", Filename: "large.txt",
+			Source: strings.NewReader(strings.Repeat("a", int(ingest.MaxTextSourceBytes)+1))},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := service.Upload(ctx, request); err == nil {
 				t.Fatal("invalid upload unexpectedly succeeded")
 			}
 		})
+	}
+	if code := sourceErrorCode(ingest.ErrChunkLimit); code != "CHUNK_LIMIT" {
+		t.Fatalf("ErrChunkLimit code = %q", code)
 	}
 }

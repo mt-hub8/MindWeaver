@@ -3,6 +3,7 @@
 package workbench
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/mt-hub8/MindWeaver/v2/internal/blob"
 	"github.com/mt-hub8/MindWeaver/v2/internal/ingest"
+	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract"
 	store "github.com/mt-hub8/MindWeaver/v2/internal/store/sqlite"
 	"github.com/mt-hub8/MindWeaver/v2/platform"
 )
@@ -28,8 +30,6 @@ const (
 	maxTitleBytes          = 1024
 	maxFilenameBytes       = 1024
 	maxIdempotencyKeyBytes = 256
-	defaultChunkRunes      = 1200
-	defaultChunkOverlap    = 100
 )
 
 // Service directly composes the accepted local stores. There are no generic
@@ -37,13 +37,21 @@ const (
 type Service struct {
 	database *store.Store
 	blobs    *blob.Store
+	pdf      pdfTextExtractor
 	ids      platform.RandomIDGenerator
+}
+
+type pdfTextExtractor interface {
+	Extract(context.Context, string) (pdfextract.Result, error)
 }
 
 // ErrPostCommitRead means ingestion was durably committed, but refreshing the
 // final job projection failed. RunOne still returns the claimed job ID with a
 // Succeeded status so a caller does not retry already-committed work.
-var ErrPostCommitRead = errors.New("workbench: ingestion committed but final job read failed")
+var (
+	ErrPostCommitRead = errors.New("workbench: ingestion committed but final job read failed")
+	ErrPDFUnavailable = errors.New("workbench: isolated PDF helper is unavailable")
+)
 
 // New constructs a concrete local workbench service.
 func New(database *store.Store, blobs *blob.Store) (*Service, error) {
@@ -55,6 +63,27 @@ func New(database *store.Store, blobs *blob.Store) (*Service, error) {
 	}
 	return &Service{database: database, blobs: blobs}, nil
 }
+
+// NewWithPDF constructs the same concrete service with an isolated PDF helper.
+// New intentionally leaves PDF disabled so tests or callers cannot
+// accidentally parse an untrusted PDF inside the Vault-owning process.
+func NewWithPDF(database *store.Store, blobs *blob.Store, pdf *pdfextract.Client) (*Service, error) {
+	return newWithPDFExtractor(database, blobs, pdf)
+}
+
+func newWithPDFExtractor(database *store.Store, blobs *blob.Store, pdf pdfTextExtractor) (*Service, error) {
+	service, err := New(database, blobs)
+	if err != nil {
+		return nil, err
+	}
+	if pdf == nil {
+		return nil, errors.New("workbench: nil PDF helper")
+	}
+	service.pdf = pdf
+	return service, nil
+}
+
+func (s *Service) SupportsPDF() bool { return s != nil && s.pdf != nil }
 
 // UploadRequest is the bounded input for one TXT or Markdown source.
 type UploadRequest struct {
@@ -100,14 +129,29 @@ func (s *Service) Upload(ctx context.Context, request UploadRequest) (UploadResu
 	if err != nil {
 		return UploadResult{}, err
 	}
+	if format == ingest.FormatPDF && s.pdf == nil {
+		return UploadResult{}, ErrPDFUnavailable
+	}
+
+	// Keep permanent deletion out from publication through the database
+	// reference commit. Backup uses the same shared barrier, while purge takes
+	// its exclusive side before proving and deleting orphans.
+	objectPin, err := s.blobs.PinObjectsContext(ctx)
+	if err != nil {
+		return UploadResult{}, fmt.Errorf("workbench: pin source objects: %w", err)
+	}
+	defer objectPin.Release()
 
 	imported, err := s.blobs.Import(ctx, request.Source, ingest.MaxTextSourceBytes)
 	if err != nil {
 		return UploadResult{}, fmt.Errorf("workbench: import source: %w", err)
 	}
 	mediaType := "text/plain"
-	if format == ingest.FormatMarkdown {
+	switch format {
+	case ingest.FormatMarkdown:
 		mediaType = "text/markdown"
+	case ingest.FormatPDF:
+		mediaType = "application/pdf"
 	}
 	requestHash, err := uploadRequestHash(title, filename, string(format), imported.ID.String(), imported.Size)
 	if err != nil {
@@ -161,16 +205,26 @@ func (s *Service) Upload(ctx context.Context, request UploadRequest) (UploadResu
 	}, nil
 }
 
-// RunOne processes at most one queued document ingestion job.
-func (s *Service) RunOne(ctx context.Context, owner string, leaseDuration time.Duration) (store.Job, error) {
+// ClaimOne admits at most one queued ingestion job. It is separate from
+// RunClaimed so the runtime can serialize the actual SQLite claim with its
+// quiesce gate without holding that gate during PDF/text processing.
+func (s *Service) ClaimOne(ctx context.Context, owner string, leaseDuration time.Duration) (store.Job, error) {
 	if ctx == nil {
 		return store.Job{}, errors.New("workbench: nil context")
 	}
-	claimed, err := s.database.ClaimDocumentIngestion(ctx, store.ClaimParams{
+	return s.database.ClaimDocumentIngestion(ctx, store.ClaimParams{
 		Owner: owner, LeaseDuration: leaseDuration,
 	})
-	if err != nil {
-		return store.Job{}, err
+
+}
+
+// RunClaimed executes one already fenced document-ingestion claim.
+func (s *Service) RunClaimed(ctx context.Context, claimed store.Job) (store.Job, error) {
+	if ctx == nil {
+		return store.Job{}, errors.New("workbench: nil context")
+	}
+	if claimed.Kind != store.IngestDocumentJobKind || claimed.Status != store.JobRunning || claimed.LeaseToken == "" {
+		return store.Job{}, errors.New("workbench: invalid ingestion claim")
 	}
 
 	source, err := s.database.GetIngestionSource(ctx, claimed.ID)
@@ -187,7 +241,13 @@ func (s *Service) RunOne(ctx context.Context, owner string, leaseDuration time.D
 	}
 	hasher := sha256.New()
 	counter := &countingReader{reader: io.TeeReader(file, hasher)}
-	text, readErr := ingest.ReadText(ctx, counter, ingest.MaxTextSourceBytes)
+	var text string
+	var readErr error
+	if source.Format == string(ingest.FormatPDF) {
+		_, readErr = io.Copy(io.Discard, counter)
+	} else {
+		text, readErr = ingest.ReadText(ctx, counter, ingest.MaxTextSourceBytes)
+	}
 	closeErr := file.Close()
 	if readErr != nil || closeErr != nil {
 		err = errors.Join(readErr, closeErr)
@@ -199,8 +259,21 @@ func (s *Service) RunOne(ctx context.Context, owner string, leaseDuration time.D
 			source.BlobID, source.Size, actualID, counter.count)
 		return s.failClaim(ctx, claimed, "SOURCE_CORRUPT", err)
 	}
+	if source.Format == string(ingest.FormatPDF) {
+		if s.pdf == nil {
+			return s.failClaim(ctx, claimed, "PDF_HELPER_UNAVAILABLE", errors.New("workbench: PDF helper is not configured"))
+		}
+		result, extractErr := s.pdf.Extract(ctx, file.Name())
+		if extractErr != nil {
+			return s.failClaim(ctx, claimed, sourceErrorCode(extractErr), extractErr)
+		}
+		text, readErr = ingest.ReadText(ctx, bytes.NewReader([]byte(result.Text)), ingest.MaxTextSourceBytes)
+		if readErr != nil {
+			return s.failClaim(ctx, claimed, sourceErrorCode(readErr), readErr)
+		}
+	}
 
-	prepared, err := ingest.ChunkText(text, defaultChunkRunes, defaultChunkOverlap)
+	prepared, err := ingest.ChunkText(text, ingest.DefaultChunkRunes, ingest.DefaultChunkOverlap)
 	if err != nil {
 		return s.failClaim(ctx, claimed, sourceErrorCode(err), err)
 	}
@@ -228,6 +301,16 @@ func (s *Service) RunOne(ctx context.Context, owner string, leaseDuration time.D
 	return finished, nil
 }
 
+// RunOne is the direct/test convenience that claims and executes one job. The
+// App worker uses ClaimOne + RunClaimed to close its shutdown admission race.
+func (s *Service) RunOne(ctx context.Context, owner string, leaseDuration time.Duration) (store.Job, error) {
+	claimed, err := s.ClaimOne(ctx, owner, leaseDuration)
+	if err != nil {
+		return store.Job{}, err
+	}
+	return s.RunClaimed(ctx, claimed)
+}
+
 // GetDocument and ListDocuments expose the fixed local read model.
 func (s *Service) GetDocument(ctx context.Context, id string) (store.Document, error) {
 	return s.database.GetDocument(ctx, id)
@@ -235,6 +318,10 @@ func (s *Service) GetDocument(ctx context.Context, id string) (store.Document, e
 
 func (s *Service) ListDocuments(ctx context.Context, limit int) ([]store.Document, error) {
 	return s.database.ListDocuments(ctx, limit)
+}
+
+func (s *Service) ListDocumentsPage(ctx context.Context, limit int, after *store.DocumentCursor) (store.DocumentPage, error) {
+	return s.database.ListDocumentsPage(ctx, limit, after)
 }
 
 // GetJob and CancelJob close the minimal progress/cancellation loop required by
@@ -245,6 +332,13 @@ func (s *Service) GetJob(ctx context.Context, id string) (store.Job, error) {
 
 func (s *Service) CancelJob(ctx context.Context, id string) error {
 	return s.database.Cancel(ctx, id)
+}
+
+// RetryDocumentIngestion applies an optimistic user request to make the
+// document's existing durable ingestion runnable again. The store owns the
+// same-job, attempt-reset, and desired-state replay semantics.
+func (s *Service) RetryDocumentIngestion(ctx context.Context, documentID string, expectedRevision int64) (store.Document, bool, error) {
+	return s.database.RetryDocumentIngestionExpected(ctx, documentID, expectedRevision)
 }
 
 // Search searches only active revisions.
@@ -271,8 +365,41 @@ func (s *Service) CreateCollection(ctx context.Context, name string) (store.Coll
 	return s.database.CreateCollection(ctx, id, name)
 }
 
+// CreateCollectionIdempotent derives a durable non-secret command identity
+// from the caller's bounded idempotency key. Replays survive restart without a
+// second command-ledger table.
+func (s *Service) CreateCollectionIdempotent(ctx context.Context, idempotencyKey, name string) (store.Collection, bool, error) {
+	idempotencyKey, err := boundedOpaque("idempotency key", idempotencyKey, maxIdempotencyKeyBytes)
+	if err != nil {
+		return store.Collection{}, false, err
+	}
+	name, err = boundedTrimmed("collection name", name, 1024)
+	if err != nil {
+		return store.Collection{}, false, err
+	}
+	digest := sha256.Sum256([]byte("mindweaver.collection.v1\x00" + idempotencyKey))
+	id := "collection:" + hex.EncodeToString(digest[:])
+	return s.database.CreateCollectionIdempotent(ctx, id, name)
+}
+
+func (s *Service) ListCollectionsPage(ctx context.Context, limit int, after *store.CollectionCursor) (store.CollectionPage, error) {
+	return s.database.ListCollectionsPage(ctx, limit, after)
+}
+
+func (s *Service) ListCollectionMembersPage(ctx context.Context, collectionID string, limit int, after *store.CollectionMemberCursor) (store.CollectionMemberPage, error) {
+	return s.database.ListCollectionMembersPage(ctx, collectionID, limit, after)
+}
+
 func (s *Service) AddDocumentToCollection(ctx context.Context, collectionID, documentID string) error {
 	return s.database.AddDocumentToCollection(ctx, collectionID, documentID)
+}
+
+func (s *Service) AddDocumentToCollectionExpected(ctx context.Context, collectionID, documentID string, expectedRevision int64) (store.Collection, bool, error) {
+	return s.database.AddDocumentToCollectionExpected(ctx, collectionID, documentID, expectedRevision)
+}
+
+func (s *Service) RemoveDocumentFromCollectionExpected(ctx context.Context, collectionID, documentID string, expectedRevision int64) (store.Collection, bool, error) {
+	return s.database.RemoveDocumentFromCollectionExpected(ctx, collectionID, documentID, expectedRevision)
 }
 
 func (s *Service) newID(ctx context.Context) (string, error) {
@@ -288,6 +415,7 @@ func (s *Service) failClaim(ctx context.Context, claimed store.Job, code string,
 	defer cancel()
 	failErr := s.database.FailOrRetry(cleanupContext, store.FailureParams{
 		JobID: claimed.ID, LeaseToken: claimed.LeaseToken, ErrorCode: code,
+		Retry: errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded),
 	})
 	job, getErr := s.database.GetJob(cleanupContext, claimed.ID)
 	return job, errors.Join(fmt.Errorf("workbench: process ingestion: %w", cause), failErr, getErr)
@@ -301,8 +429,20 @@ func sourceErrorCode(err error) string {
 		return "SOURCE_MISSING"
 	case errors.Is(err, ingest.ErrSourceTooLarge):
 		return "SOURCE_TOO_LARGE"
+	case errors.Is(err, ingest.ErrChunkLimit):
+		return "CHUNK_LIMIT"
 	case errors.Is(err, ingest.ErrInvalidUTF8), errors.Is(err, ingest.ErrBinaryText), errors.Is(err, ingest.ErrEmptyText):
 		return "SOURCE_INVALID_TEXT"
+	case errors.Is(err, pdfextract.ErrNoExtractedText):
+		return "PDF_NO_TEXT"
+	case errors.Is(err, pdfextract.ErrEncryptedPDF):
+		return "PDF_ENCRYPTED"
+	case errors.Is(err, pdfextract.ErrResourceLimit):
+		return "PDF_RESOURCE_LIMIT"
+	case errors.Is(err, pdfextract.ErrInvalidPDF), errors.Is(err, pdfextract.ErrHelperProtocol):
+		return "PDF_INVALID"
+	case errors.Is(err, pdfextract.ErrHelperFailed):
+		return "PDF_HELPER_FAILED"
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return "WORK_CANCELLED"
 	default:

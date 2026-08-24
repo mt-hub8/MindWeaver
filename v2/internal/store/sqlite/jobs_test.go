@@ -236,6 +236,60 @@ func TestRestartRecovery(t *testing.T) {
 	}
 }
 
+func TestExclusiveStartupRecoveryIsImmediateCancellationFirstAndIdempotent(t *testing.T) {
+	ctx := t.Context()
+	clock := newFakeClock(testTime)
+	store := newTestStore(t, clock)
+	enqueueJob(t, ctx, store, "a-retry", 2, time.Time{})
+	enqueueJob(t, ctx, store, "b-cancel", 2, time.Time{})
+	enqueueJob(t, ctx, store, "c-exhausted", 1, time.Time{})
+
+	claimed := make(map[string]Job)
+	for range 3 {
+		job, err := store.Claim(ctx, ClaimParams{Owner: "crashed-process", LeaseDuration: time.Hour})
+		if err != nil {
+			t.Fatal(err)
+		}
+		claimed[job.ID] = job
+	}
+	if err := store.Cancel(ctx, "b-cancel"); err != nil {
+		t.Fatal(err)
+	}
+	// None of the one-hour leases is expired. Exclusive startup ownership is
+	// what makes immediate convergence safe.
+	count, err := store.RecoverInterruptedAtStartup(ctx, 0)
+	if err != nil || count != 3 {
+		t.Fatalf("startup recovery = %d, %v", count, err)
+	}
+	for id, want := range map[string]struct {
+		status JobStatus
+		error  string
+	}{
+		"a-retry":     {JobQueued, "PROCESS_INTERRUPTED"},
+		"b-cancel":    {JobCancelled, ""},
+		"c-exhausted": {JobFailed, "PROCESS_INTERRUPTED"},
+	} {
+		job, err := store.GetJob(ctx, id)
+		if err != nil || job.Status != want.status || job.ErrorCode != want.error || job.LeaseToken != "" || job.LeaseExpiresAt != nil {
+			t.Fatalf("%s after recovery = %#v, err=%v", id, job, err)
+		}
+		if old := claimed[id]; old.LeaseToken == "" {
+			t.Fatalf("%s was not originally claimed", id)
+		}
+	}
+	count, err = store.RecoverInterruptedAtStartup(ctx, 0)
+	if err != nil || count != 0 {
+		t.Fatalf("second startup recovery = %d, %v", count, err)
+	}
+	retry, err := store.Claim(ctx, ClaimParams{Owner: "new-process", LeaseDuration: time.Minute})
+	if err != nil || retry.ID != "a-retry" || retry.Attempt != 2 || retry.LeaseToken == claimed[retry.ID].LeaseToken {
+		t.Fatalf("retry claim = %#v, err=%v", retry, err)
+	}
+	if _, err := store.RecoverInterruptedAtStartup(ctx, -time.Second); err == nil {
+		t.Fatal("negative startup recovery delay succeeded")
+	}
+}
+
 func TestTwoConnectionsClaimOnlyOnce(t *testing.T) {
 	ctx := t.Context()
 	clock := newFakeClock(testTime)

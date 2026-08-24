@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -15,6 +16,7 @@ func TestDetectTextFormat(t *testing.T) {
 		"notes.TXT":      FormatText,
 		"readme.md":      FormatMarkdown,
 		"draft.markdown": FormatMarkdown,
+		"manual.PDF":     FormatPDF,
 	}
 	for name, want := range tests {
 		name, want := name, want
@@ -26,8 +28,8 @@ func TestDetectTextFormat(t *testing.T) {
 			}
 		})
 	}
-	if _, err := DetectTextFormat("manual.pdf"); !errors.Is(err, ErrUnsupportedFormat) {
-		t.Fatalf("PDF error = %v; want ErrUnsupportedFormat", err)
+	if _, err := DetectTextFormat("archive.zip"); !errors.Is(err, ErrUnsupportedFormat) {
+		t.Fatalf("unsupported error = %v; want ErrUnsupportedFormat", err)
 	}
 }
 
@@ -172,6 +174,44 @@ func TestChunkTextRejectsBypassedReaderLimits(t *testing.T) {
 	tooLarge := strings.Repeat("a", int(MaxTextSourceBytes)+1)
 	if _, err := ChunkText(tooLarge, MaxChunkRunes, 0); !errors.Is(err, ErrSourceTooLarge) {
 		t.Fatalf("oversize error = %v; want ErrSourceTooLarge", err)
+	}
+}
+
+func TestPublicTextByteCeilingFitsDefaultChunkBudgetForASCIIAndMultibyte(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+	}{
+		{name: "maximum ASCII", text: strings.Repeat("a", int(MaxTextSourceBytes))},
+		{name: "maximum four-byte UTF-8", text: strings.Repeat("😀", int(MaxTextSourceBytes)/len("😀"))},
+	}
+	minimumAdvance := DefaultChunkRunes/2 + 1 - DefaultChunkOverlap
+	maximumWorstCase := 1 + (int(MaxTextSourceBytes)-DefaultChunkRunes+minimumAdvance-1)/minimumAdvance
+	if maximumWorstCase > MaxTextChunks {
+		t.Fatalf("public limit proof requires %d chunks; maximum is %d", maximumWorstCase, MaxTextChunks)
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if int64(len(test.text)) != MaxTextSourceBytes {
+				t.Fatalf("fixture bytes = %d, want %d", len(test.text), MaxTextSourceBytes)
+			}
+			admitted, err := ReadText(t.Context(), bytes.NewReader([]byte(test.text)), MaxTextSourceBytes)
+			if err != nil || admitted != test.text {
+				t.Fatalf("read maximum admitted source: bytes=%d, err=%v", len(admitted), err)
+			}
+			chunks, err := ChunkText(admitted, DefaultChunkRunes, DefaultChunkOverlap)
+			if err != nil {
+				t.Fatalf("chunk maximum admitted source: %v", err)
+			}
+			if len(chunks) > MaxTextChunks {
+				t.Fatalf("chunks = %d, maximum = %d", len(chunks), MaxTextChunks)
+			}
+			for index, chunk := range chunks {
+				if utf8.RuneCountInString(chunk.Text) > DefaultChunkRunes || len(chunk.Text) > 4*DefaultChunkRunes {
+					t.Fatalf("chunk %d exceeds rune/byte proof: %d/%d", index, utf8.RuneCountInString(chunk.Text), len(chunk.Text))
+				}
+			}
+		})
 	}
 }
 
