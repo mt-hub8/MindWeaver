@@ -22,10 +22,9 @@ import (
 	"time"
 	"unicode/utf16"
 
-	pdf "github.com/ledongthuc/pdf"
+	"github.com/mgilbir/pdf0"
 	pdfclient "github.com/mt-hub8/MindWeaver/v2/internal/pdfextract/client"
 	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract/protocol"
-	"github.com/mt-hub8/MindWeaver/v2/qualification/pdf/unigbspike"
 )
 
 const (
@@ -65,21 +64,74 @@ func TestProductionPDFQualificationMatrix(t *testing.T) {
 	root := t.TempDir()
 	representativePath := writeFile(t, root, "representative-unigb.pdf", representative)
 
-	t.Run("representative UniGB verdict", func(t *testing.T) {
+	t.Run("representative UniGB exact", func(t *testing.T) {
 		result, extractErr := client.Extract(t.Context(), representativePath)
 		exact := extractErr == nil && result.Pages == len(spec.Pages) && normalize(result.Text) == expectedText(spec)
-		if exact {
-			t.Fatal("qualification verdict is stale: ledongthuc/pdf now extracts the representative UniGB corpus exactly")
+		if !exact {
+			t.Fatalf("representative UniGB extraction = category %s, pages %d, text %q", safeCategory(extractErr), result.Pages, normalize(result.Text))
 		}
-		if extractErr != nil && !errors.Is(extractErr, protocol.ErrInvalidPDF) {
-			t.Fatalf("representative UniGB failure category = %s, want INVALID_PDF or a bounded garble result", safeCategory(extractErr))
+	})
+
+	t.Run("UniGB identity is fail closed", func(t *testing.T) {
+		spoofed := bytes.Replace(representative, []byte("/Ordering (GB1)"), []byte("/Ordering (XX1)"), 1)
+		if bytes.Equal(spoofed, representative) {
+			t.Fatal("qualification fixture no longer exposes CIDSystemInfo")
 		}
-		spikeText, spikeErr := unigbspike.Extract(representative, unigbspike.DefaultLimits)
-		if spikeErr != nil || normalize(spikeText) != expectedText(spec) {
-			t.Fatalf("qualification-only UniGB mechanism failed: category=%T", spikeErr)
+		path := writeFile(t, root, "unigb-spoofed-ordering.pdf", spoofed)
+		if _, err := client.Extract(t.Context(), path); !errors.Is(err, protocol.ErrInvalidPDF) {
+			t.Fatalf("spoofed UniGB category = %s", safeCategory(err))
 		}
-		t.Logf("OBSERVED ledong category=%s pages=%d text_bytes=%d exact=%t", safeCategory(extractErr), result.Pages, len(result.Text), exact)
-		t.Log("VERDICT production ledongthuc/pdf=REPLACE; representative Chinese PDF capability=BLOCKED; stdlib UniGB spike=NOT_QUALIFIED")
+	})
+
+	t.Run("explicit ToUnicode CMap", func(t *testing.T) {
+		data, err := generateToUnicodePDF(spec, len(spec.Pages))
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := writeFile(t, root, "explicit-tounicode.pdf", data)
+		result, extractErr := client.Extract(t.Context(), path)
+		if extractErr != nil || result.Pages != len(spec.Pages) || normalize(result.Text) != expectedText(spec) {
+			t.Fatalf("ToUnicode extraction = category %s, pages %d, text %q", safeCategory(extractErr), result.Pages, normalize(result.Text))
+		}
+	})
+
+	t.Run("Flate content and CMap", func(t *testing.T) {
+		data, err := generateFlateToUnicodePDF(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := writeFile(t, root, "flate-tounicode.pdf", data)
+		result, extractErr := client.Extract(t.Context(), path)
+		if extractErr != nil || result.Pages != len(spec.Pages) || normalize(result.Text) != expectedText(spec) {
+			t.Fatalf("Flate extraction = category %s, pages %d, text %q", safeCategory(extractErr), result.Pages, normalize(result.Text))
+		}
+	})
+
+	t.Run("multiple pages", func(t *testing.T) {
+		const want = "English page one\n\n中文第二页"
+		path := writeFile(t, root, "multiple-pages.pdf", generateMultiPageUniGBPDF([]string{"English page one", "中文第二页"}))
+		result, extractErr := client.Extract(t.Context(), path)
+		if extractErr != nil || result.Pages != 2 || normalize(result.Text) != want {
+			t.Fatalf("multipage extraction = category %s, pages %d, text %q", safeCategory(extractErr), result.Pages, normalize(result.Text))
+		}
+	})
+
+	t.Run("object and xref streams", func(t *testing.T) {
+		const want = "对象流中文"
+		path := writeFile(t, root, "object-xref-stream.pdf", generateObjectXRefStreamPDF(t, want))
+		result, extractErr := client.Extract(t.Context(), path)
+		if extractErr != nil || result.Pages != 1 || normalize(result.Text) != want {
+			t.Fatalf("object/xref stream extraction = category %s, pages %d, text %q", safeCategory(extractErr), result.Pages, normalize(result.Text))
+		}
+	})
+
+	t.Run("Form XObject text", func(t *testing.T) {
+		const want = "表单对象中文"
+		path := writeFile(t, root, "form-xobject.pdf", generateUniGBFormPDF(want))
+		result, extractErr := client.Extract(t.Context(), path)
+		if extractErr != nil || result.Pages != 1 || normalize(result.Text) != want {
+			t.Fatalf("Form extraction = category %s, pages %d, text %q", safeCategory(extractErr), result.Pages, normalize(result.Text))
+		}
 	})
 
 	t.Run("English text", func(t *testing.T) {
@@ -145,6 +197,37 @@ func TestProductionPDFQualificationMatrix(t *testing.T) {
 		}
 	})
 
+	t.Run("actual page count", func(t *testing.T) {
+		path := writeFile(t, root, "actual-page-count.pdf", generateManyPagePDF(protocol.MaxPages+1))
+		if _, err := client.Extract(t.Context(), path); !errors.Is(err, protocol.ErrResourceLimit) {
+			t.Fatalf("actual page-count category = %s", safeCategory(err))
+		}
+	})
+
+	t.Run("decoded stream and operand limits", func(t *testing.T) {
+		for _, test := range []struct {
+			name string
+			data []byte
+		}{
+			{name: "output-allocation", data: generateCompressedTextOutputBomb(9 << 20)},
+			{name: "operand-stack", data: generateCompressedContentPDF(bytes.Repeat([]byte("0 "), 4097))},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				path := writeFile(t, root, test.name+".pdf", test.data)
+				if _, err := client.Extract(t.Context(), path); !errors.Is(err, protocol.ErrResourceLimit) {
+					t.Fatalf("%s category = %s", test.name, safeCategory(err))
+				}
+			})
+		}
+	})
+
+	t.Run("repeated Form expansion", func(t *testing.T) {
+		path := writeFile(t, root, "repeated-form-expansion.pdf", generateRepeatedFormOutputBomb(1<<20, 400))
+		if _, err := client.Extract(t.Context(), path); !errors.Is(err, protocol.ErrResourceLimit) {
+			t.Fatalf("repeated Form category = %s", safeCategory(err))
+		}
+	})
+
 	t.Run("source size", func(t *testing.T) {
 		path := filepath.Join(root, "oversize.pdf")
 		file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
@@ -160,6 +243,14 @@ func TestProductionPDFQualificationMatrix(t *testing.T) {
 			t.Fatalf("oversize category = %s", safeCategory(err))
 		}
 	})
+
+	t.Run("already cancelled", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if _, err := client.Extract(ctx, representativePath); !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancel category = %s", safeCategory(err))
+		}
+	})
 }
 
 func assertEncryptedFixture(t *testing.T, path, password string) {
@@ -173,12 +264,12 @@ func assertEncryptedFixture(t *testing.T, path, password string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reader, err := pdf.NewReaderEncrypted(file, info.Size(), func() string { return password })
+	document, err := pdf0.ReadWithPasswordContext(t.Context(), file, info.Size(), password)
 	if err != nil {
 		t.Fatalf("encrypted fixture did not open with its qualification password: %T", err)
 	}
-	if reader.NumPage() != 1 {
-		t.Fatalf("encrypted fixture page count = %d", reader.NumPage())
+	if !document.Encrypted || document.Locked() {
+		t.Fatal("encrypted fixture did not exercise an unlocked standard-security document")
 	}
 }
 
@@ -215,50 +306,33 @@ func TestPDFHelperTimeoutQualification(t *testing.T) {
 	}
 }
 
-func TestQualificationOnlyUniGBSpikeBoundaries(t *testing.T) {
-	spec := loadPDFSpec(t)
-	source, err := generateUniGBPDF(spec)
-	if err != nil {
-		t.Fatal(err)
-	}
-	text, err := unigbspike.Extract(source, unigbspike.DefaultLimits)
-	if err != nil || normalize(text) != expectedText(spec) {
-		t.Fatalf("spike extraction failed: %T", err)
-	}
-	for _, test := range []struct {
-		name   string
-		limits unigbspike.Limits
-	}{
-		{name: "source", limits: unigbspike.Limits{MaxSourceBytes: len(source) - 1, MaxExtractedBytes: 1 << 20, MaxPages: 1, MaxTextOperands: 100}},
-		{name: "output", limits: unigbspike.Limits{MaxSourceBytes: len(source), MaxExtractedBytes: len(text) - 1, MaxPages: 1, MaxTextOperands: 100}},
-		{name: "operands", limits: unigbspike.Limits{MaxSourceBytes: len(source), MaxExtractedBytes: 1 << 20, MaxPages: 1, MaxTextOperands: 2}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			if _, err := unigbspike.Extract(source, test.limits); !errors.Is(err, unigbspike.ErrResource) {
-				t.Fatalf("resource boundary = %v", err)
-			}
-		})
-	}
-	compressedClaim := append(append([]byte(nil), source...), []byte("\n/Filter /FlateDecode")...)
-	if _, err := unigbspike.Extract(compressedClaim, unigbspike.DefaultLimits); !errors.Is(err, unigbspike.ErrUnsupported) {
-		t.Fatalf("unsupported compressed shape = %v", err)
-	}
-}
-
 func TestPDFQualificationDependencyAndLicenseEvidence(t *testing.T) {
 	root := moduleRoot(t)
 	goTool := goTool(t)
-	command := exec.Command(goTool, "list", "-deps", "-f", "{{if not .Standard}}{{.ImportPath}}|{{with .Module}}{{.Path}}{{end}}{{end}}", "./qualification/pdf/unigbspike")
+	command := exec.Command(goTool, "list", "-deps", "-f", "{{if and (not .Standard) .Module}}{{.Module.Path}}@{{.Module.Version}}{{end}}", "./internal/pdfextract/parser")
 	command.Dir = root
 	command.Env = hermeticEnvironment(runtime.GOOS, runtime.GOARCH)
 	output, err := command.Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	lines := strings.Fields(string(output))
-	want := "github.com/mt-hub8/MindWeaver/v2/qualification/pdf/unigbspike|github.com/mt-hub8/MindWeaver/v2"
-	if len(lines) != 1 || lines[0] != want {
-		t.Fatalf("spike dependency closure = %q, want only the main module", lines)
+	got := make(map[string]bool)
+	for _, line := range strings.Fields(string(output)) {
+		got[line] = true
+	}
+	for _, want := range []string{
+		"github.com/mt-hub8/MindWeaver/v2@",
+		"github.com/mgilbir/pdf0@v0.1.0",
+		"github.com/mgilbir/formalis@v0.3.1",
+		"github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2",
+		"github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556",
+	} {
+		if !got[want] {
+			t.Errorf("selected parser dependency closure is missing %s", want)
+		}
+	}
+	if len(got) != 5 {
+		t.Fatalf("selected parser dependency closure = %v, want exactly five modules including MindWeaver", got)
 	}
 
 	moduleCacheCommand := exec.Command(goTool, "env", "GOMODCACHE")
@@ -268,9 +342,16 @@ func TestPDFQualificationDependencyAndLicenseEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ledongLicense := filepath.Join(strings.TrimSpace(string(moduleCacheRaw)), "github.com", "ledongthuc", "pdf@v0.0.0-20250511090121-5959a4027728", "LICENSE")
-	assertFileSHA256(t, ledongLicense, "2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067")
-	assertFileSHA256(t, filepath.Join(runtime.GOROOT(), "LICENSE"), "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad")
+	moduleCache := strings.TrimSpace(string(moduleCacheRaw))
+	licenses := map[string]string{
+		filepath.Join(moduleCache, "github.com", "mgilbir", "pdf0@v0.1.0", "LICENSE"):                                    "4e9651455e1b761ed462c50f60c4618c8985f46404e8db467def14848e77725a",
+		filepath.Join(moduleCache, "github.com", "mgilbir", "formalis@v0.3.1", "LICENSE"):                                "4e9651455e1b761ed462c50f60c4618c8985f46404e8db467def14848e77725a",
+		filepath.Join(moduleCache, "github.com", "mgilbir", "gopenjpeg@v0.0.0-20260727163526-8a139bc479b2", "LICENSE"):   "958dc940b3916ca8b4d373f24027e26e29623828f41205de09e9c680e5539f78",
+		filepath.Join(moduleCache, "github.com", "mgilbir", "golittlecms@v0.0.0-20260727161601-f6af7cfe1556", "LICENSE"): "4b0b89edd67872e0507e20e03032e4dc4eb194f88082f80acee13a13fb73317c",
+	}
+	for path, hash := range licenses {
+		assertFileSHA256(t, path, hash)
+	}
 }
 
 func safeCategory(err error) string {

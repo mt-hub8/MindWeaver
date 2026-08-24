@@ -2,14 +2,17 @@ package client
 
 import (
 	"bufio"
+	"bytes"
 	"debug/buildinfo"
 	"encoding/json"
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -27,15 +30,19 @@ var expectedWindowsModules = map[string][]string{
 		"golang.org/x/sys@v0.47.0#h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=",
 	},
 	"mindweaver-pdf.exe": {
-		"github.com/ledongthuc/pdf@v0.0.0-20250511090121-5959a4027728#h1:QwWKgMY28TAXaDl+ExRDqGQltzXqN/xypdKP86niVn8=",
+		"github.com/mgilbir/formalis@v0.3.1#h1:NyYe/EcRYJ2jUjgaZG98lNXgJ7H+jgy6mq7HXOnQxl8=",
+		"github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556#h1:2ZUsOgMhxpHCYC8jyzeEnJZFLYGbXhqjAJWJBvY8q4U=",
+		"github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2#h1:kdDIM4JNxn9gsRk5Zo6mtmcFpBqnl9gTVUwf9t6lIRk=",
+		"github.com/mgilbir/pdf0@v0.1.0#h1:rfBK18bcQ4kHQTXBmriAb07TafhG2w1fLflq9lHgaG4=",
 	},
 }
 
 func TestPDFExtractionDirectImportAllowlist(t *testing.T) {
 	root := moduleRoot(t)
 	allowed := map[string]map[string]bool{
-		"github.com/ledongthuc/pdf": {
-			"internal/pdfextract/parser/parser.go": true,
+		"github.com/mgilbir/pdf0": {
+			"internal/pdfextract/parser/bounded_content.go":  true,
+			"internal/pdfextract/parser/bounded_document.go": true,
 		},
 		"golang.org/x/sys/windows": {
 			"internal/pdfextract/client/command_windows.go": true,
@@ -127,13 +134,18 @@ func TestWindowsAMD64PDFDependencyGraph(t *testing.T) {
 		[]string{"golang.org/x/sys"},
 	)
 	assertGraphContains(t, clientGraph, "os/exec", "golang.org/x/sys/windows")
-	assertGraphExcludes(t, clientGraph, modulePath+"/internal/pdfextract/parser", "github.com/ledongthuc/pdf")
+	assertGraphExcludes(t, clientGraph, modulePath+"/internal/pdfextract/parser", "github.com/mgilbir/pdf0")
 	parserGraph := listDependencyGraph(t, goTool, root, environment, "./internal/pdfextract/parser")
 	assertPackageBoundary(t, parserGraph,
 		[]string{modulePath + "/internal/pdfextract/parser", modulePath + "/internal/pdfextract/protocol"},
-		[]string{"github.com/ledongthuc/pdf"},
+		[]string{
+			"github.com/mgilbir/formalis",
+			"github.com/mgilbir/golittlecms",
+			"github.com/mgilbir/gopenjpeg",
+			"github.com/mgilbir/pdf0",
+		},
 	)
-	assertGraphExcludes(t, parserGraph, modulePath+"/internal/pdfextract/client", "os/exec", "golang.org/x/sys/windows")
+	assertGraphExcludes(t, parserGraph, modulePath+"/internal/pdfextract/client", "net/http", "os/exec", "golang.org/x/sys/windows")
 
 	mainGraph := listDependencyGraph(t, goTool, root, environment, "./cmd/mindweaver")
 	assertGraphContains(t, mainGraph,
@@ -142,19 +154,19 @@ func TestWindowsAMD64PDFDependencyGraph(t *testing.T) {
 	)
 	assertGraphExcludes(t, mainGraph,
 		modulePath+"/internal/pdfextract/parser",
-		modulePath+"/qualification/pdf/unigbspike",
-		"github.com/ledongthuc/pdf",
+		"github.com/mgilbir/pdf0",
 	)
 
 	helperGraph := listDependencyGraph(t, goTool, root, environment, "./cmd/mindweaver-pdf")
 	assertGraphContains(t, helperGraph,
 		modulePath+"/internal/pdfextract/parser",
 		modulePath+"/internal/pdfextract/protocol",
-		"github.com/ledongthuc/pdf",
+		"github.com/mgilbir/pdf0",
 	)
 	assertGraphExcludes(t, helperGraph,
 		modulePath+"/internal/pdfextract/client",
-		modulePath+"/qualification/pdf/unigbspike",
+		modulePath+"/qualification/pdf",
+		"net/http",
 		"os/exec",
 		"golang.org/x/sys/windows",
 	)
@@ -163,6 +175,7 @@ func TestWindowsAMD64PDFDependencyGraph(t *testing.T) {
 			t.Errorf("helper graph contains forbidden x/sys package %s", imported)
 		}
 	}
+	assertNoHelperRuntimeEscape(t, helperGraph)
 
 	temporary := t.TempDir()
 	artifacts := []struct {
@@ -203,6 +216,9 @@ func TestWindowsAMD64PDFDependencyGraph(t *testing.T) {
 				t.Fatalf("%s module closure:\n got %q\nwant %q", artifact.name, got, want)
 			}
 			t.Logf("%s module closure: %s", artifact.name, strings.Join(got, ", "))
+			if artifact.name == "mindweaver-pdf.exe" {
+				assertNoHelperFilesystemSymbols(t, goTool, path, environment)
+			}
 		})
 	}
 }
@@ -210,8 +226,92 @@ func TestWindowsAMD64PDFDependencyGraph(t *testing.T) {
 type listedPackage struct {
 	ImportPath string
 	Standard   bool
+	Dir        string
+	GoFiles    []string
 	Module     *struct {
 		Path string
+	}
+}
+
+func assertNoHelperRuntimeEscape(t *testing.T, graph map[string]listedPackage) {
+	t.Helper()
+	for imported, record := range graph {
+		if record.Standard || record.Module == nil || record.Dir == "" {
+			continue
+		}
+		for _, name := range record.GoFiles {
+			filename := filepath.Join(record.Dir, name)
+			parsed, err := parser.ParseFile(token.NewFileSet(), filename, nil, 0)
+			if err != nil {
+				t.Fatalf("parse helper source %s: %v", filename, err)
+			}
+			aliases := make(map[string]string)
+			for _, declaration := range parsed.Imports {
+				dependency, err := strconv.Unquote(declaration.Path.Value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if dependency == "net" || dependency == "net/http" || dependency == "os/exec" || dependency == "syscall" {
+					t.Errorf("helper package %s directly imports forbidden runtime capability %s", imported, dependency)
+				}
+				alias := path.Base(dependency)
+				if declaration.Name != nil {
+					alias = declaration.Name.Name
+				}
+				aliases[alias] = dependency
+			}
+			ast.Inspect(parsed, func(node ast.Node) bool {
+				selector, ok := node.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				identifier, ok := selector.X.(*ast.Ident)
+				if !ok {
+					return true
+				}
+				switch aliases[identifier.Name] {
+				case "os":
+					switch selector.Sel.Name {
+					case "CreateTemp", "MkdirTemp", "TempDir":
+						t.Errorf("helper package %s uses forbidden temporary-path API os.%s", imported, selector.Sel.Name)
+					}
+				case "io/ioutil":
+					switch selector.Sel.Name {
+					case "TempDir", "TempFile":
+						t.Errorf("helper package %s uses forbidden temporary-path API ioutil.%s", imported, selector.Sel.Name)
+					}
+				}
+				return true
+			})
+		}
+	}
+}
+
+func assertNoHelperFilesystemSymbols(t *testing.T, goTool, executable string, environment []string) {
+	t.Helper()
+	command := exec.Command(goTool, "tool", "nm", executable)
+	command.Env = environment
+	output, err := command.Output()
+	if err != nil {
+		t.Fatalf("inspect helper symbols: %v", err)
+	}
+	for _, forbidden := range []string{
+		"github.com/mgilbir/golittlecms.(*Context).CreateDeviceLinkFromCubeFile",
+		"github.com/mgilbir/golittlecms.(*Context).OpenIOhandlerFromFile",
+		"github.com/mgilbir/golittlecms.(*Context).OpenProfileFromFile",
+		"github.com/mgilbir/golittlecms.(*IT8).SaveToFile",
+		"github.com/mgilbir/golittlecms.(*Profile).SaveProfileToFile",
+		"github.com/mgilbir/golittlecms.CreateDeviceLinkFromCubeFile",
+		"github.com/mgilbir/golittlecms.IT8LoadFromFile",
+		"github.com/mgilbir/golittlecms.OpenProfileFromFile",
+		"github.com/mgilbir/golittlecms.removeFile",
+		"os.Create",
+		"os.Remove",
+		"os.WriteFile",
+	} {
+		if bytes.Contains(output, []byte(forbidden)) {
+			t.Errorf("helper PE retains forbidden filesystem symbol %s", forbidden)
+		}
 	}
 }
 
