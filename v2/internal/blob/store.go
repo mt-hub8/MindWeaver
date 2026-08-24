@@ -95,6 +95,7 @@ type preparedImport struct {
 	mu          sync.Mutex
 	store       *Store
 	file        *os.File
+	original    os.FileInfo
 	stagingPath string
 	stagingName string
 	digest      string
@@ -102,6 +103,7 @@ type preparedImport struct {
 	size        int64
 	state       preparedState
 	active      bool
+	sourceMoved bool
 }
 
 // ID returns the immutable content address computed by Prepare.
@@ -270,7 +272,7 @@ func (s *Store) Prepare(ctx context.Context, src io.Reader, maxBytes int64) (Pre
 		return nil, err
 	}
 
-	temp, err := os.CreateTemp(s.stagingDir, stagingFilePrefix)
+	temp, err := createPreparedTemp(s.stagingDir, stagingFilePrefix)
 	if err != nil {
 		return nil, fmt.Errorf("create blob staging file: %w", err)
 	}
@@ -282,6 +284,16 @@ func (s *Store) Prepare(ctx context.Context, src io.Reader, maxBytes int64) (Pre
 		state:       preparedOpen,
 		active:      true,
 	}
+	initial, err := temp.Stat()
+	if err != nil {
+		_ = temp.Close()
+		return nil, fmt.Errorf("inspect new blob staging identity: %w", err)
+	}
+	if !initial.Mode().IsRegular() {
+		_ = temp.Close()
+		return nil, fmt.Errorf("%w: new blob staging file is not regular", ErrCorrupt)
+	}
+	prepared.original = initial
 	s.markActive(prepared.stagingName)
 	abort := func(cause error) (PreparedImport, error) {
 		return nil, errors.Join(cause, prepared.Abort())
@@ -298,14 +310,17 @@ func (s *Store) Prepare(ctx context.Context, src io.Reader, maxBytes int64) (Pre
 	if err := temp.Sync(); err != nil {
 		return abort(fmt.Errorf("sync blob staging file: %w", err))
 	}
-	if err := temp.Close(); err != nil {
-		prepared.file = nil
-		return abort(fmt.Errorf("close blob staging file: %w", err))
-	}
-	prepared.file = nil
 	if err := ctx.Err(); err != nil {
 		return abort(err)
 	}
+	original, err := temp.Stat()
+	if err != nil {
+		return abort(fmt.Errorf("inspect prepared blob identity: %w", err))
+	}
+	if !original.Mode().IsRegular() || original.Size() != size {
+		return abort(fmt.Errorf("%w: prepared blob has unexpected type or size", ErrCorrupt))
+	}
+	prepared.original = original
 	if err := s.syncDir(s.stagingDir); err != nil {
 		return abort(fmt.Errorf("sync blob staging directory: %w", err))
 	}
@@ -336,7 +351,7 @@ func (prepared *preparedImport) Publish(ctx context.Context) (ImportResult, erro
 		return ImportResult{}, err
 	}
 
-	created, publishErr := prepared.store.publish(prepared.stagingPath, prepared.digest, prepared.size)
+	created, publishErr := prepared.store.publish(prepared)
 	prepared.state = preparedPublished
 	cleanupErr := prepared.cleanupStagingLocked()
 	prepared.finishActiveLocked()
@@ -367,23 +382,21 @@ func (prepared *preparedImport) Abort() error {
 }
 
 func (prepared *preparedImport) cleanupStagingLocked() error {
-	if prepared.stagingPath == "" {
+	if prepared.file == nil {
 		return nil
 	}
 	var cleanupErr error
-	if prepared.file != nil {
-		cleanupErr = prepared.file.Close()
-		prepared.file = nil
+	if !prepared.sourceMoved {
+		if _, removeErr := removePreparedIdentity(prepared.file, prepared.stagingPath, prepared.original); removeErr != nil {
+			cleanupErr = fmt.Errorf("remove blob staging identity: %w", removeErr)
+		}
 	}
-	if removeErr := os.Remove(prepared.stagingPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove blob staging file: %w", removeErr))
-	}
+	cleanupErr = errors.Join(cleanupErr, prepared.file.Close())
+	prepared.file = nil
 	if syncErr := prepared.store.syncDir(prepared.store.stagingDir); syncErr != nil {
 		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("sync blob staging directory: %w", syncErr))
 	}
-	if cleanupErr == nil {
-		prepared.stagingPath = ""
-	}
+	prepared.stagingPath = ""
 	return cleanupErr
 }
 
@@ -508,51 +521,148 @@ func (s *Store) CleanupStaging(ctx context.Context, cutoff time.Time) (int, erro
 	}
 }
 
-func (s *Store) publish(stagingPath, digest string, size int64) (bool, error) {
-	lock := s.lockForDigest(digest)
+func (s *Store) publish(prepared *preparedImport) (bool, error) {
+	lock := s.lockForDigest(prepared.digest)
 	lock.Lock()
 	defer lock.Unlock()
+	if err := verifyPreparedSource(prepared); err != nil {
+		return false, err
+	}
 
-	prefixDir := filepath.Join(s.objectsDir, digest[:2])
+	prefixDir := filepath.Join(s.objectsDir, prepared.digest[:2])
 	if err := ensureDirectory(prefixDir, s.objectsDir, s.syncDir); err != nil {
 		return false, err
 	}
-	destination := filepath.Join(prefixDir, digest[2:])
+	destination := filepath.Join(prefixDir, prepared.digest[2:])
 
 	if _, err := os.Lstat(destination); err == nil {
-		if err := verifyObject(destination, digest, size); err != nil {
-			return false, err
-		}
 		if err := s.syncDir(prefixDir); err != nil {
 			return false, fmt.Errorf("sync existing blob object directory: %w", err)
+		}
+		if _, err := verifyObject(destination, prepared.digest, prepared.size); err != nil {
+			return false, err
 		}
 		return false, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return false, fmt.Errorf("inspect blob destination: %w", err)
 	}
 
-	if err := s.rename(stagingPath, destination); err != nil {
+	if err := s.rename(prepared.stagingPath, destination); err != nil {
 		// A second process may have published identical bytes between Lstat and
-		// rename. Accept that race only after verifying the complete object.
+		// rename. Accept that race only after syncing and verifying the complete
+		// destination. A hook may also report an error after moving our identity;
+		// remember that case so cleanup cannot delete the published object.
 		if _, statErr := os.Lstat(destination); statErr == nil {
-			if verifyErr := verifyObject(destination, digest, size); verifyErr != nil {
-				return false, errors.Join(fmt.Errorf("publish blob: %w", err), verifyErr)
-			}
+			prepared.sourceMoved = pathHasIdentity(destination, prepared.original)
 			if syncErr := s.syncDir(prefixDir); syncErr != nil {
 				return false, errors.Join(
 					fmt.Errorf("publish blob: %w", err),
 					fmt.Errorf("sync concurrently published blob directory: %w", syncErr),
 				)
 			}
+			if prepared.sourceMoved {
+				if verifyErr := verifyPublishedPrepared(prepared, destination); verifyErr != nil {
+					return false, errors.Join(fmt.Errorf("publish blob: %w", err), verifyErr)
+				}
+				if closeErr := prepared.closeMovedSource(); closeErr != nil {
+					return false, errors.Join(fmt.Errorf("publish blob: %w", err), closeErr)
+				}
+			} else if _, verifyErr := verifyObject(destination, prepared.digest, prepared.size); verifyErr != nil {
+				return false, errors.Join(fmt.Errorf("publish blob: %w", err), verifyErr)
+			}
 			return false, nil
 		}
 		return false, fmt.Errorf("publish blob: %w", err)
 	}
+	prepared.sourceMoved = pathHasIdentity(destination, prepared.original)
 
 	if err := s.syncDir(prefixDir); err != nil {
 		return false, fmt.Errorf("sync blob object directory: %w", err)
 	}
+	if err := verifyPublishedPrepared(prepared, destination); err != nil {
+		return false, fmt.Errorf("verify published blob: %w", err)
+	}
+	if err := prepared.closeMovedSource(); err != nil {
+		return false, err
+	}
 	return true, nil
+}
+
+func verifyPreparedSource(prepared *preparedImport) error {
+	if prepared == nil || prepared.file == nil || prepared.original == nil {
+		return fmt.Errorf("%w: prepared blob identity is unavailable", ErrCorrupt)
+	}
+	current, err := prepared.file.Stat()
+	if err != nil {
+		return fmt.Errorf("inspect prepared blob handle: %w", err)
+	}
+	if !current.Mode().IsRegular() || current.Size() != prepared.size || !os.SameFile(current, prepared.original) {
+		return fmt.Errorf("%w: prepared blob identity or size changed", ErrCorrupt)
+	}
+	if !pathHasIdentity(prepared.stagingPath, current) {
+		return fmt.Errorf("%w: prepared blob staging name was replaced", ErrCorrupt)
+	}
+	if err := verifyOpenFile(prepared.file, prepared.digest, prepared.size); err != nil {
+		return fmt.Errorf("verify prepared blob handle: %w", err)
+	}
+	current, err = prepared.file.Stat()
+	if err != nil {
+		return fmt.Errorf("reinspect prepared blob handle: %w", err)
+	}
+	if !os.SameFile(current, prepared.original) || !pathHasIdentity(prepared.stagingPath, current) {
+		return fmt.Errorf("%w: prepared blob identity changed during verification", ErrCorrupt)
+	}
+	return nil
+}
+
+func pathHasIdentity(path string, expected os.FileInfo) bool {
+	if expected == nil {
+		return false
+	}
+	entry, err := os.Lstat(path)
+	return err == nil && entry.Mode().IsRegular() && os.SameFile(entry, expected)
+}
+
+func verifyPublishedPrepared(prepared *preparedImport, destination string) error {
+	current, err := prepared.file.Stat()
+	if err != nil {
+		return fmt.Errorf("inspect published blob handle: %w", err)
+	}
+	if !current.Mode().IsRegular() || !os.SameFile(prepared.original, current) ||
+		!pathHasIdentity(destination, current) {
+		return fmt.Errorf("%w: published destination identity differs", ErrCorrupt)
+	}
+	if err := verifyOpenFile(prepared.file, prepared.digest, prepared.size); err != nil {
+		return err
+	}
+	current, err = prepared.file.Stat()
+	if err != nil {
+		return fmt.Errorf("reinspect published blob handle: %w", err)
+	}
+	if !os.SameFile(prepared.original, current) || !pathHasIdentity(destination, current) {
+		return fmt.Errorf("%w: published destination changed during verification", ErrCorrupt)
+	}
+	return nil
+}
+
+// closeMovedSource releases the DELETE-capable identity handle before the
+// per-digest publication lock is released. This lets a serialized dedupe
+// verifier open the destination without weakening Windows sharing semantics.
+func (prepared *preparedImport) closeMovedSource() error {
+	if prepared.file == nil || !prepared.sourceMoved {
+		return nil
+	}
+	closeErr := prepared.file.Close()
+	prepared.file = nil
+	syncErr := prepared.store.syncDir(prepared.store.stagingDir)
+	prepared.stagingPath = ""
+	if closeErr != nil {
+		closeErr = fmt.Errorf("close published blob identity: %w", closeErr)
+	}
+	if syncErr != nil {
+		syncErr = fmt.Errorf("sync blob staging directory after publication: %w", syncErr)
+	}
+	return errors.Join(closeErr, syncErr)
 }
 
 func (s *Store) objectPath(id BlobID) (path string, digest string, err error) {
@@ -650,30 +760,54 @@ func writeFull(dst *os.File, data []byte) error {
 	return nil
 }
 
-func verifyObject(path, digest string, expectedSize int64) error {
-	info, err := os.Lstat(path)
+func verifyObject(path, digest string, expectedSize int64) (os.FileInfo, error) {
+	entry, err := os.Lstat(path)
 	if err != nil {
-		return fmt.Errorf("inspect existing blob: %w", err)
+		return nil, fmt.Errorf("inspect existing blob: %w", err)
 	}
-	if !info.Mode().IsRegular() || info.Size() != expectedSize {
-		return fmt.Errorf("%w: existing object has unexpected type or size", ErrCorrupt)
+	if !entry.Mode().IsRegular() || entry.Size() != expectedSize {
+		return nil, fmt.Errorf("%w: existing object has unexpected type or size", ErrCorrupt)
 	}
 
 	file, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("open existing blob for verification: %w", err)
+		return nil, fmt.Errorf("open existing blob for verification: %w", err)
+	}
+	opened, statErr := file.Stat()
+	if statErr != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("inspect opened blob for verification: %w", statErr)
+	}
+	if !opened.Mode().IsRegular() || !os.SameFile(entry, opened) {
+		_ = file.Close()
+		return nil, fmt.Errorf("%w: existing object identity changed", ErrCorrupt)
+	}
+	verifyErr := verifyOpenFile(file, digest, expectedSize)
+	after, afterErr := os.Lstat(path)
+	closeErr := file.Close()
+	if verifyErr != nil || afterErr != nil || closeErr != nil {
+		if afterErr != nil {
+			afterErr = fmt.Errorf("reinspect verified blob path: %w", afterErr)
+		}
+		return nil, errors.Join(verifyErr, afterErr, closeErr)
+	}
+	if !after.Mode().IsRegular() || !os.SameFile(opened, after) {
+		return nil, fmt.Errorf("%w: verified object path was replaced", ErrCorrupt)
+	}
+	return opened, nil
+}
+
+func verifyOpenFile(file *os.File, digest string, expectedSize int64) error {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("seek blob for verification: %w", err)
 	}
 	hasher := sha256.New()
-	_, copyErr := io.CopyBuffer(hasher, file, make([]byte, copyBufferSize))
-	closeErr := file.Close()
-	if copyErr != nil || closeErr != nil {
-		if copyErr != nil {
-			copyErr = fmt.Errorf("verify existing blob: %w", copyErr)
-		}
-		return errors.Join(copyErr, closeErr)
+	size, copyErr := io.CopyBuffer(hasher, file, make([]byte, copyBufferSize))
+	if copyErr != nil {
+		return fmt.Errorf("verify blob bytes: %w", copyErr)
 	}
-	if hex.EncodeToString(hasher.Sum(nil)) != digest {
-		return fmt.Errorf("%w: existing object hash differs", ErrCorrupt)
+	if size != expectedSize || hex.EncodeToString(hasher.Sum(nil)) != digest {
+		return fmt.Errorf("%w: blob size or hash differs", ErrCorrupt)
 	}
 	return nil
 }
