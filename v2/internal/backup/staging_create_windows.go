@@ -17,7 +17,7 @@ const ntFileCreated = 2
 // handle deliberately omits FILE_SHARE_DELETE, so the new directory cannot be
 // renamed away or deleted before os.Root has retained and verified the same
 // identity.
-func createRetainedStagingLeaf(parent *retainedDirectory, name string) (*os.File, os.FileInfo, error) {
+func createRetainedStagingLeaf(parent *retainedDirectory, name string, ownerOnly bool) (*os.File, os.FileInfo, error) {
 	if parent == nil || parent.root == nil || parent.syncHandle == nil || !validResidueLeaf(name) {
 		return nil, nil, errors.New("backup: invalid retained staging creation")
 	}
@@ -29,6 +29,13 @@ func createRetainedStagingLeaf(parent *retainedDirectory, name string) (*os.File
 		RootDirectory: windows.Handle(parent.syncHandle.Fd()),
 		ObjectName:    objectName,
 		Attributes:    windows.OBJ_CASE_INSENSITIVE | windows.OBJ_DONT_REPARSE,
+	}
+	if ownerOnly {
+		descriptor, err := newVerifyScratchSecurityDescriptor(true)
+		if err != nil {
+			return nil, nil, err
+		}
+		attributes.SecurityDescriptor = descriptor
 	}
 	attributes.Length = uint32(unsafe.Sizeof(attributes))
 	var handle windows.Handle
@@ -75,6 +82,11 @@ func createRetainedStagingLeaf(parent *retainedDirectory, name string) (*os.File
 	}
 	if err := validateDirectoryBoundary(parentInfo, info); err != nil {
 		return failCreatedFile(err)
+	}
+	if ownerOnly {
+		if err := verifyVerifyScratchHandleSecurity(file, true); err != nil {
+			return failCreatedFile(err)
+		}
 	}
 	return file, info, nil
 }

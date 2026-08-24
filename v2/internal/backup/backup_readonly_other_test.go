@@ -57,4 +57,20 @@ func TestNonWindowsMutatingBackupPathsFailBeforeFilesystemWrites(t *testing.T) {
 			t.Fatalf("non-Windows preflight left managed residue %q", entry.Name())
 		}
 	}
+
+	verifyScratch := filepath.Join(root, "verify-scratch")
+	if err := os.Mkdir(verifyScratch, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := coordinator.Verify(t.Context(), filepath.Join(root, "missing-backup"), VerifyOptions{ScratchParent: verifyScratch})
+	if !errors.Is(err, ErrUnsupportedPlatform) || outcome.Failure != FailureUnsupported {
+		t.Fatalf("non-Windows Verify = %+v, %v", outcome, err)
+	}
+	if entries, err := os.ReadDir(verifyScratch); err != nil || len(entries) != 0 {
+		t.Fatalf("non-Windows Verify wrote scratch: %v entries, %v", len(entries), err)
+	}
+	cleanup, err := coordinator.CleanupVerifyScratch(t.Context(), verifyScratch, 1)
+	if !errors.Is(err, ErrUnsupportedPlatform) || cleanup != (ScratchCleanupSummary{}) {
+		t.Fatalf("non-Windows scratch cleanup = %+v, %v", cleanup, err)
+	}
 }

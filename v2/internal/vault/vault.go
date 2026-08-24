@@ -86,6 +86,25 @@ func ValidateExistingDirectory(path string) (string, error) {
 	return abs, nil
 }
 
+// ValidateLocalDirectory validates an already-open directory capability for
+// private writable temporary data without creating children or acquiring a
+// Vault ownership lock. On Windows it applies the same fixed local NTFS,
+// non-hotplug, non-cloud checks as an active Vault to this exact handle. The
+// caller must retain the handle across every write authorized by this result.
+func ValidateLocalDirectory(directory *os.File) error {
+	if directory == nil {
+		return fmt.Errorf("%w: local directory handle is unavailable", ErrUnsafePath)
+	}
+	info, err := directory.Stat()
+	if err != nil {
+		return fmt.Errorf("%w: inspect local directory handle: %v", ErrUnsafePath, err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: local directory handle is not a real directory", ErrUnsafePath)
+	}
+	return validateLocalDirectoryHandle(directory)
+}
+
 // Open opens one explicit Vault root. The root itself may be created when its
 // parent already exists; missing ancestor chains are rejected. Existing roots,
 // fixed directories, and their ancestors must be real directories rather than

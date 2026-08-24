@@ -6,6 +6,6 @@ import (
 	"os"
 )
 
-func createRetainedStagingLeaf(*retainedDirectory, string) (*os.File, os.FileInfo, error) {
+func createRetainedStagingLeaf(*retainedDirectory, string, bool) (*os.File, os.FileInfo, error) {
 	return nil, nil, ErrUnsupportedPlatform
 }

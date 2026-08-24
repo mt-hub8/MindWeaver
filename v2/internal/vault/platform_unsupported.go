@@ -15,6 +15,10 @@ func validateActiveVaultLocation(string) error {
 	return errors.New("vault: unsupported operating system")
 }
 
+func validateLocalDirectoryHandle(*os.File) error {
+	return errors.New("vault: unsupported operating system")
+}
+
 func openVaultRootHandle(string) (*os.File, string, error) {
 	return nil, "", errors.New("vault: unsupported operating system")
 }

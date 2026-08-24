@@ -37,6 +37,10 @@ func validateRealDirectory(path string) error {
 
 func validateActiveVaultLocation(string) error { return nil }
 
+func validateLocalDirectoryHandle(*os.File) error {
+	return fmt.Errorf("%w: fixed-local scratch qualification is unavailable", ErrUnsafeMedia)
+}
+
 func openVaultRootHandle(path string) (*os.File, string, error) {
 	if err := validateRealDirectory(path); err != nil {
 		return nil, "", err

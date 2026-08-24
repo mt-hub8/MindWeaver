@@ -101,6 +101,8 @@ func residueKindForPrefix(prefix string) (string, error) {
 		return "backup", nil
 	case restorePrefix:
 		return "restore", nil
+	case verifyScratchPrefix:
+		return "verify", nil
 	default:
 		return "", errors.New("backup: unsupported staging prefix")
 	}
@@ -118,6 +120,7 @@ func validDestinationLeaf(name string) bool {
 	for _, prefix := range []string{
 		stagingPrefix,
 		restorePrefix,
+		verifyScratchPrefix,
 		residueReceiptPrefix,
 		residueTempPrefix,
 	} {
@@ -177,7 +180,7 @@ func residueReceiptRevision(receipt residueReceipt) (string, error) {
 func validateResidueReceipt(receipt residueReceipt) error {
 	if receipt.Version != residueReceiptVersion || !validHexToken(receipt.ID, 16) ||
 		!validHexToken(receipt.Revision, sha256.Size) ||
-		(receipt.Kind != "backup" && receipt.Kind != "restore") ||
+		(receipt.Kind != "backup" && receipt.Kind != "restore" && receipt.Kind != "verify") ||
 		!validResidueLeaf(receipt.StagingName) || !validDestinationLeaf(receipt.DestinationName) ||
 		len(receipt.ParentIdentity) == 0 || len(receipt.ParentIdentity) > 160 {
 		return errors.New("backup: invalid residue receipt")
@@ -185,6 +188,8 @@ func validateResidueReceipt(receipt residueReceipt) error {
 	prefix := stagingPrefix
 	if receipt.Kind == "restore" {
 		prefix = restorePrefix
+	} else if receipt.Kind == "verify" {
+		prefix = verifyScratchPrefix
 	}
 	if receipt.StagingName != prefix+receipt.ID {
 		return errors.New("backup: residue staging name differs from its operation ID")
@@ -703,6 +708,20 @@ func ListResidues(ctx context.Context, parentPath string, limit int) (page Resid
 		return ResiduePage{}, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, parent.Close()) }()
+	return listResiduesRoot(ctx, parent, limit)
+}
+
+func listResiduesRoot(
+	ctx context.Context,
+	parent *retainedDirectory,
+	limit int,
+) (page ResiduePage, resultErr error) {
+	if ctx == nil || parent == nil || parent.root == nil {
+		return ResiduePage{}, errors.New("backup: invalid retained residue listing")
+	}
+	if limit < 1 || limit > maxResiduePageSize {
+		return ResiduePage{}, fmt.Errorf("backup: residue page size must be between 1 and %d", maxResiduePageSize)
+	}
 	parentIdentity, err := persistentDirectoryIdentityToken(parent)
 	if err != nil {
 		return ResiduePage{}, err
@@ -792,6 +811,17 @@ func (c *Coordinator) RecoverResidue(ctx context.Context, parentPath string, exp
 	if c.activeVault == nil || c.activeVault.root == nil || c.activeVault.identity.info == nil {
 		return errors.New("backup: coordinator is not initialized")
 	}
+	return recoverResidue(ctx, parentPath, expected, c.rejectActiveVaultOverlap)
+}
+
+type residueRecoveryGuard func(*destinationTarget) error
+
+func recoverResidue(
+	ctx context.Context,
+	parentPath string,
+	expected Residue,
+	guard residueRecoveryGuard,
+) (resultErr error) {
 	if ctx == nil {
 		return errors.New("backup: nil residue recovery context")
 	}
@@ -808,6 +838,26 @@ func (c *Coordinator) RecoverResidue(ctx context.Context, parentPath string, exp
 		return err
 	}
 	defer func() { resultErr = errors.Join(resultErr, parent.Close()) }()
+	return recoverResidueRoot(ctx, parent, expected, guard)
+}
+
+func recoverResidueRoot(
+	ctx context.Context,
+	parent *retainedDirectory,
+	expected Residue,
+	guard residueRecoveryGuard,
+) (resultErr error) {
+	if ctx == nil || parent == nil || parent.root == nil {
+		return errors.New("backup: invalid retained residue recovery")
+	}
+	if err := ensureResidueRecoverySupported(); err != nil {
+		return err
+	}
+	if !validHexToken(expected.ID, 16) || !validHexToken(expected.Revision, sha256.Size) ||
+		expected.Identity == "" || !validResidueLeaf(expected.StagingName) ||
+		!validDestinationLeaf(expected.DestinationName) {
+		return errors.New("backup: invalid expected residue")
+	}
 	name := residueReceiptName(expected.ID)
 	receipt, receiptInfo, err := readResidueReceipt(ctx, parent, name)
 	if err != nil {
@@ -855,12 +905,14 @@ func (c *Coordinator) RecoverResidue(ctx context.Context, parentPath string, exp
 	if observation.state == ResidueStatePublicationUncertain {
 		guardName = receipt.DestinationName
 	}
-	if err := c.rejectActiveVaultOverlap(&destinationTarget{
-		finalPath: filepath.Join(parent.path, guardName),
-		finalName: guardName,
-		parent:    parent,
-	}); err != nil {
-		return fmt.Errorf("backup: residue overlaps active Vault: %w", err)
+	if guard != nil {
+		if err := guard(&destinationTarget{
+			finalPath: filepath.Join(parent.path, guardName),
+			finalName: guardName,
+			parent:    parent,
+		}); err != nil {
+			return fmt.Errorf("backup: residue overlaps protected root: %w", err)
+		}
 	}
 	switch observation.state {
 	case ResidueStateStaging:

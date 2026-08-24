@@ -98,6 +98,22 @@ func validateActiveVaultLocation(path string) error {
 	return validateWindowsVaultHandle(handle, probe)
 }
 
+func validateLocalDirectoryHandle(directory *os.File) error {
+	handle := windows.Handle(directory.Fd())
+	if err := verifyHandleType(handle, true); err != nil {
+		return err
+	}
+	finalPath, err := finalHandlePath(handle)
+	if err != nil {
+		return fmt.Errorf("%w: resolve local directory handle: %v", ErrUnsafePath, err)
+	}
+	path := normalizeFinalPath(finalPath)
+	if err := validateVaultPathSpelling(path); err != nil {
+		return err
+	}
+	return validateWindowsVaultHandle(handle, path)
+}
+
 func openVaultRootHandle(path string) (*os.File, string, error) {
 	if err := validateRealDirectory(path); err != nil {
 		return nil, "", err

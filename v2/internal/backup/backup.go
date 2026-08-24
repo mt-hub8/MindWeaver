@@ -723,19 +723,31 @@ func wrapBackupError(err error, message string) error {
 }
 
 func readManifestRoot(ctx context.Context, root *retainedDirectory, relative string) (Manifest, error) {
+	manifest, _, err := readManifestWireRoot(ctx, root, relative)
+	return manifest, err
+}
+
+// readManifestWireRoot returns the exact bounded wire representation together
+// with the validated manifest. Verify uses the wire bytes as a source
+// commitment so a semantically equivalent rewrite is still detected.
+func readManifestWireRoot(
+	ctx context.Context,
+	root *retainedDirectory,
+	relative string,
+) (Manifest, []byte, error) {
 	if ctx == nil {
-		return Manifest{}, errors.New("backup: nil manifest context")
+		return Manifest{}, nil, errors.New("backup: nil manifest context")
 	}
 	if err := ctx.Err(); err != nil {
-		return Manifest{}, err
+		return Manifest{}, nil, err
 	}
 	file, info, err := openRootRegularFile(root, relative)
 	if err != nil {
-		return Manifest{}, fmt.Errorf("backup: open manifest: %w", err)
+		return Manifest{}, nil, fmt.Errorf("backup: open manifest: %w", err)
 	}
 	if info.Size() > maxManifestBytes {
 		_ = file.Close()
-		return Manifest{}, errors.New("backup: manifest exceeds size limit")
+		return Manifest{}, nil, errors.New("backup: manifest exceeds size limit")
 	}
 	var encoded bytes.Buffer
 	_, readErr := copyContext(ctx, &encoded, io.LimitReader(file, maxManifestBytes+1))
@@ -743,11 +755,19 @@ func readManifestRoot(ctx context.Context, root *retainedDirectory, relative str
 	stableErr := verifyOpenedRootFile(root, relative, file, info)
 	closeErr := file.Close()
 	if err := errors.Join(readErr, stableErr, closeErr); err != nil {
-		return Manifest{}, fmt.Errorf("backup: read manifest: %w", err)
+		return Manifest{}, nil, fmt.Errorf("backup: read manifest: %w", err)
 	}
 	if len(data) > maxManifestBytes {
-		return Manifest{}, errors.New("backup: manifest exceeds size limit")
+		return Manifest{}, nil, errors.New("backup: manifest exceeds size limit")
 	}
+	manifest, err := decodeManifest(ctx, data)
+	if err != nil {
+		return Manifest{}, nil, err
+	}
+	return manifest, bytes.Clone(data), nil
+}
+
+func decodeManifest(ctx context.Context, data []byte) (Manifest, error) {
 	if err := rejectDuplicateJSONFields(ctx, data); err != nil {
 		return Manifest{}, fmt.Errorf("backup: invalid manifest JSON: %w", err)
 	}
@@ -1589,27 +1609,45 @@ func verifyRootArtifact(ctx context.Context, root *retainedDirectory, artifact A
 }
 
 func inspectRootFile(ctx context.Context, root *retainedDirectory, relative, blobID string) (Artifact, error) {
+	artifact, _, err := inspectRootFileIdentity(ctx, root, relative, blobID)
+	return artifact, err
+}
+
+// inspectRootFileIdentity hashes one bounded retained-root file and returns
+// the exact filesystem identity observed throughout that hash pass. Callers
+// may retain the FileInfo as a cheap final no-replacement/no-write witness.
+func inspectRootFileIdentity(
+	ctx context.Context,
+	root *retainedDirectory,
+	relative, blobID string,
+) (Artifact, os.FileInfo, error) {
 	if ctx == nil {
-		return Artifact{}, errors.New("backup: nil artifact inspection context")
+		return Artifact{}, nil, errors.New("backup: nil artifact inspection context")
 	}
 	file, info, err := openRootRegularFile(root, relative)
 	if err != nil {
-		return Artifact{}, err
+		return Artifact{}, nil, err
 	}
 	hasher := sha256.New()
 	readLimit := info.Size() + 1
 	written, copyErr := copyContext(ctx, hasher, io.LimitReader(file, readLimit))
+	afterInfo, afterInfoErr := file.Stat()
+	var mutationErr error
+	if afterInfoErr == nil && (!afterInfo.ModTime().Equal(info.ModTime()) || afterInfo.Size() != info.Size() ||
+		!os.SameFile(afterInfo, info)) {
+		mutationErr = errors.New("backup: artifact changed while hashing")
+	}
 	stableErr := verifyOpenedRootFile(root, relative, file, info)
 	closeErr := file.Close()
-	if err := errors.Join(copyErr, stableErr, closeErr); err != nil {
-		return Artifact{}, err
+	if err := errors.Join(copyErr, afterInfoErr, mutationErr, stableErr, closeErr); err != nil {
+		return Artifact{}, nil, err
 	}
 	if written != info.Size() {
-		return Artifact{}, errors.New("backup: artifact size changed while hashing")
+		return Artifact{}, nil, errors.New("backup: artifact size changed while hashing")
 	}
 	return Artifact{
 		Path: relative, Size: written, SHA256: hex.EncodeToString(hasher.Sum(nil)), BlobID: blobID,
-	}, nil
+	}, afterInfo, nil
 }
 
 // freezeQualifiedDatabaseArtifact binds product-level qualification to exact
@@ -2081,7 +2119,7 @@ func createStagingDirectoryWithHooks(
 				return nil, errors.Join(err, removeResidueReceipt(parent, staging), closeResidueLease(staging))
 			}
 		}
-		creationWitness, created, err := createRetainedStagingLeaf(parent, name)
+		creationWitness, created, err := createRetainedStagingLeaf(parent, name, kind == "verify")
 		if err != nil {
 			if errors.Is(err, ErrCleanupResidual) {
 				return nil, errors.Join(err, closeResidueLease(staging))
