@@ -304,8 +304,20 @@ func TestAnswerProvenanceBlocksPurgeUntilExplicitConversationDelete(t *testing.T
 		t.Fatalf("blocked purge changed blob: %v", err)
 	}
 	deleted, err := fixture.database.DeleteConversation(t.Context(), conversation.ID, started.AcceptedRevision)
+	if !errors.Is(err, store.ErrConversationBusy) || deleted {
+		t.Fatalf("delete pending dependent conversation = %v, %v", deleted, err)
+	}
+	if err := fixture.database.RefuseAnswer(
+		t.Context(),
+		started.AnswerMessageID,
+		"The answer was deliberately stopped for the purge lifecycle test.",
+		"TEST_TERMINAL",
+	); err != nil {
+		t.Fatalf("make dependent answer terminal: %v", err)
+	}
+	deleted, err = fixture.database.DeleteConversation(t.Context(), conversation.ID, started.AcceptedRevision)
 	if err != nil || !deleted {
-		t.Fatalf("delete dependent conversation = %v, %v", deleted, err)
+		t.Fatalf("delete terminal dependent conversation = %v, %v", deleted, err)
 	}
 	result, err = fixture.lifecycle.Purge(t.Context(), upload.DocumentID)
 	if err != nil || !result.Complete {

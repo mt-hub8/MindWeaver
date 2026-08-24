@@ -24,6 +24,24 @@ import (
 	"github.com/ncruces/go-sqlite3/ext/fts5"
 )
 
+func TestQuestionByteLimitMatchesSearchContract(t *testing.T) {
+	for name, test := range map[string]struct {
+		question string
+		wantErr  bool
+	}{
+		"ascii exact":     {question: strings.Repeat("a", MaxQuestionBytes)},
+		"ascii over":      {question: strings.Repeat("a", MaxQuestionBytes+1), wantErr: true},
+		"multibyte below": {question: strings.Repeat("界", 341)},
+		"multibyte over":  {question: strings.Repeat("界", 342), wantErr: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validateQuestion(test.question); (err != nil) != test.wantErr {
+				t.Fatalf("validateQuestion(%d bytes) = %v, wantErr %v", len(test.question), err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestAskPersistsReopensAndIdempotentReplayDoesNotRegenerate(t *testing.T) {
 	fixture := newRAGFixture(t)
 	upload := fixture.upload(t, "answer-restart.txt", "Restart", "重启知识库答案可以保持引用。")
@@ -194,6 +212,55 @@ func TestProbeOllamaUsesSafeLoopbackTransportWithoutPersisting(t *testing.T) {
 		t.Fatalf("ConfigureOllama conflict = %v", err)
 	}
 	assertActiveConfigUnchanged(t, fixture, before)
+}
+
+func TestProductOllamaTimeoutNeverExceedsOuterAskBudget(t *testing.T) {
+	fixture := newRAGFixture(t)
+	before, err := fixture.database.GetActiveOllamaConfig(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tooLong := MaxOllamaTimeout + time.Millisecond
+	if _, err := fixture.rag.ProbeOllama(t.Context(), ollama.Options{
+		BaseURL: "http://127.0.0.1:11434", Model: "qwen3:8b", Timeout: tooLong,
+	}); !errors.Is(err, ollama.ErrInvalidConfig) {
+		t.Fatalf("over-limit probe error = %v", err)
+	}
+	if _, err := fixture.rag.ConfigureOllama(t.Context(), before.Version, ollama.Options{
+		BaseURL: "http://127.0.0.1:11434", Model: "qwen3:8b", Timeout: tooLong,
+	}); !errors.Is(err, ollama.ErrInvalidConfig) {
+		t.Fatalf("over-limit configuration error = %v", err)
+	}
+	assertActiveConfigUnchanged(t, fixture, before)
+}
+
+func TestAskFailsLegacyOverLimitTimeoutWithoutCallingProvider(t *testing.T) {
+	fixture := newRAGFixture(t)
+	upload := fixture.upload(t, "legacy-timeout.md", "Legacy timeout", "quantum coffee machine durable evidence")
+	if _, err := fixture.database.SaveOllamaConfig(t.Context(), store.SaveOllamaConfigParams{
+		ExpectedVersion: 1, Endpoint: "http://127.0.0.1:11434", Model: "qwen3:8b",
+		Timeout: MaxOllamaTimeout + time.Millisecond,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	conversation, err := fixture.rag.CreateConversation(t.Context(), "Legacy timeout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	fixture.rag.generate = func(context.Context, store.OllamaConfig, string) (string, error) {
+		calls.Add(1)
+		return "must not run [1]", nil
+	}
+	answer, err := fixture.rag.Ask(t.Context(), AskRequest{
+		ConversationID: conversation.ID, ExpectedRevision: 0, IdempotencyKey: "legacy-timeout",
+		Question: "quantum coffee machine",
+	})
+	if !errors.Is(err, ollama.ErrInvalidConfig) || answer.Status != store.MessageFailed ||
+		answer.ErrorCode != "MODEL_CONFIG_INVALID" || len(answer.Sources) != 1 ||
+		answer.Sources[0].DocumentID != upload.DocumentID || calls.Load() != 0 {
+		t.Fatalf("legacy timeout answer/error/calls = %#v, %v, %d", answer, err, calls.Load())
+	}
 }
 
 func TestProbeOllamaFailureDoesNotChangeActiveConfiguration(t *testing.T) {

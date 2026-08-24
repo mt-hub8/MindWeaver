@@ -31,6 +31,11 @@ func TestRAGAnswerPersistsExactSourcesConfigVersionAndIdempotency(t *testing.T) 
 	if _, err := database.CreateConversation(t.Context(), "conversation-1", "本地问答"); err != nil {
 		t.Fatal(err)
 	}
+	tooLong := testBeginAsk("conversation-1", "ask-too-long", "user-too-long", "answer-too-long", nil)
+	tooLong.Question = strings.Repeat("界", 342)
+	if _, err := database.BeginAsk(t.Context(), tooLong); err == nil || !strings.Contains(err.Error(), "1 to 1024") {
+		t.Fatalf("over-search-limit Ask error = %v", err)
+	}
 	params := testBeginAsk("conversation-1", "ask-key-1", "user-1", "answer-1", nil)
 	started, err := database.BeginAsk(t.Context(), params)
 	if err != nil || !started.Created || started.ProviderConfig.Version != 1 {
@@ -50,8 +55,8 @@ func TestRAGAnswerPersistsExactSourcesConfigVersionAndIdempotency(t *testing.T) 
 		t.Fatalf("Ask idempotency conflict = %v", err)
 	}
 	stale := testBeginAsk("conversation-1", "ask-key-2", "user-2", "answer-2", nil)
-	if _, err := database.BeginAsk(t.Context(), stale); !errors.Is(err, ErrConversationRevision) {
-		t.Fatalf("conversation revision conflict = %v", err)
+	if _, err := database.BeginAsk(t.Context(), stale); !errors.Is(err, ErrConversationBusy) {
+		t.Fatalf("parallel Ask conflict = %v", err)
 	}
 
 	hits, err := database.Search(t.Context(), "知识库", 8)
@@ -64,6 +69,9 @@ func TestRAGAnswerPersistsExactSourcesConfigVersionAndIdempotency(t *testing.T) 
 	}
 	if err := database.CompleteAnswer(t.Context(), started.AnswerMessageID, "资料确认了这一点 [1]。", []int{1}); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := database.BeginAsk(t.Context(), stale); !errors.Is(err, ErrConversationRevision) {
+		t.Fatalf("terminal stale conversation revision conflict = %v", err)
 	}
 	if _, err := database.SaveOllamaConfig(t.Context(), SaveOllamaConfigParams{
 		ExpectedVersion: 1, Endpoint: "http://127.0.0.1:11434",
@@ -239,13 +247,41 @@ func TestCitationConstraintPendingReconciliationAndConversationDelete(t *testing
 	if err != nil || answer.Status != MessagePending || len(answer.Citations) != 0 {
 		t.Fatalf("answer after foreign citation = %#v, %v", answer, err)
 	}
+	conversation, err := database.GetConversation(t.Context(), "conversation")
+	if err != nil || !conversation.PendingAnswer || conversation.PendingAnswerID == nil ||
+		*conversation.PendingAnswerID != started.AnswerMessageID || conversation.Revision != 1 {
+		t.Fatalf("pending conversation projection = %#v, %v", conversation, err)
+	}
+	page, err := database.ListConversations(t.Context(), nil, 10)
+	if err != nil || len(page.Items) != 1 || page.Items[0].PendingAnswerID == nil ||
+		*page.Items[0].PendingAnswerID != started.AnswerMessageID {
+		t.Fatalf("pending conversation catalog projection = %#v, %v", page, err)
+	}
+	if deleted, err := database.DeleteConversation(t.Context(), "conversation", 1); !errors.Is(err, ErrConversationBusy) || deleted {
+		t.Fatalf("pending conversation delete = %v, %v", deleted, err)
+	}
+	historicalCreated := answer.CreatedAt.Add(time.Microsecond).UnixMicro()
+	if _, err := database.db.ExecContext(t.Context(), `
+		INSERT INTO conversation_messages(
+			id, conversation_id, ordinal, role, status, content,
+			provider_config_version, limitation_code, error_code,
+			created_at, completed_at, reconcile_after
+		) VALUES ('historical-pending', 'conversation', 3, 'assistant', 'pending', '',
+			1, NULL, NULL, ?, NULL, ?)
+	`, historicalCreated, historicalCreated+time.Minute.Microseconds()); err != nil {
+		t.Fatalf("seed historical second pending answer: %v", err)
+	}
 	reconciled, err := database.ReconcileAllPendingAnswers(t.Context())
-	if err != nil || reconciled != 1 {
+	if err != nil || reconciled != 2 {
 		t.Fatalf("reconcile = %d, %v", reconciled, err)
 	}
 	answer, err = database.GetAnswer(t.Context(), started.AnswerMessageID)
 	if err != nil || answer.Status != MessageFailed || answer.ErrorCode != "OUTCOME_UNCERTAIN" {
 		t.Fatalf("reconciled answer = %#v, %v", answer, err)
+	}
+	conversation, err = database.GetConversation(t.Context(), "conversation")
+	if err != nil || conversation.PendingAnswer || conversation.PendingAnswerID != nil {
+		t.Fatalf("terminal conversation projection = %#v, %v", conversation, err)
 	}
 	if _, err := database.db.ExecContext(t.Context(), "DELETE FROM documents WHERE id = 'document-a'"); err == nil {
 		t.Fatal("document deletion unexpectedly bypassed answer provenance RESTRICT")

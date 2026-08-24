@@ -14,6 +14,22 @@
   let collectionGeneration = 0;
   let memberGeneration = 0;
   let purgeGeneration = 0;
+  let modelConfigVersion = 0;
+  let modelConfigured = false;
+  let conversationKey = "";
+  let conversationCursor = "";
+  let messageCursor = "";
+  let conversationGeneration = 0;
+  let messageGeneration = 0;
+  let answerPollGeneration = 0;
+  let activeAnswerPoll = "";
+  let loadedConversations = 0;
+  let loadedMessages = 0;
+  let activeConversation = null;
+  let askAttempt = null;
+  let askInFlight = false;
+  let askOutcomeUncertain = false;
+  let askGeneration = 0;
   let loadedActiveDocuments = 0;
   let loadedTrashedDocuments = 0;
   let loadedCollections = 0;
@@ -126,7 +142,10 @@
       byId("file").accept = ".txt,.md,.markdown,.pdf,text/plain,text/markdown,application/pdf";
       byId("file").labels[0].textContent = "本地文件（TXT / Markdown / 文本型 PDF，最大 4 MiB）";
     }
-    await Promise.all([loadDocuments(true), loadCollections(true), loadMembers(true), loadPurges(true), loadDiagnostics()]);
+    await Promise.all([
+      loadDocuments(true), loadCollections(true), loadMembers(true), loadPurges(true), loadDiagnostics(),
+      loadOllamaConfiguration(), loadConversations(true), loadMessages(true)
+    ]);
   }
 
   function renderDocument(documentItem) {
@@ -304,7 +323,8 @@
       ["清理暂存文件", String(payload.cleanedStagingFiles)],
       ["启动清理对象", String(payload.sweptBlobCandidates)],
       ["后台工作器", payload.workerStatus],
-      ["AI 模型", payload.modelStatus === "unconfigured" ? "未配置（不影响本地检索）" : payload.modelStatus],
+      ["AI 模型", payload.modelStatus === "unconfigured" ? "未配置（不影响本地检索）" :
+        (payload.modelStatus === "invalid" ? "配置需修复（不影响本地检索）" : payload.modelStatus)],
       ["PDF 隔离解析", payload.pdfAvailable ? "可用" : "不可用（TXT / Markdown 可用）"]
     ];
     for (const [name, value] of entries) {
@@ -661,6 +681,487 @@
     await loadPurges(true).catch((error) => showToast(error.message));
   }
 
+  function ollamaFormPayload() {
+    const timeout = Number(byId("ollama-timeout").value);
+    if (!Number.isInteger(timeout) || timeout < 1 || timeout > 60000) {
+      throw new Error("模型超时必须是 1 到 60000 毫秒的整数。");
+    }
+    return {
+      endpoint: byId("ollama-endpoint").value,
+      model: byId("ollama-model").value,
+      timeoutMilliseconds: timeout
+    };
+  }
+
+  function updateAskAvailability() {
+    const enabled = modelConfigured && activeConversation !== null && activeConversation.pendingAnswer !== true && !askInFlight;
+    byId("ask-submit").disabled = !enabled;
+    if (!modelConfigured) {
+      byId("ask-status").textContent = "尚未配置本地模型；文档、集合与全文检索仍可正常使用。";
+    } else if (!activeConversation) {
+      byId("ask-status").textContent = "请先创建或选择会话。";
+    } else if (activeConversation.pendingAnswer) {
+      byId("ask-status").textContent = "当前会话已有 Ask 正在等待终态；不会并发调用模型。";
+    } else if (askInFlight) {
+      byId("ask-status").textContent = "Ask 已受理，正在等待持久终态。";
+    } else if (askOutcomeUncertain) {
+      byId("ask-status").textContent = "上次传输结果不确定；可再次提交以复用完全相同的请求与幂等键。";
+    }
+  }
+
+  async function loadOllamaConfiguration() {
+    const payload = await api("/api/v1/ollama");
+    const timeoutValid = payload.configured === true && payload.config !== null &&
+      Number.isInteger(payload.config.timeoutMilliseconds) && payload.config.timeoutMilliseconds >= 1 && payload.config.timeoutMilliseconds <= 60000;
+    modelConfigured = timeoutValid;
+    if (payload.configured === true && payload.config !== null) {
+      modelConfigVersion = payload.config.version;
+      byId("ollama-endpoint").value = payload.config.endpoint;
+      byId("ollama-model").value = payload.config.model;
+      byId("ollama-timeout").value = String(timeoutValid ? payload.config.timeoutMilliseconds : 60000);
+      if (timeoutValid) {
+        byId("ollama-status").textContent = `已配置 ${payload.config.model} · version ${payload.config.version}`;
+        byId("model-detail").textContent = `本机模型 ${payload.config.model} 已配置；Ask 将只使用已激活资料并验证引用。`;
+      } else {
+        byId("ollama-status").textContent = "已有模型配置超出 60 秒产品上限；请保存当前表单以修复，期间 Ask 不可用。";
+        byId("model-detail").textContent = "模型配置需要修复；上传、集合和本地全文检索仍可正常使用。";
+      }
+    } else {
+      modelConfigVersion = 0;
+      byId("ollama-status").textContent = "尚未配置模型；不会影响其它工作台功能。";
+    }
+    updateAskAvailability();
+  }
+
+  byId("ollama-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submit = event.submitter || event.currentTarget.querySelector("button[type=submit]");
+    submit.disabled = true;
+    try {
+      const form = ollamaFormPayload();
+      const payload = await api("/api/v1/ollama", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedVersion: modelConfigVersion, ...form })
+      });
+      modelConfigVersion = payload.config.version;
+      modelConfigured = true;
+      byId("ollama-status").textContent = `已保存 ${payload.config.model} · version ${payload.config.version}`;
+      byId("model-detail").textContent = `本机模型 ${payload.config.model} 已配置；Ask 将只使用已激活资料并验证引用。`;
+      updateAskAvailability();
+      await loadDiagnostics();
+    } catch (error) {
+      byId("ollama-status").textContent = error.message;
+      if (error.status === 409) await loadOllamaConfiguration().catch((refreshError) => showToast(refreshError.message));
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  byId("probe-ollama").addEventListener("click", async (event) => {
+    event.currentTarget.disabled = true;
+    try {
+      const payload = await api("/api/v1/ollama/probe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ollamaFormPayload())
+      });
+      const models = payload.models.length ? payload.models.join("、") : "未报告模型";
+      byId("ollama-status").textContent = `端点可用：${models}`;
+    } catch (error) {
+      byId("ollama-status").textContent = error.message;
+    } finally {
+      event.currentTarget.disabled = false;
+    }
+  });
+
+  function renderConversation(conversation) {
+    const item = document.createElement("li");
+    const title = document.createElement("div");
+    title.className = "document-title";
+    title.textContent = conversation.title;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = `${conversation.id} · revision ${conversation.revision}`;
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const select = actionButton(activeConversation && activeConversation.id === conversation.id ? "当前会话" : "打开", () => selectConversation(conversation));
+    select.setAttribute("aria-pressed", String(activeConversation && activeConversation.id === conversation.id));
+    const remove = actionButton("删除并解除引用", () => deleteConversation(conversation), true);
+    remove.dataset.conversationId = conversation.id;
+    if (conversationDeleteBlocked(conversation)) {
+      remove.disabled = true;
+      remove.title = "会话仍有正在受理、结果不确定或等待终态的 Ask，完成前不能删除。";
+    }
+    actions.append(select, remove);
+    item.append(title, meta, actions);
+    return item;
+  }
+
+  function conversationDeleteBlocked(conversation) {
+    return conversation.pendingAnswer === true ||
+      (activeConversation !== null && conversation.id === activeConversation.id && (askInFlight || askOutcomeUncertain));
+  }
+
+  function updateConversationDeleteAvailability() {
+    for (const remove of document.querySelectorAll("#conversations button[data-conversation-id]")) {
+      if (!activeConversation || remove.dataset.conversationId !== activeConversation.id) continue;
+      const blocked = conversationDeleteBlocked(activeConversation);
+      remove.disabled = blocked;
+      remove.title = blocked ? "会话仍有正在受理、结果不确定或等待终态的 Ask，完成前不能删除。" : "";
+    }
+  }
+
+  async function loadConversations(reset) {
+    if (!reset && !conversationCursor) return;
+    const generation = ++conversationGeneration;
+    const more = byId("conversations-more");
+    more.disabled = true;
+    if (reset) {
+      conversationCursor = "";
+      loadedConversations = 0;
+      byId("conversations").replaceChildren();
+    }
+    const params = new URLSearchParams({ limit: "50" });
+    if (conversationCursor) params.set("cursor", conversationCursor);
+    try {
+      const payload = await api(`/api/v1/conversations?${params}`);
+      if (generation !== conversationGeneration) return;
+      let activeSeen = activeConversation === null;
+      for (const conversation of payload.conversations) {
+        if (activeConversation && conversation.id === activeConversation.id) {
+          activeConversation = conversation;
+          activeSeen = true;
+        }
+        byId("conversations").append(renderConversation(conversation));
+        loadedConversations += 1;
+      }
+      if (reset && activeConversation && !activeSeen && !payload.nextCursor) {
+        activeConversation = null;
+        askAttempt = null;
+        askInFlight = false;
+        askOutcomeUncertain = false;
+        ++askGeneration;
+        activeAnswerPoll = "";
+        ++answerPollGeneration;
+      }
+      conversationCursor = payload.nextCursor || "";
+      more.hidden = !conversationCursor;
+      if (loadedConversations === 0) byId("conversations").replaceChildren(emptyItem("还没有会话。"));
+      updateActiveConversationLabel();
+      syncActiveConversationPoll();
+    } finally {
+      if (generation === conversationGeneration) more.disabled = false;
+    }
+  }
+
+  function updateActiveConversationLabel() {
+    byId("active-conversation").textContent = activeConversation
+      ? `当前会话：${activeConversation.title} · revision ${activeConversation.revision}`
+      : "请先创建或选择会话。";
+    updateAskAvailability();
+  }
+
+  async function selectConversation(conversation) {
+    activeConversation = conversation;
+    askAttempt = null;
+    askInFlight = false;
+    askOutcomeUncertain = false;
+    ++askGeneration;
+    activeAnswerPoll = "";
+    ++answerPollGeneration;
+    updateActiveConversationLabel();
+    syncActiveConversationPoll();
+    await Promise.all([loadConversations(true), loadMessages(true)]).catch((error) => showToast(error.message));
+  }
+
+  byId("conversation-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const submit = event.submitter || event.currentTarget.querySelector("button[type=submit]");
+    if (!conversationKey) conversationKey = crypto.randomUUID();
+    submit.disabled = true;
+    try {
+      const payload = await api("/api/v1/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": conversationKey },
+        body: JSON.stringify({ title: byId("conversation-title").value })
+      });
+      activeConversation = payload.conversation;
+      conversationKey = "";
+      askAttempt = null;
+      askInFlight = false;
+      askOutcomeUncertain = false;
+      ++askGeneration;
+      activeAnswerPoll = "";
+      ++answerPollGeneration;
+      byId("conversation-title").value = "";
+      updateActiveConversationLabel();
+      await Promise.all([loadConversations(true), loadMessages(true)]);
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  byId("conversation-title").addEventListener("input", () => { conversationKey = ""; });
+
+  async function deleteConversation(conversation) {
+    if (conversationDeleteBlocked(conversation)) {
+      showToast("会话仍有正在受理、结果不确定或等待终态的 Ask，完成前不能删除。");
+      return;
+    }
+    if (!window.confirm(`删除会话“${conversation.title}”及其回答？这会解除回答对文档清理的阻断。`)) return;
+    try {
+      const payload = await api("/api/v1/conversations", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: conversation.id, expectedRevision: conversation.revision })
+      });
+      if (payload.deleted && activeConversation && activeConversation.id === conversation.id) {
+        activeConversation = null;
+        askAttempt = null;
+        askInFlight = false;
+        askOutcomeUncertain = false;
+        ++askGeneration;
+        activeAnswerPoll = "";
+        ++answerPollGeneration;
+      }
+      await Promise.all([loadConversations(true), loadMessages(true), loadPurges(true)]);
+    } catch (error) {
+      showToast(error.message);
+      await loadConversations(true).catch((refreshError) => showToast(refreshError.message));
+    }
+  }
+
+  function answerStateText(answer) {
+    if (answer.status === "pending") return "回答仍在等待终态，正在安全轮询。";
+    if (answer.status === "refused") return `回答受限：${answer.limitationCode || "资料不足"}`;
+    if (answer.status === "failed") {
+      if (answer.limitationCode === "OUTCOME_UNCERTAIN") return "应用中断或调用超时，结果无法确认；为避免重复调用，本次不会自动重放模型。";
+      return `回答失败：${answer.limitationCode || answer.errorCode || "MODEL_UNAVAILABLE"}`;
+    }
+    return "回答已完成并验证引用。";
+  }
+
+  function appendCitationDetails(container, sources, citations) {
+    if (!Array.isArray(sources) || sources.length === 0) return;
+    const details = document.createElement("details");
+    details.className = "citations";
+    const summary = document.createElement("summary");
+    summary.textContent = `展开引用资料（${sources.length} 个来源，${Array.isArray(citations) ? citations.length : 0} 处引用）`;
+    details.append(summary);
+    for (const source of sources) {
+      const block = document.createElement("div");
+      block.className = "source";
+      const title = document.createElement("div");
+      title.className = "document-title";
+      title.textContent = `[${source.position}] ${source.documentTitle}`;
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = `${source.documentId} · 片段 ${source.chunkOrdinal + 1} · ${source.contentHash}`;
+      const content = document.createElement("div");
+      content.className = "source-content";
+      content.textContent = source.content;
+      block.append(title, meta, content);
+      details.append(block);
+    }
+    container.append(details);
+  }
+
+  function renderMessage(message) {
+    const item = document.createElement("li");
+    item.className = `${message.role} ${message.status}`;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = `${message.role === "user" ? "提问" : "回答"} · ${message.status}${message.providerConfigVersion ? ` · 模型配置 v${message.providerConfigVersion}` : ""}`;
+    const content = document.createElement("div");
+    content.className = "message-content";
+    content.textContent = message.content;
+    item.append(meta, content);
+    if (message.role === "assistant" && (message.status === "refused" || message.status === "failed" || message.status === "pending")) {
+      const limitation = document.createElement("div");
+      limitation.className = "limitation";
+      limitation.textContent = answerStateText(message);
+      item.append(limitation);
+    }
+    appendCitationDetails(item, message.sources, message.citations);
+    return item;
+  }
+
+  async function loadMessages(reset) {
+    const conversation = activeConversation;
+    if (!conversation) {
+      ++messageGeneration;
+      messageCursor = "";
+      loadedMessages = 0;
+      byId("messages").replaceChildren(emptyItem("选择会话后显示历史。"));
+      byId("messages-more").hidden = true;
+      return;
+    }
+    if (!reset && !messageCursor) return;
+    const generation = ++messageGeneration;
+    const more = byId("messages-more");
+    more.disabled = true;
+    if (reset) {
+      messageCursor = "";
+      loadedMessages = 0;
+      byId("messages").replaceChildren();
+    }
+    const params = new URLSearchParams({ conversation_id: conversation.id, limit: "50" });
+    if (messageCursor) params.set("cursor", messageCursor);
+    try {
+      const payload = await api(`/api/v1/conversations/messages?${params}`);
+      if (generation !== messageGeneration || !activeConversation || conversation.id !== activeConversation.id) return;
+      for (const message of payload.messages) {
+        byId("messages").append(renderMessage(message));
+        loadedMessages += 1;
+      }
+      messageCursor = payload.nextCursor || "";
+      more.hidden = !messageCursor;
+      if (loadedMessages === 0) byId("messages").replaceChildren(emptyItem("当前会话还没有消息。"));
+    } finally {
+      if (generation === messageGeneration && activeConversation && conversation.id === activeConversation.id) more.disabled = false;
+    }
+  }
+
+  function resetAskAttempt() {
+    if ((activeConversation && activeConversation.pendingAnswer) || askInFlight || askOutcomeUncertain) return;
+    askAttempt = null;
+    activeAnswerPoll = "";
+    ++answerPollGeneration;
+  }
+  byId("ask-question").addEventListener("input", resetAskAttempt);
+  byId("ask-collection").addEventListener("input", resetAskAttempt);
+
+  function startAnswerPoll(answerID, conversationID) {
+    const identity = `${conversationID}\u0000${answerID}`;
+    if (activeAnswerPoll === identity) return;
+    activeAnswerPoll = identity;
+    const generation = ++answerPollGeneration;
+    pollAnswer(answerID, conversationID, generation)
+      .catch((error) => showToast(error.message))
+      .finally(() => {
+        if (generation === answerPollGeneration && activeAnswerPoll === identity) activeAnswerPoll = "";
+      });
+  }
+
+  function syncActiveConversationPoll() {
+    if (!activeConversation || activeConversation.pendingAnswer !== true ||
+        typeof activeConversation.pendingAnswerId !== "string" || activeConversation.pendingAnswerId.length === 0) {
+      if (activeAnswerPoll !== "") {
+        activeAnswerPoll = "";
+        ++answerPollGeneration;
+      }
+      return;
+    }
+    startAnswerPoll(activeConversation.pendingAnswerId, activeConversation.id);
+  }
+
+  async function pollAnswer(answerID, conversationID, generation) {
+    for (;;) {
+      if (generation !== answerPollGeneration || !activeConversation || activeConversation.id !== conversationID) return;
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      let payload;
+      try {
+        payload = await api(`/api/v1/answers?id=${encodeURIComponent(answerID)}`);
+      } catch (error) {
+        if (generation !== answerPollGeneration || !activeConversation || activeConversation.id !== conversationID) return;
+        if (error.status === 400 || error.status === 404) throw error;
+        byId("ask-status").textContent = "回答状态暂时不可读，正在按同一 answer ID 重试；不会重放模型。";
+        continue;
+      }
+      if (generation !== answerPollGeneration || !activeConversation || activeConversation.id !== conversationID) return;
+      byId("ask-status").textContent = answerStateText(payload.answer);
+      if (payload.answer.status !== "pending") {
+        askAttempt = null;
+        askInFlight = false;
+        askOutcomeUncertain = false;
+        activeConversation.revision = payload.answer.conversationRevision;
+        activeConversation.pendingAnswer = false;
+        activeConversation.pendingAnswerId = null;
+        activeAnswerPoll = "";
+        updateActiveConversationLabel();
+        await Promise.all([loadMessages(true), loadConversations(true)]);
+        return;
+      }
+    }
+  }
+
+  byId("ask-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!activeConversation || !modelConfigured || activeConversation.pendingAnswer || askInFlight) {
+      updateAskAvailability();
+      return;
+    }
+    const submit = event.submitter || byId("ask-submit");
+    if (!askAttempt) {
+      const question = byId("ask-question").value;
+      const questionBytes = new TextEncoder().encode(question).length;
+      if (questionBytes < 1 || questionBytes > 1024) {
+        byId("ask-status").textContent = "问题必须为 1 到 1024 个 UTF-8 字节。";
+        return;
+      }
+      const scope = byId("ask-collection").value.trim();
+      const requestBody = {
+        conversationId: activeConversation.id,
+        expectedRevision: activeConversation.revision,
+        question
+      };
+      if (scope) requestBody.scopeCollectionId = scope;
+      askAttempt = {
+        conversationID: activeConversation.id,
+        key: crypto.randomUUID(),
+        body: JSON.stringify(requestBody)
+      };
+    }
+    const attempt = askAttempt;
+    const generation = ++askGeneration;
+    askInFlight = true;
+    askOutcomeUncertain = false;
+    submit.disabled = true;
+    updateAskAvailability();
+    updateConversationDeleteAvailability();
+    try {
+      const payload = await api("/api/v1/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": attempt.key },
+        body: attempt.body
+      });
+      if (generation !== askGeneration || !activeConversation || activeConversation.id !== attempt.conversationID) return;
+      askInFlight = false;
+      askOutcomeUncertain = false;
+      activeConversation.revision = payload.answer.conversationRevision;
+      activeConversation.pendingAnswer = payload.answer.status === "pending";
+      activeConversation.pendingAnswerId = payload.answer.status === "pending" ? payload.answer.id : null;
+      updateActiveConversationLabel();
+      byId("ask-status").textContent = answerStateText(payload.answer);
+      await Promise.all([loadMessages(true), loadConversations(true)]);
+      if (payload.answer.status === "pending") {
+        startAnswerPoll(payload.answer.id, attempt.conversationID);
+      } else {
+        askAttempt = null;
+      }
+    } catch (error) {
+      if (generation !== askGeneration || !activeConversation || activeConversation.id !== attempt.conversationID) return;
+      askInFlight = false;
+      byId("ask-status").textContent = `${error.message}；网络或服务不确定时再次提交会复用完全相同的请求与幂等键。`;
+      if (Number.isInteger(error.status) && error.status < 500) {
+        askAttempt = null;
+        askOutcomeUncertain = false;
+        if (error.status === 404 || error.status === 409) {
+          await Promise.all([loadConversations(true), loadMessages(true)]).catch((refreshError) => showToast(refreshError.message));
+        }
+      } else {
+        askOutcomeUncertain = true;
+      }
+    } finally {
+      if (generation === askGeneration && activeConversation && activeConversation.id === attempt.conversationID) {
+        updateAskAvailability();
+        updateConversationDeleteAvailability();
+      }
+    }
+  });
+
   byId("documents-more").addEventListener("click", () => loadDocuments(false).catch((error) => showToast(error.message)));
   byId("collections-more").addEventListener("click", () => loadCollections(false).catch((error) => showToast(error.message)));
   byId("members-more").addEventListener("click", () => loadMembers(false).catch((error) => showToast(error.message)));
@@ -668,6 +1169,10 @@
   byId("refresh-documents").addEventListener("click", () => loadDocuments(true).catch((error) => showToast(error.message)));
   byId("refresh-collections").addEventListener("click", () => loadCollections(true).catch((error) => showToast(error.message)));
   byId("refresh-purges").addEventListener("click", () => loadPurges(true).catch((error) => showToast(error.message)));
+  byId("conversations-more").addEventListener("click", () => loadConversations(false).catch((error) => showToast(error.message)));
+  byId("messages-more").addEventListener("click", () => loadMessages(false).catch((error) => showToast(error.message)));
+  byId("refresh-conversations").addEventListener("click", () => loadConversations(true).catch((error) => showToast(error.message)));
+  byId("refresh-messages").addEventListener("click", () => loadMessages(true).catch((error) => showToast(error.message)));
   byId("refresh-diagnostics").addEventListener("click", () => loadDiagnostics().catch((error) => showToast(error.message)));
 
   bootstrap().catch((error) => {

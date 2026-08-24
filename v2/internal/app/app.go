@@ -19,6 +19,7 @@ import (
 	"github.com/mt-hub8/MindWeaver/v2/internal/lifecycle"
 	"github.com/mt-hub8/MindWeaver/v2/internal/localhttp"
 	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract"
+	"github.com/mt-hub8/MindWeaver/v2/internal/rag"
 	store "github.com/mt-hub8/MindWeaver/v2/internal/store/sqlite"
 	"github.com/mt-hub8/MindWeaver/v2/internal/vault"
 	"github.com/mt-hub8/MindWeaver/v2/internal/webui"
@@ -27,10 +28,11 @@ import (
 )
 
 const (
-	defaultWorkerInterval = 150 * time.Millisecond
-	defaultWorkerLease    = 5 * time.Minute
-	startupSweepBatch     = 128
-	shutdownGrace         = 8 * time.Second
+	defaultWorkerInterval          = 150 * time.Millisecond
+	defaultWorkerLease             = 5 * time.Minute
+	defaultAnswerReconcileInterval = 5 * time.Second
+	startupSweepBatch              = 128
+	shutdownGrace                  = 8 * time.Second
 )
 
 // RouteRegistrar appends exact routes before localhttp seals the router. It is
@@ -42,20 +44,22 @@ type RouteRegistrar func(*localhttp.Router) error
 // solely when ConfigPath does not exist; an existing versioned configuration is
 // always authoritative.
 type Options struct {
-	ConfigPath        string
-	FirstRunVaultRoot string
-	HTTP              localhttp.Config
-	ExtraRoutes       []RouteRegistrar
-	WorkerInterval    time.Duration
-	PDFHelperPath     string
+	ConfigPath              string
+	FirstRunVaultRoot       string
+	HTTP                    localhttp.Config
+	ExtraRoutes             []RouteRegistrar
+	WorkerInterval          time.Duration
+	AnswerReconcileInterval time.Duration
+	PDFHelperPath           string
 }
 
 // StartupEvidence records bounded, non-sensitive reconciliation outcomes.
 type StartupEvidence struct {
-	ConfigCreated       bool  `json:"configCreated"`
-	RecoveredJobs       int64 `json:"recoveredJobs"`
-	CleanedStagingFiles int   `json:"cleanedStagingFiles"`
-	SweptBlobCandidates int   `json:"sweptBlobCandidates"`
+	ConfigCreated            bool  `json:"configCreated"`
+	RecoveredJobs            int64 `json:"recoveredJobs"`
+	CleanedStagingFiles      int   `json:"cleanedStagingFiles"`
+	SweptBlobCandidates      int   `json:"sweptBlobCandidates"`
+	ReconciledPendingAnswers int64 `json:"reconciledPendingAnswers"`
 }
 
 // App owns every process-lifetime local resource in dependency order.
@@ -64,6 +68,7 @@ type App struct {
 	database *store.Store
 	server   *localhttp.Server
 	worker   *ingestionWorker
+	rag      *ragRuntime
 
 	bootstrap localhttp.BootstrapToken
 	startup   StartupEvidence
@@ -93,6 +98,12 @@ func Start(ctx context.Context, options Options) (*App, error) {
 	}
 	if options.WorkerInterval < 10*time.Millisecond || options.WorkerInterval > 10*time.Second {
 		return nil, errors.New("app: worker interval must be between 10ms and 10s")
+	}
+	if options.AnswerReconcileInterval == 0 {
+		options.AnswerReconcileInterval = defaultAnswerReconcileInterval
+	}
+	if options.AnswerReconcileInterval < 10*time.Millisecond || options.AnswerReconcileInterval > 10*time.Minute {
+		return nil, errors.New("app: answer reconciliation interval must be between 10ms and 10m")
 	}
 
 	created, err := ensureConfig(ctx, options.ConfigPath, options.FirstRunVaultRoot)
@@ -151,6 +162,18 @@ func Start(ctx context.Context, options Options) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("app: reconcile pending blob deletion: %w", err)
 	}
+	ragService, err := rag.New(database)
+	if err != nil {
+		return nil, err
+	}
+	reconciledAnswers, err := ragService.ReconcilePendingAnswersOnStartup(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("app: reconcile pending answers: %w", err)
+	}
+	ragRuntime, err := newRAGRuntime(ragService, options.AnswerReconcileInterval)
+	if err != nil {
+		return nil, err
+	}
 
 	service, err := workbench.New(database, blobs)
 	if err != nil {
@@ -171,13 +194,14 @@ func Start(ctx context.Context, options Options) (*App, error) {
 	worker := newIngestionWorker(service, database, options.WorkerInterval, defaultWorkerLease)
 	evidence := StartupEvidence{
 		ConfigCreated: created, RecoveredJobs: recovered, CleanedStagingFiles: cleaned,
-		SweptBlobCandidates: swept,
+		SweptBlobCandidates:      swept,
+		ReconciledPendingAnswers: reconciledAnswers,
 	}
 	router := localhttp.NewRouter()
 	if err := webui.Register(router); err != nil {
 		return nil, err
 	}
-	api := newAPI(service, lifecycleService, worker, evidence, pdfReady)
+	api := newAPI(service, lifecycleService, worker, ragRuntime, evidence, pdfReady)
 	if err := api.Register(router); err != nil {
 		return nil, err
 	}
@@ -195,19 +219,26 @@ func Start(ctx context.Context, options Options) (*App, error) {
 		httpConfig.MaxBodyBytes = ingest.MaxTextSourceBytes
 	}
 	if httpConfig.RequestTimeout == 0 {
-		httpConfig.RequestTimeout = time.Minute
+		httpConfig.RequestTimeout = 2 * time.Minute
+	}
+	if httpConfig.RequestTimeout < 2*time.Minute {
+		return nil, errors.New("app: HTTP request timeout must be at least 120s for durable Ask convergence")
 	}
 	if httpConfig.ReadTimeout == 0 {
-		httpConfig.ReadTimeout = time.Minute
+		httpConfig.ReadTimeout = 2 * time.Minute
 	}
 	if httpConfig.WriteTimeout == 0 {
-		httpConfig.WriteTimeout = time.Minute
+		httpConfig.WriteTimeout = 2 * time.Minute
+	}
+	if httpConfig.WriteTimeout < 2*time.Minute {
+		return nil, errors.New("app: HTTP write timeout must be at least 120s for durable Ask convergence")
 	}
 	server, bootstrap, err := localhttp.Start(router, httpConfig)
 	if err != nil {
 		return nil, fmt.Errorf("app: start loopback server: %w", err)
 	}
 	worker.Start()
+	ragRuntime.Start()
 
 	closeVaultOnError = false
 	closeDatabaseOnError = false
@@ -216,6 +247,7 @@ func Start(ctx context.Context, options Options) (*App, error) {
 		database:     database,
 		server:       server,
 		worker:       worker,
+		rag:          ragRuntime,
 		bootstrap:    bootstrap,
 		startup:      evidence,
 		shutdownDone: make(chan struct{}),
@@ -323,12 +355,16 @@ func (app *App) Shutdown(ctx context.Context) error {
 
 func (app *App) shutdown() {
 	defer close(app.shutdownDone)
+	app.rag.Quiesce()
 	grace, cancel := context.WithTimeout(context.Background(), shutdownGrace)
 	defer cancel()
 	serverErr := app.server.Shutdown(grace)
 	if serverErr != nil {
 		serverErr = errors.Join(serverErr, app.server.Close())
 	}
+	// Closing ingress may cancel an active provider call. Ask owns a bounded
+	// WithoutCancel terminal write; do not close SQLite until it has returned.
+	ragErr := app.rag.Wait(context.Background())
 	app.worker.Quiesce()
 	workerErr := app.worker.Wait(grace)
 	if workerErr != nil {
@@ -338,7 +374,7 @@ func (app *App) shutdown() {
 	// bound, while this cleanup goroutine continues until the bounded local file
 	// operation observes cancellation and exits.
 	workerErr = errors.Join(workerErr, app.worker.Wait(context.Background()))
-	app.shutdownErr = errors.Join(serverErr, workerErr, app.database.Close(), app.vault.Close())
+	app.shutdownErr = errors.Join(serverErr, ragErr, workerErr, app.database.Close(), app.vault.Close())
 }
 
 func ensureConfig(ctx context.Context, path, firstVault string) (bool, error) {

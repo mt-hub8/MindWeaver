@@ -17,7 +17,7 @@ const (
 	maxOllamaEndpointBytes   = 2048
 	maxOllamaModelBytes      = 255
 	maxConversationTitle     = 1024
-	maxAskQuestionBytes      = 4096
+	maxAskQuestionBytes      = 1024
 	maxAnswerBytes           = 256 << 10
 	maxAnswerSources         = 8
 	maxAnswerSourceBytes     = 48 << 10
@@ -34,15 +34,17 @@ const (
 )
 
 var (
-	ErrConversationRevision   = errors.New("sqlite: conversation revision conflict")
-	ErrProviderConfigRevision = errors.New("sqlite: Ollama configuration revision conflict")
-	ErrAskIdempotency         = errors.New("sqlite: ask idempotency key was already used for a different request")
-	ErrOllamaNotConfigured    = errors.New("sqlite: Ollama is not configured")
-	ErrAnswerNotPending       = errors.New("sqlite: answer is not pending")
-	ErrAnswerSourceChanged    = errors.New("sqlite: answer source changed or left scope")
-	ErrInvalidCitation        = errors.New("sqlite: citation does not reference a supplied source")
-	ErrHistoryItemTooLarge    = errors.New("sqlite: history item exceeds response content limit")
-	ErrHistoryCursorInvalid   = errors.New("sqlite: history cursor does not identify an item in scope")
+	ErrConversationRevision    = errors.New("sqlite: conversation revision conflict")
+	ErrConversationIdempotency = errors.New("sqlite: conversation idempotency key was already used for a different title")
+	ErrConversationBusy        = errors.New("sqlite: conversation has a pending answer")
+	ErrProviderConfigRevision  = errors.New("sqlite: Ollama configuration revision conflict")
+	ErrAskIdempotency          = errors.New("sqlite: ask idempotency key was already used for a different request")
+	ErrOllamaNotConfigured     = errors.New("sqlite: Ollama is not configured")
+	ErrAnswerNotPending        = errors.New("sqlite: answer is not pending")
+	ErrAnswerSourceChanged     = errors.New("sqlite: answer source changed or left scope")
+	ErrInvalidCitation         = errors.New("sqlite: citation does not reference a supplied source")
+	ErrHistoryItemTooLarge     = errors.New("sqlite: history item exceeds response content limit")
+	ErrHistoryCursorInvalid    = errors.New("sqlite: history cursor does not identify an item in scope")
 )
 
 // MessageStatus is the small durable state machine for a user-visible Ask.
@@ -170,11 +172,13 @@ func scanOllamaConfig(row scanner) (OllamaConfig, error) {
 // Conversation uses one optimistic revision per accepted Ask pair. This is a
 // browser concurrency root, not a message-count approximation.
 type Conversation struct {
-	ID        string
-	Title     string
-	Revision  int64
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID              string
+	Title           string
+	Revision        int64
+	PendingAnswer   bool
+	PendingAnswerID *string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // HistoryCursor is an exact stable database key. Conversation pages sort it
@@ -207,15 +211,72 @@ func (s *Store) CreateConversation(ctx context.Context, id, title string) (Conve
 	return Conversation{ID: id, Title: title, Revision: 0, CreatedAt: stamp, UpdatedAt: stamp}, nil
 }
 
+// CreateConversationIdempotent creates the caller-derived conversation
+// identity once. Reusing that identity with the same title returns the
+// original row; reusing it for a different title is a conflict.
+func (s *Store) CreateConversationIdempotent(ctx context.Context, id, title string) (Conversation, bool, error) {
+	if err := validateIdentifier("conversation id", id); err != nil {
+		return Conversation{}, false, err
+	}
+	if !validDisplayText(title, maxConversationTitle) {
+		return Conversation{}, false, fmt.Errorf("sqlite: conversation title must contain 1 to %d UTF-8 bytes", maxConversationTitle)
+	}
+	var conversation Conversation
+	created := false
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		now := s.nowMicros()
+		result, err := tx.ExecContext(ctx, `
+			INSERT INTO conversations(id, title, revision, created_at, updated_at)
+			VALUES (?, ?, 0, ?, ?)
+			ON CONFLICT(id) DO NOTHING
+		`, id, title, now, now)
+		if err != nil {
+			return fmt.Errorf("create idempotent conversation: %w", err)
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("count idempotent conversation creation: %w", err)
+		}
+		created = count == 1
+		var createdAt, updatedAt int64
+		var pendingAnswerID sql.NullString
+		if err := tx.QueryRowContext(ctx, `
+			SELECT c.id, c.title, c.revision, c.created_at, c.updated_at,
+				(SELECT m.id FROM conversation_messages AS m
+					WHERE m.conversation_id = c.id AND m.role = 'assistant' AND m.status = 'pending'
+					ORDER BY m.created_at, m.id LIMIT 1)
+			FROM conversations AS c WHERE c.id = ?
+		`, id).Scan(&conversation.ID, &conversation.Title, &conversation.Revision, &createdAt, &updatedAt, &pendingAnswerID); err != nil {
+			return fmt.Errorf("read idempotent conversation: %w", err)
+		}
+		if conversation.Title != title {
+			return ErrConversationIdempotency
+		}
+		conversation.CreatedAt = time.UnixMicro(createdAt).UTC()
+		conversation.UpdatedAt = time.UnixMicro(updatedAt).UTC()
+		setPendingAnswerProjection(&conversation, pendingAnswerID)
+		return nil
+	})
+	if err != nil {
+		return Conversation{}, false, err
+	}
+	return conversation, created, nil
+}
+
 func (s *Store) GetConversation(ctx context.Context, id string) (Conversation, error) {
 	if err := validateIdentifier("conversation id", id); err != nil {
 		return Conversation{}, err
 	}
 	var conversation Conversation
 	var createdAt, updatedAt int64
+	var pendingAnswerID sql.NullString
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, title, revision, created_at, updated_at FROM conversations WHERE id = ?
-	`, id).Scan(&conversation.ID, &conversation.Title, &conversation.Revision, &createdAt, &updatedAt)
+		SELECT c.id, c.title, c.revision, c.created_at, c.updated_at,
+			(SELECT m.id FROM conversation_messages AS m
+				WHERE m.conversation_id = c.id AND m.role = 'assistant' AND m.status = 'pending'
+				ORDER BY m.created_at, m.id LIMIT 1)
+		FROM conversations AS c WHERE c.id = ?
+	`, id).Scan(&conversation.ID, &conversation.Title, &conversation.Revision, &createdAt, &updatedAt, &pendingAnswerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Conversation{}, ErrNotFound
 	}
@@ -224,6 +285,7 @@ func (s *Store) GetConversation(ctx context.Context, id string) (Conversation, e
 	}
 	conversation.CreatedAt = time.UnixMicro(createdAt).UTC()
 	conversation.UpdatedAt = time.UnixMicro(updatedAt).UTC()
+	setPendingAnswerProjection(&conversation, pendingAnswerID)
 	return conversation, nil
 }
 
@@ -242,8 +304,11 @@ func (s *Store) ListConversations(ctx context.Context, after *HistoryCursor, lim
 	}
 	defer tx.Rollback()
 	query := `
-		SELECT id, title, revision, created_at, updated_at
-		FROM conversations`
+		SELECT c.id, c.title, c.revision, c.created_at, c.updated_at,
+			(SELECT m.id FROM conversation_messages AS m
+				WHERE m.conversation_id = c.id AND m.role = 'assistant' AND m.status = 'pending'
+				ORDER BY m.created_at, m.id LIMIT 1)
+		FROM conversations AS c`
 	args := make([]any, 0, 4)
 	if after != nil {
 		stamp := after.CreatedAt.UnixMicro()
@@ -295,12 +360,23 @@ func (s *Store) ListConversations(ctx context.Context, after *HistoryCursor, lim
 func scanConversation(row scanner) (Conversation, error) {
 	var conversation Conversation
 	var createdAt, updatedAt int64
-	if err := row.Scan(&conversation.ID, &conversation.Title, &conversation.Revision, &createdAt, &updatedAt); err != nil {
+	var pendingAnswerID sql.NullString
+	if err := row.Scan(&conversation.ID, &conversation.Title, &conversation.Revision, &createdAt, &updatedAt, &pendingAnswerID); err != nil {
 		return Conversation{}, err
 	}
 	conversation.CreatedAt = time.UnixMicro(createdAt).UTC()
 	conversation.UpdatedAt = time.UnixMicro(updatedAt).UTC()
+	setPendingAnswerProjection(&conversation, pendingAnswerID)
 	return conversation, nil
+}
+
+func setPendingAnswerProjection(conversation *Conversation, pending sql.NullString) {
+	conversation.PendingAnswer = pending.Valid
+	conversation.PendingAnswerID = nil
+	if pending.Valid {
+		value := pending.String
+		conversation.PendingAnswerID = &value
+	}
 }
 
 // DeleteConversation is the explicit user action that removes a conversation,
@@ -328,6 +404,16 @@ func (s *Store) DeleteConversation(ctx context.Context, id string, expectedRevis
 		}
 		if currentRevision != expectedRevision {
 			return ErrConversationRevision
+		}
+		var pending int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT count(*) FROM conversation_messages
+			WHERE conversation_id = ? AND role = 'assistant' AND status = 'pending'
+		`, id).Scan(&pending); err != nil {
+			return fmt.Errorf("inspect pending answers before conversation deletion: %w", err)
+		}
+		if pending != 0 {
+			return ErrConversationBusy
 		}
 		result, err := tx.ExecContext(ctx, `
 			DELETE FROM conversations WHERE id = ? AND revision = ?
@@ -584,6 +670,16 @@ func (s *Store) BeginAsk(ctx context.Context, params BeginAskParams) (AskStart, 
 			return ErrNotFound
 		} else if err != nil {
 			return fmt.Errorf("read conversation revision: %w", err)
+		}
+		var pending int
+		if err := tx.QueryRowContext(ctx, `
+			SELECT count(*) FROM conversation_messages
+			WHERE conversation_id = ? AND role = 'assistant' AND status = 'pending'
+		`, params.ConversationID).Scan(&pending); err != nil {
+			return fmt.Errorf("inspect pending answer before Ask: %w", err)
+		}
+		if pending != 0 {
+			return ErrConversationBusy
 		}
 		if currentRevision != params.ExpectedRevision {
 			return ErrConversationRevision

@@ -69,8 +69,17 @@ func runServe(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 	shutdown := func() error {
 		shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		return application.Shutdown(shutdownContext)
+		err := application.Shutdown(shutdownContext)
+		cancel()
+		if !errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		if _, writeErr := fmt.Fprintln(stdout, "正在等待本地问答完成安全收敛……"); writeErr != nil {
+			// Output failure must not permit the process to exit while App still
+			// owns a terminal write or the Vault lock.
+			return errors.Join(outputError(writeErr), application.Shutdown(context.Background()))
+		}
+		return application.Shutdown(context.Background())
 	}
 	launchURL := application.LaunchURL()
 	if _, err := fmt.Fprintf(stdout, "MindWeaver 已就绪。请打开一次性本地链接：\n%s\n", launchURL); err != nil {

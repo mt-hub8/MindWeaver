@@ -13,13 +13,15 @@ import (
 )
 
 const (
-	apiCursorVersion     = 1
-	maxAPICursorBytes    = 2048
-	maxCursorJSONBytes   = 1024
-	documentCursorKind   = "documents"
-	collectionCursorKind = "collections"
-	memberCursorKind     = "collection-members"
-	purgeCursorKind      = "document-purges"
+	apiCursorVersion              = 1
+	maxAPICursorBytes             = 2048
+	maxCursorJSONBytes            = 1024
+	documentCursorKind            = "documents"
+	collectionCursorKind          = "collections"
+	memberCursorKind              = "collection-members"
+	purgeCursorKind               = "document-purges"
+	conversationCursorKind        = "conversations"
+	conversationMessageCursorKind = "conversation-messages"
 )
 
 type apiCursor struct {

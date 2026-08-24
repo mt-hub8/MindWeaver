@@ -26,6 +26,13 @@ const (
 	// The SQLite kernel's default busy timeout is 5s. Terminal persistence must
 	// outlive that wait so transient writer contention cannot strand a message.
 	terminalPersistenceTimeout = 15 * time.Second
+	// MaxOllamaTimeout is the product-level provider budget. The lower-level
+	// transport accepts wider values for qualification, but product Ask never
+	// starts a call that can outlive this boundary.
+	MaxOllamaTimeout = 60 * time.Second
+	// MaxQuestionBytes matches the lexical search contract. Ask must reject a
+	// question before reservation when the downstream search cannot accept it.
+	MaxQuestionBytes = 1024
 
 	NoContextText       = "当前范围内没有可用于回答的资料。"
 	BadCitationText     = "模型返回的引用无法安全解析，本次未发布该回答。"
@@ -40,6 +47,8 @@ var (
 	ErrMalformedCitation = errors.New("rag: answer contains a malformed citation")
 	ErrForeignCitation   = errors.New("rag: answer cites a source not supplied to the model")
 )
+
+const maxIdempotencyKeyBytes = 256
 
 type generatorFunc func(context.Context, store.OllamaConfig, string) (string, error)
 
@@ -64,6 +73,9 @@ func (s *Service) ConfigureOllama(ctx context.Context, expectedVersion int64, op
 	if ctx == nil {
 		return store.OllamaConfig{}, errors.New("rag: nil context")
 	}
+	if err := validateProductOllamaTimeout(options.Timeout); err != nil {
+		return store.OllamaConfig{}, err
+	}
 	client, err := ollama.New(options)
 	if err != nil {
 		return store.OllamaConfig{}, err
@@ -77,12 +89,22 @@ func (s *Service) ConfigureOllama(ctx context.Context, expectedVersion int64, op
 	})
 }
 
+func (s *Service) GetActiveOllamaConfig(ctx context.Context) (store.OllamaConfig, error) {
+	if ctx == nil {
+		return store.OllamaConfig{}, errors.New("rag: nil context")
+	}
+	return s.database.GetActiveOllamaConfig(ctx)
+}
+
 // ProbeOllama checks one prospective concrete Ollama endpoint without reading
 // or changing the active configuration. The Ollama client owns the loopback,
 // redirect, timeout, protocol, and response-size policy used by Ask as well.
 func (s *Service) ProbeOllama(ctx context.Context, options ollama.Options) ([]string, error) {
 	if ctx == nil {
 		return nil, errors.New("rag: nil context")
+	}
+	if err := validateProductOllamaTimeout(options.Timeout); err != nil {
+		return nil, err
 	}
 	client, err := ollama.New(options)
 	if err != nil {
@@ -101,6 +123,18 @@ func (s *Service) CreateConversation(ctx context.Context, title string) (store.C
 		return store.Conversation{}, fmt.Errorf("rag: generate conversation identifier: %w", err)
 	}
 	return s.database.CreateConversation(ctx, id.String(), title)
+}
+
+func (s *Service) CreateConversationIdempotent(ctx context.Context, key, title string) (store.Conversation, bool, error) {
+	if ctx == nil {
+		return store.Conversation{}, false, errors.New("rag: nil context")
+	}
+	if !validIdempotencyKey(key) {
+		return store.Conversation{}, false, errors.New("rag: invalid conversation idempotency key")
+	}
+	digest := sha256.Sum256([]byte("mindweaver.conversation.v1\x00" + key))
+	id := "conversation-" + hex.EncodeToString(digest[:])
+	return s.database.CreateConversationIdempotent(ctx, id, title)
 }
 
 func (s *Service) GetConversation(ctx context.Context, id string) (store.Conversation, error) {
@@ -208,6 +242,10 @@ func (s *Service) Ask(ctx context.Context, request AskRequest) (store.Answer, er
 	if err != nil {
 		return s.refuseAndRead(ctx, answerID, NoContextText, "CONTEXT_LIMIT", err)
 	}
+	if err := validateProductOllamaTimeout(started.ProviderConfig.Timeout); err != nil {
+		return s.failAndRead(ctx, answerID, ProviderFailureText,
+			"MODEL_CONFIG_INVALID", "MODEL_CONFIG_INVALID", err)
+	}
 	if _, err := s.database.ArmAnswerInvocation(ctx, answerID); err != nil {
 		return s.failAndRead(ctx, answerID, InvalidResponseText,
 			"INVOCATION_NOT_STARTED", "INVOCATION_NOT_STARTED", err)
@@ -276,6 +314,9 @@ func (s *Service) newID(ctx context.Context) (string, error) {
 }
 
 func generateWithOllama(ctx context.Context, config store.OllamaConfig, prompt string) (string, error) {
+	if err := validateProductOllamaTimeout(config.Timeout); err != nil {
+		return "", err
+	}
 	client, err := ollama.New(ollama.Options{
 		BaseURL: config.Endpoint, Model: config.Model, Timeout: config.Timeout,
 	})
@@ -288,9 +329,17 @@ func generateWithOllama(ctx context.Context, config store.OllamaConfig, prompt s
 
 func normalizedTimeout(value time.Duration) time.Duration {
 	if value == 0 {
-		return 60 * time.Second
+		return MaxOllamaTimeout
 	}
 	return value
+}
+
+func validateProductOllamaTimeout(value time.Duration) error {
+	normalized := normalizedTimeout(value)
+	if normalized < time.Millisecond || normalized > MaxOllamaTimeout {
+		return fmt.Errorf("%w: product timeout must be between 1ms and %s", ollama.ErrInvalidConfig, MaxOllamaTimeout)
+	}
+	return nil
 }
 
 func classifyProviderFailure(err error) (limitation, code, text string) {
@@ -423,8 +472,8 @@ func validModelAnswer(value string) bool {
 }
 
 func validateQuestion(value string) error {
-	if !utf8.ValidString(value) || len(value) == 0 || len(value) > 4096 || strings.TrimSpace(value) != value {
-		return errors.New("rag: question must contain 1 to 4096 non-padded UTF-8 bytes")
+	if !utf8.ValidString(value) || len(value) == 0 || len(value) > MaxQuestionBytes || strings.TrimSpace(value) != value {
+		return fmt.Errorf("rag: question must contain 1 to %d non-padded UTF-8 bytes", MaxQuestionBytes)
 	}
 	for _, character := range value {
 		if character == 0 || (unicode.IsControl(character) && character != '\t' && character != '\n') {
@@ -435,6 +484,18 @@ func validateQuestion(value string) error {
 		return ErrQuestionTooShort
 	}
 	return nil
+}
+
+func validIdempotencyKey(value string) bool {
+	if value == "" || len(value) > maxIdempotencyKeyBytes || !utf8.ValidString(value) || strings.TrimSpace(value) != value {
+		return false
+	}
+	for _, character := range value {
+		if unicode.IsControl(character) {
+			return false
+		}
+	}
+	return true
 }
 
 func askRequestHash(request AskRequest) (string, error) {

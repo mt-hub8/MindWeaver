@@ -41,7 +41,43 @@ var indexTemplate = template.Must(template.New("index").Parse(`<!doctype html>
     <div id="workspace" hidden>
       <section class="panel notice" aria-labelledby="model-title">
         <div><p class="kicker">离线优先</p><h2 id="model-title">本地检索可用，AI 模型为可选能力</h2>
-        <p id="model-detail">未配置模型不会阻止上传、整理和搜索。Ask 功能准备好后会在这里显示。</p></div>
+        <p id="model-detail">未配置模型不会阻止上传、整理和搜索；配置本机 Ollama 后可使用带引用的 Ask。</p></div>
+      </section>
+
+      <div class="grid two">
+        <section class="panel" aria-labelledby="ollama-title">
+          <div class="section-head"><div><p class="kicker">本地模型</p><h2 id="ollama-title">Ollama 配置与探测</h2></div><button id="probe-ollama" class="secondary" type="button">探测</button></div>
+          <form id="ollama-form">
+            <label for="ollama-endpoint">本机端点（必须是 literal loopback）</label><input id="ollama-endpoint" value="http://127.0.0.1:11434" maxlength="2048" required autocomplete="off">
+            <label for="ollama-model">模型名称</label><input id="ollama-model" maxlength="255" required autocomplete="off">
+            <label for="ollama-timeout">超时毫秒（1–60000）</label><input id="ollama-timeout" type="number" min="1" max="60000" step="1" value="60000" required>
+            <button type="submit">保存模型配置</button>
+          </form>
+          <div id="ollama-status" class="status" role="status" aria-live="polite">正在读取模型配置。</div>
+        </section>
+
+        <section class="panel" aria-labelledby="conversations-title">
+          <div class="section-head"><div><p class="kicker">问答空间</p><h2 id="conversations-title">会话</h2></div><button id="refresh-conversations" class="secondary" type="button">刷新</button></div>
+          <form id="conversation-form">
+            <label for="conversation-title">新会话标题</label><input id="conversation-title" maxlength="1024" required autocomplete="off">
+            <button type="submit">创建会话</button>
+          </form>
+          <ul id="conversations" class="documents" aria-live="polite"></ul>
+          <button id="conversations-more" class="secondary catalog-more" type="button" hidden>加载更多会话</button>
+        </section>
+      </div>
+
+      <section class="panel ask-panel" aria-labelledby="ask-title">
+        <div class="section-head"><div><p class="kicker">有据可查</p><h2 id="ask-title">Ask 与历史</h2></div><button id="refresh-messages" class="secondary" type="button">刷新历史</button></div>
+        <p id="active-conversation" class="meta">请先创建或选择会话。</p>
+        <form id="ask-form">
+          <label for="ask-question">问题（最多 1024 UTF-8 字节）</label><textarea id="ask-question" maxlength="1024" rows="4" required></textarea>
+          <label for="ask-collection">集合 ID（留空为全部已激活文档）</label><input id="ask-collection" maxlength="255" autocomplete="off">
+          <button id="ask-submit" type="submit">Ask</button>
+        </form>
+        <div id="ask-status" class="status" role="status" aria-live="polite">尚未提问。</div>
+        <ol id="messages" class="messages" aria-live="polite"></ol>
+        <button id="messages-more" class="secondary catalog-more" type="button" hidden>加载后续历史</button>
       </section>
 
       <div class="grid two">

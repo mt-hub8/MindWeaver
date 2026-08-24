@@ -22,6 +22,8 @@ import (
 	"github.com/mt-hub8/MindWeaver/v2/internal/ingest"
 	"github.com/mt-hub8/MindWeaver/v2/internal/lifecycle"
 	"github.com/mt-hub8/MindWeaver/v2/internal/localhttp"
+	"github.com/mt-hub8/MindWeaver/v2/internal/ollama"
+	"github.com/mt-hub8/MindWeaver/v2/internal/rag"
 	store "github.com/mt-hub8/MindWeaver/v2/internal/store/sqlite"
 	"github.com/mt-hub8/MindWeaver/v2/internal/transport"
 	"github.com/mt-hub8/MindWeaver/v2/internal/workbench"
@@ -96,18 +98,19 @@ type API struct {
 	service   workbenchAPI
 	lifecycle lifecycleAPI
 	worker    *ingestionWorker
+	rag       *ragRuntime
 	startup   StartupEvidence
 	pdfReady  bool
 }
 
-func newAPI(service workbenchAPI, lifecycleService lifecycleAPI, worker *ingestionWorker, startup StartupEvidence, pdfReady bool) *API {
-	return &API{service: service, lifecycle: lifecycleService, worker: worker, startup: startup, pdfReady: pdfReady}
+func newAPI(service workbenchAPI, lifecycleService lifecycleAPI, worker *ingestionWorker, ragRuntime *ragRuntime, startup StartupEvidence, pdfReady bool) *API {
+	return &API{service: service, lifecycle: lifecycleService, worker: worker, rag: ragRuntime, startup: startup, pdfReady: pdfReady}
 }
 
 // Register installs only fixed endpoint paths. IDs are query/body values, not
 // path templates, so localhttp can seal and audit the complete route table.
 func (api *API) Register(router *localhttp.Router) error {
-	if api == nil || api.service == nil || api.lifecycle == nil || api.worker == nil || router == nil {
+	if api == nil || api.service == nil || api.lifecycle == nil || api.worker == nil || api.rag == nil || router == nil {
 		return errors.New("app: invalid API dependencies")
 	}
 	routes := []struct {
@@ -133,6 +136,15 @@ func (api *API) Register(router *localhttp.Router) error {
 		{http.MethodPost, apiPrefix + "/collections/members", api.addCollectionMember},
 		{http.MethodGet, apiPrefix + "/collections/members", api.collectionMembers},
 		{http.MethodDelete, apiPrefix + "/collections/members", api.removeCollectionMember},
+		{http.MethodGet, apiPrefix + "/ollama", api.ollamaConfiguration},
+		{http.MethodPut, apiPrefix + "/ollama", api.configureOllama},
+		{http.MethodPost, apiPrefix + "/ollama/probe", api.probeOllama},
+		{http.MethodPost, apiPrefix + "/conversations", api.createConversation},
+		{http.MethodGet, apiPrefix + "/conversations", api.conversations},
+		{http.MethodDelete, apiPrefix + "/conversations", api.deleteConversation},
+		{http.MethodGet, apiPrefix + "/conversations/messages", api.conversationMessages},
+		{http.MethodPost, apiPrefix + "/ask", api.ask},
+		{http.MethodGet, apiPrefix + "/answers", api.answer},
 	}
 	for _, route := range routes {
 		if err := router.HandleFunc(route.method, route.path, route.serve); err != nil {
@@ -147,13 +159,14 @@ func (api *API) runtime(response http.ResponseWriter, request *http.Request) {
 		api.problem(response, request, transport.CodeInvalidArgument, "运行时请求不能包含查询参数。")
 		return
 	}
+	modelStatus := api.modelStatus(request.Context())
 	writeJSON(response, http.StatusOK, struct {
 		Version       string `json:"version"`
 		State         string `json:"state"`
 		ModelStatus   string `json:"modelStatus"`
 		PDFAvailable  bool   `json:"pdfAvailable"`
 		ConfigCreated bool   `json:"configCreated"`
-	}{Version: version.String(), State: "ready", ModelStatus: "unconfigured", PDFAvailable: api.pdfReady, ConfigCreated: api.startup.ConfigCreated})
+	}{Version: version.String(), State: "ready", ModelStatus: modelStatus, PDFAvailable: api.pdfReady, ConfigCreated: api.startup.ConfigCreated})
 }
 
 func (api *API) diagnostics(response http.ResponseWriter, request *http.Request) {
@@ -162,21 +175,37 @@ func (api *API) diagnostics(response http.ResponseWriter, request *http.Request)
 		return
 	}
 	writeJSON(response, http.StatusOK, struct {
-		VaultStatus         string `json:"vaultStatus"`
-		DatabaseStatus      string `json:"databaseStatus"`
-		WorkerStatus        string `json:"workerStatus"`
-		ModelStatus         string `json:"modelStatus"`
-		PDFAvailable        bool   `json:"pdfAvailable"`
-		RecoveredJobs       int64  `json:"recoveredJobs"`
-		CleanedStagingFiles int    `json:"cleanedStagingFiles"`
-		SweptBlobCandidates int    `json:"sweptBlobCandidates"`
+		VaultStatus              string `json:"vaultStatus"`
+		DatabaseStatus           string `json:"databaseStatus"`
+		WorkerStatus             string `json:"workerStatus"`
+		ModelStatus              string `json:"modelStatus"`
+		PDFAvailable             bool   `json:"pdfAvailable"`
+		RecoveredJobs            int64  `json:"recoveredJobs"`
+		CleanedStagingFiles      int    `json:"cleanedStagingFiles"`
+		SweptBlobCandidates      int    `json:"sweptBlobCandidates"`
+		ReconciledPendingAnswers int64  `json:"reconciledPendingAnswers"`
 	}{
 		VaultStatus: "locked_by_this_process", DatabaseStatus: "ready",
-		WorkerStatus: api.worker.Status(), ModelStatus: "unconfigured",
+		WorkerStatus: api.worker.Status(), ModelStatus: api.modelStatus(request.Context()),
 		PDFAvailable:  api.pdfReady,
 		RecoveredJobs: api.startup.RecoveredJobs, CleanedStagingFiles: api.startup.CleanedStagingFiles,
-		SweptBlobCandidates: api.startup.SweptBlobCandidates,
+		SweptBlobCandidates:      api.startup.SweptBlobCandidates,
+		ReconciledPendingAnswers: api.startup.ReconciledPendingAnswers,
 	})
+}
+
+func (api *API) modelStatus(ctx context.Context) string {
+	config, err := api.rag.service.GetActiveOllamaConfig(ctx)
+	switch {
+	case err == nil && config.Timeout >= time.Millisecond && config.Timeout <= rag.MaxOllamaTimeout:
+		return "configured"
+	case err == nil:
+		return "invalid"
+	case errors.Is(err, store.ErrOllamaNotConfigured):
+		return "unconfigured"
+	default:
+		return "unavailable"
+	}
 }
 
 func (api *API) upload(response http.ResponseWriter, request *http.Request) {
@@ -886,6 +915,26 @@ func classifyError(err error) (transport.ErrorCode, string) {
 		return transport.CodeConflict, "该幂等键已经用于不同的请求内容。"
 	case errors.Is(err, store.ErrRevisionConflict):
 		return transport.CodeConflict, "资源已被其他操作更新；请刷新后按最新 revision 重试。"
+	case errors.Is(err, store.ErrConversationIdempotency), errors.Is(err, store.ErrAskIdempotency):
+		return transport.CodeConflict, "该幂等键已经用于不同的会话或 Ask 请求。"
+	case errors.Is(err, store.ErrConversationRevision):
+		return transport.CodeConflict, "会话已被其他操作更新；请刷新历史后按最新 revision 重试。"
+	case errors.Is(err, store.ErrConversationBusy):
+		return transport.CodeConflict, "会话仍有等待终态的 Ask；请等待完成后再继续提问或删除。"
+	case errors.Is(err, store.ErrProviderConfigRevision):
+		return transport.CodeConflict, "模型配置已被更新；请刷新后按最新 version 重试。"
+	case errors.Is(err, store.ErrOllamaNotConfigured):
+		return transport.CodeConflict, "尚未配置本地 Ollama 模型；其它工作台功能仍可使用。"
+	case errors.Is(err, store.ErrHistoryCursorInvalid):
+		return transport.CodeInvalidArgument, "历史游标无效或已不属于当前目录。"
+	case errors.Is(err, store.ErrHistoryItemTooLarge):
+		return transport.CodeResourceLimit, "单条历史记录超过安全响应上限。"
+	case errors.Is(err, rag.ErrQuestionTooShort), errors.Is(err, ollama.ErrInvalidConfig), errors.Is(err, ollama.ErrInvalidRequest):
+		return transport.CodeInvalidArgument, "模型或 Ask 请求参数无效。"
+	case errors.Is(err, errAskQuiescing):
+		return transport.CodeServiceUnavailable, "应用正在安全关闭，不能接受新的 Ask。"
+	case errors.Is(err, ollama.ErrUnavailable), errors.Is(err, ollama.ErrProtocol), errors.Is(err, ollama.ErrResponseTooLarge), errors.Is(err, ollama.ErrRequestTooLarge):
+		return transport.CodeServiceUnavailable, "本地模型不可用或返回了无效响应。"
 	case errors.Is(err, store.ErrCollectionNameConflict):
 		return transport.CodeConflict, "同名集合已经存在。"
 	case errors.Is(err, store.ErrLifecycleConflict):

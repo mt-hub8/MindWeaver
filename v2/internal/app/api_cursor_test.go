@@ -25,6 +25,28 @@ func TestAPICursorRoundTripAndScopeBinding(t *testing.T) {
 	}
 }
 
+func TestConversationHistoryCursorScopesAreDisjoint(t *testing.T) {
+	stamp := time.UnixMicro(42).UTC()
+	conversation, err := encodeAPICursor(conversationCursorKind, "", stamp, "conversation-one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := decodeAPICursor(conversation, conversationMessageCursorKind, "conversation-one"); err == nil {
+		t.Fatal("conversation catalog cursor crossed into message history")
+	}
+	messages, err := encodeAPICursor(conversationMessageCursorKind, "conversation-one", stamp, "message-one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := decodeAPICursor(messages, conversationMessageCursorKind, "conversation-two"); err == nil {
+		t.Fatal("message cursor crossed conversation scope")
+	}
+	gotStamp, gotID, err := decodeAPICursor(messages, conversationMessageCursorKind, "conversation-one")
+	if err != nil || !gotStamp.Equal(stamp) || gotID != "message-one" {
+		t.Fatalf("message cursor = %v, %q, %v", gotStamp, gotID, err)
+	}
+}
+
 func TestAPICursorRejectsNonCanonicalOrAmbiguousInput(t *testing.T) {
 	encoded := func(body string) string {
 		return base64.RawURLEncoding.EncodeToString([]byte(body))
