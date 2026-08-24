@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/mt-hub8/MindWeaver/v2/internal/app"
+	"github.com/mt-hub8/MindWeaver/v2/internal/vault"
 	"github.com/mt-hub8/MindWeaver/v2/platform/apperror"
 	"github.com/mt-hub8/MindWeaver/v2/platform/config"
 	"github.com/mt-hub8/MindWeaver/v2/platform/version"
@@ -26,7 +30,7 @@ func main() {
 
 func run(ctx context.Context, args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return printUsage(stdout)
+		return runServe(ctx, nil, stdout)
 	}
 	switch args[0] {
 	case "help", "-h", "--help":
@@ -36,8 +40,62 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		return outputError(err)
 	case "config":
 		return runConfig(ctx, args[1:], stdout)
+	case "serve":
+		return runServe(ctx, args[1:], stdout)
 	default:
 		return apperror.New(apperror.KindInvalid, "cli.command_unknown", "unknown command; run mindweaver help")
+	}
+}
+
+func runServe(ctx context.Context, args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	file := flags.String("config", config.DefaultFileName, "configuration file")
+	firstVault := flags.String("vault", "./vault", "Vault root used only on first run")
+	noBrowser := flags.Bool("no-browser", false, "print the local URL without opening a browser")
+	if err := flags.Parse(args); err != nil {
+		return apperror.Wrap(err, apperror.KindInvalid, "cli.flags_invalid", "cli.serve", "invalid serve flags")
+	}
+	if flags.NArg() != 0 {
+		return apperror.New(apperror.KindInvalid, "cli.arguments_unexpected", "serve does not accept positional arguments")
+	}
+
+	application, err := app.Start(ctx, app.Options{ConfigPath: *file, FirstRunVaultRoot: *firstVault})
+	if err != nil {
+		if errors.Is(err, vault.ErrLocked) {
+			return apperror.Wrap(err, apperror.KindConflict, "runtime.vault_locked", "cli.serve", "this Vault is already open in another MindWeaver process")
+		}
+		return err
+	}
+	shutdown := func() error {
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return application.Shutdown(shutdownContext)
+	}
+	launchURL := application.LaunchURL()
+	if _, err := fmt.Fprintf(stdout, "MindWeaver 已就绪。请打开一次性本地链接：\n%s\n", launchURL); err != nil {
+		return errors.Join(outputError(err), shutdown())
+	}
+	if !*noBrowser {
+		if err := openBrowser(launchURL); err != nil {
+			// The printed one-use URL remains a complete recovery path. Browser
+			// integration failure must be visible but must not take the owned Vault
+			// and already-ready workbench back down.
+			if _, writeErr := fmt.Fprintln(stdout, "未能自动打开浏览器；请手动打开上面的本地链接。"); writeErr != nil {
+				return errors.Join(outputError(writeErr), shutdown())
+			}
+		}
+	}
+
+	select {
+	case <-ctx.Done():
+		return shutdown()
+	case serveErr, open := <-application.Done():
+		shutdownErr := shutdown()
+		if !open || serveErr == nil {
+			return shutdownErr
+		}
+		return errors.Join(fmt.Errorf("local HTTP server stopped: %w", serveErr), shutdownErr)
 	}
 }
 
@@ -88,6 +146,9 @@ func outputError(err error) error {
 }
 
 func exitCode(err error) int {
+	if errors.Is(err, vault.ErrLocked) {
+		return 3
+	}
 	switch apperror.KindOf(err) {
 	case apperror.KindInvalid:
 		return 2
@@ -110,6 +171,8 @@ func printUsage(writer io.Writer) error {
 	_, err := fmt.Fprintln(writer, `MindWeaver local workbench (Go rewrite)
 
 Usage:
+  mindweaver
+  mindweaver serve [-config mindweaver.v1.json] [-vault ./vault] [-no-browser]
   mindweaver version
   mindweaver config init  [-file mindweaver.v1.json] [-vault ./vault]
   mindweaver config check [-file mindweaver.v1.json]`)
