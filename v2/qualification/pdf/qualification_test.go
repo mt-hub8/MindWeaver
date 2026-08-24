@@ -1,0 +1,640 @@
+package pdfqualification_test
+
+import (
+	"bytes"
+	"context"
+	"crypto/md5"
+	"crypto/rc4"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+	"unicode/utf16"
+
+	pdf "github.com/ledongthuc/pdf"
+	pdfclient "github.com/mt-hub8/MindWeaver/v2/internal/pdfextract/client"
+	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract/protocol"
+	"github.com/mt-hub8/MindWeaver/v2/qualification/pdf/unigbspike"
+)
+
+const (
+	pdfTextLayerSchema         = "mindweaver.qualification.pdf-text-layer/v1"
+	qualificationCIDFontObject = "<< /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 0 >> /DW 1000 /FontDescriptor << /Type /FontDescriptor /FontName /STSongStd-Light /Flags 6 /FontBBox [-25 -254 1000 880] /ItalicAngle 0 /Ascent 752 /Descent -271 /CapHeight 737 /StemV 58 /MissingWidth 500 >> /W [1 [207 270 342 467 462 797 710 239 374] 10 [374 423 605 238 375 238 334 462] 18 26 462 27 28 238 29 31 605 32 [344 748 684 560 695 739 563 511 729 793 318 312 666 526 896 758 772 544 772 628 465 607 753 711 972 647 620 607 374 333 374 606 500 239 417 503 427 529 415 264 444 518 241 230 495 228 793 527 524] 81 [524 504 338 336 277 517 450 652 466 452 407 370 258 370 605]] >>"
+	readyEnvironment           = "MWQ_PDF_PROBE_READY"
+	sentinelEnvironment        = "MWQ_PDF_PROBE_SENTINEL"
+	sentinelDelayEnvironment   = "MWQ_PDF_PROBE_SENTINEL_DELAY_MS"
+)
+
+type pdfTextLayerSpec struct {
+	SchemaVersion              string    `json:"schema_version"`
+	DocumentID                 string    `json:"document_id"`
+	MediaBox                   [4]int    `json:"media_box"`
+	ExpectedGeneratedPDFSHA256 string    `json:"expected_generated_pdf_sha256"`
+	Pages                      []pdfPage `json:"pages"`
+}
+
+type pdfPage struct {
+	Lines []string `json:"lines"`
+}
+
+func TestProductionPDFQualificationMatrix(t *testing.T) {
+	helper := buildPackage(t, "./cmd/mindweaver-pdf", "mindweaver-pdf")
+	client, err := pdfclient.New(helper, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := loadPDFSpec(t)
+	representative, err := generateUniGBPDF(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if digest(representative) != spec.ExpectedGeneratedPDFSHA256 {
+		t.Fatal("representative UniGB PDF digest drifted from the committed corpus spec")
+	}
+	root := t.TempDir()
+	representativePath := writeFile(t, root, "representative-unigb.pdf", representative)
+
+	t.Run("representative UniGB verdict", func(t *testing.T) {
+		result, extractErr := client.Extract(t.Context(), representativePath)
+		exact := extractErr == nil && result.Pages == len(spec.Pages) && normalize(result.Text) == expectedText(spec)
+		if exact {
+			t.Fatal("qualification verdict is stale: ledongthuc/pdf now extracts the representative UniGB corpus exactly")
+		}
+		if extractErr != nil && !errors.Is(extractErr, protocol.ErrInvalidPDF) {
+			t.Fatalf("representative UniGB failure category = %s, want INVALID_PDF or a bounded garble result", safeCategory(extractErr))
+		}
+		spikeText, spikeErr := unigbspike.Extract(representative, unigbspike.DefaultLimits)
+		if spikeErr != nil || normalize(spikeText) != expectedText(spec) {
+			t.Fatalf("qualification-only UniGB mechanism failed: category=%T", spikeErr)
+		}
+		t.Logf("OBSERVED ledong category=%s pages=%d text_bytes=%d exact=%t", safeCategory(extractErr), result.Pages, len(result.Text), exact)
+		t.Log("VERDICT production ledongthuc/pdf=REPLACE; representative Chinese PDF capability=BLOCKED; stdlib UniGB spike=NOT_QUALIFIED")
+	})
+
+	t.Run("English text", func(t *testing.T) {
+		const text = "English calibration torque sensor 12.5"
+		path := writeFile(t, root, "english.pdf", generateSimpleEnglishPDF(text))
+		result, err := client.Extract(t.Context(), path)
+		if err != nil || result.Pages != 1 || normalize(result.Text) != text {
+			t.Fatalf("English extraction = pages %d, category %s", result.Pages, safeCategory(err))
+		}
+	})
+
+	t.Run("empty and no text", func(t *testing.T) {
+		empty := writeFile(t, root, "empty.pdf", nil)
+		if _, err := client.Extract(t.Context(), empty); !errors.Is(err, protocol.ErrInvalidPDF) {
+			t.Fatalf("empty source category = %s", safeCategory(err))
+		}
+		noText := writeFile(t, root, "no-text.pdf", generateSimpleEnglishPDF(""))
+		if _, err := client.Extract(t.Context(), noText); !errors.Is(err, protocol.ErrNoExtractedText) {
+			t.Fatalf("no-text category = %s", safeCategory(err))
+		}
+	})
+
+	t.Run("encrypted", func(t *testing.T) {
+		const protectedText = "protected text"
+		const password = "secret"
+		encrypted := writeFile(t, root, "encrypted.pdf", generateEncryptedEnglishPDF(protectedText, password))
+		assertEncryptedFixture(t, encrypted, password)
+		if _, err := client.Extract(t.Context(), encrypted); !errors.Is(err, protocol.ErrEncryptedPDF) {
+			t.Fatalf("encrypted category = %s", safeCategory(err))
+		}
+	})
+
+	t.Run("malformed", func(t *testing.T) {
+		valid := generateSimpleEnglishPDF("malformed matrix")
+		xref := bytes.LastIndex(valid, []byte("xref\n"))
+		if xref < 0 {
+			t.Fatal("fixture has no xref")
+		}
+		broken := bytes.Replace(valid, []byte("4 0 obj\n"), []byte("4 0 bad\n"), 1)
+		cases := map[string][]byte{
+			"invalid-signature": []byte("NOTPDF-1.7\nsource"),
+			"truncated-xref":    append([]byte(nil), valid[:xref+5]...),
+			"broken-object":     broken,
+		}
+		for name, data := range cases {
+			t.Run(name, func(t *testing.T) {
+				path := writeFile(t, root, name+".pdf", data)
+				if _, err := client.Extract(t.Context(), path); !errors.Is(err, protocol.ErrInvalidPDF) {
+					t.Fatalf("malformed category = %s", safeCategory(err))
+				}
+			})
+		}
+	})
+
+	t.Run("declared page count", func(t *testing.T) {
+		bomb, err := generateToUnicodePDF(spec, protocol.MaxPages+1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := writeFile(t, root, "page-count.pdf", bomb)
+		if _, err := client.Extract(t.Context(), path); !errors.Is(err, protocol.ErrResourceLimit) {
+			t.Fatalf("page-count category = %s", safeCategory(err))
+		}
+	})
+
+	t.Run("source size", func(t *testing.T) {
+		path := filepath.Join(root, "oversize.pdf")
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		truncateErr := file.Truncate(protocol.MaxSourceBytes + 1)
+		closeErr := file.Close()
+		if truncateErr != nil || closeErr != nil {
+			t.Fatal("materialize oversize source")
+		}
+		if _, err := client.Extract(t.Context(), path); !errors.Is(err, protocol.ErrResourceLimit) {
+			t.Fatalf("oversize category = %s", safeCategory(err))
+		}
+	})
+}
+
+func assertEncryptedFixture(t *testing.T, path, password string) {
+	t.Helper()
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := pdf.NewReaderEncrypted(file, info.Size(), func() string { return password })
+	if err != nil {
+		t.Fatalf("encrypted fixture did not open with its qualification password: %T", err)
+	}
+	if reader.NumPage() != 1 {
+		t.Fatalf("encrypted fixture page count = %d", reader.NumPage())
+	}
+}
+
+func TestPDFHelperTimeoutQualification(t *testing.T) {
+	probe := buildPackage(t, "./qualification/pdf/adversarialprobe", "pdf-adversarial-probe")
+	root := t.TempDir()
+	source := writeFile(t, root, "source.pdf", []byte("%PDF-1.7\nqualification probe"))
+	ready := filepath.Join(root, "ready")
+	sentinel := filepath.Join(root, "must-not-survive")
+	t.Setenv(readyEnvironment, ready)
+	t.Setenv(sentinelEnvironment, sentinel)
+	t.Setenv(sentinelDelayEnvironment, "1100")
+	client, err := pdfclient.New(probe, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, extractErr := client.Extract(context.Background(), source)
+		done <- extractErr
+	}()
+	waitForFile(t, ready, 2*time.Second)
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("timeout category = %s", safeCategory(err))
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed-out helper was not reaped")
+	}
+	time.Sleep(1200 * time.Millisecond)
+	if _, err := os.Lstat(sentinel); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("timed-out helper survived: %v", err)
+	}
+}
+
+func TestQualificationOnlyUniGBSpikeBoundaries(t *testing.T) {
+	spec := loadPDFSpec(t)
+	source, err := generateUniGBPDF(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, err := unigbspike.Extract(source, unigbspike.DefaultLimits)
+	if err != nil || normalize(text) != expectedText(spec) {
+		t.Fatalf("spike extraction failed: %T", err)
+	}
+	for _, test := range []struct {
+		name   string
+		limits unigbspike.Limits
+	}{
+		{name: "source", limits: unigbspike.Limits{MaxSourceBytes: len(source) - 1, MaxExtractedBytes: 1 << 20, MaxPages: 1, MaxTextOperands: 100}},
+		{name: "output", limits: unigbspike.Limits{MaxSourceBytes: len(source), MaxExtractedBytes: len(text) - 1, MaxPages: 1, MaxTextOperands: 100}},
+		{name: "operands", limits: unigbspike.Limits{MaxSourceBytes: len(source), MaxExtractedBytes: 1 << 20, MaxPages: 1, MaxTextOperands: 2}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := unigbspike.Extract(source, test.limits); !errors.Is(err, unigbspike.ErrResource) {
+				t.Fatalf("resource boundary = %v", err)
+			}
+		})
+	}
+	compressedClaim := append(append([]byte(nil), source...), []byte("\n/Filter /FlateDecode")...)
+	if _, err := unigbspike.Extract(compressedClaim, unigbspike.DefaultLimits); !errors.Is(err, unigbspike.ErrUnsupported) {
+		t.Fatalf("unsupported compressed shape = %v", err)
+	}
+}
+
+func TestPDFQualificationDependencyAndLicenseEvidence(t *testing.T) {
+	root := moduleRoot(t)
+	goTool := goTool(t)
+	command := exec.Command(goTool, "list", "-deps", "-f", "{{if not .Standard}}{{.ImportPath}}|{{with .Module}}{{.Path}}{{end}}{{end}}", "./qualification/pdf/unigbspike")
+	command.Dir = root
+	command.Env = hermeticEnvironment(runtime.GOOS, runtime.GOARCH)
+	output, err := command.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Fields(string(output))
+	want := "github.com/mt-hub8/MindWeaver/v2/qualification/pdf/unigbspike|github.com/mt-hub8/MindWeaver/v2"
+	if len(lines) != 1 || lines[0] != want {
+		t.Fatalf("spike dependency closure = %q, want only the main module", lines)
+	}
+
+	moduleCacheCommand := exec.Command(goTool, "env", "GOMODCACHE")
+	moduleCacheCommand.Dir = root
+	moduleCacheCommand.Env = hermeticEnvironment(runtime.GOOS, runtime.GOARCH)
+	moduleCacheRaw, err := moduleCacheCommand.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ledongLicense := filepath.Join(strings.TrimSpace(string(moduleCacheRaw)), "github.com", "ledongthuc", "pdf@v0.0.0-20250511090121-5959a4027728", "LICENSE")
+	assertFileSHA256(t, ledongLicense, "2d36597f7117c38b006835ae7f537487207d8ec407aa9d9980794b2030cbc067")
+	assertFileSHA256(t, filepath.Join(runtime.GOROOT(), "LICENSE"), "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad")
+}
+
+func safeCategory(err error) string {
+	switch {
+	case err == nil:
+		return "NONE"
+	case errors.Is(err, protocol.ErrInvalidPDF):
+		return "INVALID_PDF"
+	case errors.Is(err, protocol.ErrEncryptedPDF):
+		return "ENCRYPTED_PDF"
+	case errors.Is(err, protocol.ErrResourceLimit):
+		return "RESOURCE_LIMIT"
+	case errors.Is(err, protocol.ErrHelperProtocol):
+		return "HELPER_PROTOCOL"
+	case errors.Is(err, pdfclient.ErrHelperFailed):
+		return "HELPER_FAILED"
+	case errors.Is(err, protocol.ErrNoExtractedText):
+		return "NO_EXTRACTED_TEXT"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "DEADLINE"
+	default:
+		return "UNCLASSIFIED"
+	}
+}
+
+func loadPDFSpec(t *testing.T) pdfTextLayerSpec {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(moduleRoot(t), "testdata", "qualification", "pdf", "text-layer-cn-mixed.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec pdfTextLayerSpec
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&spec); err != nil {
+		t.Fatal(err)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		t.Fatal("qualification spec contains trailing data")
+	}
+	if spec.SchemaVersion != pdfTextLayerSchema || len(spec.Pages) != 1 || len(spec.Pages[0].Lines) == 0 {
+		t.Fatal("qualification spec is outside the frozen schema")
+	}
+	return spec
+}
+
+func expectedText(spec pdfTextLayerSpec) string {
+	pages := make([]string, 0, len(spec.Pages))
+	for _, page := range spec.Pages {
+		pages = append(pages, strings.Join(page.Lines, "\n"))
+	}
+	return normalize(strings.Join(pages, "\n\n"))
+}
+
+func normalize(text string) string {
+	return strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"))
+}
+
+func generateUniGBPDF(spec pdfTextLayerSpec) ([]byte, error) {
+	if len(spec.Pages) != 1 {
+		return nil, errors.New("qualification UniGB PDF requires one page")
+	}
+	var content strings.Builder
+	content.WriteString("BT\n/F0 11 Tf\n72 790 Td\n")
+	for index, line := range spec.Pages[0].Lines {
+		if index > 0 {
+			content.WriteString("0 -18 Td\n")
+		}
+		fmt.Fprintf(&content, "<%s> Tj\n", utf16BEHex(line))
+	}
+	content.WriteString("ET\n")
+	mediaBox := fmt.Sprintf("[%d %d %d %d]", spec.MediaBox[0], spec.MediaBox[1], spec.MediaBox[2], spec.MediaBox[3])
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		fmt.Sprintf("<< /Type /Page /Parent 2 0 R /MediaBox %s /Resources << /Font << /F0 5 0 R >> >> /Contents 4 0 R >>", mediaBox),
+		pdfStream([]byte(content.String())),
+		"<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /UniGB-UCS2-H /DescendantFonts [6 0 R] >>",
+		qualificationCIDFontObject,
+	}
+	return serializePDF(objects, ""), nil
+}
+
+func generateToUnicodePDF(spec pdfTextLayerSpec, declaredPages int) ([]byte, error) {
+	if len(spec.Pages) != 1 || declaredPages < 1 {
+		return nil, errors.New("qualification ToUnicode PDF requires one page")
+	}
+	var content strings.Builder
+	for index, line := range spec.Pages[0].Lines {
+		fmt.Fprintf(&content, "BT\n/F0 11 Tf\n72 %d Td\n<%s> Tj\nET\n", 790-index*18, utf16BEHex(line))
+	}
+	mediaBox := fmt.Sprintf("[%d %d %d %d]", spec.MediaBox[0], spec.MediaBox[1], spec.MediaBox[2], spec.MediaBox[3])
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		fmt.Sprintf("<< /Type /Pages /Kids [3 0 R] /Count %d >>", declaredPages),
+		fmt.Sprintf("<< /Type /Page /Parent 2 0 R /MediaBox %s /Resources << /Font << /F0 5 0 R >> >> /Contents 4 0 R >>", mediaBox),
+		pdfStream([]byte(content.String())),
+		"<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /Identity-H /DescendantFonts [6 0 R] /ToUnicode 7 0 R >>",
+		qualificationCIDFontObject,
+		pdfStream([]byte(toUnicodeCMap(spec.Pages[0].Lines))),
+	}
+	return serializePDF(objects, ""), nil
+}
+
+func generateSimpleEnglishPDF(text string) []byte {
+	escaped := strings.NewReplacer("\\", "\\\\", "(", "\\(", ")", "\\)").Replace(text)
+	content := "BT /F1 12 Tf 72 720 Td (" + escaped + ") Tj ET"
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+		pdfStream([]byte(content)),
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+	}
+	return serializePDF(objects, "")
+}
+
+func generateEncryptedEnglishPDF(text, userPassword string) []byte {
+	const permissions int32 = -4
+	fileID := md5.Sum([]byte("MindWeaver encrypted qualification fixture"))
+	owner := standardOwnerEntry("owner", userPassword)
+	key := standardFileKey(userPassword, owner, permissions, fileID[:])
+	user := standardUserEntry(key)
+	content := []byte("BT /F1 12 Tf 72 720 Td (" + text + ") Tj ET")
+	encryptedContent := cryptObject(content, key, 4, 0)
+	objects := []string{
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+		pdfStream(encryptedContent),
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+		fmt.Sprintf("<< /Filter /Standard /V 1 /R 2 /O <%X> /U <%X> /P %d >>", owner, user, permissions),
+	}
+	trailer := fmt.Sprintf(" /Encrypt 6 0 R /ID [<%X><%X>]", fileID, fileID)
+	return serializePDF(objects, trailer)
+}
+
+var standardPasswordPadding = []byte{
+	0x28, 0xBF, 0x4E, 0x5E, 0x4E, 0x75, 0x8A, 0x41,
+	0x64, 0x00, 0x4E, 0x56, 0xFF, 0xFA, 0x01, 0x08,
+	0x2E, 0x2E, 0x00, 0xB6, 0xD0, 0x68, 0x3E, 0x80,
+	0x2F, 0x0C, 0xA9, 0xFE, 0x64, 0x53, 0x69, 0x7A,
+}
+
+func standardOwnerEntry(ownerPassword, userPassword string) []byte {
+	digest := md5.Sum(padPassword(ownerPassword))
+	return rc4Bytes(digest[:5], padPassword(userPassword))
+}
+
+func standardFileKey(userPassword string, owner []byte, permissions int32, fileID []byte) []byte {
+	hash := md5.New()
+	_, _ = hash.Write(padPassword(userPassword))
+	_, _ = hash.Write(owner)
+	var encodedPermissions [4]byte
+	binary.LittleEndian.PutUint32(encodedPermissions[:], uint32(permissions))
+	_, _ = hash.Write(encodedPermissions[:])
+	_, _ = hash.Write(fileID)
+	return hash.Sum(nil)[:5]
+}
+
+func standardUserEntry(key []byte) []byte {
+	return rc4Bytes(key, standardPasswordPadding)
+}
+
+func padPassword(password string) []byte {
+	result := make([]byte, 32)
+	length := copy(result, []byte(password))
+	if length < len(result) {
+		copy(result[length:], standardPasswordPadding[:len(result)-length])
+	}
+	return result
+}
+
+func cryptObject(data, fileKey []byte, objectNumber, generation int) []byte {
+	hash := md5.New()
+	_, _ = hash.Write(fileKey)
+	_, _ = hash.Write([]byte{byte(objectNumber), byte(objectNumber >> 8), byte(objectNumber >> 16), byte(generation), byte(generation >> 8)})
+	digest := hash.Sum(nil)
+	keyLength := len(fileKey) + 5
+	if keyLength > 16 {
+		keyLength = 16
+	}
+	return rc4Bytes(digest[:keyLength], data)
+}
+
+func rc4Bytes(key, data []byte) []byte {
+	cipher, err := rc4.NewCipher(key)
+	if err != nil {
+		panic(err)
+	}
+	output := make([]byte, len(data))
+	cipher.XORKeyStream(output, data)
+	return output
+}
+
+func serializePDF(objects []string, trailerExtra string) []byte {
+	var output bytes.Buffer
+	output.WriteString("%PDF-1.7\n")
+	offsets := make([]int, len(objects)+1)
+	for index, object := range objects {
+		offsets[index+1] = output.Len()
+		fmt.Fprintf(&output, "%d 0 obj\n%s\nendobj\n", index+1, object)
+	}
+	xref := output.Len()
+	fmt.Fprintf(&output, "xref\n0 %d\n", len(offsets))
+	output.WriteString("0000000000 65535 f \n")
+	for _, offset := range offsets[1:] {
+		fmt.Fprintf(&output, "%010d 00000 n \n", offset)
+	}
+	fmt.Fprintf(&output, "trailer\n<< /Size %d /Root 1 0 R%s >>\nstartxref\n%d\n%%%%EOF\n", len(offsets), trailerExtra, xref)
+	return output.Bytes()
+}
+
+func pdfStream(content []byte) string {
+	return fmt.Sprintf("<< /Length %d >>\nstream\n%sendstream", len(content), content)
+}
+
+func utf16BEHex(text string) string {
+	var encoded strings.Builder
+	for _, unit := range utf16.Encode([]rune(text)) {
+		fmt.Fprintf(&encoded, "%04X", unit)
+	}
+	return encoded.String()
+}
+
+func toUnicodeCMap(lines []string) string {
+	units := make(map[uint16]struct{})
+	for _, line := range lines {
+		for _, unit := range utf16.Encode([]rune(line)) {
+			units[unit] = struct{}{}
+		}
+	}
+	ordered := make([]int, 0, len(units))
+	for unit := range units {
+		ordered = append(ordered, int(unit))
+	}
+	sort.Ints(ordered)
+	var cmap strings.Builder
+	cmap.WriteString("/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n")
+	cmap.WriteString("/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n")
+	cmap.WriteString("/CMapName /MindWeaverQualification-UCS def\n/CMapType 2 def\n")
+	cmap.WriteString("1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n")
+	fmt.Fprintf(&cmap, "%d beginbfchar\n", len(ordered))
+	for _, unit := range ordered {
+		fmt.Fprintf(&cmap, "<%04X> <%04X>\n", unit, unit)
+	}
+	cmap.WriteString("endbfchar\nendcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n")
+	return cmap.String()
+}
+
+func moduleRoot(t *testing.T) string {
+	t.Helper()
+	current, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for depth := 0; depth < 8; depth++ {
+		module, readErr := os.ReadFile(filepath.Join(current, "go.mod"))
+		if readErr == nil && bytes.Contains(module, []byte("module github.com/mt-hub8/MindWeaver/v2")) {
+			return current
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		current = parent
+	}
+	t.Fatal("locate v2 module root")
+	return ""
+}
+
+func goTool(t *testing.T) string {
+	t.Helper()
+	if configured := strings.TrimSpace(os.Getenv("MW_GO")); configured != "" {
+		absolute, err := filepath.Abs(configured)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return absolute
+	}
+	name := "go"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	path := filepath.Join(runtime.GOROOT(), "bin", name)
+	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+		t.Fatal("qualification Go tool is unavailable")
+	}
+	return path
+}
+
+func buildPackage(t *testing.T, packagePath, baseName string) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		baseName += ".exe"
+	}
+	output := filepath.Join(t.TempDir(), baseName)
+	command := exec.Command(goTool(t), "build", "-trimpath", "-buildvcs=false", "-o", output, packagePath)
+	command.Dir = moduleRoot(t)
+	command.Env = hermeticEnvironment(runtime.GOOS, runtime.GOARCH)
+	if buildOutput, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("build %s: %v\n%s", packagePath, err, buildOutput)
+	}
+	return output
+}
+
+func hermeticEnvironment(goos, goarch string) []string {
+	overrides := map[string]string{
+		"CGO_ENABLED": "0", "GOARCH": goarch, "GOOS": goos,
+		"GOFLAGS": "-mod=readonly -buildvcs=false", "GOPROXY": "off", "GOSUMDB": "off",
+		"GOTOOLCHAIN": "local", "GOWORK": "off",
+	}
+	environment := make([]string, 0, len(os.Environ())+len(overrides))
+	for _, entry := range os.Environ() {
+		key, _, found := strings.Cut(entry, "=")
+		if found {
+			if _, replaced := overrides[strings.ToUpper(key)]; replaced {
+				continue
+			}
+		}
+		environment = append(environment, entry)
+	}
+	for key, value := range overrides {
+		environment = append(environment, key+"="+value)
+	}
+	return environment
+}
+
+func writeFile(t *testing.T, directory, name string, data []byte) string {
+	t.Helper()
+	path := filepath.Join(directory, name)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func waitForFile(t *testing.T, path string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := os.Lstat(path); err == nil {
+			return
+		} else if !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("qualification helper did not start")
+}
+
+func digest(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func assertFileSHA256(t *testing.T, path, want string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := digest(data); got != want {
+		t.Fatalf("license evidence %s SHA256 = %s, want %s", filepath.Base(path), got, want)
+	}
+}

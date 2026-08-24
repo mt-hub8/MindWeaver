@@ -142,6 +142,7 @@ func TestWindowsAMD64PDFDependencyGraph(t *testing.T) {
 	)
 	assertGraphExcludes(t, mainGraph,
 		modulePath+"/internal/pdfextract/parser",
+		modulePath+"/qualification/pdf/unigbspike",
 		"github.com/ledongthuc/pdf",
 	)
 
@@ -153,6 +154,7 @@ func TestWindowsAMD64PDFDependencyGraph(t *testing.T) {
 	)
 	assertGraphExcludes(t, helperGraph,
 		modulePath+"/internal/pdfextract/client",
+		modulePath+"/qualification/pdf/unigbspike",
 		"os/exec",
 		"golang.org/x/sys/windows",
 	)
