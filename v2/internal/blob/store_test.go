@@ -496,7 +496,9 @@ func TestRenameRaceWinnerIsVerifiedAndDirectorySynced(t *testing.T) {
 	prefixDir := filepath.Join(store.objectsDir, digest[:2])
 	renameLost := errors.New("injected rename race loss")
 
+	var formerStagingPath string
 	store.rename = func(oldPath, newPath string) error {
+		formerStagingPath = oldPath
 		if err := renamePublished(oldPath, newPath); err != nil {
 			return err
 		}
@@ -516,6 +518,12 @@ func TestRenameRaceWinnerIsVerifiedAndDirectorySynced(t *testing.T) {
 	}
 	if result.Created {
 		t.Fatal("simulated rename loser reported Created")
+	}
+	if formerStagingPath == "" {
+		t.Fatal("rename hook did not observe staging path")
+	}
+	if _, err := os.Lstat(formerStagingPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("former staging path after recovered rename error = %v, want not-exist", err)
 	}
 	if prefixSyncs != 1 {
 		t.Fatalf("rename loser object prefix syncs = %d, want 1", prefixSyncs)
