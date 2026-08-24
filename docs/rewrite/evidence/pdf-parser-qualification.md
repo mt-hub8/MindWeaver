@@ -2,8 +2,13 @@
 
 Status: **PASS for bounded text-layer PDF extraction; OCR remains out of CORE**
 
-This evidence was measured offline on Windows amd64 with Go 1.27.0. The
-replacement branch starts at `b379d40`; the production helper is built with
+This evidence was measured offline on Windows amd64 with Go 1.27.0. The original
+candidate `1a48ff12394196c784d1b94da1533649c6fa7ab7` started from `b379d40`.
+It was replayed on `7d831cf` as
+`95f051c25de0d414489534af1eac5cbb2a3b8674` and integrated as
+`2b088a28373b187e41cc5e36f7df33a140dd026d`. Both candidate patches have stable
+patch ID `5df113ed0b9a3a2cb966395348b919dd6ad635ee`; the nine retained file blob IDs
+and the deleted path are identical. The production helper is built with
 `CGO_ENABLED=0`, `GOPROXY=off`, `GOSUMDB=off`, and `GOWORK=off`.
 
 No corpus PDF was downloaded. Every test document is generated from the short
