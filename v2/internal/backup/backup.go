@@ -127,6 +127,7 @@ type publicationResult struct{ stagingConsumed bool }
 
 type publicationHooks struct {
 	afterOverlapCheck                         func(*destinationTarget) error
+	validateRestoreDestination                func(*retainedDirectory) error
 	afterCreateQualificationBeforeCommitment  func(string) error
 	beforeRestoreQualification                func(string) error
 	afterRestoreQualificationBeforeCommitment func(string) error
@@ -534,9 +535,6 @@ func (c *Coordinator) restore(
 		c.activeVault == nil || c.activeVault.root == nil || c.activeVault.identity.info == nil {
 		return errors.New("backup: coordinator is not initialized")
 	}
-	if ctx == nil {
-		return errors.New("backup: nil context")
-	}
 	if err := ensureStagingCleanupSupported(); err != nil {
 		return err
 	}
@@ -547,8 +545,39 @@ func (c *Coordinator) restore(
 	defer func() {
 		resultErr = errors.Join(resultErr, wrapBackupError(target.parent.Close(), "backup: close restore destination parent"))
 	}()
-	if err := c.rejectActiveVaultOverlap(target); err != nil {
-		return fmt.Errorf("backup: restore destination overlaps active Vault: %w", err)
+	return restoreToTarget(ctx, backupDirectory, target, nil, hooks, c.rejectActiveVaultOverlap)
+}
+
+type restoreDestinationGuard func(*destinationTarget) error
+
+func restoreToTarget(
+	ctx context.Context,
+	backupDirectory string,
+	target *destinationTarget,
+	summary *Summary,
+	hooks publicationHooks,
+	destinationGuard restoreDestinationGuard,
+) (resultErr error) {
+	if ctx == nil {
+		return failOperation(FailureInvalid, errors.New("backup: nil context"))
+	}
+	if err := ensureStagingCleanupSupported(); err != nil {
+		return err
+	}
+	if target == nil || target.parent == nil || target.parent.root == nil || target.finalName == "" {
+		return failOperation(FailureInvalid, errors.New("backup: restore destination capability is unavailable"))
+	}
+	validateDestination := validateRestoreDestinationParent
+	if hooks.validateRestoreDestination != nil {
+		validateDestination = hooks.validateRestoreDestination
+	}
+	if err := validateDestination(target.parent); err != nil {
+		return classifyRestoreDestinationValidation(err)
+	}
+	if destinationGuard != nil {
+		if err := destinationGuard(target); err != nil {
+			return failOperation(FailureInvalid, err)
+		}
 	}
 	if hooks.afterOverlapCheck != nil {
 		if err := hooks.afterOverlapCheck(target); err != nil {
@@ -557,33 +586,47 @@ func (c *Coordinator) restore(
 	}
 	backupRoot, err := openRetainedDirectory(backupDirectory)
 	if err != nil {
-		return fmt.Errorf("backup: open backup: %w", err)
+		return failOperation(FailureInvalid, fmt.Errorf("backup: open backup: %w", err))
 	}
 	defer func() {
 		resultErr = errors.Join(resultErr, wrapBackupError(backupRoot.Close(), "backup: close backup root"))
 	}()
 	if err := rejectRestoreDestinationOverlap(backupRoot, target); err != nil {
-		return fmt.Errorf("backup: restore destination overlap: %w", err)
+		return failOperation(FailureInvalid, fmt.Errorf("backup: restore destination overlap: %w", err))
 	}
 	if err := ensureDestinationAbsent(target); err != nil {
-		return fmt.Errorf("backup: restore destination: %w", err)
+		return failOperation(FailureInvalid, fmt.Errorf("backup: restore destination: %w", err))
 	}
 	manifest, err := readManifestRoot(ctx, backupRoot, manifestFileName)
 	if err != nil {
-		return err
+		return failOperation(FailureCorrupt, err)
 	}
 	if err := verifyBackupTreeRoot(ctx, backupRoot, manifest); err != nil {
-		return fmt.Errorf("backup: backup verification failed: %w", err)
+		return failOperation(FailureCorrupt, fmt.Errorf("backup: backup verification failed: %w", err))
+	}
+	if summary != nil {
+		totalBytes, err := manifestAggregateBytes(manifest)
+		if err != nil {
+			return failOperation(FailureCorrupt, err)
+		}
+		*summary = Summary{
+			SchemaVersion:     manifest.SchemaVersion,
+			ArtifactCount:     len(manifest.Blobs) + 1,
+			BlobCount:         len(manifest.Blobs),
+			VerifiedBytes:     totalBytes,
+			DatabaseBytes:     manifest.Database.Size,
+			ReferencedBlobIDs: len(manifest.Blobs),
+		}
 	}
 
 	staging, err := createStagingDirectory(target.parent, restorePrefix, target.finalName)
 	if err != nil {
-		return fmt.Errorf("backup: create restore staging directory: %w", err)
+		return failOperation(FailureInternal, fmt.Errorf("backup: create restore staging directory: %w", err))
 	}
 	publicationConsumed := false
 	defer func() {
 		if resultErr != nil && staging.receiptName != "" && !publicationConsumed {
-			resultErr = errors.Join(resultErr, ErrCleanupResidual)
+			resultErr = errors.Join(classifyPrincipalOperationError(resultErr), ErrCleanupResidual)
 		}
 	}()
 	defer func() { resultErr = errors.Join(resultErr, closeResidueLease(staging)) }()

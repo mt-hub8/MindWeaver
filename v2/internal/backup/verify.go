@@ -48,7 +48,7 @@ const (
 	FailureInternal             FailureClass = "internal"
 )
 
-// Summary contains only bounded aggregate facts proven by Verify.
+// Summary contains only bounded aggregate facts proven by Verify or Restore.
 type Summary struct {
 	SchemaVersion     int   `json:"schema_version"`
 	ArtifactCount     int   `json:"artifact_count"`
@@ -70,9 +70,9 @@ type Progress struct {
 	VerifiedBytes     int64 `json:"verified_bytes"`
 }
 
-// Outcome is always returned, including on failure. Failure is empty only
-// after the source, scratch qualification, source recheck, and scratch cleanup
-// all succeed.
+// Outcome is always returned, including on failure. Failure is empty only when
+// the selected operation and every required cleanup or publication proof
+// succeed.
 type Outcome struct {
 	Succeeded       bool         `json:"succeeded"`
 	Failure         FailureClass `json:"failure,omitempty"`
@@ -122,29 +122,42 @@ func (failure *classifiedFailure) Error() string {
 	return "backup operation failed: " + string(failure.class)
 }
 
+// Format keeps every common fmt rendering on the same path-free public
+// representation. The retained cause remains available only to errors.Is.
+func (failure *classifiedFailure) Format(state fmt.State, verb rune) {
+	message := failure.Error()
+	if verb == 'q' {
+		_, _ = fmt.Fprintf(state, "%q", message)
+		return
+	}
+	_, _ = io.WriteString(state, message)
+}
+
 // Is preserves cancellation and stable sentinel checks without exposing the
 // internal cause (which may contain a local path) through Unwrap or formatting.
 func (failure *classifiedFailure) Is(target error) bool {
 	return failure != nil && errors.Is(failure.cause, target)
 }
 
-type verifyFailure struct {
+type operationFailure struct {
 	class FailureClass
 	err   error
 }
 
-func (failure *verifyFailure) Error() string { return failure.err.Error() }
-func (failure *verifyFailure) Unwrap() error { return failure.err }
+func (failure *operationFailure) Error() string { return failure.err.Error() }
+func (failure *operationFailure) Unwrap() error { return failure.err }
 
-func failVerify(class FailureClass, err error) error {
+func failOperation(class FailureClass, err error) error {
 	if err == nil {
 		return nil
 	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		class = FailureCanceled
 	}
-	return &verifyFailure{class: class, err: err}
+	return &operationFailure{class: class, err: err}
 }
+
+func failVerify(class FailureClass, err error) error { return failOperation(class, err) }
 
 // Verify proves that source is an exact, self-consistent backup while keeping
 // source read-only for the entire call. Only the database is copied, with a
@@ -163,6 +176,21 @@ func (c *Coordinator) Verify(ctx context.Context, source string, options VerifyO
 	summary, err := verifyBackup(ctx, source, options, verifyHooks{}, func(scratch *retainedDirectory) error {
 		return rejectRetainedDirectoryOverlap(c.activeVault, scratch, ErrActiveVaultOverlap)
 	})
+	return outcomeFromResult(summary, err)
+}
+
+// VerifyStandalone verifies a backup without requiring an active Vault,
+// database, or blob store. The source remains read-only. ScratchParent is
+// retained and independently proven fixed-local before any temporary write;
+// source/scratch overlap is rejected by the shared verification kernel.
+func VerifyStandalone(ctx context.Context, source string, options VerifyOptions) (Outcome, error) {
+	summary, err := verifyBackup(ctx, source, options, verifyHooks{}, func(*retainedDirectory) error {
+		return nil
+	})
+	return outcomeFromResult(summary, err)
+}
+
+func outcomeFromResult(summary Summary, err error) (Outcome, error) {
 	outcome := Outcome{Summary: summary}
 	if err == nil {
 		outcome.Succeeded = true
@@ -419,7 +447,7 @@ func verifyBackup(
 	cleanupPending := true
 	defer func() {
 		if cleanupPending {
-			resultErr = classifyPrincipalVerifyError(resultErr)
+			resultErr = classifyPrincipalOperationError(resultErr)
 			resultErr = errors.Join(resultErr, cleanupVerifyStaging(staging, scratchParent))
 		}
 	}()
@@ -807,11 +835,11 @@ func emitVerifyProgress(callback func(Progress), progress Progress) (err error) 
 	return nil
 }
 
-func classifyPrincipalVerifyError(err error) error {
+func classifyPrincipalOperationError(err error) error {
 	if err == nil {
 		return nil
 	}
-	var explicit *verifyFailure
+	var explicit *operationFailure
 	if errors.As(err, &explicit) || errors.Is(err, ErrCleanupResidual) ||
 		errors.Is(err, ErrPublicationUncertain) || errors.Is(err, ErrUnsupportedPlatform) {
 		return err
@@ -889,7 +917,7 @@ func classifyBackupFailure(err error) FailureClass {
 	if err == nil {
 		return ""
 	}
-	var explicit *verifyFailure
+	var explicit *operationFailure
 	if errors.As(err, &explicit) {
 		return explicit.class
 	}

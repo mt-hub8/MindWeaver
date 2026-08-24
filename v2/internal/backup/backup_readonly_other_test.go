@@ -66,11 +66,25 @@ func TestNonWindowsMutatingBackupPathsFailBeforeFilesystemWrites(t *testing.T) {
 	if !errors.Is(err, ErrUnsupportedPlatform) || outcome.Failure != FailureUnsupported {
 		t.Fatalf("non-Windows Verify = %+v, %v", outcome, err)
 	}
+	standaloneOutcome, err := VerifyStandalone(
+		t.Context(), filepath.Join(root, "missing-backup"), VerifyOptions{ScratchParent: verifyScratch},
+	)
+	if !errors.Is(err, ErrUnsupportedPlatform) || standaloneOutcome.Failure != FailureUnsupported {
+		t.Fatalf("non-Windows standalone Verify = %+v, %v", standaloneOutcome, err)
+	}
 	if entries, err := os.ReadDir(verifyScratch); err != nil || len(entries) != 0 {
 		t.Fatalf("non-Windows Verify wrote scratch: %v entries, %v", len(entries), err)
 	}
 	cleanup, err := coordinator.CleanupVerifyScratch(t.Context(), verifyScratch, 1)
 	if !errors.Is(err, ErrUnsupportedPlatform) || cleanup != (ScratchCleanupSummary{}) {
 		t.Fatalf("non-Windows scratch cleanup = %+v, %v", cleanup, err)
+	}
+	standaloneRestore := filepath.Join(root, "standalone-must-not-restore")
+	recovery, err := NewCleanMachineRecovery(standaloneRestore)
+	if recovery != nil || !errors.Is(err, ErrUnsupportedPlatform) {
+		t.Fatalf("non-Windows clean-machine recovery = %#v, %v", recovery, err)
+	}
+	if _, err := os.Lstat(standaloneRestore); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("non-Windows clean-machine constructor wrote destination: %v", err)
 	}
 }
