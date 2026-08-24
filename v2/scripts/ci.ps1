@@ -40,6 +40,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'go vet failed' }
     & $Go build -trimpath -o (Join-Path $mwBuildRoot 'mindweaver.exe') ./cmd/mindweaver
     if ($LASTEXITCODE -ne 0) { throw 'go build failed' }
+    & $Go build -trimpath -o (Join-Path $mwBuildRoot 'mindweaver-pdf.exe') ./cmd/mindweaver-pdf
+    if ($LASTEXITCODE -ne 0) { throw 'PDF helper build failed' }
 } finally {
     Pop-Location
     $mwResolvedBuild = (Resolve-Path -LiteralPath $mwBuildRoot).Path

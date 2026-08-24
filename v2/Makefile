@@ -13,3 +13,4 @@ test:
 
 build:
 	GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOFLAGS='-mod=readonly -buildvcs=false' "$(GO)" build ./cmd/mindweaver
+	GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOFLAGS='-mod=readonly -buildvcs=false' "$(GO)" build ./cmd/mindweaver-pdf
