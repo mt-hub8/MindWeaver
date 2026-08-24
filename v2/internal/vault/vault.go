@@ -66,9 +66,11 @@ type Vault struct {
 }
 
 // ValidateExistingDirectory resolves an external directory and applies the
-// same full ancestor, symlink, junction/reparse-point, and final-handle checks
-// used for a Vault root. Backup and restore use it without acquiring a Vault
-// ownership lock on the backup location.
+// ancestor, symlink, junction/reparse-point, and final-handle identity checks
+// used at the Vault boundary. It deliberately does not apply the active
+// writable Vault's fixed-NTFS/media policy: removable, remote, or sync-backed
+// locations may be read-only import sources or capability-checked backup
+// destinations. It does not acquire a Vault ownership lock.
 func ValidateExistingDirectory(path string) (string, error) {
 	if strings.TrimSpace(path) == "" || strings.ContainsRune(path, '\x00') {
 		return "", fmt.Errorf("%w: directory must not be empty", ErrUnsafePath)

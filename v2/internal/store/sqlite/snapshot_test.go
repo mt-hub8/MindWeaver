@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -43,8 +44,23 @@ func TestBackupSnapshotPublishesExactlyOnceWithoutReplacing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(private) != 0 {
-		t.Fatalf("private snapshot artifacts remain: %v", private)
+	if len(private) > 4 {
+		t.Fatalf("concurrent loser left an unbounded private artifact set: %v", private)
+	}
+	published, err := os.Stat(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var privateBytes int64
+	for _, path := range private {
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			t.Fatalf("private artifact is not a direct regular file: %s, %v", path, err)
+		}
+		privateBytes += info.Size()
+	}
+	if privateBytes > 4*(published.Size()+(1<<20)) {
+		t.Fatalf("concurrent loser private bytes = %d, published bytes = %d", privateBytes, published.Size())
 	}
 }
 
@@ -64,6 +80,50 @@ func TestBackupSnapshotPreservesExistingDestination(t *testing.T) {
 	}
 	if string(got) != string(want) {
 		t.Fatalf("existing destination changed: %q", got)
+	}
+}
+
+func TestSnapshotSyncFailureNeverDeletesPublishedNameOrReplacement(t *testing.T) {
+	parent := t.TempDir()
+	destination := filepath.Join(parent, "published.sqlite3")
+	if err := os.WriteFile(destination, []byte("replacement must survive"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	injected := errors.New("injected parent sync failure")
+	err := finishSnapshotPublicationWithSync(parent, destination, func(string) error { return injected })
+	if !errors.Is(err, ErrSnapshotPublicationUncertain) || !errors.Is(err, injected) {
+		t.Fatalf("snapshot sync error = %v", err)
+	}
+	data, err := os.ReadFile(destination)
+	if err != nil || string(data) != "replacement must survive" {
+		t.Fatalf("published replacement changed: %q, %v", data, err)
+	}
+}
+
+func TestReferencedBlobIDsUsesCallerBoundAndSentinelRow(t *testing.T) {
+	store := newTestStore(t, newFakeClock(testTime))
+	for index := 1; index <= 3; index++ {
+		params := testDocumentUpload(
+			fmt.Sprintf("bounded-reference-%d", index),
+			fmt.Sprintf("%x", index),
+			fmt.Sprintf("bounded-document-%d", index),
+			fmt.Sprintf("bounded-revision-%d", index),
+			fmt.Sprintf("bounded-job-%d", index),
+		)
+		params.SourceBlobID = "sha256:" + fmt.Sprintf("%064x", index)
+		if _, _, err := store.CreateDocumentUpload(t.Context(), params); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.ReferencedBlobIDs(t.Context(), 2); err == nil || !strings.Contains(err.Error(), "exceeds limit 2") {
+		t.Fatalf("bounded enumeration error = %v", err)
+	}
+	references, err := store.ReferencedBlobIDs(t.Context(), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(references) != 3 {
+		t.Fatalf("bounded enumeration returned %d references", len(references))
 	}
 }
 

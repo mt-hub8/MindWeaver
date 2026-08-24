@@ -67,8 +67,9 @@ func InspectSchemaVersion(ctx context.Context, path string) (int, error) {
 }
 
 // BackupSnapshot writes a transactionally consistent standalone SQLite image
-// using SQLite's online Backup API. destination must not exist. On any reported
-// failure the incomplete destination and its private sidecars are removed.
+// using SQLite's online Backup API. destination must not exist. A failure after
+// private-file creation may retain private artifacts in the caller-owned parent;
+// callers that need automatic recovery must place it inside an owned directory.
 func (s *Store) BackupSnapshot(ctx context.Context, destination string) (resultErr error) {
 	if s == nil || s.db == nil {
 		return errors.New("sqlite: store is not open")
@@ -99,13 +100,9 @@ func (s *Store) BackupSnapshot(ctx context.Context, destination string) (resultE
 	}
 	privatePath := privateFile.Name()
 	privateOpen := true
-	published := false
 	defer func() {
 		if privateOpen {
 			resultErr = errors.Join(resultErr, wrapIf(privateFile.Close(), "sqlite: close private snapshot"))
-		}
-		if !published {
-			resultErr = errors.Join(resultErr, cleanupSnapshotArtifacts(privatePath))
 		}
 	}()
 	if err := privateFile.Chmod(0o600); err != nil {
@@ -181,21 +178,7 @@ func (s *Store) BackupSnapshot(ctx context.Context, destination string) (resultE
 	if err := publishSnapshot(privatePath, abs, parent); err != nil {
 		return fmt.Errorf("sqlite: publish completed snapshot: %w", err)
 	}
-	published = true
 	return nil
-}
-
-func cleanupSnapshotArtifacts(path string) error {
-	var failures []error
-	for _, artifact := range []string{path, path + "-wal", path + "-shm", path + "-journal"} {
-		if err := os.Remove(artifact); err != nil && !errors.Is(err, os.ErrNotExist) {
-			failures = append(failures, fmt.Errorf("sqlite: remove private snapshot artifact %s: %w", filepath.Base(artifact), err))
-		}
-	}
-	if err := syncSnapshotParent(filepath.Dir(path)); err != nil {
-		failures = append(failures, fmt.Errorf("sqlite: sync snapshot parent after cleanup: %w", err))
-	}
-	return errors.Join(failures...)
 }
 
 // SchemaVersion returns the highest applied migration after validating that
@@ -215,26 +198,35 @@ func (s *Store) SchemaVersion(ctx context.Context) (int, error) {
 	return version, nil
 }
 
-// ReferencedBlobIDs enumerates source objects from this database image. A
-// backup must call it on the snapshot Store, never on the live Store.
-func (s *Store) ReferencedBlobIDs(ctx context.Context) ([]string, error) {
+// ReferencedBlobIDs enumerates at most maxResults source objects from this
+// database image. The SQL reads one sentinel row beyond the product bound so a
+// caller cannot allocate an unbounded slice before discovering oversize input.
+// A backup must call it on the snapshot Store, never on the live Store.
+func (s *Store) ReferencedBlobIDs(ctx context.Context, maxResults int) ([]string, error) {
+	if maxResults < 0 || maxResults == int(^uint(0)>>1) {
+		return nil, errors.New("sqlite: referenced blob limit is invalid")
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT DISTINCT source_blob_id
 		FROM document_revisions
 		WHERE source_blob_id IS NOT NULL
 		ORDER BY source_blob_id
-	`)
+		LIMIT ?
+	`, maxResults+1)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: enumerate referenced blobs: %w", err)
 	}
 	defer rows.Close()
-	result := make([]string, 0)
+	result := make([]string, 0, min(maxResults+1, 1024))
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
 			return nil, fmt.Errorf("sqlite: scan referenced blob: %w", err)
 		}
 		result = append(result, id)
+		if len(result) > maxResults {
+			return nil, fmt.Errorf("sqlite: referenced blob count exceeds limit %d", maxResults)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("sqlite: iterate referenced blobs: %w", err)
