@@ -9,10 +9,10 @@ import (
 	"sync"
 )
 
-// ObjectPin prevents permanent deletion while a caller is turning published
-// bytes into a durable database reference, or while a backup is copying the
-// set of objects named by its database snapshot. Pins are process local; the
-// Vault's exclusive OS lock is what makes that sufficient for this product.
+// ObjectPin prevents permanent deletion while a caller prepares, publishes,
+// and turns bytes into a durable database reference, or while a backup is
+// copying the set of objects named by its database snapshot. Pins are process
+// local; the Vault's exclusive OS lock is what makes that sufficient here.
 type ObjectPin struct {
 	store *Store
 	once  sync.Once

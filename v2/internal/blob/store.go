@@ -33,6 +33,9 @@ var (
 	ErrTooLarge = errors.New("blob exceeds size limit")
 	// ErrCorrupt reports an object whose bytes do not match its content address.
 	ErrCorrupt = errors.New("blob content does not match its ID")
+	// ErrPreparedFinalized reports an attempt to publish staging bytes that were
+	// already published or aborted. A PreparedImport is a one-shot capability.
+	ErrPreparedFinalized = errors.New("prepared blob is already finalized")
 )
 
 // BlobID is a canonical, path-independent content address. Its string form is
@@ -66,6 +69,55 @@ type ImportResult struct {
 	ID      BlobID
 	Size    int64
 	Created bool
+}
+
+type preparedState uint8
+
+const (
+	preparedOpen preparedState = iota
+	preparedPublished
+	preparedAborted
+)
+
+// PreparedImport owns one bounded, synced staging file. Its bytes are not
+// visible through Open until Publish succeeds. Callers must either Publish or
+// Abort it. The unexported implementation prevents copying or rebinding the
+// capability; its state transition is concurrency-safe and deliberately
+// one-shot.
+type PreparedImport interface {
+	ID() BlobID
+	Size() int64
+	Publish(context.Context) (ImportResult, error)
+	Abort() error
+}
+
+type preparedImport struct {
+	mu          sync.Mutex
+	store       *Store
+	file        *os.File
+	stagingPath string
+	stagingName string
+	digest      string
+	id          BlobID
+	size        int64
+	state       preparedState
+	active      bool
+}
+
+// ID returns the immutable content address computed by Prepare.
+func (prepared *preparedImport) ID() BlobID {
+	if prepared == nil {
+		return ""
+	}
+	return prepared.id
+}
+
+// Size returns the exact number of bytes durably written by Prepare.
+func (prepared *preparedImport) Size() int64 {
+	if prepared == nil {
+		return 0
+	}
+	return prepared.size
 }
 
 // Store is safe for concurrent use within a process.
@@ -193,55 +245,46 @@ func runtimeForRoot(root string) (*storeRuntime, error) {
 	return shared, nil
 }
 
-// Import copies at most maxBytes from src into the store. The hash is computed
-// while streaming; input is never buffered in full. An exact maxBytes payload is
-// accepted, including an empty payload when maxBytes is zero.
+// Prepare copies at most maxBytes into a private staging file. The hash is
+// computed while streaming; input is never buffered in full. The file and its
+// directory entry are synced before this method returns, but the content address
+// is not yet visible through Open.
 //
 // Cancellation is checked before and after every source read, but it cannot
-// interrupt a source whose Read method itself blocks forever. On an error before
-// publication no object is published. An error returned after the atomic rename
-// may leave an unreferenced object at its content address; retrying the same bytes
-// is the recovery path.
-func (s *Store) Import(ctx context.Context, src io.Reader, maxBytes int64) (ImportResult, error) {
+// interrupt a source whose Read method itself blocks forever. Every failure is
+// followed by a best-effort Abort and reports any cleanup failure as well.
+func (s *Store) Prepare(ctx context.Context, src io.Reader, maxBytes int64) (PreparedImport, error) {
 	if s == nil {
-		return ImportResult{}, errors.New("nil blob store")
+		return nil, errors.New("nil blob store")
 	}
 	if ctx == nil {
-		return ImportResult{}, errors.New("nil context")
+		return nil, errors.New("nil context")
 	}
 	if src == nil {
-		return ImportResult{}, errors.New("nil blob source")
+		return nil, errors.New("nil blob source")
 	}
 	if maxBytes < 0 {
-		return ImportResult{}, ErrInvalidLimit
+		return nil, ErrInvalidLimit
 	}
 	if err := ctx.Err(); err != nil {
-		return ImportResult{}, err
+		return nil, err
 	}
 
 	temp, err := os.CreateTemp(s.stagingDir, stagingFilePrefix)
 	if err != nil {
-		return ImportResult{}, fmt.Errorf("create blob staging file: %w", err)
+		return nil, fmt.Errorf("create blob staging file: %w", err)
 	}
-	stagingPath := temp.Name()
-	stagingName := filepath.Base(stagingPath)
-	s.markActive(stagingName)
-	defer s.unmarkActive(stagingName)
-
-	closed := false
-	abort := func(cause error) (ImportResult, error) {
-		var cleanupErr error
-		if !closed {
-			cleanupErr = temp.Close()
-			closed = true
-		}
-		if removeErr := os.Remove(stagingPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove blob staging file: %w", removeErr))
-		}
-		if syncErr := s.syncDir(s.stagingDir); syncErr != nil {
-			cleanupErr = errors.Join(cleanupErr, fmt.Errorf("sync blob staging directory: %w", syncErr))
-		}
-		return ImportResult{}, errors.Join(cause, cleanupErr)
+	prepared := &preparedImport{
+		store:       s,
+		file:        temp,
+		stagingPath: temp.Name(),
+		stagingName: filepath.Base(temp.Name()),
+		state:       preparedOpen,
+		active:      true,
+	}
+	s.markActive(prepared.stagingName)
+	abort := func(cause error) (PreparedImport, error) {
+		return nil, errors.Join(cause, prepared.Abort())
 	}
 
 	hasher := sha256.New()
@@ -256,28 +299,117 @@ func (s *Store) Import(ctx context.Context, src io.Reader, maxBytes int64) (Impo
 		return abort(fmt.Errorf("sync blob staging file: %w", err))
 	}
 	if err := temp.Close(); err != nil {
-		closed = true
+		prepared.file = nil
 		return abort(fmt.Errorf("close blob staging file: %w", err))
 	}
-	closed = true
+	prepared.file = nil
 	if err := ctx.Err(); err != nil {
 		return abort(err)
 	}
+	if err := s.syncDir(s.stagingDir); err != nil {
+		return abort(fmt.Errorf("sync blob staging directory: %w", err))
+	}
 
-	digest := hex.EncodeToString(hasher.Sum(nil))
-	id := BlobID(idPrefix + digest)
-	created, err := s.publish(stagingPath, digest, size)
+	prepared.digest = hex.EncodeToString(hasher.Sum(nil))
+	prepared.id = BlobID(idPrefix + prepared.digest)
+	prepared.size = size
+	return prepared, nil
+}
+
+// Publish makes the prepared bytes visible at their content address using the
+// Store's no-replace publication and deduplication path. Exactly one call may
+// attempt publication. A returned error can follow the atomic rename, so a
+// database-backed caller must queue the address for reference-aware GC first.
+func (prepared *preparedImport) Publish(ctx context.Context) (ImportResult, error) {
+	if prepared == nil || prepared.store == nil {
+		return ImportResult{}, errors.New("nil prepared blob")
+	}
+	if ctx == nil {
+		return ImportResult{}, errors.New("nil context")
+	}
+	prepared.mu.Lock()
+	defer prepared.mu.Unlock()
+	if prepared.state != preparedOpen {
+		return ImportResult{}, ErrPreparedFinalized
+	}
+	if err := ctx.Err(); err != nil {
+		return ImportResult{}, err
+	}
+
+	created, publishErr := prepared.store.publish(prepared.stagingPath, prepared.digest, prepared.size)
+	prepared.state = preparedPublished
+	cleanupErr := prepared.cleanupStagingLocked()
+	prepared.finishActiveLocked()
+	if err := errors.Join(publishErr, cleanupErr); err != nil {
+		return ImportResult{}, err
+	}
+	return ImportResult{ID: prepared.id, Size: prepared.size, Created: created}, nil
+}
+
+// Abort permanently revokes publication and removes only this capability's
+// staging file. It is safe and idempotent, including after Publish; it never
+// removes a published content-addressed object.
+func (prepared *preparedImport) Abort() error {
+	if prepared == nil {
+		return nil
+	}
+	prepared.mu.Lock()
+	defer prepared.mu.Unlock()
+	if prepared.store == nil {
+		return nil
+	}
+	if prepared.state == preparedOpen {
+		prepared.state = preparedAborted
+	}
+	err := prepared.cleanupStagingLocked()
+	prepared.finishActiveLocked()
+	return err
+}
+
+func (prepared *preparedImport) cleanupStagingLocked() error {
+	if prepared.stagingPath == "" {
+		return nil
+	}
+	var cleanupErr error
+	if prepared.file != nil {
+		cleanupErr = prepared.file.Close()
+		prepared.file = nil
+	}
+	if removeErr := os.Remove(prepared.stagingPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove blob staging file: %w", removeErr))
+	}
+	if syncErr := prepared.store.syncDir(prepared.store.stagingDir); syncErr != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("sync blob staging directory: %w", syncErr))
+	}
+	if cleanupErr == nil {
+		prepared.stagingPath = ""
+	}
+	return cleanupErr
+}
+
+func (prepared *preparedImport) finishActiveLocked() {
+	if !prepared.active {
+		return
+	}
+	prepared.store.unmarkActive(prepared.stagingName)
+	prepared.active = false
+}
+
+// Import prepares and immediately publishes a blob through the same one-shot
+// implementation used by transactional callers. An exact maxBytes payload is
+// accepted, including an empty payload when maxBytes is zero. An error returned
+// after the atomic rename may still leave an unreferenced object; callers that
+// need crash-closed reference creation must queue a GC candidate before Publish.
+func (s *Store) Import(ctx context.Context, src io.Reader, maxBytes int64) (ImportResult, error) {
+	prepared, err := s.Prepare(ctx, src, maxBytes)
 	if err != nil {
-		return abort(err)
+		return ImportResult{}, err
 	}
-
-	// A deduplicated import still owns its staging file. A created import has
-	// already renamed it, so Remove simply observes os.ErrNotExist.
-	if _, cleanupErr := abort(nil); cleanupErr != nil {
-		return ImportResult{}, cleanupErr
+	result, err := prepared.Publish(ctx)
+	if err != nil {
+		return ImportResult{}, errors.Join(err, prepared.Abort())
 	}
-
-	return ImportResult{ID: id, Size: size, Created: created}, nil
+	return result, nil
 }
 
 // Open opens an immutable object for reading. The caller must close the file.
@@ -420,9 +552,6 @@ func (s *Store) publish(stagingPath, digest string, size int64) (bool, error) {
 	if err := s.syncDir(prefixDir); err != nil {
 		return false, fmt.Errorf("sync blob object directory: %w", err)
 	}
-	// Failure to persist removal of the staging name is not a loss of the
-	// destination object. CleanupStaging can remove a resurrected stale name.
-	_ = s.syncDir(s.stagingDir)
 	return true, nil
 }
 

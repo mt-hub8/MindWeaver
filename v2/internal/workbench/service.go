@@ -103,11 +103,12 @@ type UploadResult struct {
 	Created    bool
 }
 
-// Upload streams a source to immutable storage first, then atomically creates
-// the document, inactive revision, job, and idempotency relation. A database
-// failure can leave only an unreferenced content-addressed blob, never a partial
-// document graph.
-func (s *Service) Upload(ctx context.Context, request UploadRequest) (UploadResult, error) {
+// Upload prepares an immutable source, durably queues its address for
+// reference-aware GC, publishes it, and then atomically creates the document,
+// inactive revision, job, and idempotency relation. The reference transaction
+// removes the queue entry. Every interrupted boundary therefore leaves either
+// staging bytes or a durable candidate that startup cleanup can resolve.
+func (s *Service) Upload(ctx context.Context, request UploadRequest) (result UploadResult, resultErr error) {
 	if ctx == nil {
 		return UploadResult{}, errors.New("workbench: nil context")
 	}
@@ -143,10 +144,16 @@ func (s *Service) Upload(ctx context.Context, request UploadRequest) (UploadResu
 	}
 	defer objectPin.Release()
 
-	imported, err := s.blobs.Import(ctx, request.Source, ingest.MaxTextSourceBytes)
+	prepared, err := s.blobs.Prepare(ctx, request.Source, ingest.MaxTextSourceBytes)
 	if err != nil {
-		return UploadResult{}, fmt.Errorf("workbench: import source: %w", err)
+		return UploadResult{}, fmt.Errorf("workbench: prepare source: %w", err)
 	}
+	defer func() {
+		if abortErr := prepared.Abort(); abortErr != nil {
+			result = UploadResult{}
+			resultErr = errors.Join(resultErr, fmt.Errorf("workbench: clean source staging: %w", abortErr))
+		}
+	}()
 	mediaType := "text/plain"
 	switch format {
 	case ingest.FormatMarkdown:
@@ -154,7 +161,7 @@ func (s *Service) Upload(ctx context.Context, request UploadRequest) (UploadResu
 	case ingest.FormatPDF:
 		mediaType = "application/pdf"
 	}
-	requestHash, err := uploadRequestHash(title, filename, string(format), imported.ID.String(), imported.Size)
+	requestHash, err := uploadRequestHash(title, filename, string(format), prepared.ID().String(), prepared.Size())
 	if err != nil {
 		return UploadResult{}, err
 	}
@@ -179,6 +186,13 @@ func (s *Service) Upload(ctx context.Context, request UploadRequest) (UploadResu
 	if err != nil {
 		return UploadResult{}, fmt.Errorf("workbench: encode ingestion payload: %w", err)
 	}
+	if err := s.database.QueueBlobGCCandidate(ctx, prepared.ID().String()); err != nil {
+		return UploadResult{}, fmt.Errorf("workbench: queue source recovery: %w", err)
+	}
+	published, err := prepared.Publish(ctx)
+	if err != nil {
+		return UploadResult{}, fmt.Errorf("workbench: publish source: %w", err)
+	}
 
 	accepted, created, err := s.database.CreateDocumentUpload(ctx, store.CreateDocumentUploadParams{
 		IdempotencyKey: idempotencyKey,
@@ -188,8 +202,8 @@ func (s *Service) Upload(ctx context.Context, request UploadRequest) (UploadResu
 		JobID:          jobID,
 		Title:          title,
 		MediaType:      mediaType,
-		SourceBlobID:   imported.ID.String(),
-		SourceSize:     imported.Size,
+		SourceBlobID:   published.ID.String(),
+		SourceSize:     published.Size,
 		SourceFilename: filename,
 		SourceFormat:   string(format),
 		JobPayloadJSON: string(payload),
@@ -201,7 +215,7 @@ func (s *Service) Upload(ctx context.Context, request UploadRequest) (UploadResu
 		DocumentID: accepted.DocumentID,
 		RevisionID: accepted.RevisionID,
 		JobID:      accepted.JobID,
-		BlobID:     imported.ID.String(),
+		BlobID:     published.ID.String(),
 		Created:    created,
 	}, nil
 }

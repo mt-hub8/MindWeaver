@@ -180,20 +180,24 @@ func (s *Store) CreateDocumentUpload(ctx context.Context, params CreateDocumentU
 	var result DocumentUpload
 	created := false
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
-		var appliedHash string
+		var appliedHash, appliedSourceBlobID string
 		err := tx.QueryRowContext(ctx, `
-			SELECT request_hash, document_id, revision_id, job_id
+			SELECT request_hash, document_id, revision_id, job_id, source_blob_id
 			FROM document_ingestions
 			WHERE idempotency_key = ?
 		`, params.IdempotencyKey).Scan(
 			&appliedHash, &result.DocumentID, &result.RevisionID, &result.JobID,
+			&appliedSourceBlobID,
 		)
 		switch {
 		case err == nil:
 			if appliedHash != params.RequestHash {
 				return ErrIdempotencyConflict
 			}
-			return nil
+			if appliedSourceBlobID != params.SourceBlobID {
+				return fmt.Errorf("%w: idempotent upload source differs", ErrIngestionState)
+			}
+			return resolveBlobGCCandidateTx(ctx, tx, params.SourceBlobID)
 		case !errors.Is(err, sql.ErrNoRows):
 			return fmt.Errorf("sqlite: inspect document idempotency key: %w", err)
 		}
@@ -233,7 +237,7 @@ func (s *Store) CreateDocumentUpload(ctx context.Context, params CreateDocumentU
 		}
 		result = DocumentUpload{DocumentID: params.DocumentID, RevisionID: params.RevisionID, JobID: params.JobID}
 		created = true
-		return nil
+		return resolveBlobGCCandidateTx(ctx, tx, params.SourceBlobID)
 	})
 	if err != nil {
 		return DocumentUpload{}, false, err

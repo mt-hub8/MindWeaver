@@ -399,6 +399,30 @@ func (s *Store) ListDocumentPurgesPage(ctx context.Context, limit int, after *Do
 	return page, nil
 }
 
+// QueueBlobGCCandidate durably records one content address that must be
+// resolved against the live reference graph. The row is an idempotent address
+// queue entry, not evidence that a purge occurred or that deletion is safe.
+func (s *Store) QueueBlobGCCandidate(ctx context.Context, blobID string) error {
+	if ctx == nil {
+		return errors.New("sqlite: nil blob GC candidate context")
+	}
+	if !validBlobAddress(blobID) {
+		return errors.New("sqlite: invalid blob address")
+	}
+	return s.withTx(ctx, func(tx *sql.Tx) error {
+		now := s.nowMicros()
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO blob_gc_candidates(
+				blob_id, attempts, last_error_code, queued_at, updated_at
+			) VALUES (?, 0, NULL, ?, ?)
+			ON CONFLICT(blob_id) DO NOTHING
+		`, blobID, now, now); err != nil {
+			return fmt.Errorf("sqlite: queue blob GC candidate: %w", err)
+		}
+		return nil
+	})
+}
+
 // PendingBlobDeletes returns a bounded oldest-first retry page.
 func (s *Store) PendingBlobDeletes(ctx context.Context, limit int) ([]PendingBlobDelete, error) {
 	if limit < 1 || limit > 1000 {
@@ -434,20 +458,28 @@ func (s *Store) CompleteBlobDelete(ctx context.Context, blobID string) error {
 		return errors.New("sqlite: invalid blob address")
 	}
 	return s.withTx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM blob_gc_candidates WHERE blob_id = ?", blobID); err != nil {
-			return fmt.Errorf("sqlite: complete blob delete: %w", err)
-		}
-		if _, err := tx.ExecContext(ctx, `
-			DELETE FROM document_purges
-			WHERE NOT EXISTS (
-				SELECT 1 FROM document_purge_blobs AS b
-				WHERE b.document_id = document_purges.document_id
-			)
-		`); err != nil {
-			return fmt.Errorf("sqlite: complete document purge: %w", err)
-		}
-		return nil
+		return resolveBlobGCCandidateTx(ctx, tx, blobID)
 	})
+}
+
+// resolveBlobGCCandidateTx closes the shared address queue entry after either
+// object deletion or proof of a live reference. Deleting the candidate also
+// cascades any purge binding for that address, so empty current purge records
+// must be removed in the same transaction.
+func resolveBlobGCCandidateTx(ctx context.Context, tx *sql.Tx, blobID string) error {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM blob_gc_candidates WHERE blob_id = ?", blobID); err != nil {
+		return fmt.Errorf("sqlite: resolve blob GC candidate: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM document_purges
+		WHERE NOT EXISTS (
+			SELECT 1 FROM document_purge_blobs AS b
+			WHERE b.document_id = document_purges.document_id
+		)
+	`); err != nil {
+		return fmt.Errorf("sqlite: close resolved document purge: %w", err)
+	}
+	return nil
 }
 
 // RecordBlobDeleteFailure keeps a safe, bounded diagnostic for retry.

@@ -43,6 +43,145 @@ func TestImportDeduplicatesContent(t *testing.T) {
 	assertStagingEmpty(t, store)
 }
 
+func TestPrepareRemainsPrivateUntilPublishOrAbort(t *testing.T) {
+	store := newTestStore(t)
+	content := []byte("prepared bytes are not an object yet")
+	prepared, err := store.Prepare(t.Context(), bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	wantID := fmt.Sprintf("sha256:%x", sha256.Sum256(content))
+	if prepared.ID().String() != wantID || prepared.Size() != int64(len(content)) {
+		t.Fatalf("prepared identity = %q/%d, want %q/%d", prepared.ID(), prepared.Size(), wantID, len(content))
+	}
+	if _, err := store.Open(prepared.ID()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Open prepared bytes error = %v, want not-exist", err)
+	}
+	entries, err := os.ReadDir(store.stagingDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("prepared staging entries = %v, %v", entryNames(entries), err)
+	}
+	if err := prepared.Abort(); err != nil {
+		t.Fatalf("Abort: %v", err)
+	}
+	if err := prepared.Abort(); err != nil {
+		t.Fatalf("idempotent Abort: %v", err)
+	}
+	assertNoObjects(t, store)
+	assertStagingEmpty(t, store)
+	if _, err := prepared.Publish(t.Context()); !errors.Is(err, ErrPreparedFinalized) {
+		t.Fatalf("Publish after Abort error = %v, want ErrPreparedFinalized", err)
+	}
+}
+
+func TestPreparedPublishIsOneShotAndDeduplicates(t *testing.T) {
+	store := newTestStore(t)
+	content := []byte("one shot publication")
+	first, err := store.Prepare(t.Context(), bytes.NewReader(content), 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := first.Publish(t.Context())
+	if err != nil || !result.Created || result.ID != first.ID() || result.Size != first.Size() {
+		t.Fatalf("first Publish = %#v, %v", result, err)
+	}
+	if _, err := first.Publish(t.Context()); !errors.Is(err, ErrPreparedFinalized) {
+		t.Fatalf("duplicate Publish error = %v, want ErrPreparedFinalized", err)
+	}
+	if err := first.Abort(); err != nil {
+		t.Fatalf("Abort after Publish: %v", err)
+	}
+
+	second, err := store.Prepare(t.Context(), bytes.NewReader(content), 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deduplicated, err := second.Publish(t.Context())
+	if err != nil || deduplicated.Created || deduplicated.ID != result.ID {
+		t.Fatalf("deduplicated Publish = %#v, %v", deduplicated, err)
+	}
+	assertBlobContent(t, store, result.ID, content)
+	assertStagingEmpty(t, store)
+}
+
+func TestConcurrentPublishOnOnePreparationHasOneAttempt(t *testing.T) {
+	store := newTestStore(t)
+	content := []byte("serialized one-shot prepared object")
+	prepared, err := store.Prepare(t.Context(), bytes.NewReader(content), 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type outcome struct {
+		result ImportResult
+		err    error
+	}
+	start := make(chan struct{})
+	outcomes := make(chan outcome, 2)
+	for range 2 {
+		go func() {
+			<-start
+			result, err := prepared.Publish(context.Background())
+			outcomes <- outcome{result: result, err: err}
+		}()
+	}
+	close(start)
+	var successes, finalized int
+	for range 2 {
+		got := <-outcomes
+		switch {
+		case got.err == nil:
+			successes++
+		case errors.Is(got.err, ErrPreparedFinalized):
+			finalized++
+		default:
+			t.Fatalf("concurrent Publish error = %v", got.err)
+		}
+	}
+	if successes != 1 || finalized != 1 {
+		t.Fatalf("concurrent outcomes = success %d/finalized %d, want 1/1", successes, finalized)
+	}
+	assertBlobContent(t, store, prepared.ID(), content)
+	assertStagingEmpty(t, store)
+}
+
+func TestConcurrentAbortAndPublishConvergeToOneTerminalState(t *testing.T) {
+	store := newTestStore(t)
+	content := []byte("abort and publish share one terminal transition")
+	prepared, err := store.Prepare(t.Context(), bytes.NewReader(content), 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := make(chan struct{})
+	publishResult := make(chan error, 1)
+	abortResult := make(chan error, 1)
+	go func() {
+		<-start
+		_, err := prepared.Publish(context.Background())
+		publishResult <- err
+	}()
+	go func() {
+		<-start
+		abortResult <- prepared.Abort()
+	}()
+	close(start)
+	publishErr := <-publishResult
+	if err := <-abortResult; err != nil {
+		t.Fatalf("concurrent Abort: %v", err)
+	}
+	switch {
+	case publishErr == nil:
+		assertBlobContent(t, store, prepared.ID(), content)
+	case errors.Is(publishErr, ErrPreparedFinalized):
+		if _, err := store.Open(prepared.ID()); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("aborted concurrent object Open error = %v, want not-exist", err)
+		}
+	default:
+		t.Fatalf("concurrent Publish error = %v", publishErr)
+	}
+	assertStagingEmpty(t, store)
+}
+
 func TestImportAndOpenEmptyBlob(t *testing.T) {
 	store := newTestStore(t)
 	result, err := store.Import(context.Background(), bytes.NewReader(nil), 0)
@@ -511,6 +650,10 @@ func TestNilAndInvalidInputsFailClosed(t *testing.T) {
 	}{
 		{"empty root", func() error { _, err := OpenStore(""); return err }},
 		{"nil store import", func() error { _, err := nilStore.Import(context.Background(), bytes.NewReader(nil), 0); return err }},
+		{"nil store prepare", func() error { _, err := nilStore.Prepare(context.Background(), bytes.NewReader(nil), 0); return err }},
+		{"nil prepare context", func() error { _, err := store.Prepare(nil, bytes.NewReader(nil), 0); return err }},
+		{"nil prepare reader", func() error { _, err := store.Prepare(context.Background(), nil, 0); return err }},
+		{"negative prepare limit", func() error { _, err := store.Prepare(context.Background(), bytes.NewReader(nil), -1); return err }},
 		{"nil context import", func() error { _, err := store.Import(nil, bytes.NewReader(nil), 0); return err }},
 		{"nil reader", func() error { _, err := store.Import(context.Background(), nil, 0); return err }},
 		{"negative limit", func() error { _, err := store.Import(context.Background(), bytes.NewReader(nil), -1); return err }},
