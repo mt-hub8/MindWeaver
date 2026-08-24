@@ -2,7 +2,18 @@
 set -eu
 
 mw_module_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-mw_go=${MW_GO:-go}
+mw_go_input=${MW_GO:-go}
+case "$mw_go_input" in
+    */*) mw_go=$mw_go_input ;;
+    *) mw_go=$(command -v "$mw_go_input") ;;
+esac
+mw_go_dir=$(CDPATH= cd -- "$(dirname -- "$mw_go")" && pwd)
+mw_go="$mw_go_dir/$(basename -- "$mw_go")"
+if [ ! -f "$mw_go" ] || [ ! -x "$mw_go" ]; then
+    printf 'Go executable is not an executable regular file: %s\n' "$mw_go" >&2
+    exit 1
+fi
+export MW_GO="$mw_go"
 mw_go_dir=$(dirname -- "$mw_go")
 mw_gofmt="$mw_go_dir/gofmt"
 if [ ! -x "$mw_gofmt" ]; then

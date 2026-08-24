@@ -93,6 +93,9 @@ func TestPDFHelperProcess(t *testing.T) {
 	if os.Getenv("GO_WANT_PDF_HELPER") != "1" {
 		return
 	}
+	if mode := os.Getenv(pdfHelperTestModeEnv); mode != "" {
+		runPDFHelperTestMode(mode)
+	}
 	args := os.Args
 	for index, arg := range args {
 		if arg == "--" {

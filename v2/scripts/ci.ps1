@@ -6,10 +6,15 @@ param(
 $ErrorActionPreference = 'Stop'
 $mwModuleRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 if ([string]::IsNullOrWhiteSpace($Go)) {
-    $mwGoCommand = Get-Command go -ErrorAction Stop
-    $Go = $mwGoCommand.Source
+    $Go = 'go'
 }
-$Go = (Resolve-Path -LiteralPath $Go).Path
+$mwGoCommand = Get-Command -Name $Go -CommandType Application -ErrorAction Stop
+$Go = (Resolve-Path -LiteralPath $mwGoCommand.Source).Path
+$mwGoItem = Get-Item -LiteralPath $Go -Force
+if ($mwGoItem.PSIsContainer) {
+    throw "Go executable is not a regular file: $Go"
+}
+$env:MW_GO = $Go
 $mwGofmt = Join-Path (Split-Path -Parent $Go) 'gofmt.exe'
 if (-not (Test-Path -LiteralPath $mwGofmt)) {
     throw "gofmt was not found next to $Go"

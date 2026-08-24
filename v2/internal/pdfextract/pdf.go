@@ -33,12 +33,13 @@ const (
 )
 
 var (
-	ErrInvalidPDF      = errors.New("pdfextract: invalid text PDF")
-	ErrEncryptedPDF    = errors.New("pdfextract: encrypted PDF is not supported")
-	ErrResourceLimit   = errors.New("pdfextract: resource limit exceeded")
-	ErrHelperProtocol  = errors.New("pdfextract: invalid helper protocol")
-	ErrHelperFailed    = errors.New("pdfextract: helper failed")
-	ErrNoExtractedText = errors.New("pdfextract: PDF contains no extractable text")
+	ErrInvalidPDF        = errors.New("pdfextract: invalid text PDF")
+	ErrEncryptedPDF      = errors.New("pdfextract: encrypted PDF is not supported")
+	ErrResourceLimit     = errors.New("pdfextract: resource limit exceeded")
+	ErrHelperProtocol    = errors.New("pdfextract: invalid helper protocol")
+	ErrHelperFailed      = errors.New("pdfextract: helper failed")
+	ErrHelperUnavailable = errors.New("pdfextract: helper capability unavailable")
+	ErrNoExtractedText   = errors.New("pdfextract: PDF contains no extractable text")
 )
 
 // Result is the bounded, UTF-8 output returned by the isolated parser.
@@ -123,7 +124,9 @@ func (c *Client) Extract(ctx context.Context, sourcePath string) (Result, error)
 		if classified := classifyHelperExit(err); classified != nil {
 			return Result{}, classified
 		}
-		return Result{}, fmt.Errorf("%w: %s", ErrHelperFailed, safeDiagnostic(stderr.String()))
+		// Helper stderr is untrusted parser output. Keep it bounded at the process
+		// boundary, but never place it in an error that may reach diagnostics.
+		return Result{}, ErrHelperFailed
 	}
 	if stdout.overflow {
 		return Result{}, ErrResourceLimit
@@ -182,6 +185,12 @@ func RunHelper(args []string, output io.Writer) (err error) {
 	}()
 	if output == nil {
 		return errors.New("pdfextract: nil helper output")
+	}
+	if len(args) == 1 && args[0] == probeCommand {
+		if _, err := io.WriteString(output, probeResponse); err != nil {
+			return fmt.Errorf("pdfextract: write probe: %w", err)
+		}
+		return nil
 	}
 	if len(args) != 2 || args[0] != "-input" || strings.TrimSpace(args[1]) == "" {
 		return errors.New("usage: mindweaver-pdf -input <content-addressed-file>")
@@ -295,19 +304,6 @@ func readProtocolLine(reader *bufio.Reader) (string, error) {
 	return strings.TrimSuffix(line, "\n"), nil
 }
 
-func safeDiagnostic(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "helper exited without a diagnostic"
-	}
-	for _, character := range value {
-		if character < 0x20 && character != '\t' && character != '\n' && character != '\r' {
-			return "helper returned an invalid diagnostic"
-		}
-	}
-	return value
-}
-
 type limitedBuffer struct {
 	buffer   bytes.Buffer
 	limit    int
@@ -332,5 +328,4 @@ func (b *limitedBuffer) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-func (b *limitedBuffer) Bytes() []byte  { return b.buffer.Bytes() }
-func (b *limitedBuffer) String() string { return b.buffer.String() }
+func (b *limitedBuffer) Bytes() []byte { return b.buffer.Bytes() }
