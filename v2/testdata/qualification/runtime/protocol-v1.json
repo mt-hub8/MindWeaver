@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "default_repetitions": 3,
+  "maximum_repetitions": 10,
+  "cases": [
+    {
+      "case_code": "ANSWER_PROVIDER_RECEIVED_BEFORE_TERMINAL",
+      "checkpoint_code": "PROVIDER_REQUEST_RECEIVED_ANSWER_PENDING",
+      "final_code": "ANSWER_FAILED_OUTCOME_UNCERTAIN"
+    },
+    {
+      "case_code": "INGESTION_ACCEPTED_WHILE_WORKER_OCCUPIED",
+      "checkpoint_code": "BLOCKER_RUNNING_TARGET_QUEUED",
+      "final_code": "TARGET_SUCCEEDED_SEARCHABLE_NO_DUPLICATES"
+    }
+  ]
+}
