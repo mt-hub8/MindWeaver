@@ -1,9 +1,10 @@
 // Package vault owns the on-disk boundary of one local Mind Weaver workspace.
 //
-// Open resolves one explicit root, creates its fixed data and blobs directories,
-// and holds an operating-system lock until Close. The lock file is only a stable
-// object on which the OS lock is held: its contents and existence are not state,
-// and it is deliberately not removed on Close.
+// Open resolves one explicit root, retains both a directory identity handle and
+// an os.Root, creates its fixed data and blobs directories relative to that
+// root, and holds an operating-system lock until Close. The lock file is only a
+// stable object on which the OS byte-range lock is held: its contents and
+// existence are not state, and it is deliberately not removed on Close.
 //
 // Newly created directories request mode 0700. Existing directory permissions
 // are inspected for type but are not silently changed. Unix applies the creation
@@ -12,10 +13,9 @@
 // directory-fsync contract, so Open makes no stronger permission or
 // crash-durability claim there.
 //
-// The Vault is intended for a local filesystem. These checks prevent accidental
-// aliasing and link traversal, but they are not a sandbox against a hostile
-// process running as the same account and renaming directories between checks;
-// network filesystem locking and flush behavior are also outside this contract.
+// Windows writable Vaults are limited to fixed, non-hotplug local NTFS volumes
+// outside Cloud Files sync roots. Unix retains a conservative local fallback;
+// filesystem and locking guarantees still depend on the mounted filesystem.
 package vault
 
 import (
@@ -35,6 +35,15 @@ var (
 	// ErrUnsafePath means a Vault path is empty, aliases another path, traverses
 	// a symbolic link/reparse point, or is not the expected filesystem type.
 	ErrUnsafePath = errors.New("unsafe vault path")
+	// ErrRemoteUnsupported means the active Vault resolves through a UNC,
+	// mapped, or otherwise remote drive.
+	ErrRemoteUnsupported = errors.New("remote Vaults are unsupported")
+	// ErrCloudSyncUnsupported means the active Vault is inside a registered
+	// Windows Cloud Files sync root, or that classification could not be proven.
+	ErrCloudSyncUnsupported = errors.New("cloud-synced Vaults are unsupported")
+	// ErrUnsafeMedia means the active Vault is not on fixed, non-hotplug local
+	// NTFS media, or that media classification could not be proven.
+	ErrUnsafeMedia = errors.New("Vault media is unsupported")
 )
 
 // Paths are absolute, cleaned paths created and validated by Open. Blobs is an
@@ -49,8 +58,11 @@ type Paths struct {
 type Vault struct {
 	paths Paths
 
-	mu       sync.Mutex
-	lockFile *os.File
+	rootFile  *os.File
+	root      *os.Root
+	lockFile  *os.File
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // ValidateExistingDirectory resolves an external directory and applies the
@@ -86,41 +98,49 @@ func Open(root string) (*Vault, error) {
 		return nil, fmt.Errorf("resolve vault root: %w", err)
 	}
 	absRoot = filepath.Clean(absRoot)
+	if err := validateActiveVaultLocation(absRoot); err != nil {
+		return nil, err
+	}
 	if err := ensureRoot(absRoot); err != nil {
 		return nil, err
 	}
 
-	lockPath := filepath.Join(absRoot, lockFileName)
-	lockFile, err := acquireProcessLock(lockPath)
+	rootFile, displayRoot, err := openVaultRootHandle(absRoot)
 	if err != nil {
 		return nil, err
 	}
-	closeOnError := true
-	defer func() {
-		if closeOnError {
-			_ = lockFile.Close()
-		}
-	}()
+	rootDir, err := os.OpenRoot(absRoot)
+	if err != nil {
+		return nil, cleanupOpen(nil, nil, rootFile, fmt.Errorf("open retained Vault root: %w", err))
+	}
+	probe, err := rootDir.Open(".")
+	if err != nil {
+		return nil, cleanupOpen(nil, rootDir, rootFile, fmt.Errorf("probe retained Vault root: %w", err))
+	}
+	identityErr := verifyRootIdentity(rootFile, probe)
+	probeCloseErr := probe.Close()
+	if err := errors.Join(identityErr, probeCloseErr); err != nil {
+		return nil, cleanupOpen(nil, rootDir, rootFile, fmt.Errorf("verify retained Vault root identity: %w", err))
+	}
+
+	lockFile, err := acquireProcessLock(rootFile)
+	if err != nil {
+		return nil, cleanupOpen(nil, rootDir, rootFile, err)
+	}
 
 	paths := Paths{
-		Root:  absRoot,
-		Data:  filepath.Join(absRoot, "data"),
-		Blobs: filepath.Join(absRoot, "blobs"),
+		Root:  displayRoot,
+		Data:  filepath.Join(displayRoot, "data"),
+		Blobs: filepath.Join(displayRoot, "blobs"),
 	}
-	for _, directory := range []struct {
-		name string
-		path string
-	}{
-		{name: "data", path: paths.Data},
-		{name: "blobs", path: paths.Blobs},
-	} {
-		if err := ensureFixedDirectory(directory.path, absRoot); err != nil {
-			return nil, fmt.Errorf("prepare vault %s directory: %w", directory.name, err)
+	for _, name := range []string{"data", "blobs"} {
+		if err := ensureFixedDirectory(rootDir, rootFile, name); err != nil {
+			return nil, cleanupOpen(lockFile, rootDir, rootFile,
+				fmt.Errorf("prepare vault %s directory: %w", name, err))
 		}
 	}
 
-	closeOnError = false
-	return &Vault{paths: paths, lockFile: lockFile}, nil
+	return &Vault{paths: paths, rootFile: rootFile, root: rootDir, lockFile: lockFile}, nil
 }
 
 // Paths returns a copy of the absolute paths owned by v.
@@ -131,24 +151,47 @@ func (v *Vault) Paths() Paths {
 	return v.paths
 }
 
-// Close releases the operating-system ownership lock. It is safe to call more
-// than once. The fixed lock file remains in place and carries no persistent
-// ownership information.
+// Close releases the operating-system ownership lock and both retained root
+// handles. It is safe to call more than once. The fixed lock file remains in
+// place and carries no persistent ownership information.
 func (v *Vault) Close() error {
 	if v == nil {
 		return nil
 	}
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	if v.lockFile == nil {
-		return nil
+	v.closeOnce.Do(func() {
+		var lockErr, rootErr, rootFileErr error
+		if v.lockFile != nil {
+			if err := releaseProcessLock(v.lockFile); err != nil {
+				lockErr = fmt.Errorf("release Vault ownership lock: %w", err)
+			}
+		}
+		if v.root != nil {
+			if err := v.root.Close(); err != nil {
+				rootErr = fmt.Errorf("close retained os.Root: %w", err)
+			}
+		}
+		if v.rootFile != nil {
+			if err := v.rootFile.Close(); err != nil {
+				rootFileErr = fmt.Errorf("close retained Vault root handle: %w", err)
+			}
+		}
+		v.closeErr = errors.Join(lockErr, rootErr, rootFileErr)
+	})
+	return v.closeErr
+}
+
+func cleanupOpen(lockFile *os.File, root *os.Root, rootFile *os.File, cause error) error {
+	var lockErr, rootErr, rootFileErr error
+	if lockFile != nil {
+		lockErr = releaseProcessLock(lockFile)
 	}
-	file := v.lockFile
-	v.lockFile = nil
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("release vault lock: %w", err)
+	if root != nil {
+		rootErr = root.Close()
 	}
-	return nil
+	if rootFile != nil {
+		rootFileErr = rootFile.Close()
+	}
+	return errors.Join(cause, lockErr, rootErr, rootFileErr)
 }
 
 func ensureRoot(root string) error {
@@ -183,16 +226,34 @@ func ensureRoot(root string) error {
 	return nil
 }
 
-func ensureFixedDirectory(path, parent string) error {
-	if err := validateRealDirectory(parent); err != nil {
+func ensureFixedDirectory(root *os.Root, rootFile *os.File, name string) error {
+	created := false
+	info, err := root.Lstat(name)
+	switch {
+	case err == nil:
+	case errors.Is(err, os.ErrNotExist):
+		if err := root.Mkdir(name, 0o700); err == nil {
+			created = true
+		} else if !errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("create directory: %w", err)
+		}
+		info, err = root.Lstat(name)
+		if err != nil {
+			return fmt.Errorf("inspect created directory: %w", err)
+		}
+	case err != nil:
+		return fmt.Errorf("inspect directory: %w", err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%w: %q is not a real directory", ErrUnsafePath, name)
+	}
+	if err := validateControlledDirectory(rootFile, name); err != nil {
 		return err
 	}
-	if err := os.Mkdir(path, 0o700); err == nil {
-		if err := syncCreatedDirectory(parent); err != nil {
-			return err
+	if created {
+		if err := syncRetainedDirectory(rootFile); err != nil {
+			return fmt.Errorf("sync Vault root after creating %q: %w", name, err)
 		}
-	} else if !errors.Is(err, os.ErrExist) {
-		return fmt.Errorf("create directory: %w", err)
 	}
-	return validateRealDirectory(path)
+	return nil
 }

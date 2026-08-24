@@ -35,8 +35,72 @@ func validateRealDirectory(path string) error {
 	return nil
 }
 
-func acquireProcessLock(path string) (*os.File, error) {
-	fd, err := unix.Open(path, unix.O_RDWR|unix.O_CREAT|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0o600)
+func validateActiveVaultLocation(string) error { return nil }
+
+func openVaultRootHandle(path string) (*os.File, string, error) {
+	if err := validateRealDirectory(path); err != nil {
+		return nil, "", err
+	}
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, "", fmt.Errorf("open Vault root identity handle: %w", err)
+	}
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil {
+		_ = unix.Close(fd)
+		return nil, "", fmt.Errorf("inspect Vault root identity handle: %w", err)
+	}
+	if stat.Mode&unix.S_IFMT != unix.S_IFDIR {
+		_ = unix.Close(fd)
+		return nil, "", fmt.Errorf("%w: Vault root handle is not a directory", ErrUnsafePath)
+	}
+	file := os.NewFile(uintptr(fd), path)
+	if file == nil {
+		_ = unix.Close(fd)
+		return nil, "", errors.New("adopt Vault root identity handle")
+	}
+	return file, path, nil
+}
+
+func verifyRootIdentity(retained, probe *os.File) error {
+	retainedInfo, err := retained.Stat()
+	if err != nil {
+		return fmt.Errorf("inspect retained root handle: %w", err)
+	}
+	probeInfo, err := probe.Stat()
+	if err != nil {
+		return fmt.Errorf("inspect os.Root handle: %w", err)
+	}
+	if !retainedInfo.IsDir() || !probeInfo.IsDir() || !os.SameFile(retainedInfo, probeInfo) {
+		return fmt.Errorf("%w: retained root handles identify different directories", ErrUnsafePath)
+	}
+	return nil
+}
+
+func validateControlledDirectory(rootFile *os.File, name string) error {
+	fd, err := unix.Openat(int(rootFile.Fd()), name,
+		unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		if errors.Is(err, unix.ELOOP) {
+			return fmt.Errorf("%w: %q is a symbolic link", ErrUnsafePath, name)
+		}
+		return fmt.Errorf("%w: open controlled directory %q: %v", ErrUnsafePath, name, err)
+	}
+	var stat unix.Stat_t
+	statErr := unix.Fstat(fd, &stat)
+	closeErr := unix.Close(fd)
+	if err := errors.Join(statErr, closeErr); err != nil {
+		return fmt.Errorf("inspect controlled directory %q: %w", name, err)
+	}
+	if stat.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return fmt.Errorf("%w: %q is not a directory", ErrUnsafePath, name)
+	}
+	return nil
+}
+
+func acquireProcessLock(rootFile *os.File) (*os.File, error) {
+	fd, err := unix.Openat(int(rootFile.Fd()), lockFileName,
+		unix.O_RDWR|unix.O_CREAT|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0o600)
 	if err != nil {
 		if errors.Is(err, unix.ELOOP) {
 			return nil, fmt.Errorf("%w: lock file is a symbolic link", ErrUnsafePath)
@@ -59,13 +123,23 @@ func acquireProcessLock(path string) (*os.File, error) {
 	}
 	if err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
-			return nil, fmt.Errorf("%w: %s", ErrLocked, filepath.Base(filepath.Dir(path)))
+			return nil, ErrLocked
 		}
 		return nil, fmt.Errorf("acquire vault lock: %w", err)
 	}
 
 	closeOnError = false
-	return os.NewFile(uintptr(fd), path), nil
+	return os.NewFile(uintptr(fd), lockFileName), nil
+}
+
+func releaseProcessLock(file *os.File) error {
+	unlockErr := unix.Flock(int(file.Fd()), unix.LOCK_UN)
+	closeErr := file.Close()
+	return errors.Join(unlockErr, closeErr)
+}
+
+func syncRetainedDirectory(file *os.File) error {
+	return file.Sync()
 }
 
 func syncCreatedDirectory(path string) error {

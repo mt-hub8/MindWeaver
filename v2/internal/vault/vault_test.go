@@ -93,6 +93,95 @@ func TestCloseReleasesLockAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestRetainsRootHandlesAndUsesSharedLockHandleUntilClose(t *testing.T) {
+	rootPath := filepath.Join(t.TempDir(), "retained-root-vault")
+	v, err := Open(rootPath)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	retained := v.rootFile
+	root := v.root
+	lock := v.lockFile
+	if retained == nil || root == nil || lock == nil {
+		t.Fatalf("retained resources = rootFile:%v os.Root:%v lock:%v", retained, root, lock)
+	}
+	probe, err := root.Open(".")
+	if err != nil {
+		t.Fatalf("open through retained os.Root: %v", err)
+	}
+	if err := verifyRootIdentity(retained, probe); err != nil {
+		_ = probe.Close()
+		t.Fatalf("retained root identity: %v", err)
+	}
+	if err := probe.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	observer, err := os.OpenFile(filepath.Join(v.Paths().Root, lockFileName), os.O_RDWR, 0)
+	if err != nil {
+		t.Fatalf("lock file was not opened with shared access: %v", err)
+	}
+	if _, err := Open(rootPath); !errors.Is(err, ErrLocked) {
+		_ = observer.Close()
+		t.Fatalf("second Open error = %v, want byte-range ErrLocked", err)
+	}
+	if err := observer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := v.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := retained.Stat(); err == nil {
+		t.Fatal("retained root file handle remained open after Close")
+	}
+	if _, err := root.Stat("."); err == nil {
+		t.Fatal("retained os.Root remained open after Close")
+	}
+	if _, err := lock.Stat(); err == nil {
+		t.Fatal("dedicated lock handle remained open after Close")
+	}
+}
+
+func TestCloseContinuesAfterLockReleaseFailure(t *testing.T) {
+	v, err := Open(filepath.Join(t.TempDir(), "close-error-vault"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	retained := v.rootFile
+	root := v.root
+	if err := v.lockFile.Close(); err != nil {
+		t.Fatalf("preclose lock handle: %v", err)
+	}
+	firstErr := v.Close()
+	if firstErr == nil {
+		t.Fatal("Close hid the lock release failure")
+	}
+	if _, err := retained.Stat(); err == nil {
+		t.Fatal("Close stopped before closing the retained root handle")
+	}
+	if _, err := root.Stat("."); err == nil {
+		t.Fatal("Close stopped before closing os.Root")
+	}
+	if secondErr := v.Close(); secondErr == nil || secondErr.Error() != firstErr.Error() {
+		t.Fatalf("second Close error = %v, want stable %v", secondErr, firstErr)
+	}
+}
+
+func TestForcedProcessTerminationReleasesVaultLock(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "forced-exit-vault")
+	holder := startHolder(t, root)
+	holder.kill(t)
+
+	reopened, err := Open(root)
+	if err != nil {
+		t.Fatalf("Open after forced holder termination: %v", err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatalf("Close reopened Vault: %v", err)
+	}
+}
+
 func TestDifferentVaultsCanBeOpenTogether(t *testing.T) {
 	base := t.TempDir()
 	first := startHolder(t, filepath.Join(base, "first"))
@@ -275,5 +364,15 @@ func (h *helperProcess) exit(t *testing.T) {
 	if err := h.command.Wait(); err != nil {
 		t.Fatalf("wait helper: %v", err)
 	}
+	h.done = true
+}
+
+func (h *helperProcess) kill(t *testing.T) {
+	t.Helper()
+	if err := h.command.Process.Kill(); err != nil {
+		t.Fatalf("kill helper: %v", err)
+	}
+	_ = h.stdin.Close()
+	_ = h.command.Wait()
 	h.done = true
 }
