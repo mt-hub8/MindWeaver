@@ -53,6 +53,15 @@ func newTestStore(t *testing.T, clock *fakeClock) *Store {
 	return openTestStore(t, filepath.Join(t.TempDir(), "mindweaver.db"), clock)
 }
 
+func expectedMigrationCount(t testing.TB) int {
+	t.Helper()
+	items, err := readMigrations()
+	if err != nil {
+		t.Fatalf("read embedded migrations: %v", err)
+	}
+	return len(items)
+}
+
 func enqueueJob(t *testing.T, ctx context.Context, store *Store, id string, attempts int, runAfter time.Time) {
 	t.Helper()
 	if err := store.Enqueue(ctx, EnqueueParams{

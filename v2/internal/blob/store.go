@@ -74,10 +74,28 @@ type Store struct {
 	stagingDir string
 	syncDir    func(string) error
 	rename     func(string, string) error
+	runtime    *storeRuntime
+}
 
+// storeRuntime is shared by every Store opened on the same physical root in
+// this process. Store permits multiple handles for dedupe tests and helpers, so
+// publication/cleanup/deletion coordination cannot live on one pointer.
+type storeRuntime struct {
+	maintenance objectBarrier
 	objectLocks [256]sync.Mutex
 	activeMu    sync.RWMutex
 	active      map[string]struct{}
+}
+
+var runtimeRegistry struct {
+	sync.Mutex
+	entries []runtimeEntry
+}
+
+type runtimeEntry struct {
+	canonical string
+	rootInfo  os.FileInfo
+	runtime   *storeRuntime
 }
 
 // OpenStore opens or creates the blob directories rooted at root. The root must
@@ -121,14 +139,58 @@ func openStore(root string, syncDir func(string) error, rename func(string, stri
 			return nil, err
 		}
 	}
+	shared, err := runtimeForRoot(absRoot)
+	if err != nil {
+		return nil, err
+	}
 
 	return &Store{
 		objectsDir: algorithmDir,
 		stagingDir: stagingDir,
 		syncDir:    syncDir,
 		rename:     rename,
-		active:     make(map[string]struct{}),
+		runtime:    shared,
 	}, nil
+}
+
+func runtimeForRoot(root string) (*storeRuntime, error) {
+	info, err := os.Stat(root)
+	if err != nil {
+		return nil, fmt.Errorf("inspect blob store identity: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, errors.New("blob store identity is not a directory")
+	}
+	canonical, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve blob store identity: %w", err)
+	}
+	canonical, err = filepath.Abs(canonical)
+	if err != nil {
+		return nil, fmt.Errorf("resolve absolute blob store identity: %w", err)
+	}
+	canonical = filepath.Clean(canonical)
+	runtimeRegistry.Lock()
+	defer runtimeRegistry.Unlock()
+	for index := 0; index < len(runtimeRegistry.entries); {
+		entry := runtimeRegistry.entries[index]
+		// Compare physical identities only while the entry's original name still
+		// resolves to that identity. This supports aliases, case-sensitive Windows
+		// directories, and safe eviction after remove/recreate without relying on
+		// lower-cased path strings.
+		current, statErr := os.Stat(entry.canonical)
+		if statErr != nil || !os.SameFile(current, entry.rootInfo) {
+			runtimeRegistry.entries = append(runtimeRegistry.entries[:index], runtimeRegistry.entries[index+1:]...)
+			continue
+		}
+		if os.SameFile(info, current) {
+			return entry.runtime, nil
+		}
+		index++
+	}
+	shared := &storeRuntime{maintenance: newObjectBarrier(), active: make(map[string]struct{})}
+	runtimeRegistry.entries = append(runtimeRegistry.entries, runtimeEntry{canonical: canonical, rootInfo: info, runtime: shared})
+	return shared, nil
 }
 
 // Import copies at most maxBytes from src into the store. The hash is computed
@@ -375,25 +437,25 @@ func (s *Store) objectPath(id BlobID) (path string, digest string, err error) {
 
 func (s *Store) lockForDigest(digest string) *sync.Mutex {
 	first, _ := hex.DecodeString(digest[:2])
-	return &s.objectLocks[int(first[0])]
+	return &s.runtime.objectLocks[int(first[0])]
 }
 
 func (s *Store) markActive(name string) {
-	s.activeMu.Lock()
-	s.active[name] = struct{}{}
-	s.activeMu.Unlock()
+	s.runtime.activeMu.Lock()
+	s.runtime.active[name] = struct{}{}
+	s.runtime.activeMu.Unlock()
 }
 
 func (s *Store) unmarkActive(name string) {
-	s.activeMu.Lock()
-	delete(s.active, name)
-	s.activeMu.Unlock()
+	s.runtime.activeMu.Lock()
+	delete(s.runtime.active, name)
+	s.runtime.activeMu.Unlock()
 }
 
 func (s *Store) isActive(name string) bool {
-	s.activeMu.RLock()
-	_, ok := s.active[name]
-	s.activeMu.RUnlock()
+	s.runtime.activeMu.RLock()
+	_, ok := s.runtime.active[name]
+	s.runtime.activeMu.RUnlock()
 	return ok
 }
 

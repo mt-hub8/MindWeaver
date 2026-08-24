@@ -11,6 +11,7 @@ import (
 )
 
 func TestMigrationLedgerRejectsChecksumGapAndNewerVersion(t *testing.T) {
+	futureVersion := expectedMigrationCount(t) + 1
 	for _, test := range []struct {
 		name    string
 		mutate  string
@@ -28,10 +29,10 @@ func TestMigrationLedgerRejectsChecksumGapAndNewerVersion(t *testing.T) {
 		},
 		{
 			name: "newer",
-			mutate: `
+			mutate: fmt.Sprintf(`
 				INSERT INTO schema_migrations(version, name, checksum, applied_at)
-				VALUES (4, 'future', 'future', '2026-08-24T00:00:00Z')
-			`,
+				VALUES (%d, 'future', 'future', '2026-08-24T00:00:00Z')
+			`, futureVersion),
 			wantErr: "newer than supported",
 		},
 	} {
@@ -67,7 +68,7 @@ func TestFailedMigrationRollsBackSchemaAndLedger(t *testing.T) {
 	`
 	digest := sha256.Sum256([]byte(sqlText))
 	err := store.applyMigration(ctx, migration{
-		version: 4, name: "broken", checksum: fmt.Sprintf("%x", digest), sql: sqlText,
+		version: expectedMigrationCount(t) + 1, name: "broken", checksum: fmt.Sprintf("%x", digest), sql: sqlText,
 	})
 	if err == nil {
 		t.Fatal("broken migration unexpectedly succeeded")
@@ -83,8 +84,8 @@ func TestFailedMigrationRollsBackSchemaAndLedger(t *testing.T) {
 	}
 	var ledgerRows int
 	if err := store.db.QueryRowContext(ctx, `
-		SELECT count(*) FROM schema_migrations WHERE version = 4
-	`).Scan(&ledgerRows); err != nil {
+		SELECT count(*) FROM schema_migrations WHERE version = ?
+	`, expectedMigrationCount(t)+1).Scan(&ledgerRows); err != nil {
 		t.Fatalf("inspect migration ledger: %v", err)
 	}
 	if ledgerRows != 0 {

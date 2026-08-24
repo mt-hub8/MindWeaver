@@ -53,6 +53,25 @@ type Vault struct {
 	lockFile *os.File
 }
 
+// ValidateExistingDirectory resolves an external directory and applies the
+// same full ancestor, symlink, junction/reparse-point, and final-handle checks
+// used for a Vault root. Backup and restore use it without acquiring a Vault
+// ownership lock on the backup location.
+func ValidateExistingDirectory(path string) (string, error) {
+	if strings.TrimSpace(path) == "" || strings.ContainsRune(path, '\x00') {
+		return "", fmt.Errorf("%w: directory must not be empty", ErrUnsafePath)
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("%w: resolve directory: %v", ErrUnsafePath, err)
+	}
+	abs = filepath.Clean(abs)
+	if err := validateRealDirectory(abs); err != nil {
+		return "", err
+	}
+	return abs, nil
+}
+
 // Open opens one explicit Vault root. The root itself may be created when its
 // parent already exists; missing ancestor chains are rejected. Existing roots,
 // fixed directories, and their ancestors must be real directories rather than

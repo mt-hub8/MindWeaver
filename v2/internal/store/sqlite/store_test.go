@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,17 +19,22 @@ func TestOpenReopenAndEveryPhysicalConnectionPragmas(t *testing.T) {
 	clock := newFakeClock(testTime)
 	path := filepath.Join(t.TempDir(), "mind weaver #1%.db")
 	store := openTestStore(t, path, clock)
+	assertDatabaseIdentityHandle(t, path, store)
 	assertPhysicalConnectionPragmas(t, ctx, store, 4)
 
 	var migrationCount int
 	if err := store.db.QueryRowContext(ctx, "SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrationCount != 3 {
-		t.Fatalf("migration count = %d, want 3", migrationCount)
+	if migrationCount != expectedMigrationCount(t) {
+		t.Fatalf("migration count = %d, want %d", migrationCount, expectedMigrationCount(t))
 	}
+	identityFile := store.databaseFile
 	if err := store.Close(); err != nil {
 		t.Fatalf("close before reopen: %v", err)
+	}
+	if _, err := identityFile.Stat(); err == nil {
+		t.Fatal("Close retained an open database identity handle")
 	}
 	reopened, err := Open(ctx, path, Options{BusyTimeout: time.Second, Connections: 4})
 	if err != nil {
@@ -36,7 +42,104 @@ func TestOpenReopenAndEveryPhysicalConnectionPragmas(t *testing.T) {
 	}
 	reopened.now = clock.Now
 	t.Cleanup(func() { _ = reopened.Close() })
+	assertDatabaseIdentityHandle(t, path, reopened)
 	assertPhysicalConnectionPragmas(t, ctx, reopened, 4)
+}
+
+func TestOpenRejectsDatabaseLeafAliases(t *testing.T) {
+	t.Run("hard link", func(t *testing.T) {
+		root := t.TempDir()
+		original := filepath.Join(root, "vault-a.sqlite3")
+		first, err := Open(t.Context(), original, Options{BusyTimeout: time.Second})
+		if err != nil {
+			t.Fatalf("open original database: %v", err)
+		}
+		t.Cleanup(func() { _ = first.Close() })
+
+		alias := filepath.Join(root, "vault-b.sqlite3")
+		if err := os.Link(original, alias); err != nil {
+			t.Skipf("hard links unavailable: %v", err)
+		}
+		for _, path := range []string{alias, original} {
+			aliased, err := Open(t.Context(), path, Options{BusyTimeout: time.Second})
+			if err == nil {
+				_ = aliased.Close()
+				t.Fatalf("opened multiply-linked database through %q", filepath.Base(path))
+			}
+			if !strings.Contains(err.Error(), "hard links") {
+				t.Fatalf("Open(%q) error = %v, want hard-link rejection", filepath.Base(path), err)
+			}
+		}
+		if err := first.db.PingContext(t.Context()); err != nil {
+			t.Fatalf("original store failed after alias rejection: %v", err)
+		}
+	})
+
+	t.Run("symbolic link", func(t *testing.T) {
+		root := t.TempDir()
+		original := filepath.Join(root, "vault-a.sqlite3")
+		first, err := Open(t.Context(), original, Options{BusyTimeout: time.Second})
+		if err != nil {
+			t.Fatalf("open original database: %v", err)
+		}
+		t.Cleanup(func() { _ = first.Close() })
+
+		alias := filepath.Join(root, "vault-b.sqlite3")
+		if err := os.Symlink(original, alias); err != nil {
+			t.Skipf("symbolic links unavailable: %v", err)
+		}
+		aliased, err := Open(t.Context(), alias, Options{BusyTimeout: time.Second})
+		if err == nil {
+			_ = aliased.Close()
+			t.Fatal("opened database through symbolic-link leaf")
+		}
+		if !strings.Contains(err.Error(), "database leaf") {
+			t.Fatalf("symlink Open error = %v, want database-leaf rejection", err)
+		}
+		if err := first.db.PingContext(t.Context()); err != nil {
+			t.Fatalf("original store failed after alias rejection: %v", err)
+		}
+	})
+}
+
+func TestOpenCreatesAndReopensLongDatabasePath(t *testing.T) {
+	directory := t.TempDir()
+	for len(filepath.Join(directory, DatabaseFileName)) <= 300 {
+		directory = filepath.Join(directory, "long-database-path-component")
+		if err := os.Mkdir(directory, 0o700); err != nil {
+			t.Fatalf("create long-path component: %v", err)
+		}
+	}
+	path := filepath.Join(directory, DatabaseFileName)
+	store, err := Open(t.Context(), path, Options{BusyTimeout: time.Second})
+	if err != nil {
+		t.Fatalf("create long-path database: %v", err)
+	}
+	assertDatabaseIdentityHandle(t, path, store)
+	if err := store.Close(); err != nil {
+		t.Fatalf("close long-path database: %v", err)
+	}
+	reopened, err := Open(t.Context(), path, Options{BusyTimeout: time.Second})
+	if err != nil {
+		t.Fatalf("reopen long-path database: %v", err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	assertDatabaseIdentityHandle(t, path, reopened)
+}
+
+func TestOpenRejectsNonRegularDatabaseLeaf(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "directory.sqlite3")
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(t.Context(), path, Options{BusyTimeout: time.Second})
+	if err == nil {
+		_ = store.Close()
+		t.Fatal("opened a directory as the SQLite database")
+	}
+	if !strings.Contains(err.Error(), "not a regular") {
+		t.Fatalf("directory Open error = %v, want regular-file rejection", err)
+	}
 }
 
 func TestConnectionPragmaReadbackRejectsMisconfiguration(t *testing.T) {
@@ -256,6 +359,24 @@ func assertPhysicalConnectionPragmas(t *testing.T, ctx context.Context, store *S
 			t.Fatalf("connection %d pragmas = fk:%d journal:%s sync:%d busy:%d trusted:%d recursive:%d",
 				index, foreignKeys, journal, synchronous, busy, trusted, recursive)
 		}
+	}
+}
+
+func assertDatabaseIdentityHandle(t *testing.T, path string, store *Store) {
+	t.Helper()
+	if store.databaseFile == nil {
+		t.Fatal("Store did not retain its database identity handle")
+	}
+	pathInfo, err := os.Lstat(path)
+	if err != nil {
+		t.Fatalf("inspect database path: %v", err)
+	}
+	handleInfo, err := store.databaseFile.Stat()
+	if err != nil {
+		t.Fatalf("inspect database identity handle: %v", err)
+	}
+	if !pathInfo.Mode().IsRegular() || !handleInfo.Mode().IsRegular() || !os.SameFile(pathInfo, handleInfo) {
+		t.Fatalf("database path and retained handle do not identify one regular file")
 	}
 }
 

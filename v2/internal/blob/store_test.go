@@ -318,23 +318,35 @@ func TestConcurrentDedupeFlushesBeforeWinnerReturns(t *testing.T) {
 		}
 		return syncDirectory(path)
 	}
-	result, err := loser.Import(context.Background(), bytes.NewReader(content), int64(len(content)))
-	if err != nil {
-		close(releaseWinner)
-		t.Fatalf("concurrent dedupe Import: %v", err)
+	type importOutcome struct {
+		result ImportResult
+		err    error
 	}
-	if result.Created {
+	loserResult := make(chan importOutcome, 1)
+	go func() {
+		result, err := loser.Import(context.Background(), bytes.NewReader(content), int64(len(content)))
+		loserResult <- importOutcome{result: result, err: err}
+	}()
+	select {
+	case outcome := <-loserResult:
 		close(releaseWinner)
-		t.Fatal("concurrent dedupe Import reported Created")
+		t.Fatalf("loser returned before winner's durable flush: %#v, %v", outcome.result, outcome.err)
+	case <-time.After(25 * time.Millisecond):
 	}
-	if loserPrefixSyncs != 1 {
-		close(releaseWinner)
-		t.Fatalf("loser object prefix syncs = %d, want 1 before success", loserPrefixSyncs)
-	}
-
 	close(releaseWinner)
 	if err := <-winnerResult; err != nil {
 		t.Fatalf("winner Import: %v", err)
+	}
+	outcome := <-loserResult
+	result, err := outcome.result, outcome.err
+	if err != nil {
+		t.Fatalf("concurrent dedupe Import: %v", err)
+	}
+	if result.Created {
+		t.Fatal("concurrent dedupe Import reported Created")
+	}
+	if loserPrefixSyncs != 1 {
+		t.Fatalf("loser object prefix syncs = %d, want 1 after serialized success", loserPrefixSyncs)
 	}
 }
 

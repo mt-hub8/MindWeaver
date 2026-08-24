@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -17,6 +19,11 @@ import (
 	sqliteDriver "github.com/ncruces/go-sqlite3/driver"
 	"github.com/ncruces/go-sqlite3/ext/fts5"
 )
+
+// DatabaseFileName is the single on-disk SQLite name used by the running App,
+// backup/restore, migration, and release tooling. Keeping it here prevents a
+// restored Vault from being silently opened as a new empty database.
+const DatabaseFileName = "mindweaver.sqlite3"
 
 const (
 	defaultBusyTimeout = 5 * time.Second
@@ -32,9 +39,12 @@ type Options struct {
 
 // Store owns a configured SQLite connection pool.
 type Store struct {
-	db      *sql.DB
-	now     func() time.Time
-	lastNow atomic.Int64
+	db           *sql.DB
+	databaseFile *os.File
+	now          func() time.Time
+	lastNow      atomic.Int64
+	closeOnce    sync.Once
+	closeErr     error
 }
 
 // Open opens or creates path, configures every physical connection, and
@@ -59,9 +69,18 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 		return nil, errors.New("sqlite: connections must be between 1 and 32")
 	}
 
-	dsn, err := fileURI(path)
+	absolutePath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: resolve database path: %w", err)
+	}
+	absolutePath = filepath.Clean(absolutePath)
+	databaseFile, err := openDatabaseFile(absolutePath)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite: validate database file: %w", err)
+	}
+	dsn, err := fileURI(absolutePath)
+	if err != nil {
+		return nil, closeFailedOpen(nil, databaseFile, fmt.Errorf("sqlite: resolve database path: %w", err))
 	}
 	db, err := sqliteDriver.Open(dsn, func(conn *sqlite3.Conn) error {
 		if err := conn.BusyTimeout(options.BusyTimeout); err != nil {
@@ -87,29 +106,62 @@ func Open(ctx context.Context, path string, options Options) (*Store, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("sqlite: open: %w", err)
+		return nil, closeFailedOpen(nil, databaseFile, fmt.Errorf("sqlite: open: %w", err))
 	}
 	db.SetMaxOpenConns(options.Connections)
 	db.SetMaxIdleConns(options.Connections)
 
-	store := &Store{db: db, now: time.Now}
+	store := &Store{db: db, databaseFile: databaseFile, now: time.Now}
 	if err := db.PingContext(ctx); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("sqlite: connect: %w", err)
+		return nil, closeFailedOpen(db, databaseFile, fmt.Errorf("sqlite: connect: %w", err))
+	}
+	if err := verifyDatabaseFile(absolutePath, databaseFile); err != nil {
+		return nil, closeFailedOpen(db, databaseFile, fmt.Errorf("sqlite: revalidate database file: %w", err))
 	}
 	if err := store.migrate(ctx); err != nil {
-		_ = db.Close()
-		return nil, err
+		return nil, closeFailedOpen(db, databaseFile, err)
+	}
+	if err := verifyDatabaseFile(absolutePath, databaseFile); err != nil {
+		return nil, closeFailedOpen(db, databaseFile, fmt.Errorf("sqlite: revalidate migrated database file: %w", err))
 	}
 	return store, nil
 }
 
-// Close closes the underlying connection pool.
+// Close closes the underlying connection pool and its retained identity handle.
 func (s *Store) Close() error {
-	if s == nil || s.db == nil {
+	if s == nil {
 		return nil
 	}
-	return s.db.Close()
+	s.closeOnce.Do(func() {
+		var databaseErr, identityErr error
+		if s.db != nil {
+			if err := s.db.Close(); err != nil {
+				databaseErr = fmt.Errorf("sqlite: close connection pool: %w", err)
+			}
+		}
+		if s.databaseFile != nil {
+			if err := s.databaseFile.Close(); err != nil {
+				identityErr = fmt.Errorf("sqlite: close database identity handle: %w", err)
+			}
+		}
+		s.closeErr = errors.Join(databaseErr, identityErr)
+	})
+	return s.closeErr
+}
+
+func closeFailedOpen(db *sql.DB, databaseFile *os.File, cause error) error {
+	var databaseErr, identityErr error
+	if db != nil {
+		if err := db.Close(); err != nil {
+			databaseErr = fmt.Errorf("sqlite: close failed connection pool: %w", err)
+		}
+	}
+	if databaseFile != nil {
+		if err := databaseFile.Close(); err != nil {
+			identityErr = fmt.Errorf("sqlite: close failed database identity handle: %w", err)
+		}
+	}
+	return errors.Join(cause, databaseErr, identityErr)
 }
 
 // withTx runs fn in an immediate SQLite transaction. The selected driver maps
