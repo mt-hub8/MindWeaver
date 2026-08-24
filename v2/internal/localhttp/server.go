@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,17 +22,21 @@ import (
 const (
 	HealthPath            = "/healthz"
 	BootstrapExchangePath = "/bootstrap/exchange"
+	CSRFRefreshPath       = "/session/csrf"
 	BootstrapHeader       = "X-MindWeaver-Bootstrap"
 	CSRFHeader            = "X-MindWeaver-CSRF"
 	NonBrowserHeader      = "X-MindWeaver-Client"
 	NonBrowserReadOnly    = "local-readonly"
-	SessionCookieName     = "mindweaver_session"
 
 	defaultMaxBodyBytes = int64(1 << 20)
 	defaultMaxResponse  = int64(4 << 20)
 	maximumBodyBytes    = int64(64 << 20)
 	maximumResponse     = int64(64 << 20)
 	tokenBytes          = 32
+	cookieNameBytes     = 16
+	sessionCookiePrefix = "mindweaver_session_"
+	defaultBootstrapTTL = 2 * time.Minute
+	maximumBootstrapTTL = 10 * time.Minute
 )
 
 var errRandomness = errors.New("secure randomness unavailable")
@@ -46,6 +51,7 @@ type Config struct {
 	ReadTimeout       time.Duration
 	WriteTimeout      time.Duration
 	IdleTimeout       time.Duration
+	BootstrapTTL      time.Duration
 }
 
 // BootstrapToken is the only bootstrap credential copy returned by Start.
@@ -69,6 +75,7 @@ func (token BootstrapToken) HeaderValue() string {
 type sessionState struct {
 	cookieHash [sha256.Size]byte
 	csrfHash   [sha256.Size]byte
+	csrfToken  [tokenBytes]byte
 }
 
 // Server owns one loopback listener and one process-memory browser session.
@@ -83,11 +90,13 @@ type Server struct {
 	http     *http.Server
 	done     chan error
 
-	mu            sync.Mutex
-	bootstrapHash [sha256.Size]byte
-	bootstrapLive bool
-	session       *sessionState
-	closed        bool
+	mu             sync.Mutex
+	bootstrapHash  [sha256.Size]byte
+	bootstrapLive  bool
+	bootstrapUntil time.Time
+	session        *sessionState
+	sessionCookie  string
+	closed         bool
 
 	maxBodyBytes int64
 	maxResponse  int64
@@ -125,23 +134,32 @@ func Start(router *Router, config Config) (*Server, BootstrapToken, error) {
 	if _, err := io.ReadFull(rand.Reader, bootstrap.value[:]); err != nil {
 		return nil, BootstrapToken{}, fmt.Errorf("%w: %v", errRandomness, err)
 	}
+	var cookieNameEntropy [cookieNameBytes]byte
+	if _, err := io.ReadFull(rand.Reader, cookieNameEntropy[:]); err != nil {
+		return nil, BootstrapToken{}, fmt.Errorf("%w: %v", errRandomness, err)
+	}
 	encodedBootstrap := bootstrap.HeaderValue()
 	host := listener.Addr().String()
 	server := &Server{
-		host:          host,
-		origin:        "http://" + host,
-		listener:      listener,
-		done:          make(chan error, 1),
-		bootstrapHash: sha256.Sum256([]byte(encodedBootstrap)),
-		bootstrapLive: true,
-		maxBodyBytes:  config.MaxBodyBytes,
-		maxResponse:   config.MaxResponseBytes,
-		router:        router,
+		host:           host,
+		origin:         "http://" + host,
+		listener:       listener,
+		done:           make(chan error, 1),
+		bootstrapHash:  sha256.Sum256([]byte(encodedBootstrap)),
+		bootstrapLive:  true,
+		bootstrapUntil: time.Now().Add(config.BootstrapTTL),
+		sessionCookie:  sessionCookiePrefix + hex.EncodeToString(cookieNameEntropy[:]),
+		maxBodyBytes:   config.MaxBodyBytes,
+		maxResponse:    config.MaxResponseBytes,
+		router:         router,
 	}
 	router.seal()
 
 	requestHandler := http.HandlerFunc(server.dispatch)
-	handler := securityHeaders(recoverSafely(http.TimeoutHandler(requestHandler, config.RequestTimeout, "request timed out\n")))
+	// TimeoutHandler executes its wrapped handler in a child goroutine. Recovery
+	// must therefore be inside that boundary; placing recoverSafely outside it
+	// would let a business-handler panic terminate the whole process.
+	handler := securityHeaders(http.TimeoutHandler(recoverSafely(requestHandler), config.RequestTimeout, "request rejected\n"))
 	server.http = &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: config.ReadHeaderTimeout,
@@ -213,6 +231,25 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	return nil
 }
 
+// Close force-closes active HTTP connections after invalidating all in-memory
+// credentials. App uses this only when graceful shutdown exceeds its bound.
+func (server *Server) Close() error {
+	if server == nil {
+		return nil
+	}
+	server.mu.Lock()
+	server.closed = true
+	server.bootstrapLive = false
+	server.bootstrapHash = [sha256.Size]byte{}
+	server.bootstrapUntil = time.Time{}
+	server.session = nil
+	server.mu.Unlock()
+	if err := server.http.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("close local HTTP server: %w", err)
+	}
+	return nil
+}
+
 func (server *Server) dispatch(response http.ResponseWriter, request *http.Request) {
 	request.Body = http.MaxBytesReader(response, request.Body, server.maxBodyBytes)
 	if request.ContentLength > server.maxBodyBytes {
@@ -223,7 +260,8 @@ func (server *Server) dispatch(response http.ResponseWriter, request *http.Reque
 		writeSafeError(response, http.StatusBadRequest)
 		return
 	}
-	if !server.validTransportRequest(request) {
+	public := server.router.isPublic(request.Method, request.URL.Path)
+	if !server.validTransportRequest(request, public) {
 		writeSafeError(response, http.StatusForbidden)
 		return
 	}
@@ -236,9 +274,17 @@ func (server *Server) dispatch(response http.ResponseWriter, request *http.Reque
 		server.serveBootstrapExchange(response, request)
 		return
 	}
+	if public {
+		server.router.servePublic(response, request, server.maxResponse)
+		return
+	}
 
 	if !server.authenticated(request) {
 		writeSafeError(response, http.StatusUnauthorized)
+		return
+	}
+	if request.URL.Path == CSRFRefreshPath {
+		server.serveCSRFRefresh(response, request)
 		return
 	}
 	if needsCSRF(request.Method) && !server.validCSRF(request) {
@@ -248,7 +294,7 @@ func (server *Server) dispatch(response http.ResponseWriter, request *http.Reque
 	server.router.serveBusiness(response, request, server.maxResponse)
 }
 
-func (server *Server) validTransportRequest(request *http.Request) bool {
+func (server *Server) validTransportRequest(request *http.Request, public bool) bool {
 	if request.Host != server.host || request.URL.IsAbs() || request.URL.Host != "" || request.URL.RawPath != "" || request.URL.Fragment != "" {
 		return false
 	}
@@ -270,8 +316,24 @@ func (server *Server) validTransportRequest(request *http.Request) bool {
 	if validTopLevelNavigation(request.Header) {
 		return true
 	}
+	if sameOriginBrowserRead(request.Header, public) {
+		return true
+	}
 	clients := request.Header.Values(NonBrowserHeader)
 	return len(clients) == 1 && clients[0] == NonBrowserReadOnly && !hasBrowserFetchHeaders(request.Header)
+}
+
+func sameOriginBrowserRead(header http.Header, public bool) bool {
+	sites := header.Values("Sec-Fetch-Site")
+	modes := header.Values("Sec-Fetch-Mode")
+	destinations := header.Values("Sec-Fetch-Dest")
+	if len(sites) != 1 || len(modes) != 1 || len(destinations) != 1 || sites[0] != "same-origin" {
+		return false
+	}
+	if public {
+		return modes[0] == "no-cors" && (destinations[0] == "script" || destinations[0] == "style")
+	}
+	return modes[0] == "cors" && destinations[0] == "empty"
 }
 
 func validTopLevelNavigation(header http.Header) bool {
@@ -335,13 +397,21 @@ func (server *Server) serveBootstrapExchange(response http.ResponseWriter, reque
 	presentedHash := sha256.Sum256([]byte(values[0]))
 
 	server.mu.Lock()
+	now := time.Now()
+	if server.bootstrapLive && !now.Before(server.bootstrapUntil) {
+		server.bootstrapLive = false
+		server.bootstrapHash = [sha256.Size]byte{}
+		server.bootstrapUntil = time.Time{}
+	}
 	valid := !server.closed && server.bootstrapLive && subtle.ConstantTimeCompare(presentedHash[:], server.bootstrapHash[:]) == 1
 	if valid {
 		server.bootstrapLive = false
 		server.bootstrapHash = [sha256.Size]byte{}
+		server.bootstrapUntil = time.Time{}
 		server.session = &sessionState{
 			cookieHash: sha256.Sum256([]byte(sessionValue)),
 			csrfHash:   sha256.Sum256([]byte(csrfValue)),
+			csrfToken:  csrfBytes,
 		}
 	}
 	server.mu.Unlock()
@@ -351,7 +421,7 @@ func (server *Server) serveBootstrapExchange(response http.ResponseWriter, reque
 	}
 
 	http.SetCookie(response, &http.Cookie{
-		Name:     SessionCookieName,
+		Name:     server.sessionCookie,
 		Value:    sessionValue,
 		Path:     "/",
 		HttpOnly: true,
@@ -365,7 +435,7 @@ func (server *Server) serveBootstrapExchange(response http.ResponseWriter, reque
 }
 
 func (server *Server) authenticated(request *http.Request) bool {
-	cookies := request.CookiesNamed(SessionCookieName)
+	cookies := request.CookiesNamed(server.sessionCookie)
 	if len(cookies) != 1 || len(cookies[0].Value) != base64.RawURLEncoding.EncodedLen(tokenBytes) {
 		return false
 	}
@@ -373,6 +443,41 @@ func (server *Server) authenticated(request *http.Request) bool {
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	return !server.closed && server.session != nil && subtle.ConstantTimeCompare(presented[:], server.session.cookieHash[:]) == 1
+}
+
+func (server *Server) serveCSRFRefresh(response http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		writeSafeError(response, http.StatusMethodNotAllowed)
+		return
+	}
+	if request.URL.RawQuery != "" {
+		writeSafeError(response, http.StatusBadRequest)
+		return
+	}
+	// Unlike ordinary authenticated reads, this credential-bearing response is
+	// never available to a top-level navigation or the local read-only CLI
+	// profile. Sec-Fetch-* headers are browser-controlled, so this admits only a
+	// same-origin fetch/XHR shape after validTransportRequest checked Host,
+	// Origin, and the exact loopback peer.
+	if !sameOriginBrowserRead(request.Header, false) {
+		writeSafeError(response, http.StatusForbidden)
+		return
+	}
+
+	server.mu.Lock()
+	if server.closed || server.session == nil {
+		server.mu.Unlock()
+		writeSafeError(response, http.StatusUnauthorized)
+		return
+	}
+	csrfToken := server.session.csrfToken
+	server.mu.Unlock()
+
+	response.Header().Set("Content-Type", "application/json")
+	response.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(response).Encode(struct {
+		CSRFToken string `json:"csrfToken"`
+	}{CSRFToken: base64.RawURLEncoding.EncodeToString(csrfToken[:])})
 }
 
 func (server *Server) validCSRF(request *http.Request) bool {
@@ -399,7 +504,7 @@ func securityHeaders(next http.Handler) http.Handler {
 
 func setSecurityHeaders(header http.Header) {
 	header.Set("Cache-Control", "no-store")
-	header.Set("Content-Security-Policy", "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+	header.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
 	header.Set("Referrer-Policy", "no-referrer")
 	header.Set("X-Content-Type-Options", "nosniff")
 	header.Set("X-Frame-Options", "DENY")
@@ -431,7 +536,7 @@ func clearHeaders(header http.Header) {
 }
 
 func normalizeConfig(config Config) (Config, error) {
-	if config.MaxBodyBytes < 0 || config.MaxResponseBytes < 0 || config.RequestTimeout < 0 || config.ReadHeaderTimeout < 0 || config.ReadTimeout < 0 || config.WriteTimeout < 0 || config.IdleTimeout < 0 {
+	if config.MaxBodyBytes < 0 || config.MaxResponseBytes < 0 || config.RequestTimeout < 0 || config.ReadHeaderTimeout < 0 || config.ReadTimeout < 0 || config.WriteTimeout < 0 || config.IdleTimeout < 0 || config.BootstrapTTL < 0 {
 		return Config{}, errors.New("local HTTP limits must not be negative")
 	}
 	if config.MaxBodyBytes == 0 {
@@ -458,7 +563,10 @@ func normalizeConfig(config Config) (Config, error) {
 	if config.IdleTimeout == 0 {
 		config.IdleTimeout = 30 * time.Second
 	}
-	if config.RequestTimeout > 2*time.Minute || config.ReadHeaderTimeout > 10*time.Second || config.ReadTimeout > 2*time.Minute || config.WriteTimeout > 2*time.Minute || config.IdleTimeout > 5*time.Minute {
+	if config.BootstrapTTL == 0 {
+		config.BootstrapTTL = defaultBootstrapTTL
+	}
+	if config.RequestTimeout > 2*time.Minute || config.ReadHeaderTimeout > 10*time.Second || config.ReadTimeout > 2*time.Minute || config.WriteTimeout > 2*time.Minute || config.IdleTimeout > 5*time.Minute || config.BootstrapTTL > maximumBootstrapTTL {
 		return Config{}, errors.New("local HTTP timeout exceeds hard maximum")
 	}
 	return config, nil

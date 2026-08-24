@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -65,10 +66,14 @@ func (active activeTestServer) request(t *testing.T, method, path string, body i
 }
 
 func (active activeTestServer) exchange(t *testing.T) browserSession {
+	return active.exchangeWithClient(t, active.client)
+}
+
+func (active activeTestServer) exchangeWithClient(t *testing.T, client *http.Client) browserSession {
 	t.Helper()
 	request := active.request(t, http.MethodPost, BootstrapExchangePath, nil)
 	request.Header.Set(BootstrapHeader, active.bootstrap.HeaderValue())
-	response, err := active.client.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		t.Fatalf("bootstrap exchange: %v", err)
 	}
@@ -216,7 +221,7 @@ func TestBootstrapIsSingleUseAndCookieIsHardened(t *testing.T) {
 	}
 
 	session := active.exchange(t)
-	if session.cookie.Name != SessionCookieName || !session.cookie.HttpOnly || session.cookie.SameSite != http.SameSiteStrictMode || session.cookie.Path != "/" || session.cookie.Domain != "" {
+	if !strings.HasPrefix(session.cookie.Name, sessionCookiePrefix) || len(session.cookie.Name) != len(sessionCookiePrefix)+2*cookieNameBytes || !session.cookie.HttpOnly || session.cookie.SameSite != http.SameSiteStrictMode || session.cookie.Path != "/" || session.cookie.Domain != "" {
 		t.Fatalf("session cookie = %#v", session.cookie)
 	}
 	if session.cookie.Value == "" || session.csrf == "" || session.cookie.Value == session.csrf {
@@ -233,6 +238,57 @@ func TestBootstrapIsSingleUseAndCookieIsHardened(t *testing.T) {
 	body, _ := io.ReadAll(replayResponse.Body)
 	if replayResponse.StatusCode != http.StatusUnauthorized || bytes.Contains(body, []byte(active.bootstrap.HeaderValue())) {
 		t.Fatalf("replay status/body = %d %q", replayResponse.StatusCode, body)
+	}
+}
+
+func TestRandomCookieNamesKeepTwoLoopbackServersAuthenticatedInOneJar(t *testing.T) {
+	newRouter := func(value string) *Router {
+		router := NewRouter()
+		if err := router.HandleFunc(http.MethodGet, "/api/value", func(response http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(response, value)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return router
+	}
+	first := startTestServer(t, newRouter("first"), Config{})
+	second := startTestServer(t, newRouter("second"), Config{})
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{
+		Jar:     jar,
+		Timeout: 2 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	t.Cleanup(client.CloseIdleConnections)
+
+	firstSession := first.exchangeWithClient(t, client)
+	secondSession := second.exchangeWithClient(t, client)
+	if firstSession.cookie.Name == secondSession.cookie.Name {
+		t.Fatalf("independent servers reused cookie name %q", firstSession.cookie.Name)
+	}
+
+	for _, test := range []struct {
+		active activeTestServer
+		want   string
+	}{{first, "first"}, {second, "second"}, {first, "first"}} {
+		request := test.active.request(t, http.MethodGet, "/api/value", nil)
+		response, err := client.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, readErr := io.ReadAll(response.Body)
+		response.Body.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if response.StatusCode != http.StatusOK || string(body) != test.want {
+			t.Fatalf("%s status/body = %d %q", test.active.server.Origin(), response.StatusCode, body)
+		}
 	}
 }
 
@@ -317,7 +373,7 @@ func TestBusinessSessionCSRFAndOriginEnforcement(t *testing.T) {
 	}{
 		{name: "missing session", method: http.MethodGet, path: "/api/value", wantStatus: http.StatusUnauthorized},
 		{name: "forged session", method: http.MethodGet, path: "/api/value", prepare: func(request *http.Request) {
-			request.AddCookie(&http.Cookie{Name: SessionCookieName, Value: strings.Repeat("A", 43)})
+			request.AddCookie(&http.Cookie{Name: session.cookie.Name, Value: strings.Repeat("A", 43)})
 		}, wantStatus: http.StatusUnauthorized},
 		{name: "valid read", method: http.MethodGet, path: "/api/value", prepare: func(request *http.Request) {
 			request.AddCookie(session.cookie)
@@ -358,6 +414,99 @@ func TestBusinessSessionCSRFAndOriginEnforcement(t *testing.T) {
 	if mutations.Load() != 1 {
 		t.Fatalf("mutation handler calls = %d, want 1", mutations.Load())
 	}
+}
+
+func TestCSRFRefreshRequiresAuthenticatedSameOriginBrowserFetch(t *testing.T) {
+	router := NewRouter()
+	if err := router.HandleFunc(http.MethodPost, "/api/mutate", func(response http.ResponseWriter, _ *http.Request) {
+		response.WriteHeader(http.StatusNoContent)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	active := startTestServer(t, router, Config{})
+	session := active.exchange(t)
+
+	refresh := active.request(t, http.MethodGet, CSRFRefreshPath, nil)
+	refresh.AddCookie(session.cookie)
+	refresh.Header.Del("Origin")
+	refresh.Header.Set("Sec-Fetch-Site", "same-origin")
+	refresh.Header.Set("Sec-Fetch-Mode", "cors")
+	refresh.Header.Set("Sec-Fetch-Dest", "empty")
+	refreshResponse, err := active.client.Do(refresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer refreshResponse.Body.Close()
+	var payload struct {
+		CSRFToken string `json:"csrfToken"`
+	}
+	if err := json.NewDecoder(refreshResponse.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if refreshResponse.StatusCode != http.StatusOK || payload.CSRFToken != session.csrf {
+		t.Fatalf("refresh status/payload = %d %#v", refreshResponse.StatusCode, payload)
+	}
+	assertSecurityHeaders(t, refreshResponse.Header)
+
+	mutation := active.request(t, http.MethodPost, "/api/mutate", nil)
+	mutation.AddCookie(session.cookie)
+	mutation.Header.Set(CSRFHeader, payload.CSRFToken)
+	mutationResponse, err := active.client.Do(mutation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutationResponse.Body.Close()
+	if mutationResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf("mutation with refreshed token status = %d", mutationResponse.StatusCode)
+	}
+
+	for _, test := range []struct {
+		name   string
+		method string
+		path   string
+		setup  func(*http.Request)
+		want   int
+	}{
+		{name: "missing session", method: http.MethodGet, path: CSRFRefreshPath, setup: setSameOriginFetchHeaders, want: http.StatusUnauthorized},
+		{name: "navigation", method: http.MethodGet, path: CSRFRefreshPath, setup: func(request *http.Request) {
+			request.AddCookie(session.cookie)
+			request.Header.Set("Sec-Fetch-Site", "same-origin")
+			request.Header.Set("Sec-Fetch-Mode", "navigate")
+			request.Header.Set("Sec-Fetch-Dest", "document")
+		}, want: http.StatusForbidden},
+		{name: "read only client", method: http.MethodGet, path: CSRFRefreshPath, setup: func(request *http.Request) {
+			request.AddCookie(session.cookie)
+			request.Header.Del("Origin")
+			request.Header.Set(NonBrowserHeader, NonBrowserReadOnly)
+		}, want: http.StatusForbidden},
+		{name: "query", method: http.MethodGet, path: CSRFRefreshPath + "?unexpected=1", setup: func(request *http.Request) {
+			request.AddCookie(session.cookie)
+			setSameOriginFetchHeaders(request)
+		}, want: http.StatusBadRequest},
+		{name: "wrong method", method: http.MethodHead, path: CSRFRefreshPath, setup: func(request *http.Request) {
+			request.AddCookie(session.cookie)
+			setSameOriginFetchHeaders(request)
+		}, want: http.StatusMethodNotAllowed},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := active.request(t, test.method, test.path, nil)
+			test.setup(request)
+			response, err := active.client.Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
+			if response.StatusCode != test.want {
+				t.Fatalf("status = %d, want %d", response.StatusCode, test.want)
+			}
+		})
+	}
+}
+
+func setSameOriginFetchHeaders(request *http.Request) {
+	request.Header.Set("Sec-Fetch-Site", "same-origin")
+	request.Header.Set("Sec-Fetch-Mode", "cors")
+	request.Header.Set("Sec-Fetch-Dest", "empty")
 }
 
 func TestBusinessErrorsAreSanitizedAndBodiesAreBounded(t *testing.T) {
@@ -472,6 +621,40 @@ func TestRequestTimeoutIsBoundedAndSafe(t *testing.T) {
 	assertSecurityHeaders(t, response.Header)
 }
 
+func TestBusinessHandlerPanicIsContainedInsideTimeoutGoroutine(t *testing.T) {
+	router := NewRouter()
+	if err := router.HandleFunc(http.MethodGet, "/api/panic", func(http.ResponseWriter, *http.Request) {
+		panic("secret panic payload")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	active := startTestServer(t, router, Config{})
+	session := active.exchange(t)
+	request := active.request(t, http.MethodGet, "/api/panic", nil)
+	request.AddCookie(session.cookie)
+	response, err := active.client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(response.Body)
+	response.Body.Close()
+	if response.StatusCode != http.StatusInternalServerError || bytes.Contains(body, []byte("secret")) {
+		t.Fatalf("panic status/body = %d %q", response.StatusCode, body)
+	}
+	assertSecurityHeaders(t, response.Header)
+
+	// A contained panic must not kill the process or listener.
+	health := active.request(t, http.MethodGet, HealthPath, nil)
+	healthResponse, err := active.client.Do(health)
+	if err != nil {
+		t.Fatalf("health after panic: %v", err)
+	}
+	healthResponse.Body.Close()
+	if healthResponse.StatusCode != http.StatusOK {
+		t.Fatalf("health after panic status = %d", healthResponse.StatusCode)
+	}
+}
+
 func TestConfigurationHardLimitsAndNilShutdownContext(t *testing.T) {
 	if _, _, err := Start(nil, Config{MaxBodyBytes: maximumBodyBytes + 1}); err == nil {
 		t.Fatal("Start accepted body limit above hard maximum")
@@ -525,7 +708,7 @@ func assertSecurityHeaders(t *testing.T, header http.Header) {
 	t.Helper()
 	checks := map[string]string{
 		"Cache-Control":           "no-store",
-		"Content-Security-Policy": "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+		"Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
 		"Referrer-Policy":         "no-referrer",
 		"X-Content-Type-Options":  "nosniff",
 		"X-Frame-Options":         "DENY",

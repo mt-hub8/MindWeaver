@@ -11,12 +11,16 @@ package localhttp
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"path"
 	"strings"
 	"sync"
+
+	"github.com/mt-hub8/MindWeaver/v2/internal/transport"
 )
 
 var (
@@ -39,14 +43,18 @@ type routeKey struct {
 // allowed before Start. Health and bootstrap endpoints are owned by Server and
 // cannot be replaced through Router.
 type Router struct {
-	mu     sync.RWMutex
-	routes map[routeKey]http.Handler
-	sealed bool
+	mu           sync.RWMutex
+	routes       map[routeKey]http.Handler
+	publicRoutes map[routeKey]http.Handler
+	sealed       bool
 }
 
 // NewRouter returns an empty router.
 func NewRouter() *Router {
-	return &Router{routes: make(map[routeKey]http.Handler)}
+	return &Router{
+		routes:       make(map[routeKey]http.Handler),
+		publicRoutes: make(map[routeKey]http.Handler),
+	}
 }
 
 // Handle registers one exact business endpoint. path must be a clean ASCII
@@ -76,6 +84,36 @@ func (r *Router) HandleFunc(method, routePath string, handler http.HandlerFunc) 
 		return ErrInvalidRoute
 	}
 	return r.Handle(method, routePath, handler)
+}
+
+// HandlePublicAsset registers copied immutable UI bytes at one exact route for
+// both GET and HEAD. It deliberately does not accept a handler, so code outside
+// this package cannot place database or user-data behavior before authentication.
+func (r *Router) HandlePublicAsset(routePath, contentType string, body []byte) error {
+	if r == nil || !validPublicRoutePath(routePath) || !validPublicContentType(contentType) || len(body) == 0 || int64(len(body)) > maximumResponse {
+		return ErrInvalidRoute
+	}
+	contents := append([]byte(nil), body...)
+	handler := http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", contentType)
+		if request.Method == http.MethodGet {
+			_, _ = response.Write(contents)
+		}
+	})
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.sealed {
+		return ErrRouterSealed
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		if _, exists := r.publicRoutes[routeKey{method: method, path: routePath}]; exists {
+			return ErrDuplicateRoute
+		}
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		r.publicRoutes[routeKey{method: method, path: routePath}] = handler
+	}
+	return nil
 }
 
 func (r *Router) seal() {
@@ -111,6 +149,25 @@ func (r *Router) serveBusiness(response http.ResponseWriter, request *http.Reque
 	buffered.flushTo(response)
 }
 
+func (r *Router) isPublic(method, routePath string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.publicRoutes[routeKey{method: method, path: routePath}] != nil
+}
+
+func (r *Router) servePublic(response http.ResponseWriter, request *http.Request, maxResponseBytes int64) bool {
+	r.mu.RLock()
+	handler := r.publicRoutes[routeKey{method: request.Method, path: request.URL.Path}]
+	r.mu.RUnlock()
+	if handler == nil {
+		return false
+	}
+	buffered := newSafeBusinessResponse(maxResponseBytes)
+	handler.ServeHTTP(buffered, request)
+	buffered.flushTo(response)
+	return true
+}
+
 func validMethod(method string) bool {
 	switch method {
 	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
@@ -132,6 +189,60 @@ func validRoutePath(routePath string) bool {
 	return true
 }
 
+func validPublicRoutePath(routePath string) bool {
+	if routePath != "/" && !strings.HasPrefix(routePath, "/assets/") {
+		return false
+	}
+	if strings.HasSuffix(routePath, "/") && routePath != "/" {
+		return false
+	}
+	if path.Clean(routePath) != routePath {
+		return false
+	}
+	for _, character := range routePath {
+		if character < 0x21 || character > 0x7e || character == '?' || character == '#' || character == '%' || character == '*' || character == '{' || character == '}' {
+			return false
+		}
+	}
+	return true
+}
+
+func validPublicContentType(value string) bool {
+	mediaType, parameters, err := mime.ParseMediaType(value)
+	if err != nil {
+		return false
+	}
+	if mediaType != "text/html" && mediaType != "text/css" && mediaType != "text/javascript" {
+		return false
+	}
+	for name, parameter := range parameters {
+		if name != "charset" || !strings.EqualFold(parameter, "utf-8") {
+			return false
+		}
+	}
+	return true
+}
+
+// WriteProblem is the only way a business handler can intentionally expose an
+// error body through the sanitizing response boundary. The versioned Problem
+// must validate, must serialize within the configured response limit, and
+// carries only caller-selected safe detail. Arbitrary http.Error output remains
+// discarded by safeBusinessResponse.
+func WriteProblem(response http.ResponseWriter, problem transport.Problem) {
+	buffered, ok := response.(*safeBusinessResponse)
+	if !ok || problem.Validate() != nil {
+		writeSafeError(response, http.StatusInternalServerError)
+		return
+	}
+	body, err := json.Marshal(problem)
+	if err != nil {
+		writeSafeError(response, http.StatusInternalServerError)
+		return
+	}
+	body = append(body, '\n')
+	buffered.setProblem(problem.Status, body)
+}
+
 // safeBusinessResponse prevents an endpoint implementation from returning an
 // error body or error headers containing internal details. It also keeps
 // successful output bounded and unobservable until the handler returns. A
@@ -143,6 +254,7 @@ type safeBusinessResponse struct {
 	status      int
 	wroteHeader bool
 	errorStatus int
+	problemBody []byte
 	overflow    bool
 }
 
@@ -186,6 +298,14 @@ func (response *safeBusinessResponse) flushTo(destination http.ResponseWriter) {
 		return
 	}
 	if response.errorStatus != 0 {
+		if len(response.problemBody) != 0 {
+			clearHeaders(destination.Header())
+			setSecurityHeaders(destination.Header())
+			destination.Header().Set("Content-Type", "application/problem+json")
+			destination.WriteHeader(response.errorStatus)
+			_, _ = destination.Write(response.problemBody)
+			return
+		}
 		writeSafeError(destination, response.errorStatus)
 		return
 	}
@@ -201,6 +321,22 @@ func (response *safeBusinessResponse) flushTo(destination http.ResponseWriter) {
 	}
 	destination.WriteHeader(status)
 	_, _ = io.Copy(destination, &response.body)
+}
+
+func (response *safeBusinessResponse) setProblem(status int, body []byte) {
+	if response.wroteHeader || status < 400 || status > 599 || int64(len(body)) > response.maxBytes {
+		response.header = make(http.Header)
+		response.body.Reset()
+		response.problemBody = nil
+		response.errorStatus = http.StatusInternalServerError
+		response.wroteHeader = true
+		return
+	}
+	response.header = make(http.Header)
+	response.body.Reset()
+	response.problemBody = append([]byte(nil), body...)
+	response.errorStatus = status
+	response.wroteHeader = true
 }
 
 func safeStatus(status int) int {
