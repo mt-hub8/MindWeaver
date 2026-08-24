@@ -1,4 +1,4 @@
-package pdfextract
+package client
 
 import (
 	"bytes"
@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract/protocol"
 )
 
 const (
@@ -26,55 +28,6 @@ type nestedGoSources struct {
 	configured string
 	lookPath   func(string) (string, error)
 	goroot     string
-}
-
-func TestRunHelperProbeIsExactAndDoesNotAcceptAliases(t *testing.T) {
-	t.Parallel()
-	var output bytes.Buffer
-	if err := RunHelper([]string{probeCommand}, &output); err != nil {
-		t.Fatalf("RunHelper probe: %v", err)
-	}
-	if output.String() != probeResponse {
-		t.Fatalf("probe response = %q, want %q", output.String(), probeResponse)
-	}
-
-	for _, args := range [][]string{
-		nil,
-		{"probe"},
-		{"--probe"},
-		{"-probe=true"},
-		{probeCommand, probeCommand},
-		{probeCommand, "trailing"},
-	} {
-		output.Reset()
-		if err := RunHelper(args, &output); err == nil || output.Len() != 0 {
-			t.Fatalf("RunHelper(%q) = output %q, error %v; want strict rejection", args, output.String(), err)
-		}
-	}
-}
-
-func TestDecodeProbeRequiresOneCanonicalBoundedFrame(t *testing.T) {
-	t.Parallel()
-	if err := decodeProbe([]byte(probeResponse)); err != nil {
-		t.Fatalf("canonical probe: %v", err)
-	}
-	for _, test := range []struct {
-		name  string
-		frame []byte
-	}{
-		{name: "protocol alias", frame: []byte("MWPDF-PROBE/01\nhelper=mindweaver-pdf\nextract=MWPDF1\n")},
-		{name: "field alias", frame: []byte("MWPDF-PROBE/1\nname=mindweaver-pdf\nextract=MWPDF1\n")},
-		{name: "duplicate", frame: []byte("MWPDF-PROBE/1\nhelper=mindweaver-pdf\nhelper=mindweaver-pdf\nextract=MWPDF1\n")},
-		{name: "trailing", frame: []byte(probeResponse + "trailing")},
-		{name: "extra newline", frame: []byte(probeResponse + "\n")},
-		{name: "over limit", frame: bytes.Repeat([]byte("x"), maxProbeResponseBytes+1)},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			if err := decodeProbe(test.frame); !errors.Is(err, ErrHelperProtocol) {
-				t.Fatalf("decodeProbe error = %v, want ErrHelperProtocol", err)
-			}
-		})
-	}
 }
 
 func TestClientProbeStartsCompatibleHelperProcess(t *testing.T) {
@@ -200,7 +153,7 @@ func TestClientProbeRejectsHostileProcessFrames(t *testing.T) {
 			client := newPDFHelperProcessClient(t, 5*time.Second)
 			t.Setenv(pdfHelperTestModeEnv, mode)
 			err := client.Probe(t.Context())
-			if !errors.Is(err, ErrHelperUnavailable) || !errors.Is(err, ErrHelperProtocol) {
+			if !errors.Is(err, ErrHelperUnavailable) || !errors.Is(err, protocol.ErrHelperProtocol) {
 				t.Fatalf("Probe error = %v, want unavailable protocol failure", err)
 			}
 		})
@@ -284,9 +237,9 @@ func runPDFHelperTestMode(mode string) {
 	case "probe-duplicate":
 		_, _ = os.Stdout.WriteString("MWPDF-PROBE/1\nhelper=mindweaver-pdf\nhelper=mindweaver-pdf\nextract=MWPDF1\n")
 	case "probe-trailing":
-		_, _ = os.Stdout.WriteString(probeResponse + "trailing")
+		_, _ = os.Stdout.WriteString(canonicalProbeResponse() + "trailing")
 	case "probe-over-limit":
-		_, _ = os.Stdout.WriteString(strings.Repeat("x", maxProbeResponseBytes+1))
+		_, _ = os.Stdout.WriteString(strings.Repeat("x", protocol.MaxProbeResponseBytes+1))
 	case "fail-secret":
 		_, _ = os.Stderr.WriteString(hostileHelperOutput)
 		os.Exit(1)
@@ -299,6 +252,14 @@ func runPDFHelperTestMode(mode string) {
 		os.Exit(97)
 	}
 	os.Exit(0)
+}
+
+func canonicalProbeResponse() string {
+	var output bytes.Buffer
+	if err := protocol.WriteProbe(&output); err != nil {
+		panic(err)
+	}
+	return output.String()
 }
 
 func assertProbeUnavailableWithoutLeak(t *testing.T, path string) {
@@ -318,8 +279,6 @@ func assertProbeUnavailableWithoutLeak(t *testing.T, path string) {
 
 func buildBundledHelper(t *testing.T, targetGOOS, targetGOARCH string) string {
 	t.Helper()
-	// Name the artifact for the host so exec attempts to load even a deliberately
-	// incompatible target (notably, Windows otherwise consults PATHEXT first).
 	suffix := executableSuffix(runtime.GOOS)
 	output := filepath.Join(t.TempDir(), "mindweaver-pdf"+suffix)
 	goTool, err := locateNestedGoTool(nestedGoSources{
@@ -334,8 +293,8 @@ func buildBundledHelper(t *testing.T, targetGOOS, targetGOARCH string) string {
 		t.Fatalf("locate nested Go tool: %v", err)
 	}
 	command := exec.Command(goTool, "build", "-o", output, "./cmd/mindweaver-pdf")
-	command.Dir = filepath.Clean(filepath.Join("..", ".."))
-	command.Env = append(os.Environ(), "GOTOOLCHAIN=local", "GOOS="+targetGOOS, "GOARCH="+targetGOARCH)
+	command.Dir = filepath.Clean(filepath.Join("..", "..", ".."))
+	command.Env = hermeticBuildEnvironment(targetGOOS, targetGOARCH)
 	buildOutput, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("build helper for %s/%s: %v\n%s", targetGOOS, targetGOARCH, err, buildOutput)

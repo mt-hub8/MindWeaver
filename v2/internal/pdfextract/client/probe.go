@@ -1,18 +1,12 @@
-package pdfextract
+package client
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os/exec"
-)
 
-const (
-	probeCommand          = "-probe"
-	probeProtocolMagic    = "MWPDF-PROBE/1"
-	maxProbeResponseBytes = 256
-	probeResponse         = probeProtocolMagic + "\nhelper=mindweaver-pdf\nextract=" + protocolMagic + "\n"
+	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract/protocol"
 )
 
 // Probe proves that the configured executable is this client's compatible
@@ -28,9 +22,9 @@ func (c *Client) Probe(ctx context.Context) error {
 
 	callCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	args := append(append([]string(nil), c.prefixArgs...), probeCommand)
+	args := append(append([]string(nil), c.prefixArgs...), protocol.ProbeArgument)
 	command := exec.CommandContext(callCtx, c.executable, args...)
-	stdout := &limitedBuffer{limit: maxProbeResponseBytes}
+	stdout := &limitedBuffer{limit: protocol.MaxProbeResponseBytes}
 	stderr := &limitedBuffer{limit: maxDiagnosticBytes}
 	command.Stdout = stdout
 	command.Stderr = stderr
@@ -38,22 +32,13 @@ func (c *Client) Probe(ctx context.Context) error {
 		if callErr := callCtx.Err(); callErr != nil {
 			return fmt.Errorf("%w: %w", ErrHelperUnavailable, callErr)
 		}
-		// Start/exit errors and stderr may contain attacker-controlled details.
-		// Availability needs only the stable category, never those diagnostics.
 		return ErrHelperUnavailable
 	}
 	if stdout.overflow {
-		return errors.Join(ErrHelperUnavailable, ErrHelperProtocol)
+		return errors.Join(ErrHelperUnavailable, protocol.ErrHelperProtocol)
 	}
-	if err := decodeProbe(stdout.Bytes()); err != nil {
+	if err := protocol.DecodeProbe(stdout.Bytes()); err != nil {
 		return errors.Join(ErrHelperUnavailable, err)
-	}
-	return nil
-}
-
-func decodeProbe(data []byte) error {
-	if len(data) > maxProbeResponseBytes || !bytes.Equal(data, []byte(probeResponse)) {
-		return ErrHelperProtocol
 	}
 	return nil
 }

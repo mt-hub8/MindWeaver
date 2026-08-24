@@ -21,7 +21,8 @@ import (
 
 	"github.com/mt-hub8/MindWeaver/v2/internal/blob"
 	"github.com/mt-hub8/MindWeaver/v2/internal/ingest"
-	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract"
+	pdfclient "github.com/mt-hub8/MindWeaver/v2/internal/pdfextract/client"
+	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract/protocol"
 	store "github.com/mt-hub8/MindWeaver/v2/internal/store/sqlite"
 	"github.com/mt-hub8/MindWeaver/v2/platform"
 )
@@ -42,7 +43,7 @@ type Service struct {
 }
 
 type pdfTextExtractor interface {
-	Extract(context.Context, string) (pdfextract.Result, error)
+	Extract(context.Context, string) (protocol.Result, error)
 }
 
 // ErrPostCommitRead means ingestion was durably committed, but refreshing the
@@ -67,7 +68,7 @@ func New(database *store.Store, blobs *blob.Store) (*Service, error) {
 // NewWithPDF constructs the same concrete service with an isolated PDF helper.
 // New intentionally leaves PDF disabled so tests or callers cannot
 // accidentally parse an untrusted PDF inside the Vault-owning process.
-func NewWithPDF(database *store.Store, blobs *blob.Store, pdf *pdfextract.Client) (*Service, error) {
+func NewWithPDF(database *store.Store, blobs *blob.Store, pdf *pdfclient.Client) (*Service, error) {
 	return newWithPDFExtractor(database, blobs, pdf)
 }
 
@@ -433,15 +434,15 @@ func sourceErrorCode(err error) string {
 		return "CHUNK_LIMIT"
 	case errors.Is(err, ingest.ErrInvalidUTF8), errors.Is(err, ingest.ErrBinaryText), errors.Is(err, ingest.ErrEmptyText):
 		return "SOURCE_INVALID_TEXT"
-	case errors.Is(err, pdfextract.ErrNoExtractedText):
+	case errors.Is(err, protocol.ErrNoExtractedText):
 		return "PDF_NO_TEXT"
-	case errors.Is(err, pdfextract.ErrEncryptedPDF):
+	case errors.Is(err, protocol.ErrEncryptedPDF):
 		return "PDF_ENCRYPTED"
-	case errors.Is(err, pdfextract.ErrResourceLimit):
+	case errors.Is(err, protocol.ErrResourceLimit):
 		return "PDF_RESOURCE_LIMIT"
-	case errors.Is(err, pdfextract.ErrInvalidPDF), errors.Is(err, pdfextract.ErrHelperProtocol):
+	case errors.Is(err, protocol.ErrInvalidPDF), errors.Is(err, protocol.ErrHelperProtocol):
 		return "PDF_INVALID"
-	case errors.Is(err, pdfextract.ErrHelperFailed):
+	case errors.Is(err, pdfclient.ErrHelperFailed):
 		return "PDF_HELPER_FAILED"
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return "WORK_CANCELLED"

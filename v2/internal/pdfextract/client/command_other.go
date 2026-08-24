@@ -1,6 +1,6 @@
 //go:build !windows
 
-package pdfextract
+package client
 
 import "os/exec"
 

@@ -11,16 +11,16 @@ import (
 
 	"github.com/mt-hub8/MindWeaver/v2/internal/blob"
 	"github.com/mt-hub8/MindWeaver/v2/internal/ingest"
-	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract"
+	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract/protocol"
 	store "github.com/mt-hub8/MindWeaver/v2/internal/store/sqlite"
 )
 
 type fixedPDFExtractor struct {
-	result pdfextract.Result
+	result protocol.Result
 	err    error
 }
 
-func (extractor fixedPDFExtractor) Extract(context.Context, string) (pdfextract.Result, error) {
+func (extractor fixedPDFExtractor) Extract(context.Context, string) (protocol.Result, error) {
 	return extractor.result, extractor.err
 }
 
@@ -149,7 +149,7 @@ func TestPDFUploadUsesIsolatedExtractorContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer database.Close()
-	service, err := newWithPDFExtractor(database, blobs, fixedPDFExtractor{result: pdfextract.Result{
+	service, err := newWithPDFExtractor(database, blobs, fixedPDFExtractor{result: protocol.Result{
 		Text: "PDF 中的可靠知识库内容可以被检索。", Pages: 1,
 	}})
 	if err != nil {

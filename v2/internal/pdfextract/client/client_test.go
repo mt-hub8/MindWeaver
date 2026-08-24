@@ -1,4 +1,4 @@
-package pdfextract
+package client
 
 import (
 	"bytes"
@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract/parser"
+	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract/protocol"
 )
 
 func TestClientExtractsTextThroughHelperProcess(t *testing.T) {
@@ -47,45 +50,14 @@ func TestClientPreservesControlledHelperFailureCategories(t *testing.T) {
 		path string
 		want error
 	}{
-		{name: "invalid", path: invalid, want: ErrInvalidPDF},
-		{name: "no extracted text", path: empty, want: ErrNoExtractedText},
+		{name: "invalid", path: invalid, want: protocol.ErrInvalidPDF},
+		{name: "no extracted text", path: empty, want: protocol.ErrNoExtractedText},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if _, err := client.Extract(context.Background(), test.path); !errors.Is(err, test.want) {
 				t.Fatalf("Extract error = %v, want %v", err, test.want)
 			}
 		})
-	}
-}
-
-func TestParseRejectsInvalidAndEmptyPDF(t *testing.T) {
-	t.Parallel()
-	invalid := filepath.Join(t.TempDir(), "invalid.pdf")
-	if err := os.WriteFile(invalid, []byte("not a pdf"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := parseFile(invalid); err == nil {
-		t.Fatal("invalid PDF unexpectedly parsed")
-	}
-
-	empty := filepath.Join(t.TempDir(), "empty.pdf")
-	writeSimplePDF(t, empty, "")
-	if _, err := parseFile(empty); err == nil {
-		t.Fatal("empty PDF unexpectedly produced text")
-	}
-}
-
-func TestDecodeResultRejectsMalformedFrames(t *testing.T) {
-	t.Parallel()
-	for _, frame := range [][]byte{
-		[]byte("wrong\npages=1\nbytes=1\nx"),
-		[]byte("MWPDF1\npages=0\nbytes=1\nx"),
-		[]byte("MWPDF1\npages=1\nbytes=2\nx"),
-		[]byte("MWPDF1\npages=1\nbytes=1\n\xff"),
-	} {
-		if _, err := decodeResult(frame); err == nil {
-			t.Fatalf("frame %q unexpectedly accepted", frame)
-		}
 	}
 }
 
@@ -103,9 +75,9 @@ func TestPDFHelperProcess(t *testing.T) {
 			break
 		}
 	}
-	if err := RunHelper(args, os.Stdout); err != nil {
+	if err := parser.Run(args, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(HelperExitCode(err))
+		os.Exit(protocol.ExitCode(err))
 	}
 	os.Exit(0)
 }

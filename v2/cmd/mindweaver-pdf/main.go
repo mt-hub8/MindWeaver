@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract"
+	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract/parser"
+	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract/protocol"
 )
 
 func main() {
-	if err := pdfextract.RunHelper(os.Args[1:], os.Stdout); err != nil {
+	if err := parser.Run(os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(pdfextract.HelperExitCode(err))
+		os.Exit(protocol.ExitCode(err))
 	}
 }

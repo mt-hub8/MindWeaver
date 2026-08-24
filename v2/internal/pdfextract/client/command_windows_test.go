@@ -1,6 +1,6 @@
 //go:build windows
 
-package pdfextract
+package client
 
 import (
 	"errors"
@@ -35,7 +35,6 @@ func TestWindowsPDFJobHelperProcess(t *testing.T) {
 		child := exec.Command(os.Args[0], "-test.run=^TestWindowsPDFJobHelperProcess$")
 		child.Env = append(os.Environ(), pdfJobHelperMode+"=child")
 		if err := child.Start(); err == nil {
-			// A successful child creation would violate ActiveProcessLimit=1.
 			_ = child.Process.Release()
 			os.Exit(4)
 		}

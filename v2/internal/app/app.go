@@ -18,7 +18,7 @@ import (
 	"github.com/mt-hub8/MindWeaver/v2/internal/ingest"
 	"github.com/mt-hub8/MindWeaver/v2/internal/lifecycle"
 	"github.com/mt-hub8/MindWeaver/v2/internal/localhttp"
-	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract"
+	pdfclient "github.com/mt-hub8/MindWeaver/v2/internal/pdfextract/client"
 	"github.com/mt-hub8/MindWeaver/v2/internal/rag"
 	store "github.com/mt-hub8/MindWeaver/v2/internal/store/sqlite"
 	"github.com/mt-hub8/MindWeaver/v2/internal/vault"
@@ -184,7 +184,7 @@ func Start(ctx context.Context, options Options) (*App, error) {
 	if pdfHelperPath == "" {
 		pdfHelperPath = adjacentPDFHelper()
 	}
-	if pdfClient, clientErr := pdfextract.New(pdfHelperPath, 30*time.Second); clientErr == nil && pdfClient.Probe(ctx) == nil {
+	if pdfClient, clientErr := pdfclient.New(pdfHelperPath, 30*time.Second); clientErr == nil && pdfClient.Probe(ctx) == nil {
 		service, err = workbench.NewWithPDF(database, blobs, pdfClient)
 		if err != nil {
 			return nil, err
