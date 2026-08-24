@@ -20,11 +20,16 @@ import (
 )
 
 const (
-	MaxPromptBytes   = 64 << 10
-	maxRequestBytes  = 128 << 10
-	maxResponseBytes = 4 << 20
-	maxModels        = 1000
-	defaultTimeout   = 60 * time.Second
+	MaxPromptBytes         = 64 << 10
+	maxRequestBytes        = 128 << 10
+	maxResponseBytes       = 4 << 20
+	maxResponseHeaderBytes = 64 << 10
+	maxModels              = 1000
+	maxJSONNestingDepth    = 128
+	maxJSONTokens          = 64 << 10
+	maxJSONKeys            = 16 << 10
+	maxJSONItems           = 16 << 10
+	defaultTimeout         = 60 * time.Second
 )
 
 var (
@@ -53,6 +58,56 @@ type Client struct {
 	transport *http.Transport
 }
 
+type tagsResponse struct {
+	Models []tagModel `json:"models"`
+}
+
+type tagModel struct {
+	Name string `json:"name"`
+}
+
+type chatResponse struct {
+	Message chatMessage `json:"message"`
+	Done    bool        `json:"done"`
+}
+
+type chatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+func (response *tagsResponse) UnmarshalJSON(data []byte) error {
+	if err := rejectKnownFieldAliases(data, "models"); err != nil {
+		return err
+	}
+	type wireTagsResponse tagsResponse
+	return json.Unmarshal(data, (*wireTagsResponse)(response))
+}
+
+func (model *tagModel) UnmarshalJSON(data []byte) error {
+	if err := rejectKnownFieldAliases(data, "name"); err != nil {
+		return err
+	}
+	type wireTagModel tagModel
+	return json.Unmarshal(data, (*wireTagModel)(model))
+}
+
+func (response *chatResponse) UnmarshalJSON(data []byte) error {
+	if err := rejectKnownFieldAliases(data, "message", "done"); err != nil {
+		return err
+	}
+	type wireChatResponse chatResponse
+	return json.Unmarshal(data, (*wireChatResponse)(response))
+}
+
+func (message *chatMessage) UnmarshalJSON(data []byte) error {
+	if err := rejectKnownFieldAliases(data, "role", "content"); err != nil {
+		return err
+	}
+	type wireChatMessage chatMessage
+	return json.Unmarshal(data, (*wireChatMessage)(message))
+}
+
 func New(options Options) (*Client, error) {
 	baseURL, dialAddress, err := validateBaseURL(options.BaseURL)
 	if err != nil {
@@ -72,13 +127,14 @@ func New(options Options) (*Client, error) {
 
 	dialer := &net.Dialer{Timeout: min(timeout, 5*time.Second), KeepAlive: 30 * time.Second}
 	transport := &http.Transport{
-		Proxy:                 nil,
-		DisableCompression:    true,
-		ForceAttemptHTTP2:     false,
-		MaxConnsPerHost:       4,
-		MaxIdleConnsPerHost:   2,
-		IdleConnTimeout:       30 * time.Second,
-		ResponseHeaderTimeout: timeout,
+		Proxy:                  nil,
+		DisableCompression:     true,
+		ForceAttemptHTTP2:      false,
+		MaxConnsPerHost:        4,
+		MaxIdleConnsPerHost:    2,
+		IdleConnTimeout:        30 * time.Second,
+		MaxResponseHeaderBytes: maxResponseHeaderBytes,
+		ResponseHeaderTimeout:  timeout,
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 			if network != "tcp" && network != "tcp4" && network != "tcp6" {
 				return nil, fmt.Errorf("ollama: unsupported network %q", network)
@@ -111,11 +167,7 @@ func (c *Client) CloseIdleConnections() {
 
 // Probe returns the bounded model names reported by /api/tags.
 func (c *Client) Probe(ctx context.Context) ([]string, error) {
-	var response struct {
-		Models []struct {
-			Name string `json:"name"`
-		} `json:"models"`
-	}
+	var response tagsResponse
 	if err := c.doJSON(ctx, http.MethodGet, "/api/tags", nil, &response); err != nil {
 		return nil, err
 	}
@@ -153,13 +205,7 @@ func (c *Client) Generate(ctx context.Context, prompt string) (string, error) {
 		Role    string `json:"role"`
 		Content string `json:"content"`
 	}{Role: "user", Content: prompt})
-	var response struct {
-		Message struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
-		} `json:"message"`
-		Done bool `json:"done"`
-	}
+	var response chatResponse
 	if err := c.doJSON(ctx, http.MethodPost, "/api/chat", request, &response); err != nil {
 		return "", err
 	}
@@ -195,6 +241,7 @@ func (c *Client) doJSON(ctx context.Context, method, path string, input, output 
 		return fmt.Errorf("ollama: create request: %w", err)
 	}
 	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Accept-Encoding", "identity")
 	if input != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
@@ -218,13 +265,18 @@ func (c *Client) doJSON(ctx context.Context, method, path string, input, output 
 		}
 		return fmt.Errorf("%w: HTTP %d", ErrProtocol, response.StatusCode)
 	}
-	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if err != nil || mediaType != "application/json" {
+	if len(response.Header.Values("Content-Encoding")) != 0 {
+		return fmt.Errorf("%w: encoded responses are not accepted", ErrProtocol)
+	}
+	if !validJSONContentType(response.Header) {
 		return fmt.Errorf("%w: response is not application/json", ErrProtocol)
+	}
+	if response.ContentLength > maxResponseBytes {
+		return ErrResponseTooLarge
 	}
 	data, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
 	if err != nil {
-		return fmt.Errorf("%w: response read failed", ErrUnavailable)
+		return classifyResponseReadError(ctx, err)
 	}
 	if len(data) > maxResponseBytes {
 		return ErrResponseTooLarge
@@ -232,13 +284,170 @@ func (c *Client) doJSON(ctx context.Context, method, path string, input, output 
 	if !utf8.Valid(data) {
 		return fmt.Errorf("%w: response is not valid UTF-8", ErrProtocol)
 	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	if err := decoder.Decode(output); err != nil {
+	if err := rejectDuplicateJSONKeys(data); err != nil {
 		return fmt.Errorf("%w: malformed JSON", ErrProtocol)
 	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return fmt.Errorf("%w: trailing JSON", ErrProtocol)
+	if err := json.Unmarshal(data, output); err != nil {
+		return fmt.Errorf("%w: malformed JSON", ErrProtocol)
+	}
+	return nil
+}
+
+func validJSONContentType(header http.Header) bool {
+	values := header.Values("Content-Type")
+	if len(values) != 1 {
+		return false
+	}
+	mediaType, parameters, err := mime.ParseMediaType(values[0])
+	if err != nil || mediaType != "application/json" {
+		return false
+	}
+	for name, value := range parameters {
+		if name != "charset" || !strings.EqualFold(value, "utf-8") {
+			return false
+		}
+	}
+	return true
+}
+
+func classifyResponseReadError(ctx context.Context, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	var networkError net.Error
+	if errors.As(err, &networkError) {
+		if networkError.Timeout() {
+			return context.DeadlineExceeded
+		}
+		return fmt.Errorf("%w: response read failed", ErrUnavailable)
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return ErrProtocol
+	}
+	return fmt.Errorf("%w: malformed response framing", ErrProtocol)
+}
+
+func rejectDuplicateJSONKeys(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	budget := &jsonScanBudget{}
+	if err := scanJSONValue(decoder, 0, budget); err != nil {
+		return err
+	}
+	if _, err := budget.nextToken(decoder); !errors.Is(err, io.EOF) {
+		return errors.New("JSON response has trailing data")
+	}
+	return nil
+}
+
+type jsonScanBudget struct {
+	tokens int
+	keys   int
+	items  int
+}
+
+func (budget *jsonScanBudget) nextToken(decoder *json.Decoder) (json.Token, error) {
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	budget.tokens++
+	if budget.tokens > maxJSONTokens {
+		return nil, errors.New("JSON response exceeds token limit")
+	}
+	return token, nil
+}
+
+func (budget *jsonScanBudget) addKey() error {
+	budget.keys++
+	if budget.keys > maxJSONKeys {
+		return errors.New("JSON response exceeds object key limit")
+	}
+	return nil
+}
+
+func (budget *jsonScanBudget) addItem() error {
+	budget.items++
+	if budget.items > maxJSONItems {
+		return errors.New("JSON response exceeds array item limit")
+	}
+	return nil
+}
+
+func scanJSONValue(decoder *json.Decoder, depth int, budget *jsonScanBudget) error {
+	token, err := budget.nextToken(decoder)
+	if err != nil {
+		return err
+	}
+	delimiter, composite := token.(json.Delim)
+	if !composite {
+		return nil
+	}
+	if depth >= maxJSONNestingDepth {
+		return errors.New("JSON response exceeds nesting limit")
+	}
+	switch delimiter {
+	case '{':
+		seen := make(map[string]struct{})
+		for decoder.More() {
+			keyToken, err := budget.nextToken(decoder)
+			if err != nil {
+				return err
+			}
+			if err := budget.addKey(); err != nil {
+				return err
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return errors.New("JSON object key is not text")
+			}
+			if _, duplicate := seen[key]; duplicate {
+				return errors.New("JSON response contains a duplicate object key")
+			}
+			seen[key] = struct{}{}
+			if err := scanJSONValue(decoder, depth+1, budget); err != nil {
+				return err
+			}
+		}
+	case '[':
+		for decoder.More() {
+			if err := budget.addItem(); err != nil {
+				return err
+			}
+			if err := scanJSONValue(decoder, depth+1, budget); err != nil {
+				return err
+			}
+		}
+	default:
+		return errors.New("invalid JSON delimiter")
+	}
+	closing, err := budget.nextToken(decoder)
+	if err != nil {
+		return err
+	}
+	if delimiter == '{' && closing != json.Delim('}') || delimiter == '[' && closing != json.Delim(']') {
+		return errors.New("mismatched JSON delimiter")
+	}
+	return nil
+}
+
+func rejectKnownFieldAliases(data []byte, knownFields ...string) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	for field := range fields {
+		for _, known := range knownFields {
+			if field != known && strings.EqualFold(field, known) {
+				return errors.New("JSON response contains a mis-cased known field")
+			}
+		}
 	}
 	return nil
 }
