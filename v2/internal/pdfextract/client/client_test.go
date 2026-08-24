@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -58,6 +60,57 @@ func TestClientPreservesControlledHelperFailureCategories(t *testing.T) {
 				t.Fatalf("Extract error = %v, want %v", err, test.want)
 			}
 		})
+	}
+}
+
+func TestBundledHelperFailureChannelIsEmpty(t *testing.T) {
+	helper := buildBundledHelper(t, runtime.GOOS, runtime.GOARCH)
+	root := t.TempDir()
+	pathCanary := "PATH_CANARY_CREDENTIAL_DO_NOT_LEAK"
+	contentCanary := "CONTENT_CANARY_PROMPT_DO_NOT_LEAK"
+	invalid := filepath.Join(root, pathCanary+".pdf")
+	if err := os.WriteFile(invalid, []byte(contentCanary), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(root, pathCanary+"_MISSING.pdf")
+
+	for _, test := range []struct {
+		name string
+		args []string
+		code int
+	}{
+		{name: "invalid content", args: []string{"-input", invalid}, code: 20},
+		{name: "missing path", args: []string{"-input", missing}, code: 20},
+		{name: "invalid usage", code: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			command := exec.Command(helper, test.args...)
+			var stdout, stderr bytes.Buffer
+			command.Stdout = &stdout
+			command.Stderr = &stderr
+			err := command.Run()
+			var exitError *exec.ExitError
+			if !errors.As(err, &exitError) || exitError.ExitCode() != test.code {
+				t.Fatalf("helper error = %v, want exit %d", err, test.code)
+			}
+			if stdout.Len() != 0 || stderr.Len() != 0 {
+				t.Fatalf("failure channel was not empty: stdout=%q stderr=%q", stdout.Bytes(), stderr.Bytes())
+			}
+			for _, canary := range []string{pathCanary, contentCanary} {
+				if strings.Contains(stdout.String(), canary) || strings.Contains(stderr.String(), canary) {
+					t.Fatalf("helper leaked canary %q", canary)
+				}
+			}
+		})
+	}
+
+	client, err := New(helper, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Extract(t.Context(), invalid); !errors.Is(err, protocol.ErrInvalidPDF) ||
+		strings.Contains(err.Error(), pathCanary) || strings.Contains(err.Error(), contentCanary) {
+		t.Fatalf("client did not preserve the stable exit category: %v", err)
 	}
 }
 
