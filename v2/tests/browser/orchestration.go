@@ -80,15 +80,11 @@ func (boundary *protocolBoundary) Run(parent context.Context) (processEvidence, 
 		return processEvidence{}, BlockerArtifactBundleInvalid, nil
 	}
 	if boundary.harness == nil {
-		blocker := BlockerProcessSandboxUnavailable
-		if processSandboxAvailable() {
-			blocker = BlockerLaunchProfileNotApproved
-		}
 		if err := artifacts.Close(); err != nil {
 			return processEvidence{}, "", errors.New("artifact close failed")
 		}
 		closed = true
-		return processEvidence{}, blocker, nil
+		return processEvidence{}, BlockerProcessSandboxUnavailable, nil
 	}
 
 	timeout := boundary.timeout

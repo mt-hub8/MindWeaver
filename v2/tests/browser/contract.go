@@ -31,7 +31,6 @@ const (
 	BlockerArtifactNotApproved       BlockerCode = "BROWSER_ARTIFACT_NOT_APPROVED"
 	BlockerArtifactBundleInvalid     BlockerCode = "BROWSER_ARTIFACT_BUNDLE_INVALID"
 	BlockerProcessSandboxUnavailable BlockerCode = "BROWSER_PROCESS_SANDBOX_NOT_IMPLEMENTED"
-	BlockerLaunchProfileNotApproved  BlockerCode = "BROWSER_LAUNCH_PROFILE_NOT_APPROVED"
 	BlockerControlledHarness         BlockerCode = "CONTROLLED_HARNESS_NOT_QUALIFIED"
 )
 
@@ -507,8 +506,7 @@ func stableVersion(value string) bool {
 
 func allowedBlockerCode(value string) bool {
 	return value == string(BlockerArtifactNotApproved) || value == string(BlockerArtifactBundleInvalid) ||
-		value == string(BlockerProcessSandboxUnavailable) || value == string(BlockerLaunchProfileNotApproved) ||
-		value == string(BlockerControlledHarness)
+		value == string(BlockerProcessSandboxUnavailable) || value == string(BlockerControlledHarness)
 }
 
 func validArtifactEvidence(evidence artifactEvidence) bool {
