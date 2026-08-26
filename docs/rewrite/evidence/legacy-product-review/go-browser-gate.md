@@ -1,5 +1,16 @@
 # Go browser qualification gate
 
+## Current status
+
+The fail-closed approval, runner-report, and process-before-prerequisite
+boundary now exists under `v2/tests/browser/**` with the offline PowerShell
+entry point `v2/scripts/test-browser.ps1`. The local capability audit found no
+repository-approved browser/driver bundle, so the approval list remains empty
+and every real scenario is still `BLOCKED/NOT_RUN`. See
+[`../browser-qualification/offline-capability-2026-08-27.md`](../browser-qualification/offline-capability-2026-08-27.md).
+
+This does not change the release decision below: no real browser PASS exists.
+
 ## Decision
 
 The embedded-asset Go tests remain fast contract tests; they are not browser
