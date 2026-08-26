@@ -811,7 +811,43 @@ func (c *Coordinator) RecoverResidue(ctx context.Context, parentPath string, exp
 	if c.activeVault == nil || c.activeVault.root == nil || c.activeVault.identity.info == nil {
 		return errors.New("backup: coordinator is not initialized")
 	}
-	return recoverResidue(ctx, parentPath, expected, c.rejectActiveVaultOverlap)
+	return recoverResidue(ctx, parentPath, expected, c.rejectActiveVaultOverlap, false)
+}
+
+// ConfirmPublishedBackup resolves only a publication-uncertain backup receipt.
+// It first performs the complete semantic Verify against an identity-bound
+// scratch parent, then CAS-reopens the exact receipt and destination, rechecks
+// the complete immutable tree, and removes only the receipt and identity
+// binding. It never deletes or rewrites the published destination.
+func (c *Coordinator) ConfirmPublishedBackup(
+	ctx context.Context,
+	parentPath string,
+	expected Residue,
+	options VerifyOptions,
+) (Outcome, error) {
+	if c == nil || ctx == nil || expected.Kind != "backup" ||
+		expected.State != ResidueStatePublicationUncertain {
+		return failedOutcome(FailureInvalid, errors.New("backup: invalid published-backup confirmation input"))
+	}
+	destination := filepath.Join(parentPath, expected.DestinationName)
+	outcome, err := c.Verify(ctx, destination, options)
+	if err != nil {
+		return outcome, err
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.activeVault == nil || c.activeVault.root == nil || c.activeVault.identity.info == nil {
+		return failedOutcome(FailureInvalid, errors.New("backup: coordinator is not initialized"))
+	}
+	err = recoverResidue(ctx, parentPath, expected, c.rejectActiveVaultOverlap, true)
+	if err == nil {
+		return outcome, nil
+	}
+	class := classifyBackupFailure(err)
+	outcome.Succeeded = false
+	outcome.Failure = class
+	outcome.CleanupRequired = errors.Is(err, ErrCleanupResidual)
+	return outcome, &classifiedFailure{class: class, cause: err}
 }
 
 type residueRecoveryGuard func(*destinationTarget) error
@@ -821,6 +857,7 @@ func recoverResidue(
 	parentPath string,
 	expected Residue,
 	guard residueRecoveryGuard,
+	confirmPublishedBackup bool,
 ) (resultErr error) {
 	if ctx == nil {
 		return errors.New("backup: nil residue recovery context")
@@ -838,7 +875,7 @@ func recoverResidue(
 		return err
 	}
 	defer func() { resultErr = errors.Join(resultErr, parent.Close()) }()
-	return recoverResidueRoot(ctx, parent, expected, guard)
+	return recoverResidueRoot(ctx, parent, expected, guard, confirmPublishedBackup)
 }
 
 func recoverResidueRoot(
@@ -846,6 +883,7 @@ func recoverResidueRoot(
 	parent *retainedDirectory,
 	expected Residue,
 	guard residueRecoveryGuard,
+	confirmPublishedBackup bool,
 ) (resultErr error) {
 	if ctx == nil || parent == nil || parent.root == nil {
 		return errors.New("backup: invalid retained residue recovery")
@@ -923,7 +961,24 @@ func recoverResidueRoot(
 		staging.directory = directory
 		return cleanupStagingTree(staging, parent, receipt.Kind)
 	case ResidueStatePublicationUncertain:
-		return ErrPublicationUncertain
+		if !confirmPublishedBackup || receipt.Kind != "backup" {
+			return ErrPublicationUncertain
+		}
+		published, err := openExpectedDirectory(
+			parent, receipt.DestinationName, directoryIdentity{info: observation.destinationInfo},
+		)
+		if err != nil {
+			return errors.Join(ErrPublicationUncertain, err)
+		}
+		manifest, verifyErr := readManifestRoot(ctx, published, manifestFileName)
+		if verifyErr == nil {
+			verifyErr = verifyBackupPublicationRoot(ctx, published, manifest)
+		}
+		closeErr := published.Close()
+		if err := errors.Join(verifyErr, closeErr); err != nil {
+			return errors.Join(ErrPublicationUncertain, err)
+		}
+		return removeResidueReceipt(parent, staging)
 	case ResidueStateReceiptOnly:
 		return removeResidueReceipt(parent, staging)
 	case ResidueStateConflict:

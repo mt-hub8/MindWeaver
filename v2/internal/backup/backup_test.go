@@ -159,6 +159,69 @@ func TestCoordinatorCloseWaitsForInFlightOperation(t *testing.T) {
 	}
 }
 
+func TestCreateValidatesFixedLocalDestinationBeforeFirstWrite(t *testing.T) {
+	fixture := newBackupFixture(t)
+	destination := filepath.Join(fixture.root, "unsafe-media-backup")
+	validated := false
+
+	_, err := fixture.coordinator.create(t.Context(), destination, publicationHooks{
+		validateCreateDestination: func(*retainedDirectory) error {
+			validated = true
+			return vault.ErrUnsafeMedia
+		},
+	})
+	if !validated || !errors.Is(err, vault.ErrUnsafeMedia) {
+		t.Fatalf("Create validation = %t, error = %v, want fixed-local rejection", validated, err)
+	}
+	if _, statErr := os.Lstat(destination); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("destination exists after validation rejection: %v", statErr)
+	}
+	page, listErr := ListResidues(t.Context(), fixture.root, 10)
+	if listErr != nil || len(page.Items) != 0 {
+		t.Fatalf("residues after validation rejection = %+v, %v", page, listErr)
+	}
+}
+
+func TestConfirmPublishedBackupRequiresFullVerifyAndExactResidueCAS(t *testing.T) {
+	fixture := newBackupFixture(t)
+	fixture.addDocument(t, "confirm-published", "published backup confirmation")
+	destination := filepath.Join(fixture.root, "published-backup")
+	injected := errors.New("injected parent sync failure")
+
+	_, err := fixture.coordinator.create(t.Context(), destination, publicationHooks{
+		syncParent: func(*retainedDirectory) error { return injected },
+	})
+	if !errors.Is(err, ErrPublicationUncertain) || !errors.Is(err, injected) {
+		t.Fatalf("Create error = %v, want publication uncertain", err)
+	}
+	page, err := ListResidues(t.Context(), fixture.root, 10)
+	if err != nil || len(page.Items) != 1 || page.Items[0].Kind != "backup" ||
+		page.Items[0].State != ResidueStatePublicationUncertain {
+		t.Fatalf("publication residue = %+v, %v", page, err)
+	}
+	expected := page.Items[0]
+	if err := fixture.coordinator.RecoverResidue(t.Context(), fixture.root, expected); !errors.Is(err, ErrPublicationUncertain) {
+		t.Fatalf("ordinary recovery error = %v, want publication uncertain", err)
+	}
+
+	scratch := filepath.Join(fixture.root, "confirm-scratch")
+	if err := os.Mkdir(scratch, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := fixture.coordinator.ConfirmPublishedBackup(
+		t.Context(), fixture.root, expected, VerifyOptions{ScratchParent: scratch},
+	)
+	if err != nil || !outcome.Succeeded || outcome.Failure != "" {
+		t.Fatalf("ConfirmPublishedBackup outcome = %+v, error = %v", outcome, err)
+	}
+	if _, err := os.Stat(destination); err != nil {
+		t.Fatalf("confirmed destination was removed: %v", err)
+	}
+	if page, err := ListResidues(t.Context(), fixture.root, 10); err != nil || len(page.Items) != 0 {
+		t.Fatalf("residues after confirmation = %+v, %v", page, err)
+	}
+}
+
 func (fixture *backupFixture) addDocument(t *testing.T, key, content string) workbench.UploadResult {
 	t.Helper()
 	return fixture.addDocumentContext(t.Context(), key, content, func(err error) { t.Fatal(err) })

@@ -127,6 +127,7 @@ type publicationResult struct{ stagingConsumed bool }
 
 type publicationHooks struct {
 	afterOverlapCheck                         func(*destinationTarget) error
+	validateCreateDestination                 func(*retainedDirectory) error
 	validateRestoreDestination                func(*retainedDirectory) error
 	afterCreateQualificationBeforeCommitment  func(string) error
 	beforeRestoreQualification                func(string) error
@@ -332,6 +333,39 @@ func (c *Coordinator) Create(ctx context.Context, destination string) (result Ma
 	return c.create(ctx, destination, publicationHooks{})
 }
 
+// ValidateCreateDestination performs the same retained-parent, fixed-local,
+// and active-Vault overlap checks used by Create without writing anything.
+// The destination may already exist so a caller can separately verify a
+// publication whose response was lost. Create always repeats every check on
+// its own retained capability before its first write.
+func (c *Coordinator) ValidateCreateDestination(ctx context.Context, destination string) (resultErr error) {
+	if c == nil {
+		return errors.New("backup: coordinator is not initialized")
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.activeVault == nil || c.activeVault.root == nil || c.activeVault.identity.info == nil {
+		return errors.New("backup: coordinator is not initialized")
+	}
+	if ctx == nil {
+		return errors.New("backup: nil context")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	target, err := newDestination(destination)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		resultErr = errors.Join(resultErr, wrapBackupError(target.parent.Close(), "backup: close destination parent"))
+	}()
+	if err := validateRestoreDestinationParent(target.parent); err != nil {
+		return classifyRestoreDestinationValidation(err)
+	}
+	return c.rejectActiveVaultOverlap(target)
+}
+
 func (c *Coordinator) create(
 	ctx context.Context,
 	destination string,
@@ -359,6 +393,13 @@ func (c *Coordinator) create(
 	defer func() {
 		resultErr = errors.Join(resultErr, wrapBackupError(target.parent.Close(), "backup: close destination parent"))
 	}()
+	validateDestination := validateRestoreDestinationParent
+	if hooks.validateCreateDestination != nil {
+		validateDestination = hooks.validateCreateDestination
+	}
+	if err := validateDestination(target.parent); err != nil {
+		return Manifest{}, classifyRestoreDestinationValidation(err)
+	}
 	if err := c.rejectActiveVaultOverlap(target); err != nil {
 		return Manifest{}, err
 	}
