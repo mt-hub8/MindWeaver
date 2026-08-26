@@ -26,6 +26,8 @@ func TestDecodeResultRejectsMalformedFrames(t *testing.T) {
 	for _, frame := range [][]byte{
 		[]byte("wrong\npages=1\nbytes=1\nx"),
 		[]byte("MWPDF1\npages=0\nbytes=1\nx"),
+		[]byte("MWPDF1\npages=01\nbytes=1\nx"),
+		[]byte("MWPDF1\npages=1\nbytes=01\nx"),
 		[]byte("MWPDF1\npages=1\nbytes=2\nx"),
 		[]byte("MWPDF1\npages=1\nbytes=1\n\xff"),
 	} {
@@ -33,6 +35,37 @@ func TestDecodeResultRejectsMalformedFrames(t *testing.T) {
 			t.Fatalf("frame %q error = %v, want ErrHelperProtocol", frame, err)
 		}
 	}
+}
+
+func FuzzDecodeResultRequiresCanonicalFrame(f *testing.F) {
+	for _, seed := range [][]byte{
+		[]byte("MWPDF1\npages=1\nbytes=1\nx"),
+		[]byte("MWPDF1\npages=01\nbytes=1\nx"),
+		[]byte("MWPDF1\npages=1\nbytes=01\nx"),
+		[]byte("MWPDF1\npages=2\nbytes=6\n中文"),
+		[]byte("garbage"),
+	} {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, frame []byte) {
+		if len(frame) > 1<<20 {
+			t.Skip()
+		}
+		result, err := DecodeResult(frame)
+		if err != nil {
+			if !errors.Is(err, ErrHelperProtocol) {
+				t.Fatalf("DecodeResult returned non-protocol error: %v", err)
+			}
+			return
+		}
+		var canonical bytes.Buffer
+		if err := WriteResult(&canonical, result); err != nil {
+			t.Fatalf("accepted result cannot be encoded: %v", err)
+		}
+		if !bytes.Equal(frame, canonical.Bytes()) {
+			t.Fatalf("DecodeResult accepted non-canonical frame")
+		}
+	})
 }
 
 func TestDecodeProbeRequiresOneCanonicalBoundedFrame(t *testing.T) {

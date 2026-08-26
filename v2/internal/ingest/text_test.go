@@ -3,12 +3,56 @@ package ingest
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"strings"
 	"testing"
 	"unicode/utf8"
 )
+
+func FuzzChunkTextDeterministicAndBounded(f *testing.F) {
+	f.Add([]byte("第一段。\n\nSecond paragraph."), uint16(12), uint8(2))
+	f.Add([]byte("潮汐校准器\r\nalpha beta gamma"), uint16(8), uint8(1))
+	f.Add([]byte{0xff, 0xfe, 0xfd}, uint16(4), uint8(0))
+	f.Add([]byte("   "), uint16(1), uint8(0))
+	f.Fuzz(func(t *testing.T, data []byte, maxSeed uint16, overlapSeed uint8) {
+		// Exact 4 MiB boundary behavior is covered by DOC-001. Keep each fuzz
+		// iteration small enough for sustained local and CI fuzzing.
+		if len(data) > 64<<10 {
+			t.Skip()
+		}
+		maxRunes := int(maxSeed%512) + 1
+		overlapRunes := int(overlapSeed) % (maxRunes/4 + 1)
+		first, firstErr := ChunkText(string(data), maxRunes, overlapRunes)
+		second, secondErr := ChunkText(string(data), maxRunes, overlapRunes)
+		if (firstErr == nil) != (secondErr == nil) ||
+			(firstErr != nil && firstErr.Error() != secondErr.Error()) {
+			t.Fatalf("ChunkText is nondeterministic: first=%v second=%v", firstErr, secondErr)
+		}
+		if firstErr != nil {
+			return
+		}
+		if len(first) == 0 || len(first) > MaxTextChunks || len(first) != len(second) {
+			t.Fatalf("invalid deterministic chunk count: first=%d second=%d", len(first), len(second))
+		}
+		for index, chunk := range first {
+			if chunk != second[index] {
+				t.Fatalf("chunk %d changed between identical calls", index)
+			}
+			if chunk.Ordinal != index || !utf8.ValidString(chunk.Text) ||
+				strings.TrimSpace(chunk.Text) != chunk.Text ||
+				utf8.RuneCountInString(chunk.Text) > maxRunes {
+				t.Fatalf("chunk %d violates ordinal/text/rune bounds", index)
+			}
+			digest := sha256.Sum256([]byte(chunk.Text))
+			if chunk.Digest != hex.EncodeToString(digest[:]) {
+				t.Fatalf("chunk %d digest mismatch", index)
+			}
+		}
+	})
+}
 
 func TestDetectTextFormat(t *testing.T) {
 	t.Parallel()

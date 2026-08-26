@@ -74,16 +74,18 @@ func DecodeResult(data []byte) (Result, error) {
 	if err != nil || !strings.HasPrefix(pageLine, "pages=") {
 		return Result{}, ErrHelperProtocol
 	}
-	pages, err := strconv.Atoi(strings.TrimPrefix(pageLine, "pages="))
-	if err != nil || pages < 1 || pages > MaxPages {
+	pageValue := strings.TrimPrefix(pageLine, "pages=")
+	pages, err := strconv.Atoi(pageValue)
+	if err != nil || pages < 1 || pages > MaxPages || strconv.Itoa(pages) != pageValue {
 		return Result{}, ErrHelperProtocol
 	}
 	byteLine, err := readLine(reader)
 	if err != nil || !strings.HasPrefix(byteLine, "bytes=") {
 		return Result{}, ErrHelperProtocol
 	}
-	length, err := strconv.Atoi(strings.TrimPrefix(byteLine, "bytes="))
-	if err != nil || length < 1 || length > MaxExtractedTextBytes {
+	byteValue := strings.TrimPrefix(byteLine, "bytes=")
+	length, err := strconv.Atoi(byteValue)
+	if err != nil || length < 1 || length > MaxExtractedTextBytes || strconv.Itoa(length) != byteValue {
 		return Result{}, ErrHelperProtocol
 	}
 	text, err := io.ReadAll(io.LimitReader(reader, int64(MaxExtractedTextBytes)+1))
