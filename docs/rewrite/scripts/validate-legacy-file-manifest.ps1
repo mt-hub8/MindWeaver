@@ -743,7 +743,13 @@ function Invoke-SelfTests {
     [void][IO.Directory]::CreateDirectory($tempRoot)
     try {
         $raw = Read-StrictUtf8TextFile -Path $manifestPath
-        $unknownHeader = $raw.Replace('"notes"' + "`n", '"unknown"' + "`n")
+        if ($raw.Contains("`r")) { $raw = $raw.Replace("`r`n", "`n") }
+        $headerEnd = $raw.IndexOf("`n", [StringComparison]::Ordinal)
+        if ($headerEnd -lt 0) { throw "Self-test manifest header is missing" }
+        $unknownColumns = [string[]]$columns.Clone()
+        $unknownColumns[$unknownColumns.Length - 1] = "unknown"
+        $unknownHeaderLine = (($unknownColumns | ForEach-Object { ConvertTo-CanonicalCsvField -Value $_ }) -join ',')
+        $unknownHeader = $unknownHeaderLine + $raw.Substring($headerEnd)
         $unknownPath = Join-Path $tempRoot "unknown.csv"
         [IO.File]::WriteAllText($unknownPath, $unknownHeader, $utf8NoBom)
         Assert-Throws -Name "unknown header" -Action { Read-CanonicalManifest -Path $unknownPath | Out-Null }
