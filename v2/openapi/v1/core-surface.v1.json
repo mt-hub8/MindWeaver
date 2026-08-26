@@ -25,6 +25,7 @@
       },
       "packages": [
         "internal/app",
+        "internal/backup",
         "internal/blob",
         "internal/ingest",
         "internal/lifecycle",
@@ -44,7 +45,7 @@
         "platform/version"
       ],
       "public": true,
-      "sourceManifestSHA256": "b9ff606e1759d7ed3ce4b5bc9c37409db636ae6db58934cdeed0e94084b32255",
+      "sourceManifestSHA256": "325dfec05db7f7744c6aaf4de792d80efaa6b458a0b850a635d3c41e3596e099",
       "verbs": [
         "config",
         "help",
@@ -104,6 +105,7 @@
   "module": "github.com/mt-hub8/MindWeaver/v2",
   "packages": [
     "internal/app",
+    "internal/backup",
     "internal/blob",
     "internal/ingest",
     "internal/lifecycle",

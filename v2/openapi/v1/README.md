@@ -67,11 +67,10 @@ changing compiled command code changes the checked-in manifest digest.
 The contract test separately requires the legacy migration root, importer
 package, migration command, SQLite adapter, `007_legacy_import.sql`, and stable
 legacy-import production tokens to be absent using ASCII case-insensitive
-matching. `internal/backup` is not currently reachable from either command and
-is therefore absent from this production surface; a future recovery command
-must add real wiring and regenerate the closure instead of claiming dormant
-code as shipped. Final PE and installer contents still require the release
-artifact gate.
+matching. `internal/backup` is reachable only from the public `mindweaver`
+startup recovery command; the PDF helper must not link it. The exact closure
+and source manifest therefore change whenever recovery wiring changes. Final
+PE and installer contents still require the release artifact gate.
 The SQLite list is read from a real freshly migrated database and covers every
 application-declared table, including the migration ledger and FTS virtual
 table, but not the exact SQLite-owned internal set or the four FTS5-managed
