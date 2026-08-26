@@ -81,10 +81,10 @@ var shippedArtifacts = []artifactContract{
 			"github.com/mgilbir/pdf0.",
 		},
 		modules: []string{
-			"github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304#h1:5NoQAewtgKNK3G4bjNPxVoGXu6F6NzLXWCTdD5FFAEY=",
-			"github.com/ncruces/go-sqlite3@v0.35.3#h1:Ei07Zv1qfV/vyXzelhFsyS5Oh9TArBZHsmFk14Xv3GY=",
-			"github.com/ncruces/julianday@v1.0.0#h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M=",
-			"golang.org/x/sys@v0.47.0#h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=",
+			"github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304",
+			"github.com/ncruces/go-sqlite3@v0.35.3",
+			"github.com/ncruces/julianday@v1.0.0",
+			"golang.org/x/sys@v0.47.0",
 		},
 		sourceSHA256:   "e06c6a3486c7b4b2683ec583df04620d725ce87e8d469c48f7f6110a55bfd723",
 		artifactSHA256: "4f1caaa014cbe4180a1434e30dd491328f956e80e47c0640cdad7a411d1515e4",
@@ -119,13 +119,13 @@ var shippedArtifacts = []artifactContract{
 			modulePath + "/internal/pdfextract/client.",
 		},
 		modules: []string{
-			"github.com/mgilbir/formalis@v0.3.1#h1:NyYe/EcRYJ2jUjgaZG98lNXgJ7H+jgy6mq7HXOnQxl8=",
-			"github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556#h1:2ZUsOgMhxpHCYC8jyzeEnJZFLYGbXhqjAJWJBvY8q4U=",
-			"github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2#h1:kdDIM4JNxn9gsRk5Zo6mtmcFpBqnl9gTVUwf9t6lIRk=",
-			"github.com/mgilbir/pdf0@v0.1.0#h1:rfBK18bcQ4kHQTXBmriAb07TafhG2w1fLflq9lHgaG4=",
+			"github.com/mgilbir/formalis@v0.3.1",
+			"github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556",
+			"github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2",
+			"github.com/mgilbir/pdf0@v0.1.0",
 		},
 		sourceSHA256:   "0bec9ddde1ea8778ffc3c20740ed55080d7ef0b537cfd070a2d563ccc5a087c6",
-		artifactSHA256: "b9cc03b7c139e9fadde86f2ec9564dbe368d85822bd96ac64385e7aa75827384",
+		artifactSHA256: "a2a6a04b4ade9367aab6cce35e9a3c87351f9c8fabd33d9ea2fe108f7e732241",
 	},
 }
 
@@ -279,6 +279,9 @@ func commandSourceManifest(
 			t.Fatalf("first-party package directory escapes module root: %s", record.ImportPath)
 		}
 		packageRelative = filepath.ToSlash(packageRelative)
+		if packageRelative == "vendor" || strings.HasPrefix(packageRelative, "vendor/") {
+			t.Fatalf("vendored package counted as first-party source: %s", record.ImportPath)
+		}
 		if record.ImportPath != modulePath+"/"+packageRelative {
 			t.Fatalf("first-party import path %s does not match directory %s", record.ImportPath, packageRelative)
 		}
@@ -539,7 +542,10 @@ func assertBuildInfo(t *testing.T, artifact artifactContract, information *build
 				t.Errorf("legacy Java/MySQL dependency %s retained in %s", dependency.Path, artifact.name)
 			}
 		}
-		gotModules = append(gotModules, dependency.Path+"@"+dependency.Version+"#"+dependency.Sum)
+		if dependency.Sum != "" {
+			t.Fatalf("vendored buildinfo unexpectedly carries a module sum for %s", dependency.Path)
+		}
+		gotModules = append(gotModules, dependency.Path+"@"+dependency.Version)
 	}
 	sort.Strings(gotModules)
 	wantModules := append([]string(nil), artifact.modules...)
@@ -677,11 +683,13 @@ func offlineWindowsAMD64Environment() []string {
 	overrides := map[string]string{
 		"CGO_ENABLED": "0",
 		"GOARCH":      "amd64",
-		"GOFLAGS":     "-mod=readonly -buildvcs=false",
+		"GOENV":       "off",
+		"GOFLAGS":     "-mod=vendor -buildvcs=false",
 		"GOOS":        "windows",
 		"GOPROXY":     "off",
 		"GOSUMDB":     "off",
 		"GOTOOLCHAIN": "local",
+		"GOVCS":       "*:off",
 		"GOWORK":      "off",
 	}
 	environment := make([]string, 0, len(os.Environ())+len(overrides))

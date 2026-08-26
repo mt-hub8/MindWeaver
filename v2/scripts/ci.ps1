@@ -20,19 +20,40 @@ if (-not (Test-Path -LiteralPath $mwGofmt)) {
     throw "gofmt was not found next to $Go"
 }
 
-$env:GOTOOLCHAIN = 'local'
-$env:GOPROXY = 'off'
-$env:GOSUMDB = 'off'
-$env:GOFLAGS = '-mod=readonly -buildvcs=false'
 $mwBuildRoot = Join-Path ([IO.Path]::GetTempPath()) ('mindweaver-v2-build-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $mwBuildRoot | Out-Null
+$mwModuleCache = Join-Path $mwBuildRoot 'gomodcache'
+$mwBuildCache = Join-Path $mwBuildRoot 'gocache'
+$mwGoTemp = Join-Path $mwBuildRoot 'gotmp'
+New-Item -ItemType Directory -Path $mwModuleCache, $mwBuildCache, $mwGoTemp | Out-Null
+
+$env:CGO_ENABLED = '0'
+$env:GOARCH = 'amd64'
+$env:GOENV = 'off'
+$env:GOFLAGS = '-mod=vendor -trimpath -buildvcs=false'
+$env:GOCACHE = $mwBuildCache
+$env:GOMODCACHE = $mwModuleCache
+$env:GOOS = 'windows'
+$env:GOPROXY = 'off'
+$env:GOSUMDB = 'off'
+$env:GOTOOLCHAIN = 'local'
+$env:GOTMPDIR = $mwGoTemp
+$env:GOVCS = '*:off'
+$env:GOWORK = 'off'
 
 Push-Location $mwModuleRoot
 try {
-    & $Go version
+    $mwGoVersion = (& $Go version | Out-String).Trim()
     if ($LASTEXITCODE -ne 0) { throw 'go version failed' }
+    if ($mwGoVersion -cne 'go version go1.27.0 windows/amd64') {
+        throw "unsupported Go toolchain: $mwGoVersion"
+    }
+    Write-Host $mwGoVersion
 
-    $mwGoFiles = @(Get-ChildItem -LiteralPath $mwModuleRoot -Recurse -File -Filter '*.go' | Select-Object -ExpandProperty FullName)
+    $mwVendorPrefix = (Join-Path $mwModuleRoot 'vendor') + [IO.Path]::DirectorySeparatorChar
+    $mwGoFiles = @(Get-ChildItem -LiteralPath $mwModuleRoot -Recurse -File -Filter '*.go' |
+        Where-Object { -not $_.FullName.StartsWith($mwVendorPrefix, [StringComparison]::OrdinalIgnoreCase) } |
+        Select-Object -ExpandProperty FullName)
     $mwUnformatted = @(& $mwGofmt -l $mwGoFiles)
     if ($LASTEXITCODE -ne 0) { throw 'gofmt check failed' }
     if ($mwUnformatted.Count -gt 0) {
@@ -43,10 +64,15 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'go test failed' }
     & $Go vet ./...
     if ($LASTEXITCODE -ne 0) { throw 'go vet failed' }
-    & $Go build -trimpath -o (Join-Path $mwBuildRoot 'mindweaver.exe') ./cmd/mindweaver
+    & $Go build -trimpath -buildvcs=false -o (Join-Path $mwBuildRoot 'mindweaver.exe') ./cmd/mindweaver
     if ($LASTEXITCODE -ne 0) { throw 'go build failed' }
-    & $Go build -trimpath -o (Join-Path $mwBuildRoot 'mindweaver-pdf.exe') ./cmd/mindweaver-pdf
+    & $Go build -trimpath -buildvcs=false -o (Join-Path $mwBuildRoot 'mindweaver-pdf.exe') ./cmd/mindweaver-pdf
     if ($LASTEXITCODE -ne 0) { throw 'PDF helper build failed' }
+
+    $mwModuleCacheEntries = @(Get-ChildItem -LiteralPath $mwModuleCache -Force -Recurse)
+    if ($mwModuleCacheEntries.Count -ne 0) {
+        throw ('vendored build wrote to the empty module cache: ' + (($mwModuleCacheEntries | Select-Object -ExpandProperty FullName) -join ', '))
+    }
 } finally {
     Pop-Location
     $mwResolvedBuild = (Resolve-Path -LiteralPath $mwBuildRoot).Path

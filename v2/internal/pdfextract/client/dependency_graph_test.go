@@ -24,16 +24,16 @@ const modulePath = "github.com/mt-hub8/MindWeaver/v2"
 
 var expectedWindowsModules = map[string][]string{
 	"mindweaver.exe": {
-		"github.com/ncruces/go-sqlite3@v0.35.3#h1:Ei07Zv1qfV/vyXzelhFsyS5Oh9TArBZHsmFk14Xv3GY=",
-		"github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304#h1:5NoQAewtgKNK3G4bjNPxVoGXu6F6NzLXWCTdD5FFAEY=",
-		"github.com/ncruces/julianday@v1.0.0#h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M=",
-		"golang.org/x/sys@v0.47.0#h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=",
+		"github.com/ncruces/go-sqlite3@v0.35.3",
+		"github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304",
+		"github.com/ncruces/julianday@v1.0.0",
+		"golang.org/x/sys@v0.47.0",
 	},
 	"mindweaver-pdf.exe": {
-		"github.com/mgilbir/formalis@v0.3.1#h1:NyYe/EcRYJ2jUjgaZG98lNXgJ7H+jgy6mq7HXOnQxl8=",
-		"github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556#h1:2ZUsOgMhxpHCYC8jyzeEnJZFLYGbXhqjAJWJBvY8q4U=",
-		"github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2#h1:kdDIM4JNxn9gsRk5Zo6mtmcFpBqnl9gTVUwf9t6lIRk=",
-		"github.com/mgilbir/pdf0@v0.1.0#h1:rfBK18bcQ4kHQTXBmriAb07TafhG2w1fLflq9lHgaG4=",
+		"github.com/mgilbir/formalis@v0.3.1",
+		"github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556",
+		"github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2",
+		"github.com/mgilbir/pdf0@v0.1.0",
 	},
 }
 
@@ -207,7 +207,10 @@ func TestWindowsAMD64PDFDependencyGraph(t *testing.T) {
 				if dependency.Replace != nil {
 					t.Fatalf("%s contains module replacement for %s", artifact.name, dependency.Path)
 				}
-				got = append(got, dependency.Path+"@"+dependency.Version+"#"+dependency.Sum)
+				if dependency.Sum != "" {
+					t.Fatalf("%s vendored buildinfo unexpectedly carries a module sum for %s", artifact.name, dependency.Path)
+				}
+				got = append(got, dependency.Path+"@"+dependency.Version)
 			}
 			sort.Strings(got)
 			want := append([]string(nil), expectedWindowsModules[artifact.name]...)
@@ -445,11 +448,13 @@ func hermeticBuildEnvironment(goos, goarch string) []string {
 	overrides := map[string]string{
 		"CGO_ENABLED": "0",
 		"GOARCH":      goarch,
-		"GOFLAGS":     "-mod=readonly -buildvcs=false",
+		"GOENV":       "off",
+		"GOFLAGS":     "-mod=vendor -buildvcs=false",
 		"GOOS":        goos,
 		"GOPROXY":     "off",
 		"GOSUMDB":     "off",
 		"GOTOOLCHAIN": "local",
+		"GOVCS":       "*:off",
 		"GOWORK":      "off",
 	}
 	environment := make([]string, 0, len(os.Environ())+len(overrides))

@@ -7,6 +7,8 @@
 *.yaml text eol=lf
 *.json text eol=lf
 *.css text eol=lf
+*.js text eol=lf
+*.html text eol=lf
 *.md text eol=lf
 *.ps1 text eol=crlf
 vendor/** -text

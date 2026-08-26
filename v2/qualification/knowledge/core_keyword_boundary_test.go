@@ -10,7 +10,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -351,11 +350,11 @@ func hitIdentities(hits []store.ChunkHit) []string {
 
 func readBoundaryContract(t *testing.T) (boundaryContract, []byte) {
 	t.Helper()
-	_, currentFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("locate boundary qualification")
+	root, err := knowledgeModuleRoot()
+	if err != nil {
+		t.Fatal(err)
 	}
-	path := filepath.Join(filepath.Dir(currentFile), "..", "..", "testdata", "qualification", "knowledge", "core-keyword-boundary.8aadf60.v2.json")
+	path := filepath.Join(root, "testdata", "qualification", "knowledge", "core-keyword-boundary.8aadf60.v2.json")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

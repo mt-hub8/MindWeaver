@@ -1,4 +1,4 @@
-name: v2-offline-dependency-verification
+name: MindWeaver Go offline CI
 
 on:
   push:
@@ -8,17 +8,29 @@ permissions:
   contents: read
 
 jobs:
-  verify:
-    runs-on: ubuntu-latest
+  windows-amd64:
+    runs-on: windows-latest
+    env:
+      CGO_ENABLED: "0"
+      GOARCH: amd64
+      GOENV: "off"
+      GOFLAGS: -mod=vendor -trimpath -buildvcs=false
+      GOOS: windows
+      GOPROXY: "off"
+      GOSUMDB: "off"
+      GOTOOLCHAIN: local
+      GOVCS: "*:off"
+      GOWORK: "off"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
+          go-version: 1.27.0
+          check-latest: false
           cache: false
-      - name: Verify without module or toolchain downloads
-        env:
-          GOTOOLCHAIN: local
-          GOPROXY: "off"
-          GOSUMDB: "off"
-        run: ./scripts/verify-standalone.sh
+      - name: Empty-cache vendored CI
+        shell: pwsh
+        run: ./scripts/ci.ps1 -Go (Get-Command go).Source
+      - name: Tracked-only standalone CI
+        shell: pwsh
+        run: ./scripts/verify-standalone.ps1 -Go (Get-Command go).Source

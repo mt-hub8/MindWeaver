@@ -94,10 +94,7 @@ func runOfflineGoList(root string, arguments ...string) ([]byte, error) {
 func runOfflineGoListWithTimeout(root string, timeout time.Duration, arguments ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	goBinary := filepath.Join(runtime.GOROOT(), "bin", "go")
-	if runtime.GOOS == "windows" {
-		goBinary += ".exe"
-	}
+	goBinary := frozenGoBinary()
 	if info, err := os.Stat(goBinary); err != nil || !info.Mode().IsRegular() {
 		return nil, errors.New("frozen Go inspection tool is unavailable")
 	}
@@ -129,19 +126,19 @@ func offlineGoEnvironment(environment []string) []string {
 		"GOARCH":      "amd64",
 		"GOENV":       "off",
 		// An empty GOEXPERIMENT selects the defaults built into the exact
-		// runtime.GOROOT toolchain. "none" is not equivalent in Go 1.27: it
+		// configured frozen toolchain. "none" is not equivalent in Go 1.27: it
 		// disables the default jsonv2 experiment required by this dependency
 		// graph.
 		"GOEXPERIMENT": "",
 		"GOFIPS140":    "off",
-		"GOFLAGS":      "-mod=readonly -buildvcs=false",
+		"GOFLAGS":      "-mod=vendor -buildvcs=false",
 		"GOOS":         "windows",
 		"GOPROXY":      "off",
 		"GOSUMDB":      "off",
 		"GOTOOLCHAIN":  "local",
 		"GOVCS":        "*:off",
 		"GOWORK":       "off",
-		"GOROOT":       runtime.GOROOT(),
+		"GOROOT":       frozenGoRoot(),
 	}
 	result := make([]string, 0, len(environment)+len(overrides))
 	for _, item := range environment {
@@ -162,6 +159,23 @@ func offlineGoEnvironment(environment []string) []string {
 		result = append(result, key+"="+overrides[key])
 	}
 	return result
+}
+
+func frozenGoBinary() string {
+	if configured := strings.TrimSpace(os.Getenv("MW_GO")); configured != "" {
+		if absolute, err := filepath.Abs(configured); err == nil {
+			return absolute
+		}
+	}
+	name := "go"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return filepath.Join(runtime.GOROOT(), "bin", name)
+}
+
+func frozenGoRoot() string {
+	return filepath.Dir(filepath.Dir(frozenGoBinary()))
 }
 
 func decodeGoListPackages(raw []byte) ([]goListPackage, error) {
@@ -228,6 +242,10 @@ func inspectCommandProduction(root, module, command string, libraryRoots, exclud
 	var sourceEntries []commandSourceEntry
 	sourceBudget := commandSourceBudget{}
 	commandImport := module + "/cmd/" + command
+	moduleSums, err := productionModuleSums(filepath.Join(root, "go.sum"))
+	if err != nil {
+		return commandProductionInventory{}, err
+	}
 	seenCommand := false
 	for _, record := range records {
 		if record.Standard {
@@ -238,6 +256,27 @@ func inspectCommandProduction(root, module, command string, libraryRoots, exclud
 			return commandProductionInventory{}, err
 		}
 		if local {
+			if strings.HasPrefix(relative, "vendor/") {
+				if record.Module == nil || record.Module.Main || record.Module.Path == "" || record.Module.Version == "" || record.Module.Sum != "" {
+					return commandProductionInventory{}, errors.New("vendored production module identity is incomplete")
+				}
+				if relative != "vendor/"+record.ImportPath {
+					return commandProductionInventory{}, errors.New("vendored import path does not match its physical directory")
+				}
+				key := record.Module.Path + "@" + record.Module.Version
+				sum := moduleSums[key]
+				if sum == "" {
+					return commandProductionInventory{}, errors.New("vendored production module lacks exact go.sum evidence")
+				}
+				identity := key + "#" + sum
+				folded := strings.ToLower(record.Module.Path)
+				if previous, collision := moduleCase[folded]; collision && previous != record.Module.Path {
+					return commandProductionInventory{}, errors.New("external production module path has a case collision")
+				}
+				moduleCase[folded] = record.Module.Path
+				externalModules[identity] = struct{}{}
+				continue
+			}
 			if record.Module == nil || !record.Module.Main || record.Module.Path != module {
 				return commandProductionInventory{}, errors.New("production command links a package from an unowned module inside the source root")
 			}
@@ -294,6 +333,29 @@ func inspectCommandProduction(root, module, command string, libraryRoots, exclud
 	}, nil
 }
 
+func productionModuleSums(filename string) (map[string]string, error) {
+	contents, err := os.ReadFile(filename)
+	if errors.Is(err, os.ErrNotExist) {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, errors.New("read production module sums")
+	}
+	result := make(map[string]string)
+	for _, line := range strings.Split(strings.ReplaceAll(string(contents), "\r\n", "\n"), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 3 || strings.HasSuffix(fields[1], "/go.mod") {
+			continue
+		}
+		key := fields[0] + "@" + fields[1]
+		if _, exists := result[key]; exists {
+			return nil, errors.New("duplicate production module sum")
+		}
+		result[key] = fields[2]
+	}
+	return result, nil
+}
+
 func moduleRelativeDirectory(root, directory string) (bool, string, error) {
 	rootAbsolute, err := filepath.Abs(root)
 	if err != nil {
@@ -348,40 +410,55 @@ func moduleMainPackages(root, module string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	mainPackages := map[string]struct{}{}
-	caseFolded := map[string]string{}
 	for _, moduleRoot := range moduleRoots {
-		raw, err := runOfflineGoList(moduleRoot, "list", "-json", "./...")
+		identity, err := sourceModuleIdentity(filepath.Join(moduleRoot, "go.mod"))
 		if err != nil {
 			return nil, err
 		}
-		packages, err := decodeGoListPackages(raw)
-		if err != nil {
-			return nil, err
-		}
-		for _, record := range packages {
-			if record.Module == nil || !record.Module.Main || record.Module.Replace != nil {
-				return nil, errors.New("source module inventory contains an unexpected module identity")
-			}
-			if moduleRoot == root && record.Module.Path != module {
-				return nil, errors.New("primary module identity drift")
-			}
-			if record.Name != "main" {
-				continue
-			}
-			local, relative, err := moduleRelativeDirectory(root, record.Dir)
-			if err != nil || !local {
-				return nil, errors.New("main package resolves outside the source root")
-			}
-			folded := strings.ToLower(relative)
-			if previous, collision := caseFolded[folded]; collision && previous != relative {
-				return nil, errors.New("main package path has a case collision")
-			}
-			caseFolded[folded] = relative
-			mainPackages[relative] = struct{}{}
+		if moduleRoot == root && identity != module {
+			return nil, errors.New("primary module identity drift")
 		}
 	}
-	return sortedKeys(mainPackages), nil
+	// A conservative source scan is intentional for evidence-only nested
+	// modules. It finds even ignored or currently unbuildable main packages
+	// without resolving their non-production dependencies.
+	return sourceMainPackages(root)
+}
+
+func sourceModuleIdentity(filename string) (string, error) {
+	contents, err := os.ReadFile(filename)
+	if err != nil {
+		return "", errors.New("read source module identity")
+	}
+	var identity string
+	for _, line := range strings.Split(strings.ReplaceAll(string(contents), "\r\n", "\n"), "\n") {
+		fields := strings.Fields(strings.TrimSpace(strings.SplitN(line, "//", 2)[0]))
+		if len(fields) == 0 {
+			continue
+		}
+		if fields[0] == "replace" || slicesContain(fields, "=>") {
+			return "", errors.New("source module replacement is forbidden")
+		}
+		if fields[0] == "module" {
+			if len(fields) != 2 || identity != "" {
+				return "", errors.New("source module identity is ambiguous")
+			}
+			identity = fields[1]
+		}
+	}
+	if identity == "" {
+		return "", errors.New("source module identity is absent")
+	}
+	return identity, nil
+}
+
+func slicesContain(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func sourceMainPackages(root string) ([]string, error) {
@@ -870,7 +947,7 @@ func TestOfflineGoEnvironmentOverridesHostileAmbientTargetSettings(t *testing.T)
 		"GOAMD64":      "v1",
 		"GOEXPERIMENT": "",
 		"GOFIPS140":    "off",
-		"GOROOT":       runtime.GOROOT(),
+		"GOROOT":       frozenGoRoot(),
 	}
 	counts := map[string]int{}
 	for _, item := range environment {

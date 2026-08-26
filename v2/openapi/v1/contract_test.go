@@ -15,7 +15,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -1292,11 +1291,23 @@ func cloneJSONValue(t *testing.T, value any) any {
 
 func moduleRoot(t *testing.T) string {
 	t.Helper()
-	_, filename, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
+	current, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
 	}
-	return filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	for depth := 0; depth < 8; depth++ {
+		module, readErr := os.ReadFile(filepath.Join(current, "go.mod"))
+		if readErr == nil && bytes.Contains(module, []byte("module github.com/mt-hub8/MindWeaver/v2")) {
+			return current
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		current = parent
+	}
+	t.Fatal("locate v2 module root")
+	return ""
 }
 
 func sortRoutes(routes []routeIdentity) {

@@ -38,18 +38,21 @@ func TestMain(m *testing.M) {
 		helperName += ".exe"
 	}
 	helperPath := filepath.Join(helperRoot, helperName)
-	_, sourceFile, _, ok := runtime.Caller(0)
-	if !ok {
-		fmt.Fprintln(os.Stderr, "knowledge qualification: locate module root")
+	moduleRoot, err := knowledgeModuleRoot()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "knowledge qualification: locate module root:", err)
 		_ = os.RemoveAll(helperRoot)
 		os.Exit(1)
 	}
-	moduleRoot := filepath.Clean(filepath.Join(filepath.Dir(sourceFile), "..", ".."))
-	goName := "go"
-	if runtime.GOOS == "windows" {
-		goName += ".exe"
+	goTool := strings.TrimSpace(os.Getenv("MW_GO"))
+	if goTool == "" {
+		goTool, err = exec.LookPath("go")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "knowledge qualification: locate Go tool:", err)
+			_ = os.RemoveAll(helperRoot)
+			os.Exit(1)
+		}
 	}
-	goTool := filepath.Join(runtime.GOROOT(), "bin", goName)
 	command := exec.Command(goTool, "build", "-trimpath", "-o", helperPath, "./cmd/mindweaver-pdf")
 	command.Dir = moduleRoot
 	command.Stdout = os.Stdout
@@ -70,6 +73,25 @@ func TestMain(m *testing.M) {
 		code = 1
 	}
 	os.Exit(code)
+}
+
+func knowledgeModuleRoot() (string, error) {
+	current, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	for depth := 0; depth < 8; depth++ {
+		module, readErr := os.ReadFile(filepath.Join(current, "go.mod"))
+		if readErr == nil && bytes.Contains(module, []byte("module github.com/mt-hub8/MindWeaver/v2")) {
+			return current, nil
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		current = parent
+	}
+	return "", errors.New("v2 module root not found")
 }
 
 func TestProductionIngestionLifecycleAcrossVaultRestart(t *testing.T) {
