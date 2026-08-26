@@ -23,6 +23,7 @@ const (
 	fakeOllamaSuccess int32 = iota
 	fakeOllamaMalformedCitation
 	fakeOllamaFailure
+	fakeOllamaTruncated
 	fakeOllamaTimeout
 	fakeOllamaBlock
 )
@@ -56,6 +57,10 @@ func newFakeOllama(t *testing.T) *fakeOllama {
 				_, _ = io.WriteString(response, `{"message":{"role":"assistant","content":"引用格式错误 [x]。"},"done":true}`)
 			case fakeOllamaFailure:
 				http.Error(response, "hostile provider detail", http.StatusInternalServerError)
+			case fakeOllamaTruncated:
+				response.Header().Set("Content-Type", "application/json")
+				response.Header().Set("Content-Length", "256")
+				_, _ = io.WriteString(response, `{"message":{"content":"PARTIAL-PROVIDER-CANARY-8d2d86cc`)
 			case fakeOllamaTimeout:
 				select {
 				case <-request.Context().Done():
@@ -213,6 +218,23 @@ func TestRAGProductHTTPDurableOutcomesAndRestartReconciliation(t *testing.T) {
 	if failure.StatusCode != http.StatusOK || !bytes.Contains(failure.body, []byte(`"status":"failed"`)) ||
 		!bytes.Contains(failure.body, []byte(`"limitationCode":"MODEL_UNAVAILABLE"`)) || bytes.Contains(failure.body, []byte("hostile")) {
 		t.Fatalf("provider failure status/body = %d %q", failure.StatusCode, failure.body)
+	}
+
+	fake.mode.Store(fakeOllamaTruncated)
+	truncatedConversation := createRAGConversation(t, client, application, session, "truncated", "响应截断")
+	truncatedBody := map[string]any{
+		"conversationId": truncatedConversation.ID, "expectedRevision": int64(0), "question": "quantum coffee machine",
+	}
+	beforeTruncated := fake.calls.Load()
+	truncated := askRAG(t, client, application, session, "ask-truncated", truncatedBody)
+	if truncated.StatusCode != http.StatusOK || !bytes.Contains(truncated.body, []byte(`"status":"failed"`)) ||
+		!bytes.Contains(truncated.body, []byte(`"limitationCode":"OUTCOME_UNCERTAIN"`)) ||
+		bytes.Contains(truncated.body, []byte("PARTIAL-PROVIDER-CANARY")) || fake.calls.Load() != beforeTruncated+1 {
+		t.Fatalf("truncated provider response status/body/calls = %d %q / %d", truncated.StatusCode, truncated.body, fake.calls.Load())
+	}
+	truncatedReplay := askRAG(t, client, application, session, "ask-truncated", truncatedBody)
+	if truncatedReplay.StatusCode != http.StatusOK || !bytes.Equal(truncatedReplay.body, truncated.body) || fake.calls.Load() != beforeTruncated+1 {
+		t.Fatalf("truncated provider replay status/body/calls = %d %q / %d", truncatedReplay.StatusCode, truncatedReplay.body, fake.calls.Load())
 	}
 
 	configureTimeout := ragJSONRequest(t, application, session, http.MethodPut, "/api/v1/ollama",

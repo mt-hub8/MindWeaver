@@ -122,6 +122,7 @@ no user Vault, and no external network.
 | Ollama origin/proxy/redirect/bounds/hostile-JSON/redaction focused tests, `count=10` | PASS |
 | Ollama pre-write versus post-write/incomplete-response classification, `count=10` | PASS |
 | RAG post-write uncertainty plus close/reopen exact replay, `count=10` | PASS |
+| App-to-real-client truncated-response, redaction, and exact-replay product path, `count=10` | PASS |
 | `go test` and `go vet` for localhttp/transport/ollama/rag/app/webui | PASS |
 | `go vet ./...` | PASS |
 | `go test ./...` | BASELINE BLOCKED only by the exact OpenAPI manifest mismatch above; every other package PASS |
