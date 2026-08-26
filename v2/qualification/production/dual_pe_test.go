@@ -19,7 +19,7 @@ import (
 )
 
 const modulePath = "github.com/mt-hub8/MindWeaver/v2"
-const expectedSourceUnionSHA256 = "3f5c6394b440f3eb43c034e5c36463805af0e9f2a18f89a0e2529d4bcfd946d6"
+const expectedSourceUnionSHA256 = "3efba79e422531a2afcce6d0b311b847254455b108a3a41a86e8240b7cf8e6e4"
 
 type artifactContract struct {
 	name              string
@@ -86,8 +86,8 @@ var shippedArtifacts = []artifactContract{
 			"github.com/ncruces/julianday@v1.0.0#h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M=",
 			"golang.org/x/sys@v0.47.0#h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=",
 		},
-		sourceSHA256:   "0c363bae2689b3916beb6fe91fbdbda5fcc0b5d9a2bf680537d138eeab5bd217",
-		artifactSHA256: "29a6ea5203fc0317d9c2448b04398c53f120f0add1ccaa181ca04ab10b4a130e",
+		sourceSHA256:   "3b1f0355cf4498f0b79c7cb1fe9644eb7741a6bbabc8fe4056fd38f926353ad0",
+		artifactSHA256: "80a54f16d0d6786ee3f9d202e49110a6101f6f23de64e8ce9e88656e20eed23e",
 	},
 	{
 		name:   "mindweaver-pdf.exe",
@@ -124,8 +124,8 @@ var shippedArtifacts = []artifactContract{
 			"github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2#h1:kdDIM4JNxn9gsRk5Zo6mtmcFpBqnl9gTVUwf9t6lIRk=",
 			"github.com/mgilbir/pdf0@v0.1.0#h1:rfBK18bcQ4kHQTXBmriAb07TafhG2w1fLflq9lHgaG4=",
 		},
-		sourceSHA256:   "bf8badaa11f215a4acd100a839d6e360017bdbc5d9ae18cbbb67e9222ab8849a",
-		artifactSHA256: "411ed538b53d533600ae5466427f3d3f30a7a81405885d92b79167e52ff32b87",
+		sourceSHA256:   "0bec9ddde1ea8778ffc3c20740ed55080d7ef0b537cfd070a2d563ccc5a087c6",
+		artifactSHA256: "b9cc03b7c139e9fadde86f2ec9564dbe368d85822bd96ac64385e7aa75827384",
 	},
 }
 
