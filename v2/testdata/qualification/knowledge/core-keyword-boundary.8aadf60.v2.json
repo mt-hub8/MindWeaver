@@ -1,0 +1,182 @@
+{
+  "schema_version": 2,
+  "baseline_commit": "8aadf6085436dac4c7081dda18c8274c0d6b61e8",
+  "product_boundary": "CORE_LITERAL_CONTIGUOUS_PHRASE_SEARCH_NATURAL_QUESTION_RETRIEVAL_LATER",
+  "collections": [
+    {
+      "key": "alpha",
+      "name": "Alpha 资料"
+    },
+    {
+      "key": "beta",
+      "name": "Beta 资料"
+    },
+    {
+      "key": "empty",
+      "name": "空集合"
+    }
+  ],
+  "documents": [
+    {
+      "key": "active-alpha",
+      "title": "月球资料",
+      "filename": "moon.md",
+      "content": "# 月球\n\n月球处于潮汐锁定状态，因此同一面长期朝向地球。",
+      "state": "active",
+      "collections": [
+        "alpha"
+      ]
+    },
+    {
+      "key": "active-beta",
+      "title": "木卫一资料",
+      "filename": "io.txt",
+      "content": "木卫一也处于潮汐锁定状态，但这份资料只属于 Beta 集合。",
+      "state": "active",
+      "collections": [
+        "beta"
+      ]
+    },
+    {
+      "key": "active-english",
+      "title": "Offline notebook",
+      "filename": "notebook.txt",
+      "content": "The offline notebook keeps immutable source citations after restart.",
+      "state": "active",
+      "collections": [
+        "alpha"
+      ]
+    },
+    {
+      "key": "trashed-alpha",
+      "title": "回收站控制",
+      "filename": "trashed.txt",
+      "content": "潮汐锁定的回收站控制含有唯一探针 ZETA-TRASH-771。",
+      "state": "trashed",
+      "collections": [
+        "alpha"
+      ],
+      "pre_transition_query": "ZETA-TRASH-771"
+    },
+    {
+      "key": "inactive-pending",
+      "title": "未激活控制",
+      "filename": "pending.txt",
+      "content": "潮汐锁定的未激活来源含有唯一探针 XI-INACTIVE-883。",
+      "state": "inactive",
+      "collections": []
+    }
+  ],
+  "probes": [
+    {
+      "id": "continuous-cjk-global",
+      "class": "supported_exact",
+      "query": "潮汐锁定",
+      "scope": "global",
+      "expected_documents": [
+        "active-alpha",
+        "active-beta"
+      ]
+    },
+    {
+      "id": "three-rune-cjk-alpha",
+      "class": "supported_exact",
+      "query": "同一面",
+      "scope": "alpha",
+      "expected_documents": [
+        "active-alpha"
+      ]
+    },
+    {
+      "id": "continuous-cjk-alpha",
+      "class": "supported_exact",
+      "query": "潮汐锁定",
+      "scope": "alpha",
+      "expected_documents": [
+        "active-alpha"
+      ]
+    },
+    {
+      "id": "continuous-cjk-beta",
+      "class": "supported_exact",
+      "query": "潮汐锁定",
+      "scope": "beta",
+      "expected_documents": [
+        "active-beta"
+      ]
+    },
+    {
+      "id": "continuous-english-global",
+      "class": "supported_exact",
+      "query": "immutable source citations",
+      "scope": "global",
+      "expected_documents": [
+        "active-english"
+      ]
+    },
+    {
+      "id": "continuous-english-alpha",
+      "class": "supported_exact",
+      "query": "offline notebook",
+      "scope": "alpha",
+      "expected_documents": [
+        "active-english"
+      ]
+    },
+    {
+      "id": "empty-scope-no-widen",
+      "class": "scope_exclusion",
+      "query": "潮汐锁定",
+      "scope": "empty",
+      "expected_documents": []
+    },
+    {
+      "id": "trash-no-leak",
+      "class": "lifecycle_exclusion",
+      "query": "ZETA-TRASH-771",
+      "scope": "global",
+      "expected_documents": []
+    },
+    {
+      "id": "inactive-no-leak",
+      "class": "lifecycle_exclusion",
+      "query": "XI-INACTIVE-883",
+      "scope": "global",
+      "expected_documents": []
+    },
+    {
+      "id": "chinese-natural-question-limitation",
+      "class": "natural_question_limitation",
+      "query": "为什么月球总是同一面朝向地球？",
+      "scope": "global",
+      "expected_documents": [],
+      "fact_document": "active-alpha",
+      "fact_anchors": [
+        "月球",
+        "同一面",
+        "朝向地球"
+      ]
+    },
+    {
+      "id": "english-natural-question-limitation",
+      "class": "natural_question_limitation",
+      "query": "How does the offline notebook keep citations after restart?",
+      "scope": "global",
+      "expected_documents": [],
+      "fact_document": "active-english",
+      "fact_anchors": [
+        "offline notebook",
+        "citations",
+        "restart"
+      ]
+    },
+    {
+      "id": "two-rune-rejected",
+      "class": "unsupported_short",
+      "query": "潮汐",
+      "scope": "global",
+      "expected_error": "QUERY_TOO_SHORT",
+      "expected_documents": []
+    }
+  ]
+}

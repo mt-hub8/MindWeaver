@@ -176,6 +176,47 @@ func TestAskCollectionScopeAndExplicitEmptyScopeNeverWidens(t *testing.T) {
 	}
 }
 
+func TestAskUsesCompleteInputAsOneLiteralPhraseAndDoesNotExpandNaturalQuestions(t *testing.T) {
+	fixture := newRAGFixture(t)
+	upload := fixture.upload(t, "literal-phrase.txt", "月球资料", "月球处于潮汐锁定状态，因此同一面长期朝向地球。")
+	conversation, err := fixture.rag.CreateConversation(t.Context(), "原文短语边界")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	fixture.rag.generate = func(_ context.Context, _ store.OllamaConfig, prompt string) (string, error) {
+		calls.Add(1)
+		if !strings.Contains(prompt, "月球处于潮汐锁定状态") {
+			t.Errorf("literal phrase prompt omitted source: %q", prompt)
+		}
+		return "资料说明月球处于潮汐锁定状态 [1]。", nil
+	}
+
+	question := "为什么月球总是同一面朝向地球？"
+	for _, anchor := range []string{"月球", "同一面", "朝向地球"} {
+		if !strings.Contains("月球处于潮汐锁定状态，因此同一面长期朝向地球。", anchor) {
+			t.Fatalf("test fact lacks anchor %q", anchor)
+		}
+	}
+	refused, err := fixture.rag.Ask(t.Context(), AskRequest{
+		ConversationID: conversation.ID, ExpectedRevision: 0,
+		IdempotencyKey: "natural-question-is-not-expanded", Question: question,
+	})
+	if err != nil || refused.Status != store.MessageRefused || refused.LimitationCode != "NO_CONTEXT" ||
+		len(refused.Sources) != 0 || calls.Load() != 0 {
+		t.Fatalf("natural-question outcome = %#v, %v; provider calls=%d", refused, err, calls.Load())
+	}
+
+	answered, err := fixture.rag.Ask(t.Context(), AskRequest{
+		ConversationID: conversation.ID, ExpectedRevision: 1,
+		IdempotencyKey: "literal-phrase-match", Question: "潮汐锁定状态",
+	})
+	if err != nil || calls.Load() != 1 {
+		t.Fatalf("literal-phrase outcome = %#v, %v; provider calls=%d", answered, err, calls.Load())
+	}
+	assertRAGAnswer(t, answered, store.MessageCompleted, "", upload.DocumentID)
+}
+
 func TestProbeOllamaUsesSafeLoopbackTransportWithoutPersisting(t *testing.T) {
 	fixture := newRAGFixture(t)
 	before, err := fixture.database.GetActiveOllamaConfig(t.Context())

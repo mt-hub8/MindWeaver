@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -24,9 +25,9 @@ import (
 )
 
 const (
-	boundaryBaseline  = "d61a158afdc7c86914c70a847ce4e9d6fe686517"
-	boundaryName      = "CORE_KEYWORD_SEARCH_ONLY_NATURAL_QUESTION_EXPLICITLY_LIMITED"
-	boundaryCorpusSHA = "3e81a3ed29077cac9bb5f6be3d6e81bb9bd757799f0e8233544535f16a58e132"
+	boundaryBaseline  = "8aadf6085436dac4c7081dda18c8274c0d6b61e8"
+	boundaryName      = "CORE_LITERAL_CONTIGUOUS_PHRASE_SEARCH_NATURAL_QUESTION_RETRIEVAL_LATER"
+	boundaryCorpusSHA = "76628ae162b63910c35d325a4d144074781a19529e3acc15248d36fae7f6b3a1"
 )
 
 type boundaryContract struct {
@@ -66,7 +67,7 @@ type boundaryProbe struct {
 
 func TestCoreKeywordBoundaryContract(t *testing.T) {
 	contract, raw := readBoundaryContract(t)
-	if contract.SchemaVersion != 1 || contract.BaselineCommit != boundaryBaseline || contract.ProductBoundary != boundaryName {
+	if contract.SchemaVersion != 2 || contract.BaselineCommit != boundaryBaseline || contract.ProductBoundary != boundaryName {
 		t.Fatalf("contract identity = version %d, baseline %q, boundary %q",
 			contract.SchemaVersion, contract.BaselineCommit, contract.ProductBoundary)
 	}
@@ -116,7 +117,7 @@ func TestCoreKeywordBoundaryContract(t *testing.T) {
 		documents[document.Key] = document
 		states[document.State]++
 	}
-	if len(documents) != 4 || states["active"] != 2 || states["trashed"] != 1 || states["inactive"] != 1 {
+	if len(documents) != 5 || states["active"] != 3 || states["trashed"] != 1 || states["inactive"] != 1 {
 		t.Fatalf("document states = %#v", states)
 	}
 
@@ -169,8 +170,8 @@ func TestCoreKeywordBoundaryContract(t *testing.T) {
 		}
 		classes[probe.Class]++
 	}
-	if len(contract.Probes) != 8 || classes["supported_exact"] != 3 || classes["scope_exclusion"] != 1 ||
-		classes["lifecycle_exclusion"] != 2 || classes["natural_question_limitation"] != 1 || classes["unsupported_short"] != 1 {
+	if len(contract.Probes) != 12 || classes["supported_exact"] != 6 || classes["scope_exclusion"] != 1 ||
+		classes["lifecycle_exclusion"] != 2 || classes["natural_question_limitation"] != 2 || classes["unsupported_short"] != 1 {
 		t.Fatalf("probe classes = %#v", classes)
 	}
 }
@@ -181,15 +182,7 @@ func TestCoreKeywordBoundaryUsesProductionSearch(t *testing.T) {
 	for _, probe := range contract.Probes {
 		probe := probe
 		t.Run(probe.ID, func(t *testing.T) {
-			var (
-				hits []store.ChunkHit
-				err  error
-			)
-			if probe.Scope == "global" {
-				hits, err = fixture.bench.Search(t.Context(), probe.Query, 100)
-			} else {
-				hits, err = fixture.bench.SearchCollection(t.Context(), fixture.collectionIDs[probe.Scope], probe.Query, 100)
-			}
+			hits, err := fixture.search(t, probe)
 			if probe.ExpectedError == "QUERY_TOO_SHORT" {
 				if !errors.Is(err, store.ErrQueryTooShort) || len(hits) != 0 {
 					t.Fatalf("short-query result = %#v, err=%v", hits, err)
@@ -204,6 +197,13 @@ func TestCoreKeywordBoundaryUsesProductionSearch(t *testing.T) {
 			sort.Strings(want)
 			if !slices.Equal(got, want) {
 				t.Fatalf("documents = %v, want %v; hits=%#v", got, want, hits)
+			}
+			identities := hitIdentities(hits)
+			for attempt := 0; attempt < 3; attempt++ {
+				repeated, repeatErr := fixture.search(t, probe)
+				if repeatErr != nil || !slices.Equal(hitIdentities(repeated), identities) {
+					t.Fatalf("repeat %d identities = %v, want %v; err=%v", attempt, hitIdentities(repeated), identities, repeatErr)
+				}
 			}
 		})
 	}
@@ -264,7 +264,7 @@ func newBoundaryFixture(t *testing.T, contract boundaryContract) *boundaryFixtur
 func (fixture *boundaryFixture) addDocument(t *testing.T, lifecycleService *lifecycle.Service, document boundaryDocument) {
 	t.Helper()
 	upload, err := fixture.bench.Upload(t.Context(), workbench.UploadRequest{
-		IdempotencyKey: "qualification-keyword-d61a-" + document.Key,
+		IdempotencyKey: "qualification-keyword-8aadf60-" + document.Key,
 		Title:          document.Title, Filename: document.Filename, Source: strings.NewReader(document.Content),
 	})
 	if err != nil || !upload.Created {
@@ -333,13 +333,29 @@ func containsDocument(hits []store.ChunkHit, documentID string) bool {
 	return false
 }
 
+func (fixture *boundaryFixture) search(t *testing.T, probe boundaryProbe) ([]store.ChunkHit, error) {
+	t.Helper()
+	if probe.Scope == "global" {
+		return fixture.bench.Search(t.Context(), probe.Query, 100)
+	}
+	return fixture.bench.SearchCollection(t.Context(), fixture.collectionIDs[probe.Scope], probe.Query, 100)
+}
+
+func hitIdentities(hits []store.ChunkHit) []string {
+	identities := make([]string, len(hits))
+	for index, hit := range hits {
+		identities[index] = fmt.Sprintf("%s\x00%s\x00%s\x00%d", hit.ChunkID, hit.DocumentID, hit.RevisionID, hit.Ordinal)
+	}
+	return identities
+}
+
 func readBoundaryContract(t *testing.T) (boundaryContract, []byte) {
 	t.Helper()
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("locate boundary qualification")
 	}
-	path := filepath.Join(filepath.Dir(currentFile), "..", "..", "testdata", "qualification", "knowledge", "core-keyword-boundary.d61a.v1.json")
+	path := filepath.Join(filepath.Dir(currentFile), "..", "..", "testdata", "qualification", "knowledge", "core-keyword-boundary.8aadf60.v2.json")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
