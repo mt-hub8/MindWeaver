@@ -26,7 +26,7 @@ func openApprovedArtifactHandle(path string, directory bool) (*os.File, error) {
 		return nil, errors.New("invalid artifact bundle")
 	}
 	desired := uint32(windows.GENERIC_READ | windows.READ_CONTROL)
-	flags := uint32(windows.FILE_FLAG_OPEN_REPARSE_POINT)
+	flags := uint32(windows.FILE_FLAG_OPEN_REPARSE_POINT | windows.FILE_FLAG_OPEN_NO_RECALL)
 	if directory {
 		desired = windows.FILE_LIST_DIRECTORY | windows.FILE_READ_ATTRIBUTES | windows.READ_CONTROL
 		flags |= windows.FILE_FLAG_BACKUP_SEMANTICS
@@ -53,11 +53,29 @@ func verifyApprovedArtifactHandle(file *os.File, directory bool) error {
 	}
 	var information windows.ByHandleFileInformation
 	if windows.GetFileInformationByHandle(windows.Handle(file.Fd()), &information) != nil ||
-		information.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 ||
+		information.FileAttributes&(windows.FILE_ATTRIBUTE_REPARSE_POINT|windows.FILE_ATTRIBUTE_OFFLINE|
+			windows.FILE_ATTRIBUTE_RECALL_ON_OPEN|windows.FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS) != 0 ||
 		(directory != (information.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0)) {
 		return errors.New("invalid artifact bundle")
 	}
 	return nil
+}
+
+func approvedArtifactCanonicalPath(file *os.File) (string, error) {
+	if file == nil {
+		return "", errors.New("invalid artifact bundle")
+	}
+	buffer := make([]uint16, 32768)
+	length, err := windows.GetFinalPathNameByHandle(windows.Handle(file.Fd()), &buffer[0], uint32(len(buffer)), 0)
+	if err != nil || length == 0 || length >= uint32(len(buffer)) {
+		return "", errors.New("invalid artifact bundle")
+	}
+	path := windows.UTF16ToString(buffer[:length])
+	path = strings.TrimPrefix(path, `\\?\`)
+	if !filepath.IsAbs(path) || filepath.VolumeName(path) == "" {
+		return "", errors.New("invalid artifact bundle")
+	}
+	return filepath.Clean(path), nil
 }
 
 func fixedLocalArtifactHandle(handle windows.Handle, path string) bool {

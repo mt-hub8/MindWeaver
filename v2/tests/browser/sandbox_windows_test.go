@@ -4,7 +4,10 @@ package browserqualification
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,15 +18,14 @@ import (
 )
 
 const (
-	sandboxHelperMode    = "MW_BROWSER_SANDBOX_HELPER"
-	sandboxReadyMarker   = "MW_BROWSER_SANDBOX_READY"
-	sandboxEscapedMarker = "MW_BROWSER_SANDBOX_ESCAPED"
+	sandboxHelperMode       = "MW_BROWSER_SANDBOX_HELPER"
+	sandboxRootReadyMarker  = "MW_BROWSER_SANDBOX_ROOT_READY"
+	sandboxChildReadyMarker = "MW_BROWSER_SANDBOX_CHILD_READY"
 )
 
-func TestWindowsSandboxAssignsSuspendedRootAndKillsDescendantsOnClose(t *testing.T) {
-	if !processSandboxAvailable() {
-		t.Fatal("Windows Job Object sandbox is unavailable")
-	}
+func TestWindowsSandboxApprovedImageIdentityAndJobZeroCleanup(t *testing.T) {
+	artifacts := openExecutableArtifactBundle(t)
+	defer artifacts.Close()
 	sandbox, err := newWindowsProcessSandbox()
 	if err != nil {
 		t.Fatal(err)
@@ -31,69 +33,121 @@ func TestWindowsSandboxAssignsSuspendedRootAndKillsDescendantsOnClose(t *testing
 	closed := false
 	t.Cleanup(func() {
 		if !closed {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 			_ = sandbox.close(ctx)
 			cancel()
 		}
 	})
-	root := t.TempDir()
-	ready := filepath.Join(root, "assigned-root-ready")
-	escaped := filepath.Join(root, "descendant-escaped")
-	command := exec.Command(os.Args[0], "-test.run=^TestWindowsSandboxHelperProcess$")
-	command.Env = sandboxTestEnvironment("parent", ready, escaped)
-	if err := sandbox.startRoot("driver", command); err != nil {
+	markers := t.TempDir()
+	rootReady := filepath.Join(markers, "root-ready")
+	childReady := filepath.Join(markers, "child-ready")
+	plan, err := artifacts.rootLaunchPlan("driver",
+		[]string{"-test.run=^TestWindowsSandboxHelperProcess$"},
+		sandboxTestEnvironment("parent", rootReady, childReady))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sandbox.startRoot("driver", exec.Command(os.Args[0])); err == nil {
-		t.Fatal("sandbox accepted a duplicate driver root")
+	identity, err := sandbox.startApprovedRoot(plan)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err := sandbox.startRoot("browser", exec.Command(os.Args[0])); err == nil {
-		t.Fatal("sandbox let the runner forge a browser child role")
+	if identity.Role != "driver" || identity.PID <= 0 || identity.ParentPID != os.Getpid() ||
+		identity.SHA256 != artifacts.approval.Driver.SHA256 {
+		t.Fatalf("OS-observed approved identity = %#v", identity)
 	}
-	callerConfigured := exec.Command(os.Args[0])
-	callerConfigured.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 1}
-	if err := sandbox.startRoot("mindweaver", callerConfigured); err == nil {
-		t.Fatal("sandbox accepted caller-owned process attributes")
+	waitForMarker(t, rootReady)
+	waitForMarker(t, childReady)
+	accounting, err := queryJobAccounting(sandbox.job)
+	if err != nil || accounting.ActiveProcesses < 2 {
+		t.Fatalf("live Job accounting = %#v, %v", accounting, err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if _, err := os.Lstat(ready); err == nil {
-			break
-		} else if !errors.Is(err, os.ErrNotExist) {
-			t.Fatal(err)
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("assigned root did not execute")
-		}
-		time.Sleep(10 * time.Millisecond)
+	if _, err := sandbox.startApprovedRoot(plan); err == nil {
+		t.Fatal("sandbox accepted a duplicate approved root")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	forged := plan
+	forged.role = "browser"
+	if _, err := sandbox.startApprovedRoot(forged); err == nil {
+		t.Fatal("sandbox accepted a forged browser root")
+	}
+	forged = plan
+	forged.artifact = &artifacts.mindweaver
+	if _, err := sandbox.startApprovedRoot(forged); err == nil {
+		t.Fatal("sandbox accepted a role/artifact mismatch")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	receipt := sandbox.close(ctx)
 	cancel()
 	closed = true
-	if !receipt.AllExited || receipt.ProcessCount != 1 {
-		t.Fatalf("sandbox cleanup receipt = %#v", receipt)
-	}
-	time.Sleep(750 * time.Millisecond)
-	if _, err := os.Lstat(escaped); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("descendant escaped kill-on-close Job: %v", err)
+	if !receipt.AllExited || receipt.ProcessCount < 2 {
+		t.Fatalf("OS-zero cleanup receipt = %#v", receipt)
 	}
 }
 
-func TestWindowsSandboxNativeStartFailureLeavesNoProcess(t *testing.T) {
+func TestWindowsSandboxAvailabilityRunsDescendantProbe(t *testing.T) {
+	if !processSandboxAvailable() {
+		t.Fatal("full suspended/assigned/resumed descendant Job probe failed")
+	}
+}
+
+func TestWindowsSandboxRejectsForgedApprovedImageAndHash(t *testing.T) {
+	artifacts := openExecutableArtifactBundle(t)
+	defer artifacts.Close()
+	plan, err := artifacts.rootLaunchPlan("driver", []string{"-test.run=^TestWindowsSandboxHelperProcess$"},
+		sandboxTestEnvironment("child", "", filepath.Join(t.TempDir(), "must-not-run")))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	sandbox, err := newWindowsProcessSandbox()
 	if err != nil {
 		t.Fatal(err)
 	}
-	missing := filepath.Join(t.TempDir(), "missing.exe")
-	if err := sandbox.startRoot("mindweaver", exec.Command(missing)); err == nil {
-		t.Fatal("missing executable unexpectedly started")
+	wrongHash := *plan.artifact
+	wrongHash.approval.SHA256 = strings.Repeat("0", sha256.Size*2)
+	forged := plan
+	forged.artifact = &wrongHash
+	if _, err := sandbox.startApprovedRoot(forged); err == nil {
+		t.Fatal("sandbox accepted a forged approved hash")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	accounting, err := queryJobAccounting(sandbox.job)
+	if err != nil || accounting.TotalProcesses != 0 {
+		t.Fatalf("hash rejection crossed process boundary: %#v, %v", accounting, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+	_ = sandbox.close(ctx)
+	cancel()
+
+	sandbox, err = newWindowsProcessSandbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongImage := *plan.artifact
+	wrongImage.image = artifacts.mindweaver.image
+	forged = plan
+	forged.artifact = &wrongImage
+	if _, err := sandbox.startApprovedRoot(forged); err == nil {
+		t.Fatal("sandbox accepted a process image with the wrong file identity")
+	}
+	ctx, cancel = context.WithTimeout(context.Background(), cleanupTimeout)
+	_ = sandbox.close(ctx)
+	cancel()
+}
+
+func TestWindowsSandboxProbeRejectsCallerProcessAttributes(t *testing.T) {
+	sandbox, err := newWindowsProcessSandbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(os.Args[0])
+	command.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 1}
+	if _, err := sandbox.startProbeRoot(command); err == nil {
+		t.Fatal("sandbox accepted caller-owned process attributes")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	receipt := sandbox.close(ctx)
 	cancel()
 	if !receipt.AllExited || receipt.ProcessCount != 0 {
-		t.Fatalf("start-failure cleanup receipt = %#v", receipt)
+		t.Fatalf("rejected probe cleanup = %#v", receipt)
 	}
 }
 
@@ -101,34 +155,110 @@ func TestWindowsSandboxHelperProcess(t *testing.T) {
 	switch os.Getenv(sandboxHelperMode) {
 	case "parent":
 		child := exec.Command(os.Args[0], "-test.run=^TestWindowsSandboxHelperProcess$")
-		child.Env = sandboxTestEnvironment("child", "", os.Getenv(sandboxEscapedMarker))
+		child.Env = sandboxTestEnvironment("child", "", os.Getenv(sandboxChildReadyMarker))
 		if child.Start() != nil {
 			os.Exit(10)
 		}
 		_ = child.Process.Release()
-		if os.WriteFile(os.Getenv(sandboxReadyMarker), []byte("ready"), 0o600) != nil {
+		waitForHelperMarker(os.Getenv(sandboxChildReadyMarker))
+		if os.WriteFile(os.Getenv(sandboxRootReadyMarker), []byte("ready"), 0o600) != nil {
 			os.Exit(11)
 		}
-		time.Sleep(30 * time.Second)
-		os.Exit(12)
+		for {
+			time.Sleep(time.Hour)
+		}
 	case "child":
-		time.Sleep(500 * time.Millisecond)
-		_ = os.WriteFile(os.Getenv(sandboxEscapedMarker), []byte("escaped"), 0o600)
-		os.Exit(0)
+		if os.WriteFile(os.Getenv(sandboxChildReadyMarker), []byte("ready"), 0o600) != nil {
+			os.Exit(12)
+		}
+		for {
+			time.Sleep(time.Hour)
+		}
 	}
 }
 
-func sandboxTestEnvironment(mode, ready, escaped string) []string {
+func waitForHelperMarker(path string) {
+	for attempts := 0; attempts < 500; attempts++ {
+		if data, err := os.ReadFile(path); err == nil && string(data) == "ready" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	os.Exit(13)
+}
+
+func waitForMarker(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(cleanupTimeout)
+	for {
+		if data, err := os.ReadFile(path); err == nil && string(data) == "ready" {
+			return
+		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("marker was not written: %s", filepath.Base(path))
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func sandboxTestEnvironment(mode, rootReady, childReady string) []string {
 	environment := make([]string, 0, len(os.Environ())+3)
 	for _, entry := range os.Environ() {
 		name := strings.SplitN(entry, "=", 2)[0]
-		if name != sandboxHelperMode && name != sandboxReadyMarker && name != sandboxEscapedMarker {
+		if name != sandboxHelperMode && name != sandboxRootReadyMarker && name != sandboxChildReadyMarker {
 			environment = append(environment, entry)
 		}
 	}
 	return append(environment,
 		sandboxHelperMode+"="+mode,
-		sandboxReadyMarker+"="+ready,
-		sandboxEscapedMarker+"="+escaped,
+		sandboxRootReadyMarker+"="+rootReady,
+		sandboxChildReadyMarker+"="+childReady,
 	)
+}
+
+func openExecutableArtifactBundle(t *testing.T) *approvedArtifactSet {
+	t.Helper()
+	source, err := os.Open(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	info, err := source.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.New()
+	if _, err := io.Copy(hash, source); err != nil {
+		t.Fatal(err)
+	}
+	digest := fmt.Sprintf("%x", hash.Sum(nil))
+	approval := artifactApproval{
+		ID: "approved-sandbox-test", OS: "windows", Arch: "amd64",
+		Browser:    binaryApproval{FileName: "browser.exe", SHA256: digest, Size: info.Size(), Version: "test"},
+		Driver:     binaryApproval{FileName: "driver.exe", SHA256: digest, Size: info.Size(), Version: "test"},
+		MindWeaver: binaryApproval{FileName: "mindweaver.exe", SHA256: digest, Size: info.Size(), Version: "test"},
+	}
+	root := t.TempDir()
+	for _, binary := range []binaryApproval{approval.Browser, approval.Driver, approval.MindWeaver} {
+		if _, err := source.Seek(0, io.SeekStart); err != nil {
+			t.Fatal(err)
+		}
+		target, err := os.OpenFile(filepath.Join(root, binary.FileName), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, copyErr := io.Copy(target, source)
+		closeErr := target.Close()
+		if copyErr != nil || closeErr != nil {
+			t.Fatalf("copy approved executable: %v", errors.Join(copyErr, closeErr))
+		}
+	}
+	protectTestArtifactBundle(t, root, approval)
+	artifacts, err := openApprovedArtifacts(approval, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return artifacts
 }

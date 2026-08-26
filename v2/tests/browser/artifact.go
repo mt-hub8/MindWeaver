@@ -17,6 +17,8 @@ type retainedArtifact struct {
 	approval binaryApproval
 	file     *os.File
 	identity os.FileInfo
+	role     string
+	image    string
 }
 
 type approvedArtifactSet struct {
@@ -120,10 +122,13 @@ func openApprovedArtifacts(approval artifactApproval, rootPath string) (_ *appro
 		}
 		switch binary.FileName {
 		case approval.Browser.FileName:
+			retained.role = "browser"
 			set.browser = retained
 		case approval.Driver.FileName:
+			retained.role = "driver"
 			set.driver = retained
 		case approval.MindWeaver.FileName:
+			retained.role = "mindweaver"
 			set.mindweaver = retained
 		}
 	}
@@ -153,7 +158,12 @@ func openRetainedArtifact(root string, approval binaryApproval) (retainedArtifac
 		_ = file.Close()
 		return retainedArtifact{}, errors.New("invalid artifact bundle")
 	}
-	retained := retainedArtifact{approval: approval, file: file, identity: identity}
+	image, err := approvedArtifactCanonicalPath(file)
+	if err != nil {
+		_ = file.Close()
+		return retainedArtifact{}, errors.New("invalid artifact bundle")
+	}
+	retained := retainedArtifact{approval: approval, file: file, identity: identity, image: image}
 	if err := retained.verify(); err != nil {
 		_ = file.Close()
 		return retainedArtifact{}, err

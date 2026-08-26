@@ -3,6 +3,7 @@
 package browserqualification
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"testing"
@@ -76,4 +77,22 @@ func setTestArtifactDACL(path string, includeWorld bool) error {
 	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
 		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
 		nil, nil, dacl, nil)
+}
+
+func TestApprovedArtifactRejectsOfflineAttribute(t *testing.T) {
+	approval := testArtifactApproval()
+	root := writeArtifactBundle(t, approval)
+	path := filepath.Join(root, approval.Driver.FileName)
+	pointer, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetFileAttributes(pointer, windows.FILE_ATTRIBUTE_OFFLINE); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = windows.SetFileAttributes(pointer, windows.FILE_ATTRIBUTE_NORMAL) })
+	report := RunQualification(context.Background(), Approval{artifact: &approval}, RunOptions{
+		SourceRevision: testRevision, BundleRoot: root, Now: fixedClock(),
+	})
+	assertBlocked(t, report, BlockerArtifactBundleInvalid)
 }

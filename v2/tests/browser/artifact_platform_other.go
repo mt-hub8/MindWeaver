@@ -18,3 +18,7 @@ func openApprovedArtifactFile(string) (*os.File, error) {
 func verifyApprovedArtifactHandle(*os.File, bool) error {
 	return errors.New("invalid artifact bundle")
 }
+
+func approvedArtifactCanonicalPath(*os.File) (string, error) {
+	return "", errors.New("invalid artifact bundle")
+}

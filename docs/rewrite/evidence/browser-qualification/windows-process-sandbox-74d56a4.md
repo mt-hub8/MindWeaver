@@ -26,7 +26,8 @@ real-run proof required for PASS.
 
 - Artifact bundle roots and all three executable leaves are opened as retained
   Windows handles on a fixed local volume. Network, device and non-fixed drive
-  paths fail closed.
+  paths fail closed. Opens include `FILE_FLAG_OPEN_NO_RECALL`; handles with
+  `OFFLINE`, `RECALL_ON_OPEN` or `RECALL_ON_DATA_ACCESS` attributes are rejected.
 - Root and files must be owned by the current qualification identity and have a
   protected DACL containing exactly one full-control allow ACE for that owner.
   The runner does not repair or broaden an artifact ACL.
@@ -44,9 +45,19 @@ real-run proof required for PASS.
   contract requires exactly `driver`, `browser` and `mindweaver`, exact approved
   hashes, and `browser.ParentPID == driver.PID`; literal-loopback endpoint
   validation remains unchanged.
-- Closing the Job kills assigned roots and descendants. Tests use real Windows
-  processes to prove the descendant cannot write its escape marker after Job
-  close. Native start failure is also reaped without adding a managed root.
+- Cleanup terminates the Job and polls `JobObjectBasicAccountingInformation`
+  until the OS reports `ActiveProcesses == 0` before closing the Job handle and
+  reaping Go root handles. A child-ready handshake plus live accounting proves
+  a descendant joined the Job; cleanup no longer relies on waiting only for two
+  roots or on a fixed post-close sleep.
+- A typed approved launch plan selects only the retained `driver` or
+  `mindweaver` artifact. While the new process is still suspended, the runner
+  obtains PID and parent from Windows, queries the process image, reopens it
+  with the same hardened policy, compares file identity and SHA-256, and calls
+  `IsProcessInJob`. Harness-supplied identity is not accepted by this launcher.
+- The availability decision runs a real suspended root through assignment,
+  membership verification and resume; that root creates a ready descendant,
+  and the probe succeeds only after OS accounting reaches zero during cleanup.
 
 No process output, executable path, user profile, Vault path, cookie, CSRF
 value, prompt, document content or environment value is added to the report.
@@ -78,10 +89,12 @@ P0 is zero for the implemented primitive. A process cannot execute in the
 runner-owned start path before Job assignment, retained artifacts cannot be
 replaced through a sharing open, and empty approval cannot reach the primitive.
 
-P1 is zero inside the committed primitive after closing two review findings:
-the runner now rejects caller-owned `SysProcAttr`, and every artifact reverify
-also rechecks the retained handle ACL so an in-flight DACL expansion fails
-closed.
+The original `13f3726` candidate was rejected by independent review and is not
+eligible for integration by itself. The follow-up rewrite closes the four named
+findings: OS job-zero cleanup, child-ready proof, typed artifact-bound process
+identity plus Job membership, a full lifecycle availability probe, and
+no-recall/offline artifact rejection. This document does not claim that every
+P1 for a future real-browser adapter is zero.
 
 The following are qualification prerequisites, not claims closed by this
 slice:
