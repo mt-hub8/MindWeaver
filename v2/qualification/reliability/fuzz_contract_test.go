@@ -35,6 +35,11 @@ type fuzzTarget struct {
 	Name    string
 }
 
+type reliabilityToolchain struct {
+	goTool string
+	goRoot string
+}
+
 var frozenCoreFuzzTargets = []fuzzTarget{
 	{Package: "./internal/blob", Name: "FuzzParseIDCanonical"},
 	{Package: "./internal/ingest", Name: "FuzzChunkTextDeterministicAndBounded"},
@@ -49,12 +54,12 @@ func TestCoreFuzzTargetClosureAndExecution(t *testing.T) {
 		t.Fatalf("CORE fuzz target set = %#v, want %#v", got, frozenCoreFuzzTargets)
 	}
 
-	goTool := reliabilityGoTool(t)
+	toolchain := reliabilityGoTool(t)
 	moduleMode := reliabilityModuleMode(t, root)
 	for _, target := range frozenCoreFuzzTargets {
 		target := target
 		t.Run(strings.TrimPrefix(target.Package, "./")+"/"+target.Name, func(t *testing.T) {
-			runCoreFuzzTarget(t, root, goTool, moduleMode, target)
+			runCoreFuzzTarget(t, root, toolchain, moduleMode, target)
 		})
 	}
 }
@@ -179,7 +184,85 @@ func TestGoFuzzTargetClassifier(t *testing.T) {
 	}
 }
 
-func runCoreFuzzTarget(t *testing.T, root, goTool, moduleMode string, target fuzzTarget) {
+func TestReliabilityGoToolPrefersConfiguredIdentity(t *testing.T) {
+	configured := strings.TrimSpace(os.Getenv("MW_GO"))
+	if configured == "" {
+		configured = filepath.Join(runtime.GOROOT(), "bin", "go.exe")
+	}
+	resolved, err := filepath.EvalSymlinks(configured)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuredEnvironmentPath := resolved
+	if runtime.GOOS == "windows" {
+		configuredEnvironmentPath = strings.ToUpper(resolved)
+	}
+	t.Setenv("MW_GO", configuredEnvironmentPath)
+	t.Setenv("GOROOT", filepath.Join(t.TempDir(), "bogus-runtime-root"))
+	toolchain := reliabilityGoTool(t)
+	actualInfo, err := os.Stat(toolchain.goTool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantInfo, err := os.Stat(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(actualInfo, wantInfo) || !strings.EqualFold(toolchain.goRoot, filepath.Dir(filepath.Dir(resolved))) {
+		t.Fatalf("resolved toolchain = %#v, want executable %q", toolchain, resolved)
+	}
+}
+
+func TestReliabilityOfflineEnvironmentReplacesMixedCaseToolVariables(t *testing.T) {
+	toolchain := reliabilityToolchain{
+		goTool: `C:\Pinned\Go\bin\go.exe`,
+		goRoot: `C:\Pinned\Go`,
+	}
+	got := reliabilityOfflineEnvironment([]string{
+		"Path=preserved",
+		"goRoot=C:\\bogus",
+		"Mw_Go=C:\\bogus\\go.exe",
+		"GoFlAgS=-mod=mod",
+		"GoPrOxY=https://proxy.invalid",
+	}, toolchain)
+	values := make(map[string][]string)
+	for _, entry := range got {
+		name, value, found := strings.Cut(entry, "=")
+		if !found {
+			t.Fatalf("malformed environment entry %q", entry)
+		}
+		key := strings.ToUpper(name)
+		values[key] = append(values[key], value)
+	}
+	for key, want := range map[string]string{
+		"GOROOT":  toolchain.goRoot,
+		"MW_GO":   toolchain.goTool,
+		"GOFLAGS": "-trimpath -buildvcs=false",
+		"GOPROXY": "off",
+	} {
+		if len(values[key]) != 1 || values[key][0] != want {
+			t.Fatalf("%s entries = %#v, want only %q", key, values[key], want)
+		}
+	}
+	if len(values["PATH"]) != 1 || values["PATH"][0] != "preserved" {
+		t.Fatalf("unrelated environment = %#v", values["PATH"])
+	}
+}
+
+func TestValidateReliabilityGoToolRejectsIncompleteRoot(t *testing.T) {
+	fake := filepath.Join(t.TempDir(), "bin", "go.exe")
+	if err := os.MkdirAll(filepath.Dir(fake), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fake, []byte("not a toolchain"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validateReliabilityGoTool(fake, "go.exe"); err == nil {
+		t.Fatal("incomplete Go toolchain root was accepted")
+	}
+}
+
+func runCoreFuzzTarget(t *testing.T, root string, toolchain reliabilityToolchain, moduleMode string, target fuzzTarget) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), fuzzCommandTimeout)
 	defer cancel()
@@ -188,9 +271,9 @@ func runCoreFuzzTarget(t *testing.T, root, goTool, moduleMode string, target fuz
 		"-fuzz=^" + regexp.QuoteMeta(target.Name) + "$", "-fuzztime=" + coreFuzzTime,
 		"-parallel=1", "-timeout=90s", target.Package,
 	}
-	command := exec.CommandContext(ctx, goTool, arguments...)
+	command := exec.CommandContext(ctx, toolchain.goTool, arguments...)
 	command.Dir = root
-	command.Env = reliabilityOfflineEnvironment(os.Environ())
+	command.Env = reliabilityOfflineEnvironment(os.Environ(), toolchain)
 	output := &boundedFuzzOutput{limit: maxFuzzOutput}
 	command.Stdout = output
 	command.Stderr = output
@@ -228,18 +311,69 @@ func reliabilityModuleRoot(t *testing.T) string {
 	}
 }
 
-func reliabilityGoTool(t *testing.T) string {
+func reliabilityGoTool(t *testing.T) reliabilityToolchain {
 	t.Helper()
 	name := "go"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	path := filepath.Join(runtime.GOROOT(), "bin", name)
-	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		t.Fatal("frozen Go fuzz tool is unavailable")
+	candidate := strings.TrimSpace(os.Getenv("MW_GO"))
+	if candidate == "" {
+		candidate = filepath.Join(runtime.GOROOT(), "bin", name)
 	}
-	return path
+	toolchain, err := validateReliabilityGoTool(candidate, name)
+	if err != nil {
+		t.Fatalf("frozen Go fuzz tool is unavailable: %v", err)
+	}
+	command := exec.CommandContext(t.Context(), toolchain.goTool, "version")
+	command.Env = reliabilityOfflineEnvironment(os.Environ(), toolchain)
+	output, err := command.Output()
+	if err != nil || strings.TrimSpace(string(output)) != "go version go1.27.0 windows/amd64" {
+		t.Fatal("frozen Go fuzz tool has an unsupported identity")
+	}
+	return toolchain
+}
+
+func validateReliabilityGoTool(candidate, executableName string) (reliabilityToolchain, error) {
+	nameMatches := filepath.Base(candidate) == executableName
+	if runtime.GOOS == "windows" {
+		nameMatches = strings.EqualFold(filepath.Base(candidate), executableName)
+	}
+	if strings.TrimSpace(candidate) == "" || !nameMatches {
+		return reliabilityToolchain{}, errors.New("Go executable path is invalid")
+	}
+	absolute, err := filepath.Abs(candidate)
+	if err != nil {
+		return reliabilityToolchain{}, err
+	}
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return reliabilityToolchain{}, err
+	}
+	info, err := os.Lstat(resolved)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return reliabilityToolchain{}, errors.New("Go executable is not a regular file")
+	}
+	root := filepath.Dir(filepath.Dir(resolved))
+	expected, err := filepath.EvalSymlinks(filepath.Join(root, "bin", executableName))
+	if err != nil {
+		return reliabilityToolchain{}, err
+	}
+	expectedInfo, err := os.Stat(expected)
+	if err != nil || !os.SameFile(info, expectedInfo) {
+		return reliabilityToolchain{}, errors.New("Go executable does not belong to its inferred root")
+	}
+	for _, required := range []string{
+		filepath.Join(root, "bin", "gofmt.exe"),
+		filepath.Join(root, "pkg", "tool", "windows_amd64", "compile.exe"),
+		filepath.Join(root, "src", "runtime", "proc.go"),
+	} {
+		requiredInfo, requiredErr := os.Lstat(required)
+		if requiredErr != nil || !requiredInfo.Mode().IsRegular() || requiredInfo.Mode()&os.ModeSymlink != 0 {
+			return reliabilityToolchain{}, errors.New("Go toolchain root is incomplete")
+		}
+	}
+	return reliabilityToolchain{goTool: resolved, goRoot: root}, nil
 }
 
 func reliabilityModuleMode(t *testing.T, root string) string {
@@ -258,12 +392,14 @@ func reliabilityModuleMode(t *testing.T, root string) string {
 	return "readonly"
 }
 
-func reliabilityOfflineEnvironment(environment []string) []string {
+func reliabilityOfflineEnvironment(environment []string, toolchain reliabilityToolchain) []string {
 	overrides := map[string]string{
-		"CGO_ENABLED": "0", "GO111MODULE": "on", "GOENV": "off",
-		"GOEXPERIMENT": "", "GOFLAGS": "-buildvcs=false", "GOPROXY": "off",
-		"GOSUMDB": "off", "GOTOOLCHAIN": "local", "GOVCS": "*:off",
-		"GOWORK": "off", "GOROOT": runtime.GOROOT(),
+		"CGO_ENABLED": "0", "GO111MODULE": "on", "GOARCH": "amd64",
+		"GOAMD64": "v1", "GOENV": "off", "GOEXPERIMENT": "",
+		"GOFIPS140": "off", "GOFLAGS": "-trimpath -buildvcs=false",
+		"GOOS": "windows", "GOPROXY": "off", "GOROOT": toolchain.goRoot,
+		"GOSUMDB": "off", "GOTELEMETRY": "off", "GOTOOLCHAIN": "local",
+		"GOVCS": "*:off", "GOWORK": "off", "MW_GO": toolchain.goTool,
 	}
 	result := make([]string, 0, len(environment)+len(overrides))
 	for _, item := range environment {
