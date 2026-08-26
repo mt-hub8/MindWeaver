@@ -80,3 +80,29 @@ func unlockResidueFile(file *os.File) error {
 	}
 	return unix.Flock(int(file.Fd()), unix.LOCK_UN)
 }
+
+func openResidueMutationFile(parent *retainedDirectory, name string, expected os.FileInfo) (*os.File, error) {
+	if parent == nil || parent.root == nil || expected == nil || !validResidueLeaf(name) {
+		return nil, errors.New("backup: invalid residue mutation capability")
+	}
+	file, err := parent.root.OpenFile(name, os.O_RDONLY, 0)
+	if err != nil {
+		return nil, err
+	}
+	opened, statErr := file.Stat()
+	current, currentErr := parent.root.Lstat(name)
+	if err := errors.Join(statErr, currentErr); err != nil || current.Mode()&os.ModeSymlink != 0 ||
+		!current.Mode().IsRegular() || !opened.Mode().IsRegular() ||
+		!os.SameFile(expected, current) || !os.SameFile(expected, opened) {
+		_ = file.Close()
+		if err != nil {
+			return nil, err
+		}
+		return nil, ErrResidueConflict
+	}
+	return file, nil
+}
+
+func deleteResidueMutationFile(*retainedDirectory, string, os.FileInfo, *os.File) error {
+	return ErrUnsupportedPlatform
+}

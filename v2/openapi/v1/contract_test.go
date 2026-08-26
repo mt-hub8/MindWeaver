@@ -45,6 +45,41 @@ func TestEmbeddedContractMatchesProduction(t *testing.T) {
 	assertNoLaterSurface(t, snapshot.Surface)
 }
 
+func TestBackupCreateContractDoesNotClaimExistingTargetAsFresh(t *testing.T) {
+	t.Parallel()
+	openAPI, _ := contract.Documents()
+	var document map[string]any
+	if err := json.Unmarshal(openAPI, &document); err != nil {
+		t.Fatal(err)
+	}
+	operation := document["paths"].(map[string]any)["/api/v1/backups"].(map[string]any)["post"].(map[string]any)
+	description := operation["description"].(string)
+	summary := operation["summary"].(string)
+	retry := operation["x-mindweaver-retry-safety"].(string)
+	responses := operation["responses"].(map[string]any)
+	if !strings.Contains(description, "never claimed as a fresh snapshot") ||
+		!strings.Contains(description, "plaintext SQLite and blob files") ||
+		!strings.Contains(summary, "no-replace, integrity-verifiable") || strings.Contains(summary, "immutable") ||
+		!strings.Contains(retry, "bounded process-memory") ||
+		!strings.Contains(retry, "history exhaustion fails closed") || responses["413"] == nil {
+		t.Fatalf("backup retry contract is not fail-closed: description=%q retry=%q", description, retry)
+	}
+	failureCode := document["components"].(map[string]any)["schemas"].(map[string]any)["BackupOperationStatus"].(map[string]any)["properties"].(map[string]any)["failureCode"].(map[string]any)["enum"].([]any)
+	if !slices.Contains(failureCode, any("BACKUP_EXISTING_VERIFIED")) {
+		t.Fatal("backup status contract omits BACKUP_EXISTING_VERIFIED")
+	}
+	status := document["paths"].(map[string]any)["/api/v1/backups/status"].(map[string]any)["get"].(map[string]any)
+	cancel := document["paths"].(map[string]any)["/api/v1/backups/cancel"].(map[string]any)["post"].(map[string]any)
+	cancelDescription := cancel["responses"].(map[string]any)["202"].(map[string]any)["description"].(string)
+	if !strings.Contains(status["summary"].(string), "retained process-local") ||
+		!strings.Contains(status["responses"].(map[string]any)["200"].(map[string]any)["description"].(string), "retained process-local") ||
+		strings.Contains(cancel["summary"].(string), "active backup") ||
+		!strings.Contains(cancelDescription, "active operation") ||
+		!strings.Contains(cancelDescription, "retained terminal operation") {
+		t.Fatal("backup status/cancel contract overstates a single current operation")
+	}
+}
+
 func TestContractFailsClosed(t *testing.T) {
 	t.Parallel()
 	openAPI, surface := contract.Documents()

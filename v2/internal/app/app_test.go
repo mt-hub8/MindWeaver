@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mt-hub8/MindWeaver/v2/internal/backup"
 	"github.com/mt-hub8/MindWeaver/v2/internal/blob"
 	"github.com/mt-hub8/MindWeaver/v2/internal/lifecycle"
 	"github.com/mt-hub8/MindWeaver/v2/internal/localhttp"
@@ -786,6 +787,76 @@ func TestLiveBackupCreateSessionCSRFReplayAndNoRecoveryRoutes(t *testing.T) {
 		if result := do(t, client, request); result.StatusCode != http.StatusNotFound {
 			t.Fatalf("forbidden live route %s status/body = %d %q", forbidden, result.StatusCode, result.body)
 		}
+	}
+}
+
+func TestAppShutdownCancelsAndDrainsAcceptedBackupBeforeClosingStore(t *testing.T) {
+	root := t.TempDir()
+	application := startTestApp(t, Options{
+		ConfigPath:        filepath.Join(root, "configuration", "mindweaver.v1.json"),
+		FirstRunVaultRoot: "../vault", WorkerInterval: 10 * time.Millisecond,
+		PDFHelperPath: filepath.Join(root, "missing-pdf-helper"),
+	})
+	client := newHTTPClient(t)
+	session := exchangeApp(t, client, application)
+	backupParent := filepath.Join(root, "shutdown-backups")
+	if err := os.Mkdir(backupParent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(backupParent, "accepted-before-shutdown")
+	realEngine := application.backups.engine
+	entered := make(chan struct{})
+	storeChecks := make(chan error, 2)
+	engineClosed := make(chan struct{})
+	application.backups.engine = &backupEngineStub{
+		create: func(ctx context.Context, _ string) (backup.Manifest, error) {
+			close(entered)
+			<-ctx.Done()
+			_, err := application.database.ListDocuments(context.Background(), 1)
+			storeChecks <- err
+			return backup.Manifest{}, ctx.Err()
+		},
+		close: func() error {
+			_, storeErr := application.database.ListDocuments(context.Background(), 1)
+			storeChecks <- storeErr
+			close(engineClosed)
+			return errors.Join(storeErr, realEngine.Close())
+		},
+	}
+	body, err := json.Marshal(struct {
+		Destination string `json:"destination"`
+	}{destination})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := appRequest(t, application, session, http.MethodPost, "/api/v1/backups", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Idempotency-Key", "shutdown-active-backup")
+	if result := do(t, client, request); result.StatusCode != http.StatusAccepted {
+		t.Fatalf("backup admission status/body = %d %q", result.StatusCode, result.body)
+	}
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("accepted backup did not enter the engine")
+	}
+	shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := application.Shutdown(shutdownContext); err != nil {
+		t.Fatalf("Shutdown() error = %v", err)
+	}
+	select {
+	case <-engineClosed:
+	default:
+		t.Fatal("backup engine was not closed before Shutdown returned")
+	}
+	for phase := range 2 {
+		if err := <-storeChecks; err != nil {
+			t.Fatalf("store was closed before backup drain phase %d: %v", phase, err)
+		}
+	}
+	if _, err := application.database.ListDocuments(context.Background(), 1); err == nil {
+		t.Fatal("store remained open after complete App shutdown")
 	}
 }
 

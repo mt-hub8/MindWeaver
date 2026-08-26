@@ -198,12 +198,12 @@ func Start(ctx context.Context, options Options) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("app: initialize backup coordinator: %w", err)
 	}
-	backupScratch, err := defaultBackupScratch(paths.Root)
-	if err != nil {
-		_ = backupCoordinator.Close()
-		return nil, err
-	}
-	backupRuntime, err := newBackupRuntime(coordinatorBackupEngine{backupCoordinator}, backupScratch)
+	backupRuntime, err := newBackupRuntime(
+		coordinatorBackupEngine{backupCoordinator},
+		func(source string) (string, error) {
+			return backup.PrepareLiveBackupVerifyScratch(paths.Root, source)
+		},
+	)
 	if err != nil {
 		_ = backupCoordinator.Close()
 		return nil, err

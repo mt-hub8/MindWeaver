@@ -22,7 +22,7 @@ traceability without expanding the first Go release.
 | JOB-001 | A core background operation cannot be executed concurrently by two workers | CORE | YES | NOT_IMPLEMENTED | duplicate-delivery and lease-takeover integration test |
 | JOB-002 | Core retries stop at a configured limit; cancel and final failure stay visible | CORE | YES | NOT_IMPLEMENTED | ingestion retry/cancel/restart tests |
 | PROG-001 | Document ingestion and Ask progress never reports success before durable completion | CORE | YES | NOT_IMPLEMENTED | reconnect/poll and forced-exit workflow tests |
-| BKP-001 | Backup manifest comes from its own DB snapshot and every blob verifies | CORE | YES | NOT_IMPLEMENTED | concurrent-write backup/restore rehearsal |
+| BKP-001 | Backup manifest comes from its own DB snapshot and every blob verifies | CORE | YES | BLOCKED | `docs/rewrite/evidence/live-backup-create.md`; retained Windows kernel-path capability and clean-machine release rehearsal remain open |
 | PUR-001 | Explicit delete removes known in-scope DB/FTS rows and unshared blobs; failure never reports success | CORE | YES | NOT_IMPLEMENTED | SQLite/filesystem failure, shared-blob and retry tests |
 | DOC-001 | TXT/Markdown/PDF upload is idempotent, bounded and crash recoverable | CORE | YES | NOT_IMPLEMENTED | duplicate/cancel/timeout/crash E2E |
 | DOC-002 | Trash excludes immediately; restore is reversible; purge is not overstated | CORE | YES | NOT_IMPLEMENTED | lifecycle and retention E2E |

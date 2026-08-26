@@ -3,11 +3,13 @@
 package backup
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -78,6 +80,15 @@ func newBackupFixture(t *testing.T) *backupFixture {
 	}
 	t.Cleanup(func() { _ = coordinator.Close() })
 	return &backupFixture{root, vaultRoot, database, blobs, workbenchService, coordinator}
+}
+
+func newOwnerOnlyVerifyScratch(t *testing.T, source string) string {
+	t.Helper()
+	scratch, err := prepareStartupVerifyScratchAt(source, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return scratch
 }
 
 func TestCoordinatorRetainsActiveVaultIdentityUntilClose(t *testing.T) {
@@ -182,6 +193,21 @@ func TestCreateValidatesFixedLocalDestinationBeforeFirstWrite(t *testing.T) {
 	}
 }
 
+func TestCreateRejectsManagedStagingAncestorBeforeFirstWrite(t *testing.T) {
+	fixture := newBackupFixture(t)
+	managed := filepath.Join(fixture.root, strings.ToUpper(stagingPrefix)+"ancestor")
+	if err := os.Mkdir(managed, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(managed, "must-not-survive-cleanup")
+	if _, err := fixture.coordinator.Create(t.Context(), destination); err == nil {
+		t.Fatal("Create accepted a destination inside a managed staging namespace")
+	}
+	if _, err := os.Lstat(destination); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("managed-ancestor rejection wrote destination: %v", err)
+	}
+}
+
 func TestCreateDiskFullBeforePublicationLeavesOnlyRecoverableOwnedResidue(t *testing.T) {
 	fixture := newBackupFixture(t)
 	fixture.addDocument(t, "disk-full", "disk full backup residue")
@@ -231,10 +257,7 @@ func TestConfirmPublishedBackupRequiresFullVerifyAndExactResidueCAS(t *testing.T
 		t.Fatalf("ordinary recovery error = %v, want publication uncertain", err)
 	}
 
-	scratch := filepath.Join(fixture.root, "confirm-scratch")
-	if err := os.Mkdir(scratch, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	scratch := newOwnerOnlyVerifyScratch(t, destination)
 	outcome, err := fixture.coordinator.ConfirmPublishedBackup(
 		t.Context(), fixture.root, expected, VerifyOptions{ScratchParent: scratch},
 	)
@@ -246,6 +269,57 @@ func TestConfirmPublishedBackupRequiresFullVerifyAndExactResidueCAS(t *testing.T
 	}
 	if page, err := ListResidues(t.Context(), fixture.root, 10); err != nil || len(page.Items) != 0 {
 		t.Fatalf("residues after confirmation = %+v, %v", page, err)
+	}
+}
+
+func TestConfirmPublishedBackupRecoversForcedExitAfterReceiptRemoval(t *testing.T) {
+	fixture := newBackupFixture(t)
+	fixture.addDocument(t, "confirm-cleanup-gap", "forced exit cleanup redo marker")
+	destination := filepath.Join(fixture.root, "published-cleanup-gap")
+	injected := errors.New("injected parent sync failure")
+	if _, err := fixture.coordinator.create(t.Context(), destination, publicationHooks{
+		syncParent: func(*retainedDirectory) error { return injected },
+	}); !errors.Is(err, ErrPublicationUncertain) {
+		t.Fatalf("Create error = %v, want publication uncertain", err)
+	}
+	page, err := ListResidues(t.Context(), fixture.root, 10)
+	if err != nil || len(page.Items) != 1 || page.Items[0].State != ResidueStatePublicationUncertain {
+		t.Fatalf("initial publication residue = %+v, %v", page, err)
+	}
+	operationID := page.Items[0].ID
+	command := exec.Command(os.Args[0], "-test.run=^TestResidueForcedExitHelper$")
+	command.Env = append(os.Environ(),
+		residueHelperModeEnv+"=confirmation-cleanup-gap",
+		residueHelperParentEnv+"="+fixture.root,
+		residueHelperIDEnv+"="+operationID,
+	)
+	err = command.Run()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 97 {
+		t.Fatalf("cleanup-gap helper exit = %v, want 97", err)
+	}
+	page, err = ListResidues(t.Context(), fixture.root, 10)
+	if err != nil || len(page.Items) != 1 || page.Items[0].State != ResidueStatePublicationCleanup {
+		t.Fatalf("cleanup-pending residue = %+v, %v", page, err)
+	}
+	expected := page.Items[0]
+	scratch := newOwnerOnlyVerifyScratch(t, destination)
+	outcome, err := fixture.coordinator.ConfirmPublishedBackup(
+		t.Context(), fixture.root, expected, VerifyOptions{ScratchParent: scratch},
+	)
+	if err != nil || !outcome.Succeeded || outcome.Failure != "" {
+		t.Fatalf("cleanup-pending confirmation outcome = %+v, error = %v", outcome, err)
+	}
+	if _, err := os.Stat(destination); err != nil {
+		t.Fatalf("confirmed destination was removed: %v", err)
+	}
+	for _, name := range []string{residueReceiptName(operationID), residueBindingName(operationID)} {
+		if _, err := os.Lstat(filepath.Join(fixture.root, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("cleanup evidence %q remains: %v", name, err)
+		}
+	}
+	if after, err := ListResidues(t.Context(), fixture.root, 10); err != nil || len(after.Items) != 0 {
+		t.Fatalf("residue remains after cleanup replay = %+v, %v", after, err)
 	}
 }
 
@@ -262,10 +336,7 @@ func TestConfirmPublishedBackupRetainsReceiptWhenContentChangesAfterFullVerify(t
 	if err != nil || len(page.Items) != 1 {
 		t.Fatalf("publication residue = %+v, %v", page, err)
 	}
-	scratch := filepath.Join(fixture.root, "mutation-confirm-scratch")
-	if err := os.Mkdir(scratch, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	scratch := newOwnerOnlyVerifyScratch(t, destination)
 	outcome, err := fixture.coordinator.confirmPublishedBackup(
 		t.Context(), fixture.root, page.Items[0], VerifyOptions{ScratchParent: scratch},
 		func() error {
@@ -283,6 +354,191 @@ func TestConfirmPublishedBackupRetainsReceiptWhenContentChangesAfterFullVerify(t
 	}
 	if after, listErr := ListResidues(t.Context(), fixture.root, 10); listErr != nil || len(after.Items) != 1 || after.Items[0] != page.Items[0] {
 		t.Fatalf("mutation removed or changed receipt = %+v, %v", after, listErr)
+	}
+}
+
+func TestConfirmPublishedBackupRetainsEvidenceWhenBindingChangesAfterFullVerify(t *testing.T) {
+	fixture := newBackupFixture(t)
+	destination := filepath.Join(fixture.root, "mutated-publication-binding")
+	injected := errors.New("injected parent sync failure")
+	if _, err := fixture.coordinator.create(t.Context(), destination, publicationHooks{
+		syncParent: func(*retainedDirectory) error { return injected },
+	}); !errors.Is(err, ErrPublicationUncertain) {
+		t.Fatalf("Create error = %v, want publication uncertain", err)
+	}
+	page, err := ListResidues(t.Context(), fixture.root, 10)
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("publication residue = %+v, %v", page, err)
+	}
+	expected := page.Items[0]
+	receiptName := residueReceiptName(expected.ID)
+	bindingName := residueBindingName(expected.ID)
+	scratch := newOwnerOnlyVerifyScratch(t, destination)
+	outcome, err := fixture.coordinator.confirmPublishedBackup(
+		t.Context(), fixture.root, expected, VerifyOptions{ScratchParent: scratch},
+		func() error {
+			encoded, readErr := os.ReadFile(filepath.Join(fixture.root, bindingName))
+			if readErr != nil {
+				return readErr
+			}
+			var binding residueBinding
+			if unmarshalErr := json.Unmarshal(encoded, &binding); unmarshalErr != nil {
+				return unmarshalErr
+			}
+			binding.TreeIdentity = "same-file-id-but-different-tree-identity"
+			mutated, marshalErr := json.Marshal(binding)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			mutated = append(mutated, '\n')
+			return os.WriteFile(filepath.Join(fixture.root, bindingName), mutated, 0o600)
+		},
+	)
+	if err == nil || outcome.Succeeded || !errors.Is(err, ErrResidueConflict) ||
+		!errors.Is(err, ErrCleanupResidual) {
+		t.Fatalf("binding mutation outcome = %+v, error = %v", outcome, err)
+	}
+	for _, path := range []string{
+		filepath.Join(fixture.root, receiptName),
+		filepath.Join(fixture.root, bindingName),
+		destination,
+	} {
+		if _, statErr := os.Lstat(path); statErr != nil {
+			t.Fatalf("CAS failure removed evidence %q: %v", filepath.Base(path), statErr)
+		}
+	}
+}
+
+func TestConfirmPublishedBackupDeniesReceiptRewriteAcrossFullVerify(t *testing.T) {
+	fixture := newBackupFixture(t)
+	destination := filepath.Join(fixture.root, "sealed-publication-receipt")
+	injected := errors.New("injected parent sync failure")
+	if _, err := fixture.coordinator.create(t.Context(), destination, publicationHooks{
+		syncParent: func(*retainedDirectory) error { return injected },
+	}); !errors.Is(err, ErrPublicationUncertain) {
+		t.Fatalf("Create error = %v, want publication uncertain", err)
+	}
+	page, err := ListResidues(t.Context(), fixture.root, 10)
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("publication residue = %+v, %v", page, err)
+	}
+	expected := page.Items[0]
+	receiptPath := filepath.Join(fixture.root, residueReceiptName(expected.ID))
+	original, err := os.ReadFile(receiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewriteBlocked := false
+	hookStop := errors.New("receipt rewrite was denied")
+	scratch := newOwnerOnlyVerifyScratch(t, destination)
+	outcome, err := fixture.coordinator.confirmPublishedBackup(
+		t.Context(), fixture.root, expected, VerifyOptions{ScratchParent: scratch},
+		func() error {
+			writeErr := os.WriteFile(receiptPath, append([]byte(nil), original...), 0o600)
+			rewriteBlocked = writeErr != nil
+			if writeErr == nil {
+				return errors.New("receipt rewrite unexpectedly succeeded")
+			}
+			return hookStop
+		},
+	)
+	if !rewriteBlocked || err == nil || outcome.Succeeded || !errors.Is(err, hookStop) ||
+		!errors.Is(err, ErrPublicationUncertain) {
+		t.Fatalf("sealed receipt outcome = %+v, error = %v, blocked = %v", outcome, err, rewriteBlocked)
+	}
+	after, readErr := os.ReadFile(receiptPath)
+	if readErr != nil || !bytes.Equal(after, original) {
+		t.Fatalf("sealed receipt changed or disappeared: %v", readErr)
+	}
+	if _, statErr := os.Lstat(destination); statErr != nil {
+		t.Fatalf("sealed-receipt failure removed destination: %v", statErr)
+	}
+}
+
+func TestVerifyLiveBackupRejectsScratchSecurityDowngradeBeforeCopy(t *testing.T) {
+	fixture := newBackupFixture(t)
+	fixture.addDocument(t, "scratch-dacl", "verification scratch security downgrade")
+	destination := filepath.Join(fixture.root, "scratch-dacl-backup")
+	if _, err := fixture.coordinator.Create(t.Context(), destination); err != nil {
+		t.Fatal(err)
+	}
+	scratch := newOwnerOnlyVerifyScratch(t, destination)
+	saved, err := captureWindowsDACLTree(scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		descriptor, err := newVerifyScratchSecurityDescriptor(true)
+		if err != nil {
+			t.Errorf("rebuild scratch DACL: %v", err)
+			return
+		}
+		dacl, _, err := descriptor.DACL()
+		if err != nil {
+			t.Errorf("read rebuilt scratch DACL: %v", err)
+			return
+		}
+		if err := windows.SetNamedSecurityInfo(
+			scratch, windows.SE_FILE_OBJECT,
+			windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+			nil, nil, dacl, nil,
+		); err != nil {
+			t.Errorf("restore scratch DACL: %v", err)
+		}
+	})
+	if err := applyCurrentUserReadExecuteDACL(saved); err != nil {
+		t.Fatal(err)
+	}
+
+	outcome, err := fixture.coordinator.VerifyLiveBackup(
+		t.Context(), destination, VerifyOptions{ScratchParent: scratch},
+	)
+	if err == nil || outcome.Succeeded || outcome.Failure != FailureInvalid {
+		t.Fatalf("downgraded scratch outcome = %+v, error = %v", outcome, err)
+	}
+	entries, readErr := os.ReadDir(scratch)
+	if readErr != nil || len(entries) != 0 {
+		t.Fatalf("downgraded scratch was written: entries=%d error=%v", len(entries), readErr)
+	}
+}
+
+func TestVerifyLiveBackupRecoversOwnedScratchResidueBeforeCopy(t *testing.T) {
+	fixture := newBackupFixture(t)
+	fixture.addDocument(t, "scratch-residue", "live verification scratch residue")
+	destination := filepath.Join(fixture.root, "scratch-residue-backup")
+	if _, err := fixture.coordinator.Create(t.Context(), destination); err != nil {
+		t.Fatal(err)
+	}
+	scratch := newOwnerOnlyVerifyScratch(t, destination)
+	parent, err := openRetainedDirectory(scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staging, err := createStagingDirectory(parent, verifyScratchPrefix, verifyScratchDestination)
+	if err != nil {
+		_ = parent.Close()
+		t.Fatal(err)
+	}
+	if err := staging.directory.root.WriteFile("forced-exit-canary", []byte("owned"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := errors.Join(
+		staging.directory.Close(),
+		closeStagingCreationWitness(staging),
+		closeResidueLease(staging),
+		parent.Close(),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	outcome, err := fixture.coordinator.VerifyLiveBackup(
+		t.Context(), destination, VerifyOptions{ScratchParent: scratch},
+	)
+	if err != nil || !outcome.Succeeded {
+		t.Fatalf("VerifyLiveBackup outcome = %+v, error = %v", outcome, err)
+	}
+	if entries, err := os.ReadDir(scratch); err != nil || len(entries) != 0 {
+		t.Fatalf("live verification residue remains: entries=%d error=%v", len(entries), err)
 	}
 }
 

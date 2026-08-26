@@ -3,6 +3,8 @@
 package backup
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -11,13 +13,32 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const startupVerifyScratchLeaf = "MindWeaver-Recovery-Verify-v1"
-
 // PrepareStartupVerifyScratch resolves LocalAppData through the Windows Known
 // Folder API, binds the backup source read-only, and provisions one dedicated
 // owner-only scratch directory. The source and the trusted parent are retained
 // while every pre-write overlap and filesystem-boundary check is performed.
 func PrepareStartupVerifyScratch(source string) (string, error) {
+	return prepareTrustedVerifyScratch([]string{source}, startupVerifyScratchLeaf)
+}
+
+// PrepareLiveBackupVerifyScratch provisions an owner-only verification
+// scratch directory while retaining both the active Vault and the backup being
+// verified. The namespace is derived from the canonical Vault path only to
+// separate concurrently running Vaults; retained identities, not the digest,
+// enforce every security decision.
+func PrepareLiveBackupVerifyScratch(activeVault, verificationSource string) (string, error) {
+	return prepareTrustedVerifyScratch(
+		[]string{activeVault, verificationSource},
+		liveVerifyScratchLeaf(activeVault),
+	)
+}
+
+func liveVerifyScratchLeaf(source string) string {
+	digest := sha256.Sum256([]byte("mindweaver:backup-live-verify:v1\x00" + filepath.Clean(source)))
+	return liveVerifyScratchPrefix + hex.EncodeToString(digest[:])
+}
+
+func prepareTrustedVerifyScratch(sources []string, leaf string) (string, error) {
 	localAppData, err := windows.KnownFolderPath(
 		windows.FOLDERID_LocalAppData,
 		windows.KF_FLAG_DONT_VERIFY,
@@ -28,24 +49,49 @@ func PrepareStartupVerifyScratch(source string) (string, error) {
 			errors.New("backup: trusted recovery scratch location is unavailable"),
 		))
 	}
-	return prepareStartupVerifyScratchAt(source, localAppData)
+	return prepareVerifyScratchAtSources(sources, localAppData, leaf)
 }
 
 func prepareStartupVerifyScratchAt(source, localAppData string) (result string, resultErr error) {
-	if strings.TrimSpace(source) == "" || strings.TrimSpace(localAppData) == "" {
+	return prepareVerifyScratchAt(source, localAppData, startupVerifyScratchLeaf)
+}
+
+func prepareVerifyScratchAt(source, localAppData, leaf string) (result string, resultErr error) {
+	return prepareVerifyScratchAtSources([]string{source}, localAppData, leaf)
+}
+
+func prepareVerifyScratchAtSources(sources []string, localAppData, leaf string) (result string, resultErr error) {
+	if len(sources) == 0 || strings.TrimSpace(localAppData) == "" {
 		return "", classifiedBackupError(failVerify(
 			FailureInvalid,
 			errors.New("backup: invalid startup verification paths"),
 		))
 	}
-	sourceRoot, err := openRetainedDirectory(source)
-	if err != nil {
-		return "", classifiedBackupError(failVerify(
-			FailureInvalid,
-			errors.New("backup: verification source is unavailable"),
-		))
+	sourceRoots := make([]*retainedDirectory, 0, len(sources))
+	closeSources := func() error {
+		var closeErr error
+		for index := len(sourceRoots) - 1; index >= 0; index-- {
+			closeErr = errors.Join(closeErr, sourceRoots[index].Close())
+		}
+		return closeErr
 	}
-	defer func() { resultErr = errors.Join(resultErr, sourceRoot.Close()) }()
+	for _, source := range sources {
+		if strings.TrimSpace(source) == "" {
+			return "", classifiedBackupError(errors.Join(
+				failVerify(FailureInvalid, errors.New("backup: invalid startup verification paths")),
+				closeSources(),
+			))
+		}
+		sourceRoot, err := openRetainedDirectory(source)
+		if err != nil {
+			return "", classifiedBackupError(errors.Join(
+				failVerify(FailureInvalid, errors.New("backup: verification source is unavailable")),
+				closeSources(),
+			))
+		}
+		sourceRoots = append(sourceRoots, sourceRoot)
+	}
+	defer func() { resultErr = errors.Join(resultErr, closeSources()) }()
 
 	trustedParent, err := openRetainedDirectory(localAppData)
 	if err != nil {
@@ -62,21 +108,25 @@ func prepareStartupVerifyScratchAt(source, localAppData string) (result string, 
 	// If the backup source is the trusted parent or one of its ancestors, even
 	// creating the dedicated child would mutate the source. A source below the
 	// trusted parent remains admissible only when it is outside the exact child.
-	if err := rejectRetainedAncestor(sourceRoot, trustedParent); err != nil {
-		return "", classifiedBackupError(failVerify(FailureInvalid, err))
+	for _, sourceRoot := range sourceRoots {
+		if err := rejectRetainedAncestor(sourceRoot, trustedParent); err != nil {
+			return "", classifiedBackupError(failVerify(FailureInvalid, err))
+		}
 	}
 
-	scratch, err := openOrCreateStartupVerifyScratch(trustedParent)
+	scratch, err := openOrCreateStartupVerifyScratch(trustedParent, leaf)
 	if err != nil {
 		return "", classifiedBackupError(failVerify(FailureInvalid, err))
 	}
 	defer func() { resultErr = errors.Join(resultErr, scratch.Close()) }()
-	if err := rejectRetainedDirectoryOverlap(
-		sourceRoot,
-		scratch,
-		errors.New("backup: verification scratch directory overlaps source"),
-	); err != nil {
-		return "", classifiedBackupError(failVerify(FailureInvalid, err))
+	for _, sourceRoot := range sourceRoots {
+		if err := rejectRetainedDirectoryOverlap(
+			sourceRoot,
+			scratch,
+			errors.New("backup: verification scratch directory overlaps source"),
+		); err != nil {
+			return "", classifiedBackupError(failVerify(FailureInvalid, err))
+		}
 	}
 	if err := validateOwnerOnlyVerifyScratch(scratch); err != nil {
 		return "", classifiedBackupError(failVerify(FailureInvalid, err))
@@ -90,12 +140,12 @@ func prepareStartupVerifyScratchAt(source, localAppData string) (result string, 
 	return scratch.path, nil
 }
 
-func openOrCreateStartupVerifyScratch(parent *retainedDirectory) (*retainedDirectory, error) {
-	if parent == nil || parent.root == nil || !validResidueLeaf(startupVerifyScratchLeaf) {
+func openOrCreateStartupVerifyScratch(parent *retainedDirectory, leaf string) (*retainedDirectory, error) {
+	if parent == nil || parent.root == nil || !validResidueLeaf(leaf) {
 		return nil, errors.New("backup: trusted scratch parent is unavailable")
 	}
-	path := filepath.Join(parent.path, startupVerifyScratchLeaf)
-	entry, err := parent.root.Lstat(startupVerifyScratchLeaf)
+	path := filepath.Join(parent.path, leaf)
+	entry, err := parent.root.Lstat(leaf)
 	if err == nil {
 		if entry.Mode()&os.ModeSymlink != 0 || !entry.IsDir() {
 			return nil, errors.New("backup: existing recovery scratch is not a real directory")
@@ -108,7 +158,7 @@ func openOrCreateStartupVerifyScratch(parent *retainedDirectory) (*retainedDirec
 	if err := parent.acquireSyncHandle(); err != nil {
 		return nil, errors.New("backup: acquire trusted scratch creation capability")
 	}
-	witness, created, err := createRetainedStagingLeaf(parent, startupVerifyScratchLeaf, true)
+	witness, created, err := createRetainedStagingLeaf(parent, leaf, true)
 	if err != nil {
 		// A concurrent creator is acceptable only if the exact secure directory
 		// can now be retained and verified through the trusted parent.
@@ -118,7 +168,7 @@ func openOrCreateStartupVerifyScratch(parent *retainedDirectory) (*retainedDirec
 		return nil, errors.New("backup: create trusted recovery scratch directory")
 	}
 	defer witness.Close()
-	root, err := parent.root.OpenRoot(startupVerifyScratchLeaf)
+	root, err := parent.root.OpenRoot(leaf)
 	if err != nil {
 		return nil, errors.New("backup: retain created recovery scratch directory")
 	}

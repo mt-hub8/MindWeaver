@@ -1046,6 +1046,8 @@ func classifyBackupControlError(err error) (transport.ErrorCode, string) {
 		return transport.CodeNotFound, "备份操作不存在或其进程内状态已过期。"
 	case errors.Is(err, errBackupQuiescing):
 		return transport.CodeServiceUnavailable, "应用正在安全关闭，不能接受新的备份。"
+	case errors.Is(err, errBackupHistoryFull):
+		return transport.CodeResourceLimit, "本次运行已达到备份操作历史上限；请重启应用后再试。"
 	default:
 		return transport.CodeInternal, "本地备份控制失败；可以在诊断面板检查运行状态。"
 	}

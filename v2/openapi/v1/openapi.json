@@ -440,6 +440,7 @@
               "BACKUP_DESTINATION_UNSUPPORTED",
               "BACKUP_DISK_FULL",
               "BACKUP_FAILED",
+              "BACKUP_EXISTING_VERIFIED",
               "BACKUP_PUBLICATION_UNCERTAIN",
               "BACKUP_RESIDUE_CONFLICT",
               "BACKUP_TARGET_EXISTS"
@@ -1854,7 +1855,7 @@
     },
     "/api/v1/backups": {
       "post": {
-        "description": "Accept one in-process backup Create. The destination is never overwritten and is never returned. Recovery restore and verify operations are intentionally absent from the live API.",
+        "description": "Accept one in-process backup Create. The destination is never overwritten and is never returned. The backup package contains plaintext SQLite and blob files and relies on account, media access-control, and disk-encryption policy for confidentiality. An already existing valid backup is reported as needs_attention and is never claimed as a fresh snapshot. Recovery restore and verify operations are intentionally absent from the live API.",
         "operationId": "createBackup",
         "parameters": [
           {
@@ -1898,6 +1899,9 @@
           "409": {
             "$ref": "#/components/responses/Problem409"
           },
+          "413": {
+            "$ref": "#/components/responses/Problem413"
+          },
           "500": {
             "$ref": "#/components/responses/Problem500"
           },
@@ -1905,9 +1909,9 @@
             "$ref": "#/components/responses/Problem503"
           }
         },
-        "summary": "Create one immutable local backup",
+        "summary": "Create one no-replace, integrity-verifiable local backup",
         "x-mindweaver-csrf": "required",
-        "x-mindweaver-retry-safety": "process-memory Idempotency-Key plus exact destination; existing valid immutable destination converges a lost response without overwrite",
+        "x-mindweaver-retry-safety": "bounded process-memory Idempotency-Key commitment plus exact destination; history exhaustion fails closed, and an existing valid target is never claimed as a fresh backup",
         "x-mindweaver-session": "required"
       }
     },
@@ -1939,7 +1943,7 @@
                 }
               }
             },
-            "description": "Cancellation is requested. A publication that already won may still converge to succeeded or needs_attention."
+            "description": "For an active operation, cancellation is requested. For a retained terminal operation, the existing terminal status is returned unchanged. A publication that already won may still converge to succeeded or needs_attention."
           },
           "400": {
             "$ref": "#/components/responses/Problem400"
@@ -1957,7 +1961,7 @@
             "$ref": "#/components/responses/Problem500"
           }
         },
-        "summary": "Request cancellation of the active backup",
+        "summary": "Request cancellation of one accepted backup operation",
         "x-mindweaver-csrf": "required",
         "x-mindweaver-retry-safety": "idempotent cancellation request against one process-local operation identifier",
         "x-mindweaver-session": "required"
@@ -1986,7 +1990,7 @@
                 }
               }
             },
-            "description": "Bounded path-free status for the current process-local backup operation."
+            "description": "Bounded path-free status for one retained process-local backup operation."
           },
           "400": {
             "$ref": "#/components/responses/Problem400"
@@ -2004,7 +2008,7 @@
             "$ref": "#/components/responses/Problem500"
           }
         },
-        "summary": "Read current backup status",
+        "summary": "Read one retained process-local backup status",
         "x-mindweaver-csrf": "none",
         "x-mindweaver-retry-safety": "read-only",
         "x-mindweaver-session": "required"

@@ -92,10 +92,11 @@ type Coordinator struct {
 // the capability and verifies that both handles retain the same directory.
 // path remains only for APIs that cannot accept an os.Root.
 type retainedDirectory struct {
-	path       string
-	root       *os.Root
-	syncHandle *os.File
-	identity   directoryIdentity
+	path               string
+	root               *os.Root
+	syncHandle         *os.File
+	namespaceWitnesses []*os.File
+	identity           directoryIdentity
 }
 
 type directoryIdentity struct{ info os.FileInfo }
@@ -1968,6 +1969,9 @@ func newDestination(raw string) (*destinationTarget, error) {
 	if strings.TrimSpace(raw) == "" || strings.ContainsRune(raw, '\x00') || !validPlatformDestinationInput(raw) {
 		return nil, errors.New("backup: destination is empty or invalid")
 	}
+	if err := validatePlatformDestinationNamespace(raw); err != nil {
+		return nil, fmt.Errorf("backup: destination namespace: %w", err)
+	}
 	finalPath, err := filepath.Abs(raw)
 	if err != nil {
 		return nil, fmt.Errorf("backup: resolve destination: %w", err)
@@ -1975,6 +1979,10 @@ func newDestination(raw string) (*destinationTarget, error) {
 	parent, err := openRetainedDirectory(filepath.Dir(finalPath))
 	if err != nil {
 		return nil, fmt.Errorf("backup: destination parent: %w", err)
+	}
+	if err := rejectManagedDestinationAncestor(parent); err != nil {
+		_ = parent.Close()
+		return nil, err
 	}
 	if err := parent.acquireSyncHandle(); err != nil {
 		_ = parent.Close()
@@ -2004,40 +2012,46 @@ func existingDirectory(raw string) (string, error) {
 	return vault.ValidateExistingDirectory(raw)
 }
 
+type retainedDirectoryHooks struct {
+	afterNamespaceRetained func() error
+}
+
 func openRetainedDirectory(raw string) (*retainedDirectory, error) {
+	return openRetainedDirectoryWithHooks(raw, retainedDirectoryHooks{})
+}
+
+func openRetainedDirectoryWithHooks(raw string, hooks retainedDirectoryHooks) (*retainedDirectory, error) {
 	candidate, err := filepath.Abs(raw)
 	if err != nil {
 		return nil, err
 	}
-	// The pre-validation handle prevents a rename on platforms whose directory
-	// handles deny delete sharing, and supplies an identity witness elsewhere.
-	// No data is read through it until the path passes Vault validation.
-	witness, err := os.OpenRoot(filepath.Clean(candidate))
+	if err := validatePlatformDirectoryNamespace(candidate); err != nil {
+		return nil, err
+	}
+	// Retain every namespace component without following reparse points before
+	// any ordinary path open. On Windows the component witnesses also omit
+	// delete sharing, preventing an ancestor from being replaced while later
+	// absolute-path-only APIs are in use.
+	path := filepath.Clean(candidate)
+	witnesses, witnessInfo, err := retainPlatformDirectoryNamespace(path)
 	if err != nil {
 		return nil, err
 	}
-	witnessInfo, err := witness.Stat(".")
-	if err != nil {
-		_ = witness.Close()
-		return nil, err
-	}
-	path, err := existingDirectory(raw)
-	if err != nil {
-		_ = witness.Close()
-		return nil, err
+	if hooks.afterNamespaceRetained != nil {
+		if err := hooks.afterNamespaceRetained(); err != nil {
+			return nil, errors.Join(err, closeNamespaceWitnesses(witnesses))
+		}
 	}
 	validated, err := os.Lstat(path)
 	if err != nil {
-		_ = witness.Close()
-		return nil, err
+		return nil, errors.Join(err, closeNamespaceWitnesses(witnesses))
 	}
 	root, err := os.OpenRoot(path)
 	if err != nil {
-		_ = witness.Close()
-		return nil, err
+		return nil, errors.Join(err, closeNamespaceWitnesses(witnesses))
 	}
 	fail := func(cause error) (*retainedDirectory, error) {
-		return nil, errors.Join(cause, root.Close(), witness.Close())
+		return nil, errors.Join(cause, root.Close(), closeNamespaceWitnesses(witnesses))
 	}
 	retained, err := root.Stat(".")
 	if err != nil {
@@ -2053,13 +2067,24 @@ func openRetainedDirectory(raw string) (*retainedDirectory, error) {
 		!os.SameFile(validated, retained) || !os.SameFile(current, retained) {
 		return fail(errors.New("backup: validated directory identity changed while retaining root"))
 	}
-	if err := witness.Close(); err != nil {
-		return nil, errors.Join(err, root.Close())
-	}
-	return &retainedDirectory{
-		path: path, root: root,
+	directory := &retainedDirectory{
+		path: path, root: root, namespaceWitnesses: witnesses,
 		identity: directoryIdentity{info: retained},
-	}, nil
+	}
+	if err := validateRetainedDirectoryCaseSemantics(directory); err != nil {
+		return fail(err)
+	}
+	return directory, nil
+}
+
+func closeNamespaceWitnesses(witnesses []*os.File) error {
+	var result error
+	for index := len(witnesses) - 1; index >= 0; index-- {
+		if witnesses[index] != nil {
+			result = errors.Join(result, witnesses[index].Close())
+		}
+	}
+	return result
 }
 
 func (directory *retainedDirectory) acquireSyncHandle() error {
@@ -2122,9 +2147,11 @@ func (directory *retainedDirectory) Close() error {
 	if directory.syncHandle != nil {
 		syncErr = directory.syncHandle.Close()
 	}
-	err := errors.Join(rootErr, syncErr)
+	witnessErr := closeNamespaceWitnesses(directory.namespaceWitnesses)
+	err := errors.Join(rootErr, syncErr, witnessErr)
 	directory.root = nil
 	directory.syncHandle = nil
+	directory.namespaceWitnesses = nil
 	return err
 }
 

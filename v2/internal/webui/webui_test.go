@@ -38,7 +38,15 @@ func TestEmbeddedClientRefreshesCSRFAndConsumesBoundedSearchPages(t *testing.T) 
 		`remove.dataset.conversationId`, `questionBytes > 1024`, "删除并解除引用",
 		`api("/api/v1/backups"`, `/api/v1/backups/status?operationId=`, `api("/api/v1/backups/cancel"`,
 		`"Idempotency-Key": attempt.key`, `JSON.stringify({ destination: attempt.destination })`,
-		`backupAttempt = null`, `status.state === "needs_attention"`,
+		`if (terminal) backupAttempt = null`, `status.state === "needs_attention"`,
+		`byId("backup-destination").disabled = !terminal`,
+		`byId("backup-destination").disabled = true`,
+		`byId("backup-destination").value = backupAttempt.destination`,
+		`if (!showBackupStatus(status)) await pollBackup(attempt.operationID, generation)`,
+		`if (!attempt || attempt.operationID !== operationID || attempt.polling) return`,
+		`backupAttempt !== attempt || attempt.operationID !== operationID`, `attempt.polling = false`,
+		"如需重试，请重新提交相同目标，新请求会先检查受控暂存残留",
+		"无法证明它由本次新请求创建；未将其冒充为新备份",
 	} {
 		if !strings.Contains(source, contract) {
 			t.Fatalf("embedded product workflow is missing %q", contract)
@@ -73,6 +81,10 @@ func TestEmbeddedClientRefreshesCSRFAndConsumesBoundedSearchPages(t *testing.T) 
 	}
 	if !strings.Contains(index.String(), `id="ask-question" maxlength="1024"`) || !strings.Contains(index.String(), "最多 1024 UTF-8 字节") {
 		t.Fatal("embedded Ask form does not expose the search-compatible question byte limit")
+	}
+	if !strings.Contains(index.String(), "备份包是未加密的明文 SQLite 与资料对象") ||
+		!strings.Contains(index.String(), "磁盘加密和访问控制") {
+		t.Fatal("embedded backup workflow does not disclose its plaintext boundary")
 	}
 	for _, id := range []string{`id="active-documents"`, `id="trashed-documents"`, `id="documents-more"`, `id="collections"`, `id="collection-members"`, `id="purges"`, `id="ollama-form"`, `id="conversations"`, `id="ask-form"`, `id="messages"`, `id="backup-form"`, `id="backup-destination"`, `id="backup-cancel"`} {
 		if !strings.Contains(index.String(), id) {

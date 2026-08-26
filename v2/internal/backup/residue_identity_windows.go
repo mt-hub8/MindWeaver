@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -78,4 +79,95 @@ func unlockResidueFile(file *os.File) error {
 	}
 	overlapped := windows.Overlapped{OffsetHigh: 1}
 	return windows.UnlockFileEx(windows.Handle(file.Fd()), 0, 1, 0, &overlapped)
+}
+
+func openResidueMutationFile(
+	parent *retainedDirectory,
+	name string,
+	expected os.FileInfo,
+) (*os.File, error) {
+	if parent == nil || parent.root == nil || expected == nil || !validResidueLeaf(name) {
+		return nil, errors.New("backup: invalid residue mutation capability")
+	}
+	path := filepath.Join(parent.path, name)
+	pointer, err := windows.UTF16PtrFromString(longWindowsPath(path))
+	if err != nil {
+		return nil, err
+	}
+	handle, err := windows.CreateFile(
+		pointer,
+		windows.GENERIC_READ|windows.DELETE,
+		windows.FILE_SHARE_READ,
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_FLAG_OPEN_REPARSE_POINT,
+		0,
+	)
+	if errors.Is(err, windows.ERROR_SHARING_VIOLATION) || errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
+		return nil, ErrResidueActive
+	}
+	if err != nil {
+		return nil, err
+	}
+	fail := func(cause error) (*os.File, error) {
+		_ = windows.CloseHandle(handle)
+		return nil, cause
+	}
+	var information windows.ByHandleFileInformation
+	if err := windows.GetFileInformationByHandle(handle, &information); err != nil {
+		return fail(err)
+	}
+	if information.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+		return fail(errors.Join(ErrResidueConflict, errors.New("backup: residue mutation target is a reparse point")))
+	}
+	file := os.NewFile(uintptr(handle), path)
+	if file == nil {
+		return fail(errors.New("backup: adopt residue mutation handle"))
+	}
+	opened, statErr := file.Stat()
+	current, currentErr := parent.root.Lstat(name)
+	if err := errors.Join(statErr, currentErr); err != nil ||
+		current.Mode()&os.ModeSymlink != 0 || !current.Mode().IsRegular() ||
+		!opened.Mode().IsRegular() || !os.SameFile(expected, opened) || !os.SameFile(opened, current) {
+		_ = file.Close()
+		if err != nil {
+			return nil, err
+		}
+		return nil, ErrResidueConflict
+	}
+	return file, nil
+}
+
+func deleteResidueMutationFile(
+	parent *retainedDirectory,
+	name string,
+	expected os.FileInfo,
+	file *os.File,
+) error {
+	if parent == nil || parent.root == nil || expected == nil || file == nil {
+		return errors.New("backup: invalid locked residue deletion")
+	}
+	current, currentErr := parent.root.Lstat(name)
+	opened, statErr := file.Stat()
+	if err := errors.Join(currentErr, statErr); err != nil || current.Mode()&os.ModeSymlink != 0 ||
+		!current.Mode().IsRegular() || !opened.Mode().IsRegular() ||
+		!os.SameFile(expected, current) || !os.SameFile(expected, opened) {
+		if err != nil {
+			return err
+		}
+		return ErrResidueConflict
+	}
+	deleteErr := markOwnedDeletion(file)
+	unlockErr := unlockResidueFile(file)
+	closeErr := file.Close()
+	if err := errors.Join(deleteErr, unlockErr, closeErr); err != nil {
+		return err
+	}
+	if _, err := parent.root.Lstat(name); !errors.Is(err, os.ErrNotExist) {
+		if err == nil {
+			err = errors.New("backup: locked residue file remains after deletion")
+		}
+		return err
+	}
+	return nil
 }

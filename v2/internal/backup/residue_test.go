@@ -82,6 +82,7 @@ const (
 	residueHelperModeEnv   = "MW_BACKUP_RESIDUE_HELPER_MODE"
 	residueHelperParentEnv = "MW_BACKUP_RESIDUE_HELPER_PARENT"
 	residueHelperKindEnv   = "MW_BACKUP_RESIDUE_HELPER_KIND"
+	residueHelperIDEnv     = "MW_BACKUP_RESIDUE_HELPER_ID"
 )
 
 func TestResidueForcedExitHelper(t *testing.T) {
@@ -149,6 +150,27 @@ func TestResidueForcedExitHelper(t *testing.T) {
 				},
 			)
 		}
+	case "confirmation-cleanup-gap":
+		id := os.Getenv(residueHelperIDEnv)
+		name := residueReceiptName(id)
+		receipt, info, readErr := readResidueReceipt(context.Background(), parent, name)
+		if readErr != nil || receipt.ID != id || parent.acquireSyncHandle() != nil {
+			os.Exit(96)
+		}
+		lease, lockErr := openAndLockResidueReceipt(parent, name, info)
+		if lockErr != nil {
+			os.Exit(96)
+		}
+		locked, lockedInfo, lockedErr := readLockedResidueReceipt(context.Background(), lease, name)
+		if lockedErr != nil || locked != receipt || !os.SameFile(info, lockedInfo) {
+			_ = unlockResidueFile(lease)
+			_ = lease.Close()
+			os.Exit(96)
+		}
+		if deleteResidueMutationFile(parent, name, info, lease) != nil || syncRetainedDirectory(parent) != nil {
+			os.Exit(96)
+		}
+		os.Exit(97)
 	}
 	_ = parent.Close()
 	os.Exit(81)
@@ -687,6 +709,54 @@ func TestBindingPersistenceFailureLeavesConflictForExplicitRecoveryPolicy(t *tes
 	}
 	if _, err := os.Lstat(filepath.Join(parentPath, residueBindingName(page.Items[0].ID))); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("pre-binding failure unexpectedly published identity sidecar: %v", err)
+	}
+}
+
+func TestReceiptOnlyBindingCASRetainsMarkerWhenTreeAppearsDuringRecovery(t *testing.T) {
+	parentPath := t.TempDir()
+	parent, err := openRetainedDirectory(parentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer parent.Close()
+	if err := parent.acquireSyncHandle(); err != nil {
+		t.Fatal(err)
+	}
+	staging, err := createStagingDirectory(parent, stagingPrefix, "destination")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := errors.Join(staging.directory.Close(), closeStagingCreationWitness(staging), closeResidueLease(staging)); err != nil {
+		t.Fatal(err)
+	}
+	if err := parent.root.Remove(staging.name); err != nil {
+		t.Fatal(err)
+	}
+	receiptLease, err := openAndLockResidueReceipt(parent, staging.receiptName, staging.receiptIdentity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := deleteResidueMutationFile(parent, staging.receiptName, staging.receiptIdentity, receiptLease); err != nil {
+		t.Fatal(err)
+	}
+	if err := syncRetainedDirectory(parent); err != nil {
+		t.Fatal(err)
+	}
+	page, err := ListResidues(t.Context(), parentPath, 10)
+	if err != nil || len(page.Items) != 1 || page.Items[0].State != ResidueStateReceiptOnly {
+		t.Fatalf("binding-only residue = %+v, %v", page, err)
+	}
+	expected := page.Items[0]
+	err = recoverResidue(t.Context(), parentPath, expected, func(*destinationTarget) error {
+		return parent.root.Mkdir(expected.StagingName, 0o700)
+	}, nil)
+	if !errors.Is(err, ErrResidueConflict) {
+		t.Fatalf("tree-appeared recovery error = %v, want ErrResidueConflict", err)
+	}
+	for _, name := range []string{residueBindingName(expected.ID), expected.StagingName} {
+		if _, statErr := parent.root.Lstat(name); statErr != nil {
+			t.Fatalf("CAS conflict removed evidence %q: %v", name, statErr)
+		}
 	}
 }
 

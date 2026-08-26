@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -19,6 +20,7 @@ const (
 	maxBackupDestinationBytes = 4096
 	maxBackupIdempotencyBytes = 256
 	backupResidueLimit        = 256
+	maxBackupOperationHistory = 4096
 )
 
 var (
@@ -27,6 +29,7 @@ var (
 	errBackupNotFound            = errors.New("app: backup operation was not found")
 	errBackupIdempotencyConflict = errors.New("app: backup idempotency conflict")
 	errBackupDestinationInvalid  = errors.New("app: backup destination is invalid")
+	errBackupHistoryFull         = errors.New("app: backup operation history is full")
 )
 
 type backupOperationState string
@@ -54,10 +57,9 @@ type backupOperationStatus struct {
 type backupEngine interface {
 	ValidateCreateDestination(context.Context, string) error
 	Create(context.Context, string) (backup.Manifest, error)
-	Verify(context.Context, string, backup.VerifyOptions) (backup.Outcome, error)
+	VerifyLiveBackup(context.Context, string, backup.VerifyOptions) (backup.Outcome, error)
 	ConfirmPublishedBackup(context.Context, string, backup.Residue, backup.VerifyOptions) (backup.Outcome, error)
 	RecoverResidue(context.Context, string, backup.Residue) error
-	CleanupVerifyScratch(context.Context, string, int) (backup.ScratchCleanupSummary, error)
 	ListResidues(context.Context, string, int) (backup.ResiduePage, error)
 	Close() error
 }
@@ -71,45 +73,43 @@ func (engine coordinatorBackupEngine) ListResidues(ctx context.Context, parent s
 type backupOperation struct {
 	status      backupOperationStatus
 	idempotency string
+	requestHash [sha256.Size]byte
 	destination string
 	cancel      context.CancelFunc
 	done        chan struct{}
 }
 
 // backupRuntime is the single app-owned admission, cancellation, and drain
-// boundary for live backup creation. It deliberately retains only the current
-// operation in memory; the immutable destination and backup residue receipts
-// are the cross-process recovery truth.
+// boundary for live backup creation. It retains a bounded process-lifetime
+// commitment for every accepted idempotency key; no-replace published backups
+// and residue receipts remain the only cross-process recovery truth.
 type backupRuntime struct {
-	mu        sync.Mutex
-	engine    backupEngine
-	scratch   string
-	accepting bool
-	operation *backupOperation
+	mu              sync.Mutex
+	engine          backupEngine
+	prepareScratch  func(string) (string, error)
+	accepting       bool
+	operation       *backupOperation
+	operationsByKey map[string]*backupOperation
+	operationsByID  map[string]*backupOperation
+	processNonce    [sha256.Size]byte
+	preflightCancel context.CancelFunc
+	preflightDone   chan struct{}
 }
 
-func newBackupRuntime(engine backupEngine, scratch string) (*backupRuntime, error) {
-	if engine == nil {
+func newBackupRuntime(engine backupEngine, prepareScratch func(string) (string, error)) (*backupRuntime, error) {
+	if engine == nil || prepareScratch == nil {
 		return nil, errors.New("app: nil backup engine")
 	}
-	if !validAbsoluteBackupPath(scratch) {
-		return nil, errors.New("app: invalid backup scratch path")
+	var processNonce [sha256.Size]byte
+	if _, err := rand.Read(processNonce[:]); err != nil {
+		return nil, errors.New("app: initialize backup operation identity")
 	}
-	return &backupRuntime{engine: engine, scratch: scratch, accepting: true}, nil
-}
-
-func defaultBackupScratch(vaultRoot string) (string, error) {
-	cache, err := os.UserCacheDir()
-	if err != nil || !filepath.IsAbs(cache) || vaultRoot == "" || !filepath.IsAbs(vaultRoot) ||
-		filepath.Clean(vaultRoot) != vaultRoot || !utf8.ValidString(vaultRoot) {
-		return "", errors.New("app: backup scratch location is unavailable")
-	}
-	identity := sha256.Sum256([]byte("mindweaver:backup-scratch:v1\x00" + vaultRoot))
-	scratch := filepath.Join(cache, "MindWeaver", "backup-live", hex.EncodeToString(identity[:]))
-	if lexicalPathsOverlap(vaultRoot, scratch) {
-		return "", errors.New("app: backup scratch overlaps the active Vault")
-	}
-	return scratch, nil
+	return &backupRuntime{
+		engine: engine, prepareScratch: prepareScratch, accepting: true,
+		operationsByKey: make(map[string]*backupOperation),
+		operationsByID:  make(map[string]*backupOperation),
+		processNonce:    processNonce,
+	}, nil
 }
 
 func (runtime *backupRuntime) Start(ctx context.Context, idempotency, destination string) (backupOperationStatus, error) {
@@ -121,39 +121,86 @@ func (runtime *backupRuntime) Start(ctx context.Context, idempotency, destinatio
 	}
 
 	runtime.mu.Lock()
+	if !runtime.accepting {
+		runtime.mu.Unlock()
+		return backupOperationStatus{}, errBackupQuiescing
+	}
+	requestHash := sha256.Sum256([]byte(destination))
+	if previous := runtime.operationsByKey[idempotency]; previous != nil {
+		if previous.requestHash != requestHash {
+			runtime.mu.Unlock()
+			return backupOperationStatus{}, errBackupIdempotencyConflict
+		}
+		status := previous.status
+		runtime.mu.Unlock()
+		return status, nil
+	}
+	if current := runtime.operation; current != nil && !backupTerminal(current.status.State) {
+		runtime.mu.Unlock()
+		return backupOperationStatus{}, errBackupBusy
+	}
+	if runtime.preflightDone != nil {
+		runtime.mu.Unlock()
+		return backupOperationStatus{}, errBackupBusy
+	}
+	if len(runtime.operationsByKey) >= maxBackupOperationHistory {
+		runtime.mu.Unlock()
+		return backupOperationStatus{}, errBackupHistoryFull
+	}
+	preflightContext, cancelPreflight := context.WithCancel(ctx)
+	preflightDone := make(chan struct{})
+	runtime.preflightCancel = cancelPreflight
+	runtime.preflightDone = preflightDone
+	runtime.mu.Unlock()
+
+	// Filesystem/media qualification can block in the operating system. Keep it
+	// outside the admission mutex so Quiesce can stop ingress and cancel an
+	// active operation without waiting for an uninterruptible preflight.
+	validationErr := runtime.engine.ValidateCreateDestination(preflightContext, destination)
+	cancelPreflight()
+
+	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
+	if runtime.preflightDone == preflightDone {
+		runtime.preflightCancel = nil
+		runtime.preflightDone = nil
+		close(preflightDone)
+	}
 	if !runtime.accepting {
 		return backupOperationStatus{}, errBackupQuiescing
 	}
-	if current := runtime.operation; current != nil && current.idempotency == idempotency {
-		if current.destination != destination {
+	if validationErr != nil {
+		return backupOperationStatus{}, classifyBackupAdmission(validationErr)
+	}
+	if previous := runtime.operationsByKey[idempotency]; previous != nil {
+		if previous.requestHash != requestHash {
 			return backupOperationStatus{}, errBackupIdempotencyConflict
 		}
-		return current.status, nil
+		return previous.status, nil
 	}
 	if current := runtime.operation; current != nil && !backupTerminal(current.status.State) {
 		return backupOperationStatus{}, errBackupBusy
 	}
-	// Preflight is intentionally inside the admission lock. Create repeats the
-	// retained-capability checks before its first write, so this check is only a
-	// fast, fail-closed admission decision and not a TOCTOU authorization.
-	if err := runtime.engine.ValidateCreateDestination(ctx, destination); err != nil {
-		return backupOperationStatus{}, classifyBackupAdmission(err)
+	if len(runtime.operationsByKey) >= maxBackupOperationHistory {
+		return backupOperationStatus{}, errBackupHistoryFull
 	}
 
 	operationContext, cancel := context.WithCancel(context.Background())
 	operation := &backupOperation{
 		status: backupOperationStatus{
-			OperationID: backupOperationID(idempotency, destination),
+			OperationID: backupOperationID(runtime.processNonce, idempotency, requestHash),
 			State:       backupStateAccepted,
 			Phase:       "accepted",
 		},
 		idempotency: idempotency,
+		requestHash: requestHash,
 		destination: destination,
 		cancel:      cancel,
 		done:        make(chan struct{}),
 	}
 	runtime.operation = operation
+	runtime.operationsByKey[idempotency] = operation
+	runtime.operationsByID[operation.status.OperationID] = operation
 	go runtime.run(operationContext, operation)
 	return operation.status, nil
 }
@@ -164,10 +211,11 @@ func (runtime *backupRuntime) Status(operationID string) (backupOperationStatus,
 	}
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
-	if runtime.operation == nil || runtime.operation.status.OperationID != operationID {
+	operation := runtime.operationsByID[operationID]
+	if operation == nil {
 		return backupOperationStatus{}, errBackupNotFound
 	}
-	return runtime.operation.status, nil
+	return operation.status, nil
 }
 
 func (runtime *backupRuntime) Cancel(operationID string) (backupOperationStatus, error) {
@@ -176,8 +224,8 @@ func (runtime *backupRuntime) Cancel(operationID string) (backupOperationStatus,
 	}
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
-	operation := runtime.operation
-	if operation == nil || operation.status.OperationID != operationID {
+	operation := runtime.operationsByID[operationID]
+	if operation == nil {
 		return backupOperationStatus{}, errBackupNotFound
 	}
 	if !backupTerminal(operation.status.State) {
@@ -193,6 +241,9 @@ func (runtime *backupRuntime) Quiesce() {
 	}
 	runtime.mu.Lock()
 	runtime.accepting = false
+	if runtime.preflightCancel != nil {
+		runtime.preflightCancel()
+	}
 	if runtime.operation != nil && !backupTerminal(runtime.operation.status.State) {
 		runtime.operation.status.CancelRequested = true
 		runtime.operation.cancel()
@@ -207,20 +258,31 @@ func (runtime *backupRuntime) Wait(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("app: nil backup drain context")
 	}
-	runtime.mu.Lock()
-	var done <-chan struct{}
-	if runtime.operation != nil {
-		done = runtime.operation.done
-	}
-	runtime.mu.Unlock()
-	if done == nil {
-		return nil
-	}
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+	for {
+		runtime.mu.Lock()
+		preflightDone := (<-chan struct{})(runtime.preflightDone)
+		var operationDone <-chan struct{}
+		if runtime.operation != nil {
+			operationDone = runtime.operation.done
+		}
+		runtime.mu.Unlock()
+		if preflightDone != nil {
+			select {
+			case <-preflightDone:
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		if operationDone == nil {
+			return nil
+		}
+		select {
+		case <-operationDone:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 }
 
@@ -247,6 +309,8 @@ func (runtime *backupRuntime) run(ctx context.Context, operation *backupOperatio
 		status.OperationID = current.OperationID
 		status.CancelRequested = current.CancelRequested
 		*current = status
+		operation.destination = ""
+		operation.cancel = nil
 	})
 }
 
@@ -274,6 +338,9 @@ func (runtime *backupRuntime) execute(ctx context.Context, destination string) b
 		}
 		return backupAttentionStatus("BACKUP_PUBLICATION_UNCERTAIN")
 	}
+	if errors.Is(err, backup.ErrCleanupResidual) {
+		return backupAttentionStatus("BACKUP_CLEANUP_REQUIRED")
+	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return backupCanceledStatus()
 	}
@@ -291,7 +358,11 @@ func (runtime *backupRuntime) reconcile(ctx context.Context, destination string)
 	}
 	var matching []backup.Residue
 	for _, residue := range page.Items {
-		if residue.DestinationName == leaf {
+		sameLeaf, compareErr := sameBackupDestinationLeaf(residue.DestinationName, leaf)
+		if compareErr != nil {
+			return backupAttentionStatus("BACKUP_RESIDUE_CONFLICT"), true
+		}
+		if sameLeaf {
 			matching = append(matching, residue)
 		}
 	}
@@ -304,25 +375,29 @@ func (runtime *backupRuntime) reconcile(ctx context.Context, destination string)
 			return backupAttentionStatus("BACKUP_RESIDUE_CONFLICT"), true
 		}
 		switch residue.State {
-		case backup.ResidueStatePublicationUncertain:
-			if err := runtime.prepareScratch(ctx); err != nil {
+		case backup.ResidueStatePublicationUncertain, backup.ResidueStatePublicationCleanup:
+			scratch, err := runtime.prepareVerifyScratch(ctx, destination)
+			if err != nil {
 				return backupErrorStatus(err), true
 			}
 			outcome, err := runtime.engine.ConfirmPublishedBackup(
-				ctx, parent, residue, backup.VerifyOptions{ScratchParent: runtime.scratch},
+				ctx, parent, residue, backup.VerifyOptions{ScratchParent: scratch},
 			)
+			if errors.Is(err, backup.ErrCleanupResidual) {
+				return backupAttentionStatus("BACKUP_CLEANUP_REQUIRED"), true
+			}
+			if errors.Is(err, backup.ErrPublicationUncertain) {
+				return backupAttentionStatus("BACKUP_PUBLICATION_UNCERTAIN"), true
+			}
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return backupCanceledStatus(), true
 			}
 			if err != nil || !outcome.Succeeded {
 				return backupAttentionStatus("BACKUP_PUBLICATION_UNCERTAIN"), true
 			}
-			return outcomeStatus(outcome), true
+			return verifiedExistingBackupStatus(outcome), true
 		case backup.ResidueStateStaging, backup.ResidueStateReceiptOnly:
 			if err := runtime.engine.RecoverResidue(ctx, parent, residue); err != nil {
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-					return backupCanceledStatus(), true
-				}
 				return backupAttentionStatus("BACKUP_CLEANUP_REQUIRED"), true
 			}
 		default:
@@ -336,15 +411,19 @@ func (runtime *backupRuntime) reconcile(ctx context.Context, destination string)
 	info, err := os.Lstat(destination)
 	switch {
 	case err == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0:
-		if err := runtime.prepareScratch(ctx); err != nil {
+		scratch, err := runtime.prepareVerifyScratch(ctx, destination)
+		if err != nil {
 			return backupErrorStatus(err), true
 		}
-		outcome, verifyErr := runtime.engine.Verify(ctx, destination, backup.VerifyOptions{ScratchParent: runtime.scratch})
+		outcome, verifyErr := runtime.engine.VerifyLiveBackup(ctx, destination, backup.VerifyOptions{ScratchParent: scratch})
+		if errors.Is(verifyErr, backup.ErrCleanupResidual) {
+			return backupAttentionStatus("BACKUP_CLEANUP_REQUIRED"), true
+		}
 		if errors.Is(verifyErr, context.Canceled) || errors.Is(verifyErr, context.DeadlineExceeded) {
 			return backupCanceledStatus(), true
 		}
 		if verifyErr == nil && outcome.Succeeded {
-			return outcomeStatus(outcome), true
+			return verifiedExistingBackupStatus(outcome), true
 		}
 		if class := backup.FailureClassOf(verifyErr); class == backup.FailureCleanupRequired ||
 			class == backup.FailureUnsupported {
@@ -360,21 +439,18 @@ func (runtime *backupRuntime) reconcile(ctx context.Context, destination string)
 	}
 }
 
-func (runtime *backupRuntime) prepareScratch(ctx context.Context) error {
+func (runtime *backupRuntime) prepareVerifyScratch(ctx context.Context, source string) (string, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return "", err
 	}
-	if err := os.MkdirAll(runtime.scratch, 0o700); err != nil {
-		return err
+	scratch, err := runtime.prepareScratch(source)
+	if err != nil || !validAbsoluteBackupPath(scratch) {
+		return "", errors.Join(errBackupDestinationInvalid, err)
 	}
 	if err := ctx.Err(); err != nil {
-		return err
+		return "", err
 	}
-	result, err := runtime.engine.CleanupVerifyScratch(ctx, runtime.scratch, backupResidueLimit)
-	if err != nil || result.Truncated {
-		return errors.Join(backup.ErrCleanupResidual, err)
-	}
-	return nil
+	return scratch, nil
 }
 
 func (runtime *backupRuntime) setPhase(phase string) {
@@ -413,7 +489,18 @@ func outcomeStatus(outcome backup.Outcome) backupOperationStatus {
 	}
 }
 
+func verifiedExistingBackupStatus(outcome backup.Outcome) backupOperationStatus {
+	status := outcomeStatus(outcome)
+	status.State = backupStateNeedsAttention
+	status.Phase = "attention"
+	status.FailureCode = "BACKUP_EXISTING_VERIFIED"
+	return status
+}
+
 func backupErrorStatus(err error) backupOperationStatus {
+	if errors.Is(err, backup.ErrCleanupResidual) {
+		return backupAttentionStatus("BACKUP_CLEANUP_REQUIRED")
+	}
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return backupCanceledStatus()
 	}
@@ -467,9 +554,15 @@ func backupTerminal(state backupOperationState) bool {
 	}
 }
 
-func backupOperationID(idempotency, destination string) string {
-	digest := sha256.Sum256([]byte("mindweaver:backup-create:v1\x00" + idempotency + "\x00" + destination))
-	return hex.EncodeToString(digest[:])
+func backupOperationID(processNonce [sha256.Size]byte, idempotency string, requestHash [sha256.Size]byte) string {
+	digest := sha256.New()
+	_, _ = digest.Write([]byte("mindweaver:backup-create-operation:v1\x00"))
+	_, _ = digest.Write(processNonce[:])
+	_, _ = digest.Write([]byte{0})
+	_, _ = digest.Write([]byte(idempotency))
+	_, _ = digest.Write([]byte{0})
+	_, _ = digest.Write(requestHash[:])
+	return hex.EncodeToString(digest.Sum(nil))
 }
 
 func validBackupOperationID(value string) bool {

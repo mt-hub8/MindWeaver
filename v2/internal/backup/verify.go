@@ -192,6 +192,65 @@ func (c *Coordinator) Verify(ctx context.Context, source string, options VerifyO
 	return outcomeFromResult(summary, err)
 }
 
+// VerifyLiveBackup is the normal-mode verification boundary. In addition to
+// binding the active Vault and verification source, it requires the reopened
+// scratch parent itself to remain current-user owned with a protected
+// owner-only DACL immediately before any database bytes are copied.
+func (c *Coordinator) VerifyLiveBackup(ctx context.Context, source string, options VerifyOptions) (Outcome, error) {
+	if c == nil {
+		return failedOutcome(FailureInvalid, errors.New("backup: coordinator is not initialized"))
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.activeVault == nil || c.activeVault.root == nil || c.activeVault.identity.info == nil {
+		return failedOutcome(FailureInvalid, errors.New("backup: coordinator is not initialized"))
+	}
+	sourceRoot, err := openRetainedDirectory(source)
+	if err != nil {
+		return failedOutcome(FailureInvalid, errors.New("backup: verification source is unavailable"))
+	}
+	cleanup, cleanupErr := c.cleanupLiveVerifyScratch(ctx, sourceRoot, options.ScratchParent)
+	cleanupErr = errors.Join(cleanupErr, sourceRoot.Close())
+	if cleanupErr == nil && cleanup.Truncated {
+		cleanupErr = errors.Join(ErrCleanupResidual, errors.New("backup: live verification scratch cleanup is truncated"))
+	}
+	if cleanupErr != nil {
+		return outcomeFromResult(Summary{}, cleanupErr)
+	}
+	summary, err := verifyBackup(ctx, source, options, verifyHooks{}, func(scratch *retainedDirectory) error {
+		return errors.Join(
+			validateOwnerOnlyVerifyScratch(scratch),
+			rejectRetainedDirectoryOverlap(c.activeVault, scratch, ErrActiveVaultOverlap),
+		)
+	})
+	return outcomeFromResult(summary, err)
+}
+
+func (c *Coordinator) cleanupLiveVerifyScratch(
+	ctx context.Context,
+	source *retainedDirectory,
+	scratchParent string,
+) (ScratchCleanupSummary, error) {
+	if source == nil || source.root == nil || source.identity.info == nil {
+		return ScratchCleanupSummary{}, failVerify(FailureInvalid, errors.New("backup: verification source is unavailable"))
+	}
+	return cleanupVerifyScratch(
+		ctx,
+		scratchParent,
+		maxResiduePageSize,
+		func(scratch *retainedDirectory) error {
+			return errors.Join(
+				validateOwnerOnlyVerifyScratch(scratch),
+				rejectRetainedDirectoryOverlap(c.activeVault, scratch, ErrActiveVaultOverlap),
+				rejectRetainedDirectoryOverlap(
+					source, scratch, errors.New("backup: verification scratch directory overlaps source"),
+				),
+			)
+		},
+		c.rejectActiveVaultOverlap,
+	)
+}
+
 // VerifyStandalone verifies a backup without requiring an active Vault,
 // database, or blob store. The source remains read-only. ScratchParent is
 // retained and independently proven fixed-local before any temporary write;
@@ -307,7 +366,7 @@ func cleanupVerifyScratchRoot(
 	result.Truncated = page.Truncated
 	for _, item := range page.Items {
 		if err := ctx.Err(); err != nil {
-			return result, err
+			return result, errors.Join(ErrCleanupResidual, err)
 		}
 		result.Examined++
 		if item.Kind != "verify" || item.DestinationName != verifyScratchDestination {

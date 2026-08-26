@@ -3,6 +3,7 @@
 package backup
 
 import (
+	"crypto/sha256"
 	"errors"
 	"os"
 	"path/filepath"
@@ -51,6 +52,61 @@ func TestPrepareStartupVerifyScratchAtCreatesOwnerOnlyDirectory(t *testing.T) {
 	reopened, err := prepareStartupVerifyScratchAt(source, trustedParent)
 	if err != nil || reopened != scratch {
 		t.Fatalf("reopen secure scratch = %q, %v", reopened, err)
+	}
+}
+
+func TestPrepareLiveBackupVerifyScratchUsesDistinctOwnerOnlyNamespace(t *testing.T) {
+	trustedParent := t.TempDir()
+	sourceOne := t.TempDir()
+	sourceTwo := t.TempDir()
+	leafOne := liveVerifyScratchLeaf(sourceOne)
+	leafTwo := liveVerifyScratchLeaf(sourceTwo)
+	if leafOne == leafTwo || !hasPlatformReservedPrefix(leafOne, liveVerifyScratchPrefix) ||
+		len(leafOne) != len(liveVerifyScratchPrefix)+sha256.Size*2 {
+		t.Fatalf("live scratch namespaces = %q / %q", leafOne, leafTwo)
+	}
+	verificationSource := t.TempDir()
+	scratch, err := prepareVerifyScratchAtSources(
+		[]string{sourceOne, verificationSource}, trustedParent, leafOne,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(scratch) != trustedParent || filepath.Base(scratch) != leafOne {
+		t.Fatalf("live scratch path = %q", scratch)
+	}
+	retained, err := openRetainedDirectory(scratch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer retained.Close()
+	if err := validateOwnerOnlyVerifyScratch(retained); err != nil {
+		t.Fatalf("owner-only live scratch validation: %v", err)
+	}
+}
+
+func TestPrepareLiveBackupVerifyScratchRejectsVerificationSourceBeforeWrite(t *testing.T) {
+	activeVault := t.TempDir()
+	verificationSource := t.TempDir()
+	trustedParent := filepath.Join(verificationSource, "known-folder")
+	if err := os.Mkdir(trustedParent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	leaf := liveVerifyScratchLeaf(activeVault)
+	canary := filepath.Join(verificationSource, "source-canary")
+	if err := os.WriteFile(canary, []byte("unchanged"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if scratch, err := prepareVerifyScratchAtSources(
+		[]string{activeVault, verificationSource}, trustedParent, leaf,
+	); err == nil || scratch != "" {
+		t.Fatalf("verification-source overlap = %q, %v", scratch, err)
+	}
+	if _, err := os.Lstat(filepath.Join(trustedParent, leaf)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("overlap admission wrote scratch: %v", err)
+	}
+	if content, err := os.ReadFile(canary); err != nil || string(content) != "unchanged" {
+		t.Fatalf("overlap admission changed source: %q, %v", content, err)
 	}
 }
 

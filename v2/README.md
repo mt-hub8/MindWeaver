@@ -28,10 +28,12 @@ incompatible file is reported as unavailable without disabling TXT/Markdown.
 
 This is still a development build, not a qualified release. The implemented
 paths above have automated evidence, but they have not passed the complete
-release, durability, security, and platform qualification matrix. Ask and
-citations, a product-reachable backup/restore workflow, Go schema-upgrade
-qualification, packaging, and release qualification remain incomplete; the
-presence of lower-level code must not be read as a supported product promise.
+release, durability, security, and platform qualification matrix. Ask/citation
+qualification, the final retained-kernel-path boundary for backup destinations,
+Go schema-upgrade qualification, packaging, and release qualification remain
+incomplete. Live no-replace backup creation and startup-only verify/restore are
+implemented candidates, but their presence must not be read as a supported
+release promise.
 The product intentionally creates a fresh Vault and exposes no Java/MySQL data
 import command or compatibility path.
 

@@ -140,6 +140,7 @@ var indexTemplate = template.Must(template.New("index").Parse(`<!doctype html>
       <section class="panel" aria-labelledby="backup-title">
         <div class="section-head"><div><p class="kicker">本地备份</p><h2 id="backup-title">创建不可覆盖的 Vault 备份</h2></div><button id="backup-cancel" class="secondary" type="button" hidden>取消</button></div>
         <p class="meta">请输入固定本地盘上、已有父目录下尚不存在的绝对目标路径。这里仅创建备份；恢复与验证只在启动前 recovery 模式提供。</p>
+        <p class="meta">备份包是未加密的明文 SQLite 与资料对象；请只写入由当前 Windows 账户控制且已采用合适磁盘加密和访问控制的介质。</p>
         <form id="backup-form">
           <label for="backup-destination">绝对目标路径</label><input id="backup-destination" maxlength="4096" required autocomplete="off" spellcheck="false">
           <button id="backup-submit" type="submit">创建备份</button>

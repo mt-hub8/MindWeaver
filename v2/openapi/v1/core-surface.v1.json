@@ -45,7 +45,7 @@
         "platform/version"
       ],
       "public": true,
-      "sourceManifestSHA256": "325dfec05db7f7744c6aaf4de792d80efaa6b458a0b850a635d3c41e3596e099",
+      "sourceManifestSHA256": "faa33857bbb2158d074e5ebc2df518382a7d8d1de8ac73f196e0dbb9ec3dcc85",
       "verbs": [
         "config",
         "help",
@@ -212,6 +212,7 @@
       "problemStatuses": [
         400,
         409,
+        413,
         500,
         503
       ],
