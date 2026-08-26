@@ -332,7 +332,8 @@ func TestBackupRuntimeStatusNeverContainsPathOrRawError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(encoded), destination) || strings.Contains(string(encoded), "raw-content-canary") ||
+	if strings.Contains(string(encoded), destination) || strings.Contains(string(encoded), filepath.Base(destination)) ||
+		strings.Contains(string(encoded), "raw-content-canary") ||
 		status.FailureCode != "BACKUP_FAILED" {
 		t.Fatalf("unsafe status: %s", encoded)
 	}

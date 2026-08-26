@@ -726,7 +726,7 @@ func TestLiveBackupCreateSessionCSRFReplayAndNoRecoveryRoutes(t *testing.T) {
 		strings.NewReader(`{"destination":`+string(encodedDestination)+`,"destination":`+string(encodedDestination)+`}`))
 	duplicateJSON.Header.Set("Content-Type", "application/json")
 	duplicateJSON.Header.Set("Idempotency-Key", "duplicate-json")
-	if result := do(t, client, duplicateJSON); result.StatusCode != http.StatusBadRequest || bytes.Contains(result.body, []byte(destination)) {
+	if result := do(t, client, duplicateJSON); result.StatusCode != http.StatusBadRequest || bytes.Contains(result.body, []byte(filepath.Base(destination))) {
 		t.Fatalf("duplicate JSON status/body = %d %q", result.StatusCode, result.body)
 	}
 
@@ -742,7 +742,7 @@ func TestLiveBackupCreateSessionCSRFReplayAndNoRecoveryRoutes(t *testing.T) {
 	create.Header.Set("Content-Type", "application/json")
 	create.Header.Set("Idempotency-Key", "live-backup-create")
 	created := do(t, client, create)
-	if created.StatusCode != http.StatusAccepted || bytes.Contains(created.body, []byte(destination)) {
+	if created.StatusCode != http.StatusAccepted || bytes.Contains(created.body, []byte(filepath.Base(destination))) {
 		t.Fatalf("create status/body = %d %q", created.StatusCode, created.body)
 	}
 	var accepted backupOperationStatus
@@ -755,7 +755,7 @@ func TestLiveBackupCreateSessionCSRFReplayAndNoRecoveryRoutes(t *testing.T) {
 	for time.Now().Before(deadline) {
 		result := do(t, client, appRequest(t, application, session, http.MethodGet,
 			"/api/v1/backups/status?operationId="+url.QueryEscape(accepted.OperationID), nil))
-		if result.StatusCode != http.StatusOK || bytes.Contains(result.body, []byte(destination)) {
+		if result.StatusCode != http.StatusOK || bytes.Contains(result.body, []byte(filepath.Base(destination))) {
 			t.Fatalf("status response = %d %q", result.StatusCode, result.body)
 		}
 		if err := json.Unmarshal(result.body, &terminal); err != nil {

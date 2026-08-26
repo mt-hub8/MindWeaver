@@ -45,7 +45,7 @@ func TestBackupCreateHandlerReturnsAcceptedBeforeCreateCompletes(t *testing.T) {
 	}
 	var accepted backupOperationStatus
 	if err := json.Unmarshal(response.Body.Bytes(), &accepted); err != nil || accepted.OperationID == "" ||
-		strings.Contains(response.Body.String(), destination) {
+		strings.Contains(response.Body.String(), filepath.Base(destination)) {
 		close(release)
 		t.Fatalf("create response = %+v, %v, body=%q", accepted, err, response.Body.String())
 	}
