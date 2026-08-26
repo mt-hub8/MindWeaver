@@ -8,6 +8,8 @@ admission. It does not qualify `BKP-001` or a release by itself.
 
 - Base: `57e293bb2f3d164dfda9d9840f1227dce5517f07`
 - Code/test commit: `b3d2a50b85855d904580b670962cd9bf6cce7854`
+- Cross-process test hardening:
+  `e737387a6127fcd356178e956f67fb46564e16d7`
 - Production files:
   - `v2/internal/vault/platform_windows.go`
   - `v2/internal/backup/leaf_windows.go`
@@ -73,7 +75,11 @@ all of the following:
   enumeration, and filesystem lookup.
 
 The cleanup verification is part of the committed test; failure is a test
-failure rather than a skip.
+failure rather than a skip. The test holds a bounded named Windows mutex from
+unused-letter selection through exact deletion and final absence checks. Since
+mutex ownership is thread-affine, the owning goroutine is pinned to one OS
+thread for that lease. Timeout or an abandoned mutex fails the test; it never
+continues into an ambiguous cleanup state.
 
 ## Executed gates
 
@@ -89,6 +95,9 @@ go test ./internal/vault ./internal/backup \
   -count=10                                                          PASS
 go test ./internal/vault ./internal/backup -count=1                 PASS
 go vet ./internal/vault ./internal/backup                           PASS
+4 concurrent processes, each running the real alias test -count=20 PASS
+post-stress QueryDosDevice E:-Z: residue scan                       EMPTY
+post-stress logical drives                                         C:\ D:\
 ```
 
 Final whole-tree and standalone gates must run from the clean documentation
