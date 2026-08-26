@@ -36,7 +36,7 @@ func TestEmbeddedContractMatchesProduction(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := moduleRoot(t)
-	assertProblemMapping(t, snapshot.ProblemStatusByCode)
+	assertProblemMapping(t, snapshot.ProblemStatusByCode, snapshot.ProblemRecoveryByCode)
 	assertRouteSurface(t, root, snapshot.Routes)
 	inventories := assertProductionPackages(t, root, snapshot.Surface)
 	assertNoLegacyMigrationSurface(t, root, inventories)
@@ -185,6 +185,54 @@ func TestContractFailsClosed(t *testing.T) {
 				return mutateObject(t, raw, func(document map[string]any) {
 					problem := document["components"].(map[string]any)["schemas"].(map[string]any)["Problem"].(map[string]any)
 					problem["required"] = []any{"code", "status", "title", "type"}
+				})
+			},
+		},
+		{
+			name: "closed success response",
+			mutate: func(raw []byte) []byte {
+				return mutateObject(t, raw, func(document map[string]any) {
+					schema := document["components"].(map[string]any)["schemas"].(map[string]any)["AnswerEnvelope"].(map[string]any)
+					schema["additionalProperties"] = false
+				})
+			},
+		},
+		{
+			name: "Problem recovery decision drift",
+			mutate: func(raw []byte) []byte {
+				return mutateObject(t, raw, func(document map[string]any) {
+					problem := document["components"].(map[string]any)["schemas"].(map[string]any)["Problem"].(map[string]any)
+					recovery := problem["x-mindweaver-recovery-by-code"].(map[string]any)
+					recovery["CONFLICT"].(map[string]any)["userAction"] = "retry_later"
+				})
+			},
+		},
+		{
+			name: "open strict request",
+			mutate: func(raw []byte) []byte {
+				return mutateObject(t, raw, func(document map[string]any) {
+					schema := document["components"].(map[string]any)["schemas"].(map[string]any)["AskRequest"].(map[string]any)
+					schema["additionalProperties"] = true
+				})
+			},
+		},
+		{
+			name: "pending Answer completedAt drift",
+			mutate: func(raw []byte) []byte {
+				return mutateObject(t, raw, func(document map[string]any) {
+					answer := document["components"].(map[string]any)["schemas"].(map[string]any)["Answer"].(map[string]any)
+					pending := answer["oneOf"].([]any)[0].(map[string]any)["properties"].(map[string]any)
+					pending["completedAt"] = map[string]any{"format": "date-time", "type": "string"}
+				})
+			},
+		},
+		{
+			name: "user Message recovery drift",
+			mutate: func(raw []byte) []byte {
+				return mutateObject(t, raw, func(document map[string]any) {
+					message := document["components"].(map[string]any)["schemas"].(map[string]any)["Message"].(map[string]any)
+					user := message["oneOf"].([]any)[0].(map[string]any)["properties"].(map[string]any)
+					user["reconcileAfter"] = map[string]any{"format": "date-time", "type": "string"}
 				})
 			},
 		},
@@ -353,7 +401,7 @@ func TestContractFailsClosed(t *testing.T) {
 	})
 }
 
-func assertProblemMapping(t *testing.T, actual map[string]int) {
+func assertProblemMapping(t *testing.T, actual map[string]int, actualRecovery map[string]contract.ProblemRecovery) {
 	t.Helper()
 	codes := []transport.ErrorCode{
 		transport.CodeInvalidArgument,
@@ -366,15 +414,22 @@ func assertProblemMapping(t *testing.T, actual map[string]int) {
 		transport.CodeInternal,
 	}
 	want := make(map[string]int, len(codes))
+	wantRecovery := make(map[string]contract.ProblemRecovery, len(codes))
 	for _, code := range codes {
 		problem := transport.NewProblem(code, "safe", "request")
 		if err := problem.Validate(); err != nil {
 			t.Fatalf("production Problem %q: %v", code, err)
 		}
 		want[string(code)] = problem.Status
+		wantRecovery[string(code)] = contract.ProblemRecovery{
+			Retryable: problem.Retryable, UserAction: string(problem.UserAction),
+		}
 	}
 	if !reflect.DeepEqual(actual, want) {
 		t.Fatalf("Problem status mapping = %#v, want %#v", actual, want)
+	}
+	if !reflect.DeepEqual(actualRecovery, wantRecovery) {
+		t.Fatalf("Problem recovery mapping = %#v, want %#v", actualRecovery, wantRecovery)
 	}
 }
 

@@ -10,15 +10,15 @@ and dual-PE slices, the same offline gate was rerun against the current Go
 product tree. The refreshed exact values are:
 
 - `mindweaver.exe`: 77 source files,
-  `006c3d00b663d6ab6417935c50c501c508b8e26783a9367ef46397f6969573e2`;
+  `b7d8ca3e12648fd472c5f9eb1d774fe5aef7b91b694080b2a813380295ddc748`;
   PE SHA-256
-  `c40feb3f39dcb69f145d0a996e2140d0d58583eec3b29d92c5ff342590b80c`
+  `e9415f981d538b7588610e4984d89d09dcc8867b7519d47abef80e4e22b8262c`
 - `mindweaver-pdf.exe`: 5 source files,
   `bf8badaa11f215a4acd100a839d6e360017bdbc5d9ae18cbbb67e9222ab8849a`;
   PE SHA-256
   `411ed538b53d533600ae5466427f3d3f30a7a81405885d92b79167e52ff32b87`
 - deduplicated dual-PE union: 81 source files,
-  `967be95103379b1d20e4310b82cbbd9ced377bd989427f20e196a137820e7bce`
+  `0c8c2e0f101b632a073bea6600c103304f7ad48d824573242308e8e5e94e1d07`
 
 `openapi/v1` now binds the refreshed `mindweaver.exe` source manifest. Its
 production discovery policy also classifies `tests/browser/runner` as an
