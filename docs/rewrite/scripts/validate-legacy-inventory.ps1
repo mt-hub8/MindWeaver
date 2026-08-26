@@ -969,6 +969,39 @@ $expectedRows = foreach ($artifact in $discovered) {
     }
 }
 
+function Assert-ExactCounts {
+    param(
+        [object[]]$Rows,
+        [string]$Property,
+        [hashtable]$Expected
+    )
+    $actual = @{}
+    foreach ($group in ($Rows | Group-Object -Property $Property)) { $actual[$group.Name] = $group.Count }
+    $actualText = @($actual.Keys | Sort-Object | ForEach-Object { "$_=$($actual[$_])" }) -join ','
+    $expectedText = @($Expected.Keys | Sort-Object | ForEach-Object { "$_=$($Expected[$_])" }) -join ','
+    if ($actualText -cne $expectedText) {
+        throw "Inventory $Property totals drift. Expected '$expectedText', found '$actualText'"
+    }
+}
+
+# Refuse discovery output as well as validation when the immutable 705-artifact
+# identity or its reviewed disposition totals drift. This prevents a mechanical
+# regeneration from overwriting the reviewed inventory with an unqualified set.
+if ($expectedRows.Count -ne 705) { throw "Discovered $($expectedRows.Count) legacy artifacts, want exactly 705" }
+Assert-ExactCounts $expectedRows "category" @{
+    background_component = 22; config_key = 108; controller_endpoint = 119; environment_key = 10
+    external_dependency = 38; flyway_migration = 33; gap = 8; legacy_script = 10
+    persistence_entity = 33; provider_backend = 98; schema_index = 101; schema_table = 33
+    static_ui = 47; user_data = 25; worker_endpoint = 6; worker_file = 14
+}
+Assert-ExactCounts $expectedRows "disposition" @{
+    KEEP_SEMANTICS = 31; REDESIGN = 402; REBUILD = 80; DEFER = 23; DROP = 169
+}
+Assert-ExactCounts $expectedRows "salvage_decision" @{
+    CORE_REQUIREMENT_ONLY = 20; CORE_REBUILD_FROM_ZERO = 165; LATER_FROM_ZERO = 351; DROP = 169
+}
+Assert-ExactCounts $expectedRows "first_release_scope" @{ CORE = 185; LATER = 351; DROP = 169 }
+
 if ($ListDiscovered) {
     $expectedRows | Format-Table artifact_id, category, locator, disposition_id, disposition -AutoSize
     exit 0
@@ -996,36 +1029,6 @@ foreach ($row in $actualRows) {
         throw "Inventory columns must be exactly '$($requiredColumns -join ',')'; found '$($actualColumns -join ',')'"
     }
 }
-
-function Assert-ExactCounts {
-    param(
-        [object[]]$Rows,
-        [string]$Property,
-        [hashtable]$Expected
-    )
-    $actual = @{}
-    foreach ($group in ($Rows | Group-Object -Property $Property)) { $actual[$group.Name] = $group.Count }
-    $actualText = @($actual.Keys | Sort-Object | ForEach-Object { "$_=$($actual[$_])" }) -join ','
-    $expectedText = @($Expected.Keys | Sort-Object | ForEach-Object { "$_=$($Expected[$_])" }) -join ','
-    if ($actualText -cne $expectedText) {
-        throw "Inventory $Property totals drift. Expected '$expectedText', found '$actualText'"
-    }
-}
-
-if ($expectedRows.Count -ne 705) { throw "Discovered $($expectedRows.Count) legacy artifacts, want exactly 705" }
-Assert-ExactCounts $expectedRows "category" @{
-    background_component = 22; config_key = 108; controller_endpoint = 119; environment_key = 10
-    external_dependency = 38; flyway_migration = 33; gap = 8; legacy_script = 10
-    persistence_entity = 33; provider_backend = 98; schema_index = 101; schema_table = 33
-    static_ui = 47; user_data = 25; worker_endpoint = 6; worker_file = 14
-}
-Assert-ExactCounts $expectedRows "disposition" @{
-    KEEP_SEMANTICS = 31; REDESIGN = 402; REBUILD = 80; DEFER = 23; DROP = 169
-}
-Assert-ExactCounts $expectedRows "salvage_decision" @{
-    CORE_REQUIREMENT_ONLY = 20; CORE_REBUILD_FROM_ZERO = 165; LATER_FROM_ZERO = 351; DROP = 169
-}
-Assert-ExactCounts $expectedRows "first_release_scope" @{ CORE = 185; LATER = 351; DROP = 169 }
 
 $legalConfidence = @("SOURCE_IDENTIFIED", "UNCONFIRMED_GAP")
 foreach ($row in $actualRows) {
