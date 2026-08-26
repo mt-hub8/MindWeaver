@@ -1,0 +1,35 @@
+/testdata/en16931-artefacts/
+/testdata/en16931-codelists/genericode/
+/testdata/en16931-codelists/*.zip
+/testdata/en16931-codelists/*.xlsx
+/testdata/en16931-ubl/*.xml
+/testdata/en16931-ubl/.ok
+/testdata/xrechnung/
+/testdata/peppol/
+/testdata/nlcius/
+/testdata/cius-pt/
+/testdata/cius-ro/
+/testdata/cius-be/
+/testdata/cius-rs/
+/testdata/fatturapa/
+/testdata/facturx/*
+# ...except the documents that have no fetch path: they exist only inside PDF
+# containers, and this package cannot open a PDF. See extracted/README.md.
+!/testdata/facturx/extracted/
+/testdata/facturae/
+/testdata/ebinterface/
+/testdata/ksef/
+/testdata/finvoice/
+/testdata/zatca/
+/testdata/svefaktura/
+/testdata/teapps/
+/testdata/oioubl/
+/testdata/turkey/
+/testdata/osa/
+/testdata/pint/
+/testdata/.cius-oracles.ok
+# The five national Schematrons `make cius-schematron` vendors live inside the
+# corpus directories already ignored above (testdata/cius-pt/schematron/, ...), so
+# they need no pattern of their own; only the stamp does.
+/testdata/.cius-schematron.ok
+/testdata/.facturx-schematron.ok
