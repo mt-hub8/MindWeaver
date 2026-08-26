@@ -6,6 +6,7 @@ package v1
 import (
 	"bytes"
 	_ "embed"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,10 +26,12 @@ const (
 )
 
 var requiredForbiddenSegments = []string{
-	"agent", "agents", "embedding", "embeddings", "evaluation", "evaluations",
-	"memories", "memory", "notification", "notifications", "reindex", "reindexing",
-	"rerank", "reranker", "vector", "vectors",
+	"agent", "agents", "batch", "batches", "embedding", "embeddings",
+	"evaluation", "evaluations", "kbhealth", "memories", "memory", "notification",
+	"notifications", "reindex", "reindexing", "rerank", "reranker", "vector", "vectors",
 }
+
+var forbiddenLegacyBackendModuleSegments = []string{"flyway", "jdbc", "mariadb", "mysql"}
 
 type operationShape struct {
 	RequestSchema string
@@ -263,9 +266,11 @@ type Surface struct {
 }
 
 type productionDiscovery struct {
-	LibraryRoots         []string `json:"libraryRoots"`
-	ExcludedRootPrefixes []string `json:"excludedRootPrefixes"`
-	ExcludedFileSuffixes []string `json:"excludedFileSuffixes"`
+	EvidenceOnlyMainPackages []string `json:"evidenceOnlyMainPackages"`
+	ExternalModules          []string `json:"externalModules"`
+	LibraryRoots             []string `json:"libraryRoots"`
+	ExcludedRootPrefixes     []string `json:"excludedRootPrefixes"`
+	ExcludedFileSuffixes     []string `json:"excludedFileSuffixes"`
 }
 
 // SurfaceRoute binds one real HTTP operation to its externally visible
@@ -285,12 +290,15 @@ type SurfaceRoute struct {
 // SurfaceCommand distinguishes the user CLI from the state-free internal PDF
 // protocol helper. Verbs and nested verbs are exact, not documentation hints.
 type SurfaceCommand struct {
-	Name        string              `json:"name"`
-	Public      bool                `json:"public"`
-	DefaultVerb string              `json:"defaultVerb,omitempty"`
-	Verbs       []string            `json:"verbs"`
-	Aliases     []string            `json:"aliases"`
-	NestedVerbs map[string][]string `json:"nestedVerbs"`
+	Name                 string              `json:"name"`
+	Public               bool                `json:"public"`
+	SourceManifestSHA256 string              `json:"sourceManifestSHA256"`
+	Packages             []string            `json:"packages"`
+	ExternalModules      []string            `json:"externalModules"`
+	DefaultVerb          string              `json:"defaultVerb,omitempty"`
+	Verbs                []string            `json:"verbs"`
+	Aliases              []string            `json:"aliases"`
+	NestedVerbs          map[string][]string `json:"nestedVerbs"`
 }
 
 func validateOpenAPI(document openAPIDocumentWire, surface Surface) (map[string]int, error) {
@@ -731,6 +739,8 @@ func validateSurface(surface Surface) error {
 	}
 	if !sortedUniqueStrings(surface.Packages) || !sortedUniqueStrings(surface.Migrations) ||
 		!sortedUniqueStrings(surface.Tables) || !sortedUniqueStrings(surface.ForbiddenSegments) ||
+		!sortedUniqueStrings(surface.ProductionDiscovery.EvidenceOnlyMainPackages) ||
+		!sortedUniqueStrings(surface.ProductionDiscovery.ExternalModules) ||
 		!sortedUniqueStrings(surface.ProductionDiscovery.LibraryRoots) ||
 		!sortedUniqueStrings(surface.ProductionDiscovery.ExcludedRootPrefixes) ||
 		!sortedUniqueStrings(surface.ProductionDiscovery.ExcludedFileSuffixes) {
@@ -738,6 +748,23 @@ func validateSurface(surface Surface) error {
 	}
 	if !equalStrings(surface.ForbiddenSegments, requiredForbiddenSegments) {
 		return errors.New("forbidden LATER segment policy drift")
+	}
+	for _, packagePath := range surface.ProductionDiscovery.EvidenceOnlyMainPackages {
+		if !validSurfaceRelativePath(packagePath) || !hasSurfacePathPrefix(packagePath, surface.ProductionDiscovery.ExcludedRootPrefixes) {
+			return fmt.Errorf("evidence-only main package %q is outside an excluded root", packagePath)
+		}
+		if segment, banned := forbiddenSegment(packagePath); banned {
+			return fmt.Errorf("evidence-only main package contains forbidden segment %q", segment)
+		}
+	}
+	for _, module := range surface.ProductionDiscovery.ExternalModules {
+		modulePath, valid := parseExternalModuleIdentity(module)
+		if !valid {
+			return fmt.Errorf("invalid external module identity %q", module)
+		}
+		if segment, banned := forbiddenExternalModuleSegment(modulePath); banned {
+			return fmt.Errorf("external module contains forbidden segment %q", segment)
+		}
 	}
 	for _, packagePath := range surface.Packages {
 		if segment, banned := forbiddenSegment(packagePath); banned {
@@ -789,16 +816,42 @@ func validateSurface(surface Surface) error {
 		}
 	}
 	seenCommands := make(map[string]struct{})
+	commandPackages := make(map[string]struct{})
+	commandModules := make(map[string]struct{})
 	previous = ""
 	for _, command := range surface.Commands {
 		if command.Name <= previous || command.Name == "" || strings.ContainsAny(command.Name, " /\\") {
 			return errors.New("commands must be sorted, unique, and single path segments")
 		}
+		if !lowerHexSHA256(command.SourceManifestSHA256) {
+			return fmt.Errorf("command %q must bind one lowercase SHA-256 source digest", command.Name)
+		}
 		previous = command.Name
-		if _, exists := seenCommands[command.Name]; exists || !sortedUniqueStrings(command.Verbs) || !sortedUniqueStrings(command.Aliases) {
+		if _, exists := seenCommands[command.Name]; exists || !sortedUniqueStrings(command.Verbs) || !sortedUniqueStrings(command.Aliases) ||
+			!sortedUniqueStrings(command.Packages) || !sortedUniqueStrings(command.ExternalModules) {
 			return errors.New("invalid command allowlist")
 		}
 		seenCommands[command.Name] = struct{}{}
+		for _, packagePath := range command.Packages {
+			if !validSurfaceRelativePath(packagePath) || !hasSurfacePathPrefix(packagePath, surface.ProductionDiscovery.LibraryRoots) ||
+				hasSurfacePathPrefix(packagePath, surface.ProductionDiscovery.ExcludedRootPrefixes) {
+				return fmt.Errorf("command %q contains an invalid package path", command.Name)
+			}
+			if segment, banned := forbiddenSegment(packagePath); banned {
+				return fmt.Errorf("command %q package contains forbidden segment %q", command.Name, segment)
+			}
+			commandPackages[packagePath] = struct{}{}
+		}
+		for _, module := range command.ExternalModules {
+			modulePath, valid := parseExternalModuleIdentity(module)
+			if !valid {
+				return fmt.Errorf("command %q contains an invalid external module identity", command.Name)
+			}
+			if segment, banned := forbiddenExternalModuleSegment(modulePath); banned {
+				return fmt.Errorf("command %q external module contains forbidden segment %q", command.Name, segment)
+			}
+			commandModules[module] = struct{}{}
+		}
 		for verb, nested := range command.NestedVerbs {
 			if verb == "" || !sortedUniqueStrings(nested) {
 				return errors.New("invalid nested command allowlist")
@@ -820,12 +873,158 @@ func validateSurface(surface Surface) error {
 			}
 		}
 	}
+	if !equalStrings(sortedStringKeys(commandPackages), surface.Packages) {
+		return errors.New("command package ownership does not match the global production package set")
+	}
+	if !equalStrings(sortedStringKeys(commandModules), surface.ProductionDiscovery.ExternalModules) {
+		return errors.New("command external-module ownership does not match the global production module set")
+	}
 	return nil
 }
 
+func sortedStringKeys(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func lowerHexSHA256(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	nonZero := false
+	for _, character := range value {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+		nonZero = nonZero || character != '0'
+	}
+	return nonZero
+}
+
+func validSurfaceRelativePath(value string) bool {
+	if value == "" || len(value) > 512 || strings.HasPrefix(value, "/") || strings.HasSuffix(value, "/") ||
+		strings.Contains(value, "\\") || strings.Contains(value, "//") || strings.ContainsAny(value, "\x00\r\n\t:@#") {
+		return false
+	}
+	for _, character := range []byte(value) {
+		if character <= 0x20 || character >= 0x7f {
+			return false
+		}
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+func hasSurfacePathPrefix(value string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if value == prefix || strings.HasPrefix(value, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func parseExternalModuleIdentity(value string) (string, bool) {
+	hashSeparator := strings.LastIndex(value, "#h1:")
+	versionSeparator := strings.LastIndex(value, "@")
+	if versionSeparator <= 0 || hashSeparator <= versionSeparator+2 || hashSeparator+4 >= len(value) {
+		return "", false
+	}
+	modulePath := value[:versionSeparator]
+	version := value[versionSeparator+1 : hashSeparator]
+	if !validSurfaceRelativePath(modulePath) || !validCanonicalModuleVersion(version) {
+		return "", false
+	}
+	encoded := value[hashSeparator+4:]
+	digest, err := base64.StdEncoding.Strict().DecodeString(encoded)
+	return modulePath, err == nil && len(digest) == 32 && base64.StdEncoding.EncodeToString(digest) == encoded
+}
+
+func validCanonicalModuleVersion(version string) bool {
+	if len(version) < len("v0.0.0") || len(version) > 128 || version[0] != 'v' {
+		return false
+	}
+	withoutBuild, build, hasBuild := strings.Cut(version[1:], "+")
+	if hasBuild && build != "incompatible" {
+		return false
+	}
+	core, prerelease, hasPrerelease := strings.Cut(withoutBuild, "-")
+	parts := strings.Split(core, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	for _, part := range parts {
+		if !canonicalNumericIdentifier(part) {
+			return false
+		}
+	}
+	if hasPrerelease && !validSemverIdentifiers(prerelease, true) {
+		return false
+	}
+	return true
+}
+
+func canonicalNumericIdentifier(value string) bool {
+	if value == "" || len(value) > 1 && value[0] == '0' {
+		return false
+	}
+	for _, character := range []byte(value) {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func validSemverIdentifiers(value string, rejectNumericLeadingZero bool) bool {
+	if value == "" {
+		return false
+	}
+	for _, identifier := range strings.Split(value, ".") {
+		if identifier == "" || rejectNumericLeadingZero && len(identifier) > 1 && identifier[0] == '0' && allASCIIDigits(identifier) {
+			return false
+		}
+		for _, character := range []byte(identifier) {
+			if (character < '0' || character > '9') && (character < 'A' || character > 'Z') &&
+				(character < 'a' || character > 'z') && character != '-' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func allASCIIDigits(value string) bool {
+	for _, character := range []byte(value) {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func forbiddenSegment(value string) (string, bool) {
-	forbidden := make(map[string]struct{}, len(requiredForbiddenSegments))
-	for _, segment := range requiredForbiddenSegments {
+	return forbiddenSegmentFrom(value, requiredForbiddenSegments)
+}
+
+func forbiddenExternalModuleSegment(value string) (string, bool) {
+	if segment, forbidden := forbiddenSegment(value); forbidden {
+		return segment, true
+	}
+	return forbiddenSegmentFrom(value, forbiddenLegacyBackendModuleSegments)
+}
+
+func forbiddenSegmentFrom(value string, segments []string) (string, bool) {
+	forbidden := make(map[string]struct{}, len(segments))
+	for _, segment := range segments {
 		forbidden[segment] = struct{}{}
 	}
 	for _, segment := range strings.FieldsFunc(strings.ToLower(value), func(character rune) bool {

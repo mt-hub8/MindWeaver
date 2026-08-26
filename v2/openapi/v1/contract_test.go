@@ -2,25 +2,31 @@ package v1_test
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/mt-hub8/MindWeaver/v2/internal/localhttp"
+	sqliteStore "github.com/mt-hub8/MindWeaver/v2/internal/store/sqlite"
 	"github.com/mt-hub8/MindWeaver/v2/internal/transport"
 	contract "github.com/mt-hub8/MindWeaver/v2/openapi/v1"
+	_ "github.com/ncruces/go-sqlite3/driver"
 )
 
 func TestEmbeddedContractMatchesProduction(t *testing.T) {
@@ -32,10 +38,10 @@ func TestEmbeddedContractMatchesProduction(t *testing.T) {
 	root := moduleRoot(t)
 	assertProblemMapping(t, snapshot.ProblemStatusByCode)
 	assertRouteSurface(t, root, snapshot.Routes)
-	assertProductionPackages(t, root, snapshot.Surface)
-	assertNoLegacyMigrationSurface(t, root)
+	inventories := assertProductionPackages(t, root, snapshot.Surface)
+	assertNoLegacyMigrationSurface(t, root, inventories)
 	assertMigrationsAndTables(t, root, snapshot.Surface)
-	assertCommandSurface(t, root, snapshot.Surface)
+	assertCommandSurface(t, root, snapshot.Surface, inventories)
 	assertNoLaterSurface(t, snapshot.Surface)
 }
 
@@ -174,14 +180,140 @@ func TestContractFailsClosed(t *testing.T) {
 			t.Fatal("unknown surface field unexpectedly validated")
 		}
 	})
-	t.Run("forbidden production package", func(t *testing.T) {
+	for _, packagePath := range []string{"internal/agent", "internal/batch", "internal/kbhealth"} {
+		t.Run("forbidden production package "+packagePath, func(t *testing.T) {
+			mutated := mutateObject(t, surface, func(document map[string]any) {
+				packages := append(document["packages"].([]any), packagePath)
+				sort.Slice(packages, func(left, right int) bool { return packages[left].(string) < packages[right].(string) })
+				document["packages"] = packages
+			})
+			if _, err := contract.Validate(openAPI, mutated); err == nil {
+				t.Fatalf("forbidden production package %q unexpectedly validated", packagePath)
+			}
+		})
+	}
+	t.Run("all zero command source digest", func(t *testing.T) {
 		mutated := mutateObject(t, surface, func(document map[string]any) {
-			packages := append(document["packages"].([]any), "internal/agent")
+			document["commands"].([]any)[0].(map[string]any)["sourceManifestSHA256"] = strings.Repeat("0", 64)
+		})
+		if _, err := contract.Validate(openAPI, mutated); err == nil {
+			t.Fatal("all-zero command source digest unexpectedly validated")
+		}
+	})
+	t.Run("invalid external module identity", func(t *testing.T) {
+		mutated := mutateObject(t, surface, func(document map[string]any) {
+			discovery := document["productionDiscovery"].(map[string]any)
+			discovery["externalModules"] = []any{"github.com/example/mysql@v1.0.0#h1:not-a-sha256"}
+		})
+		if _, err := contract.Validate(openAPI, mutated); err == nil {
+			t.Fatal("invalid external module identity unexpectedly validated")
+		}
+	})
+	t.Run("non-semver external module version", func(t *testing.T) {
+		mutated := mutateObject(t, surface, func(document map[string]any) {
+			discovery := document["productionDiscovery"].(map[string]any)
+			modules := discovery["externalModules"].([]any)
+			original := modules[0].(string)
+			at := strings.LastIndex(original, "@")
+			hash := strings.LastIndex(original, "#h1:")
+			invalid := original[:at] + "@vgarbage" + original[hash:]
+			modules[0] = invalid
+			sort.Slice(modules, func(left, right int) bool { return modules[left].(string) < modules[right].(string) })
+			for _, rawCommand := range document["commands"].([]any) {
+				command := rawCommand.(map[string]any)
+				owned := command["externalModules"].([]any)
+				for index := range owned {
+					if owned[index] == original {
+						owned[index] = invalid
+					}
+				}
+				sort.Slice(owned, func(left, right int) bool { return owned[left].(string) < owned[right].(string) })
+			}
+		})
+		if _, err := contract.Validate(openAPI, mutated); err == nil {
+			t.Fatal("non-semver external module version unexpectedly validated")
+		}
+	})
+	t.Run("forbidden external module terminal segment", func(t *testing.T) {
+		mutated := mutateObject(t, surface, func(document map[string]any) {
+			discovery := document["productionDiscovery"].(map[string]any)
+			discovery["externalModules"] = []any{"github.com/acme/agent@v1.0.0#h1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
+		})
+		if _, err := contract.Validate(openAPI, mutated); err == nil {
+			t.Fatal("forbidden external module terminal segment unexpectedly validated")
+		}
+	})
+	t.Run("forbidden legacy backend external module", func(t *testing.T) {
+		const mysqlModule = "github.com/go-sql-driver/mysql@v1.9.3#h1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+		mutated := mutateObject(t, surface, func(document map[string]any) {
+			discovery := document["productionDiscovery"].(map[string]any)
+			modules := append(discovery["externalModules"].([]any), mysqlModule)
+			sort.Slice(modules, func(left, right int) bool { return modules[left].(string) < modules[right].(string) })
+			discovery["externalModules"] = modules
+			command := document["commands"].([]any)[0].(map[string]any)
+			commandModules := append(command["externalModules"].([]any), mysqlModule)
+			sort.Slice(commandModules, func(left, right int) bool { return commandModules[left].(string) < commandModules[right].(string) })
+			command["externalModules"] = commandModules
+		})
+		if _, err := contract.Validate(openAPI, mutated); err == nil {
+			t.Fatal("forbidden legacy backend external module unexpectedly validated")
+		}
+	})
+	t.Run("evidence main outside excluded roots", func(t *testing.T) {
+		mutated := mutateObject(t, surface, func(document map[string]any) {
+			discovery := document["productionDiscovery"].(map[string]any)
+			discovery["evidenceOnlyMainPackages"] = []any{"tools/hidden"}
+		})
+		if _, err := contract.Validate(openAPI, mutated); err == nil {
+			t.Fatal("evidence-only main outside excluded roots unexpectedly validated")
+		}
+	})
+	t.Run("missing command package ownership", func(t *testing.T) {
+		mutated := mutateObject(t, surface, func(document map[string]any) {
+			command := document["commands"].([]any)[0].(map[string]any)
+			packages := command["packages"].([]any)
+			command["packages"] = append([]any(nil), packages[1:]...)
+		})
+		if _, err := contract.Validate(openAPI, mutated); err == nil {
+			t.Fatal("missing command package ownership unexpectedly validated")
+		}
+	})
+	t.Run("missing command module ownership", func(t *testing.T) {
+		mutated := mutateObject(t, surface, func(document map[string]any) {
+			command := document["commands"].([]any)[0].(map[string]any)
+			modules := command["externalModules"].([]any)
+			command["externalModules"] = append([]any(nil), modules[1:]...)
+		})
+		if _, err := contract.Validate(openAPI, mutated); err == nil {
+			t.Fatal("missing command module ownership unexpectedly validated")
+		}
+	})
+	t.Run("global package without command owner", func(t *testing.T) {
+		mutated := mutateObject(t, surface, func(document map[string]any) {
+			packages := append(document["packages"].([]any), "internal/unused")
 			sort.Slice(packages, func(left, right int) bool { return packages[left].(string) < packages[right].(string) })
 			document["packages"] = packages
 		})
 		if _, err := contract.Validate(openAPI, mutated); err == nil {
-			t.Fatal("forbidden production package unexpectedly validated")
+			t.Fatal("global package without command owner unexpectedly validated")
+		}
+	})
+	t.Run("command package outside library roots", func(t *testing.T) {
+		mutated := mutateObject(t, surface, func(document map[string]any) {
+			command := document["commands"].([]any)[0].(map[string]any)
+			commandPackages := command["packages"].([]any)
+			commandPackages[0] = "cmd/mindweaver"
+			sort.Slice(commandPackages, func(left, right int) bool { return commandPackages[left].(string) < commandPackages[right].(string) })
+			packages := document["packages"].([]any)
+			for index := range packages {
+				if packages[index] == "internal/app" {
+					packages[index] = "cmd/mindweaver"
+				}
+			}
+			sort.Slice(packages, func(left, right int) bool { return packages[left].(string) < packages[right].(string) })
+		})
+		if _, err := contract.Validate(openAPI, mutated); err == nil {
+			t.Fatal("command package outside library roots unexpectedly validated")
 		}
 	})
 }
@@ -358,45 +490,95 @@ func pathExpression(t *testing.T, expression ast.Expr) string {
 	return "/api/v1" + decoded
 }
 
-func assertProductionPackages(t *testing.T, root string, surface contract.Surface) {
+func assertProductionPackages(t *testing.T, root string, surface contract.Surface) map[string]commandProductionInventory {
 	t.Helper()
-	if !reflect.DeepEqual(surface.ProductionDiscovery.LibraryRoots, []string{"internal", "platform"}) ||
+	if !reflect.DeepEqual(surface.ProductionDiscovery.EvidenceOnlyMainPackages, []string{"qualification/pdf/adversarialprobe", "spikes/sqlite/cmd/sqlite-spike"}) ||
+		!reflect.DeepEqual(surface.ProductionDiscovery.LibraryRoots, []string{"internal", "platform"}) ||
 		!reflect.DeepEqual(surface.ProductionDiscovery.ExcludedFileSuffixes, []string{"_test.go"}) ||
 		!reflect.DeepEqual(surface.ProductionDiscovery.ExcludedRootPrefixes, []string{"docs", "openapi", "qualification", "release", "spikes", "testdata"}) {
 		t.Fatal("production discovery policy drift")
 	}
-	set := map[string]struct{}{}
-	for _, libraryRoot := range surface.ProductionDiscovery.LibraryRoots {
-		base := filepath.Join(root, filepath.FromSlash(libraryRoot))
-		err := filepath.WalkDir(base, func(path string, entry os.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" || strings.HasSuffix(entry.Name(), "_test.go") {
-				return nil
-			}
-			relative, err := filepath.Rel(root, filepath.Dir(path))
-			if err != nil {
-				return err
-			}
-			set[filepath.ToSlash(relative)] = struct{}{}
-			return nil
-		})
+	commandNames := make([]string, 0, len(surface.Commands))
+	commandContracts := make(map[string]contract.SurfaceCommand, len(surface.Commands))
+	for _, command := range surface.Commands {
+		commandNames = append(commandNames, command.Name)
+		commandContracts[command.Name] = command
+	}
+	inventories := make(map[string]commandProductionInventory, len(commandNames))
+	packageUnion := map[string]struct{}{}
+	moduleUnion := map[string]struct{}{}
+	for _, commandName := range commandNames {
+		inventory, err := inspectCommandProduction(root, surface.Module, commandName, surface.ProductionDiscovery.LibraryRoots, surface.ProductionDiscovery.ExcludedRootPrefixes)
 		if err != nil {
 			t.Fatal(err)
 		}
+		command := commandContracts[commandName]
+		if !reflect.DeepEqual(inventory.packages, command.Packages) {
+			t.Fatalf("command %s packages = %#v, contract = %#v", commandName, inventory.packages, command.Packages)
+		}
+		if !reflect.DeepEqual(inventory.externalModules, command.ExternalModules) {
+			t.Fatalf("command %s external modules = %#v, contract = %#v", commandName, inventory.externalModules, command.ExternalModules)
+		}
+		if inventory.sourceDigest != command.SourceManifestSHA256 {
+			t.Fatalf("command %s transitive source manifest SHA-256 = %s, contract = %s", commandName, inventory.sourceDigest, command.SourceManifestSHA256)
+		}
+		inventories[commandName] = inventory
+		for _, packagePath := range inventory.packages {
+			packageUnion[packagePath] = struct{}{}
+		}
+		for _, module := range inventory.externalModules {
+			moduleUnion[module] = struct{}{}
+		}
 	}
-	actual := sortedKeys(set)
+	actual := sortedKeys(packageUnion)
 	if !reflect.DeepEqual(actual, surface.Packages) {
 		t.Fatalf("production packages = %#v, contract = %#v", actual, surface.Packages)
 	}
+	externalModules := sortedKeys(moduleUnion)
+	if !reflect.DeepEqual(externalModules, surface.ProductionDiscovery.ExternalModules) {
+		t.Fatalf("external production modules = %#v, contract = %#v", externalModules, surface.ProductionDiscovery.ExternalModules)
+	}
+	actualMains, err := moduleMainPackages(root, surface.Module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedMains := append([]string(nil), surface.ProductionDiscovery.EvidenceOnlyMainPackages...)
+	for _, command := range commandNames {
+		expectedMains = append(expectedMains, "cmd/"+command)
+	}
+	sort.Strings(expectedMains)
+	if !reflect.DeepEqual(actualMains, expectedMains) {
+		t.Fatalf("module main packages = %#v, exact command/evidence allowlist = %#v", actualMains, expectedMains)
+	}
+	allSourceMains, err := sourceMainPackages(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(allSourceMains, expectedMains) {
+		t.Fatalf("all source main packages = %#v, exact command/evidence allowlist = %#v", allSourceMains, expectedMains)
+	}
+	return inventories
 }
 
-func assertNoLegacyMigrationSurface(t *testing.T, root string) {
+func assertNoLegacyMigrationSurface(t *testing.T, root string, inventories map[string]commandProductionInventory) {
 	t.Helper()
 	if err := legacyMigrationSurfaceError(root); err != nil {
 		t.Fatal(err)
 	}
+	if err := legacyMigrationSelectedFileError(inventories); err != nil {
+		t.Fatal(err)
+	}
+}
+
+var legacyMigrationTokens = [][]byte{
+	[]byte("mindweaver-migrate"),
+	[]byte("mindweaver-neutral-export"),
+	[]byte("mindweaver-neutral-export/v1"),
+	[]byte("legacyimport"),
+	[]byte("legacy_import"),
+	[]byte("legacy_ollama_intents"),
+	[]byte("legacy_ollama_reconfigure_required"),
+	[]byte("007_legacy_import"),
 }
 
 func legacyMigrationSurfaceError(root string) error {
@@ -416,16 +598,6 @@ func legacyMigrationSurfaceError(root string) error {
 		}
 	}
 
-	stableTokens := [][]byte{
-		[]byte("mindweaver-migrate"),
-		[]byte("mindweaver-neutral-export"),
-		[]byte("mindweaver-neutral-export/v1"),
-		[]byte("legacyimport"),
-		[]byte("legacy_import"),
-		[]byte("legacy_ollama_intents"),
-		[]byte("LEGACY_OLLAMA_RECONFIGURE_REQUIRED"),
-		[]byte("007_legacy_import"),
-	}
 	for _, relative := range []string{"cmd", "internal", "platform"} {
 		base := filepath.Join(root, relative)
 		err := filepath.WalkDir(base, func(path string, entry os.DirEntry, walkErr error) error {
@@ -459,10 +631,8 @@ func legacyMigrationSurfaceError(root string) error {
 			if err != nil {
 				return err
 			}
-			for _, forbidden := range stableTokens {
-				if bytes.Contains(contents, forbidden) {
-					return fmt.Errorf("legacy migration token %q exists in %s", forbidden, filepath.ToSlash(path))
-				}
+			if forbidden, found := legacyMigrationToken(contents); found {
+				return fmt.Errorf("legacy migration token %q exists in %s", forbidden, filepath.ToSlash(path))
 			}
 			return nil
 		})
@@ -471,6 +641,40 @@ func legacyMigrationSurfaceError(root string) error {
 		}
 	}
 	return nil
+}
+
+func legacyMigrationSelectedFileError(inventories map[string]commandProductionInventory) error {
+	seen := map[string]string{}
+	for _, inventory := range inventories {
+		for _, file := range inventory.selectedFiles {
+			if previous, exists := seen[file.relative]; exists {
+				if previous != file.digest {
+					return errors.New("selected production file identity differs between commands")
+				}
+				continue
+			}
+			seen[file.relative] = file.digest
+			if forbidden, found := legacyMigrationToken(file.contents); found {
+				return fmt.Errorf("selected production file contains legacy migration token %q", forbidden)
+			}
+		}
+	}
+	return nil
+}
+
+func legacyMigrationToken(contents []byte) ([]byte, bool) {
+	folded := append([]byte(nil), contents...)
+	for index, value := range folded {
+		if value >= 'A' && value <= 'Z' {
+			folded[index] = value + ('a' - 'A')
+		}
+	}
+	for _, forbidden := range legacyMigrationTokens {
+		if bytes.Contains(folded, forbidden) {
+			return forbidden, true
+		}
+	}
+	return nil, false
 }
 
 func TestLegacyMigrationAbsenceGateRejectsForbiddenSurfaces(t *testing.T) {
@@ -489,6 +693,7 @@ func TestLegacyMigrationAbsenceGateRejectsForbiddenSurfaces(t *testing.T) {
 		{name: "neutral exporter token", relative: "internal/store/sqlite/token.go", contents: "package sqlite\nconst stale = \"mindweaver-neutral-export/v1\"\n"},
 		{name: "legacy importer token", relative: "internal/store/sqlite/token.go", contents: "package sqlite\nconst stale = \"legacyimport\"\n"},
 		{name: "legacy table token", relative: "internal/store/sqlite/token.go", contents: "package sqlite\nconst stale = \"legacy_imports\"\n"},
+		{name: "legacy table token mixed case", relative: "internal/store/sqlite/token.go", contents: "package sqlite\nconst stale = \"Legacy_Import\"\n"},
 		{name: "legacy Ollama table token", relative: "internal/store/sqlite/token.go", contents: "package sqlite\nconst stale = \"legacy_ollama_intents\"\n"},
 		{name: "legacy reconfigure token", relative: "internal/store/sqlite/token.go", contents: "package sqlite\nconst stale = \"LEGACY_OLLAMA_RECONFIGURE_REQUIRED\"\n"},
 		{name: "legacy schema token", relative: "internal/store/sqlite/token.go", contents: "package sqlite\nconst stale = \"007_legacy_import\"\n"},
@@ -534,32 +739,218 @@ func assertMigrationsAndTables(t *testing.T, root string, surface contract.Surfa
 	if !reflect.DeepEqual(migrations, surface.Migrations) {
 		t.Fatalf("migration files = %#v, contract = %#v", migrations, surface.Migrations)
 	}
-	tables := map[string]struct{}{}
-	operation := regexp.MustCompile(`(?i)\b(?:CREATE\s+(?:VIRTUAL\s+)?TABLE\s+([a-z_][a-z0-9_]*)|DROP\s+TABLE\s+([a-z_][a-z0-9_]*)|ALTER\s+TABLE\s+([a-z_][a-z0-9_]*)\s+RENAME\s+TO\s+([a-z_][a-z0-9_]*))`)
-	for _, migration := range migrations {
-		contents, err := os.ReadFile(filepath.Join(directory, migration))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, match := range operation.FindAllStringSubmatch(string(contents), -1) {
-			switch {
-			case match[1] != "":
-				tables[strings.ToLower(match[1])] = struct{}{}
-			case match[2] != "":
-				delete(tables, strings.ToLower(match[2]))
-			case match[3] != "":
-				delete(tables, strings.ToLower(match[3]))
-				tables[strings.ToLower(match[4])] = struct{}{}
-			}
-		}
+	databasePath := filepath.Join(t.TempDir(), sqliteStore.DatabaseFileName)
+	store, err := sqliteStore.Open(context.Background(), databasePath, sqliteStore.Options{Connections: 1})
+	if err != nil {
+		t.Fatal(err)
 	}
-	actual := sortedKeys(tables)
+	if err := store.IntegrityCheck(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite3", readOnlySQLiteURI(t, databasePath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	actual, err := applicationSchemaTables(context.Background(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !reflect.DeepEqual(actual, surface.Tables) {
-		t.Fatalf("declared final SQLite tables = %#v, contract = %#v", actual, surface.Tables)
+		t.Fatalf("fresh SQLite application tables = %#v, contract = %#v", actual, surface.Tables)
 	}
 }
 
-func assertCommandSurface(t *testing.T, root string, surface contract.Surface) {
+func readOnlySQLiteURI(t *testing.T, filename string) string {
+	t.Helper()
+	absolute, err := filepath.Abs(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	segments := strings.Split(filepath.ToSlash(absolute), "/")
+	for index := range segments {
+		segments[index] = url.PathEscape(segments[index])
+	}
+	return (&url.URL{Scheme: "file", Opaque: strings.Join(segments, "/"), RawQuery: "mode=ro"}).String()
+}
+
+func applicationSchemaTables(ctx context.Context, db *sql.DB) ([]string, error) {
+	entries, err := sqliteSchemaTableEntries(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	return classifyApplicationSchema(entries)
+}
+
+type sqliteSchemaTableEntry struct {
+	name string
+	kind string
+}
+
+func sqliteSchemaTableEntries(ctx context.Context, db *sql.DB) ([]sqliteSchemaTableEntry, error) {
+	rows, err := db.QueryContext(ctx, "SELECT name, type FROM pragma_table_list WHERE schema = 'main' ORDER BY name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	entries := make([]sqliteSchemaTableEntry, 0, 32)
+	for rows.Next() {
+		if len(entries) >= 256 {
+			return nil, errors.New("SQLite schema object count exceeds its bound")
+		}
+		var entry sqliteSchemaTableEntry
+		if err := rows.Scan(&entry.name, &entry.kind); err != nil {
+			return nil, err
+		}
+		if len(entry.name) == 0 || len(entry.name) > 128 || len(entry.kind) == 0 || len(entry.kind) > 16 {
+			return nil, errors.New("SQLite schema object identity is outside its bound")
+		}
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func classifyApplicationSchema(entries []sqliteSchemaTableEntry) ([]string, error) {
+	requiredInternal := map[string]string{
+		"sqlite_schema":   "table",
+		"sqlite_sequence": "table",
+	}
+	requiredFTSStorage := map[string]string{
+		"chunks_fts_config":  "table",
+		"chunks_fts_data":    "table",
+		"chunks_fts_docsize": "table",
+		"chunks_fts_idx":     "table",
+	}
+	seen := make(map[string]struct{}, len(entries))
+	caseFolded := make(map[string]string, len(entries))
+	var tables []string
+	for _, entry := range entries {
+		if _, duplicate := seen[entry.name]; duplicate {
+			return nil, errors.New("SQLite schema contains a duplicate object")
+		}
+		folded := strings.ToLower(entry.name)
+		if previous, collision := caseFolded[folded]; collision && previous != entry.name {
+			return nil, errors.New("SQLite schema contains an object-name case collision")
+		}
+		seen[entry.name] = struct{}{}
+		caseFolded[folded] = entry.name
+		if requiredKind, internal := requiredInternal[entry.name]; internal {
+			if entry.kind != requiredKind {
+				return nil, errors.New("SQLite internal object type drift")
+			}
+			continue
+		}
+		if strings.HasPrefix(folded, "sqlite_") {
+			return nil, errors.New("SQLite internal object set drift")
+		}
+		if requiredKind, storage := requiredFTSStorage[entry.name]; storage {
+			if entry.kind != requiredKind {
+				return nil, fmt.Errorf("SQLite FTS storage object %q has type %q", entry.name, entry.kind)
+			}
+			continue
+		}
+		if entry.name == "chunks_fts" {
+			if entry.kind != "virtual" {
+				return nil, errors.New("SQLite FTS table is not virtual")
+			}
+		} else if entry.kind != "table" {
+			return nil, errors.New("SQLite application object type drift")
+		}
+		tables = append(tables, entry.name)
+	}
+	for name := range requiredInternal {
+		if _, exists := seen[name]; !exists {
+			return nil, errors.New("SQLite internal object set is incomplete")
+		}
+	}
+	for name := range requiredFTSStorage {
+		if _, exists := seen[name]; !exists {
+			return nil, errors.New("SQLite FTS storage object set is incomplete")
+		}
+	}
+	if _, exists := seen["chunks_fts"]; !exists {
+		return nil, errors.New("SQLite FTS virtual table is absent")
+	}
+	sort.Strings(tables)
+	return tables, nil
+}
+
+func TestApplicationSchemaTablesIncludesQuotedIdentifiers(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE "agent_runs" (id INTEGER PRIMARY KEY) STRICT`); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := sqliteSchemaTableEntries(context.Background(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, entry := range entries {
+		found = found || entry.name == "agent_runs" && entry.kind == "table"
+	}
+	if !found {
+		t.Fatalf("quoted SQLite table absent from inventory: %#v", entries)
+	}
+}
+
+func TestApplicationSchemaClassificationFailsClosed(t *testing.T) {
+	valid := []sqliteSchemaTableEntry{
+		{name: "agent_runs", kind: "table"},
+		{name: "chunks_fts", kind: "virtual"},
+		{name: "chunks_fts_config", kind: "table"},
+		{name: "chunks_fts_data", kind: "table"},
+		{name: "chunks_fts_docsize", kind: "table"},
+		{name: "chunks_fts_idx", kind: "table"},
+		{name: "sqlite_schema", kind: "table"},
+		{name: "sqlite_sequence", kind: "table"},
+	}
+	tables, err := classifyApplicationSchema(valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(tables, []string{"agent_runs", "chunks_fts"}) {
+		t.Fatalf("classified application tables = %#v", tables)
+	}
+	withUnexpectedContent := append(append([]sqliteSchemaTableEntry(nil), valid...), sqliteSchemaTableEntry{name: "chunks_fts_content", kind: "table"})
+	tables, err = classifyApplicationSchema(withUnexpectedContent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(tables, "chunks_fts_content") {
+		t.Fatalf("unexpected FTS content table was hidden: %#v", tables)
+	}
+	for name, mutate := range map[string]func([]sqliteSchemaTableEntry) []sqliteSchemaTableEntry{
+		"missing FTS storage": func(entries []sqliteSchemaTableEntry) []sqliteSchemaTableEntry {
+			return append(entries[:2], entries[3:]...)
+		},
+		"reported shadow type drift": func(entries []sqliteSchemaTableEntry) []sqliteSchemaTableEntry {
+			entries[2].kind = "shadow"
+			return entries
+		},
+		"unexpected internal table": func(entries []sqliteSchemaTableEntry) []sqliteSchemaTableEntry {
+			return append(entries, sqliteSchemaTableEntry{name: "sqlite_hidden", kind: "table"})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := append([]sqliteSchemaTableEntry(nil), valid...)
+			if _, err := classifyApplicationSchema(mutate(candidate)); err == nil {
+				t.Fatal("invalid SQLite schema classification unexpectedly passed")
+			}
+		})
+	}
+}
+
+func assertCommandSurface(t *testing.T, root string, surface contract.Surface, inventories map[string]commandProductionInventory) {
 	t.Helper()
 	if len(surface.Commands) != 2 || surface.Commands[0].Name != "mindweaver" || surface.Commands[1].Name != "mindweaver-pdf" {
 		t.Fatalf("command contract must contain exactly mindweaver and mindweaver-pdf, got %#v", surface.Commands)
@@ -570,9 +961,10 @@ func assertCommandSurface(t *testing.T, root string, surface contract.Surface) {
 	}
 	var actualNames []string
 	for _, entry := range entries {
-		if entry.IsDir() {
-			actualNames = append(actualNames, entry.Name())
+		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			t.Fatalf("cmd root contains a non-directory or linked entry: %s", entry.Name())
 		}
+		actualNames = append(actualNames, entry.Name())
 	}
 	sort.Strings(actualNames)
 	wantNames := make([]string, 0, len(surface.Commands))
@@ -586,6 +978,9 @@ func assertCommandSurface(t *testing.T, root string, surface contract.Surface) {
 	verbs := switchStringCases(t, mainSource, "run")
 	nested := switchStringCases(t, mainSource, "runConfig")
 	for _, command := range surface.Commands {
+		if _, exists := inventories[command.Name]; !exists {
+			t.Fatalf("command %s lacks a production inventory", command.Name)
+		}
 		if command.Name != "mindweaver" {
 			if command.Public || len(command.Verbs) != 0 || len(command.Aliases) != 0 || len(command.NestedVerbs) != 0 {
 				t.Fatal("internal PDF helper must not expose user command verbs")

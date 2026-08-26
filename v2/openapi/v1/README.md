@@ -36,17 +36,49 @@ rejects an invented ETag/`If-Match` parameter or response header.
 
 `core-surface.v1.json` is the fail-closed CORE allowlist. It covers production
 Go library packages, HTTP operations, migration filenames, application-declared
-final SQLite tables, and executable command surfaces. Package discovery scans
-only non-test `.go` files under `internal/` and `platform/`; `_test.go` files
-and root-level `docs`, `openapi`, `qualification`, `release`,
-`spikes`, and `testdata` evidence/tooling roots are not production packages.
+final SQLite tables, and executable command surfaces. Package discovery runs
+the frozen Go tool offline for Windows/amd64 with CGO disabled and derives the
+actual transitive closure of the two shipped commands. Every module-local
+dependency must be in the exact `internal/` or `platform/` allowlist; excluded
+evidence/tooling roots cannot enter either command. The same closure freezes
+the exact external module version and h1 set, so a MySQL/JDBC/Flyway module or
+any other undeclared dependency fails the contract. Target-aware inspection of
+the primary and nested Go modules is paired with an all-source package-clause
+scan (including Go-ignored dot, underscore, and `testdata` directories); both
+permit only the two shipped main packages and the two named
+qualification/spike helpers. `cmd/` itself cannot contain files or a third
+command.
+
+External modules with `mysql`, `mariadb`, `jdbc`, or `flyway` path segments are
+unconditionally forbidden. They cannot be admitted by merely updating an
+allowlist; this preserves the fresh-Vault decision while leaving normal Go
+SQLite schema migrations intact.
+
+Each shipped command also binds a canonical `mindweaver.command-source.v1`
+manifest. It covers every transitive first-party source and embedded file
+selected by that command's Windows build (including `browser_windows.go`,
+SQLite migrations, and WebUI assets), its owning import path,
+module-relative path, byte size, and SHA-256. Each command separately binds its
+first-party package and external module closure before their exact union is
+compared with the global surface. Textual source normalizes uniform CRLF to LF solely for
+cross-platform checkout stability; mixed line endings fail closed, while
+embedded and binary inputs remain byte exact. Adding, removing, moving, or
+changing compiled command code changes the checked-in manifest digest.
 The contract test separately requires the legacy migration root, importer
 package, migration command, SQLite adapter, `007_legacy_import.sql`, and stable
-legacy-import production tokens to be absent. It also freezes the command-source
-set to exactly `mindweaver` and the internal `mindweaver-pdf` helper; final PE
-and installer contents still require the release artifact gate.
-The SQLite list covers application-declared tables, including the FTS virtual
-table, but not SQLite-owned `sqlite_*` or FTS shadow implementation tables.
+legacy-import production tokens to be absent using ASCII case-insensitive
+matching. `internal/backup` is not currently reachable from either command and
+is therefore absent from this production surface; a future recovery command
+must add real wiring and regenerate the closure instead of claiming dormant
+code as shipped. Final PE and installer contents still require the release
+artifact gate.
+The SQLite list is read from a real freshly migrated database and covers every
+application-declared table, including the migration ledger and FTS virtual
+table, but not the exact SQLite-owned internal set or the four FTS5-managed
+storage tables (`config`, `data`, `docsize`, and `idx`). The bundled runtime
+reports those four as `table` and `chunks_fts` as `virtual`; the gate freezes
+that exact shape and runs the FTS external-content integrity check. A missing
+storage table, type drift, or an extra `chunks_fts_content` table fails closed.
 Exact token matching prevents Agent, memory, vector, embedding, rerank,
 evaluation, notification, and reindex surfaces without misclassifying accepted
 document revisions, ingestion jobs, Answer sources/citations, or Ollama calls.
@@ -57,9 +89,10 @@ vocabulary; resolves every local reference; enforces unique bounded
 operationIds and exact methods/paths; and cross-binds session, CSRF,
 idempotency, success, Problem, and transport status metadata to the surface
 manifest. `contract_test.go` then extracts the real app route literal with the
-Go AST, compares the local transport allowlist, discovers production packages,
-derives the final declared table set across ordered migrations, and inspects
-the real CLI switches and fresh-Vault absence boundary.
+Go AST, compares the local transport allowlist, derives the Windows command and
+module closure, verifies command source manifests, derives the final declared
+table set across ordered migrations, and inspects the real CLI switches and
+fresh-Vault absence boundary.
 
 This is implementation-closure evidence for API-001 and ARC-003. It is not a
 browser compatibility, accessibility, usability, penetration-test, release,

@@ -6,6 +6,12 @@
         "-h"
       ],
       "defaultVerb": "serve",
+      "externalModules": [
+        "github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304#h1:5NoQAewtgKNK3G4bjNPxVoGXu6F6NzLXWCTdD5FFAEY=",
+        "github.com/ncruces/go-sqlite3@v0.35.3#h1:Ei07Zv1qfV/vyXzelhFsyS5Oh9TArBZHsmFk14Xv3GY=",
+        "github.com/ncruces/julianday@v1.0.0#h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M=",
+        "golang.org/x/sys@v0.47.0#h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs="
+      ],
       "name": "mindweaver",
       "nestedVerbs": {
         "config": [
@@ -13,7 +19,28 @@
           "init"
         ]
       },
+      "packages": [
+        "internal/app",
+        "internal/blob",
+        "internal/ingest",
+        "internal/lifecycle",
+        "internal/localhttp",
+        "internal/ollama",
+        "internal/pdfextract/client",
+        "internal/pdfextract/protocol",
+        "internal/rag",
+        "internal/store/sqlite",
+        "internal/transport",
+        "internal/vault",
+        "internal/webui",
+        "internal/workbench",
+        "platform",
+        "platform/apperror",
+        "platform/config",
+        "platform/version"
+      ],
       "public": true,
+      "sourceManifestSHA256": "b9ff606e1759d7ed3ce4b5bc9c37409db636ae6db58934cdeed0e94084b32255",
       "verbs": [
         "config",
         "help",
@@ -23,19 +50,33 @@
     },
     {
       "aliases": [],
+      "externalModules": [
+        "github.com/mgilbir/formalis@v0.3.1#h1:NyYe/EcRYJ2jUjgaZG98lNXgJ7H+jgy6mq7HXOnQxl8=",
+        "github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556#h1:2ZUsOgMhxpHCYC8jyzeEnJZFLYGbXhqjAJWJBvY8q4U=",
+        "github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2#h1:kdDIM4JNxn9gsRk5Zo6mtmcFpBqnl9gTVUwf9t6lIRk=",
+        "github.com/mgilbir/pdf0@v0.1.0#h1:rfBK18bcQ4kHQTXBmriAb07TafhG2w1fLflq9lHgaG4="
+      ],
       "name": "mindweaver-pdf",
       "nestedVerbs": {},
+      "packages": [
+        "internal/pdfextract/parser",
+        "internal/pdfextract/protocol"
+      ],
       "public": false,
+      "sourceManifestSHA256": "bf8badaa11f215a4acd100a839d6e360017bdbc5d9ae18cbbb67e9222ab8849a",
       "verbs": []
     }
   ],
   "forbiddenSegments": [
     "agent",
     "agents",
+    "batch",
+    "batches",
     "embedding",
     "embeddings",
     "evaluation",
     "evaluations",
+    "kbhealth",
     "memories",
     "memory",
     "notification",
@@ -58,7 +99,6 @@
   "module": "github.com/mt-hub8/MindWeaver/v2",
   "packages": [
     "internal/app",
-    "internal/backup",
     "internal/blob",
     "internal/ingest",
     "internal/lifecycle",
@@ -79,6 +119,10 @@
     "platform/version"
   ],
   "productionDiscovery": {
+    "evidenceOnlyMainPackages": [
+      "qualification/pdf/adversarialprobe",
+      "spikes/sqlite/cmd/sqlite-spike"
+    ],
     "excludedFileSuffixes": [
       "_test.go"
     ],
@@ -89,6 +133,16 @@
       "release",
       "spikes",
       "testdata"
+    ],
+    "externalModules": [
+      "github.com/mgilbir/formalis@v0.3.1#h1:NyYe/EcRYJ2jUjgaZG98lNXgJ7H+jgy6mq7HXOnQxl8=",
+      "github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556#h1:2ZUsOgMhxpHCYC8jyzeEnJZFLYGbXhqjAJWJBvY8q4U=",
+      "github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2#h1:kdDIM4JNxn9gsRk5Zo6mtmcFpBqnl9gTVUwf9t6lIRk=",
+      "github.com/mgilbir/pdf0@v0.1.0#h1:rfBK18bcQ4kHQTXBmriAb07TafhG2w1fLflq9lHgaG4=",
+      "github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304#h1:5NoQAewtgKNK3G4bjNPxVoGXu6F6NzLXWCTdD5FFAEY=",
+      "github.com/ncruces/go-sqlite3@v0.35.3#h1:Ei07Zv1qfV/vyXzelhFsyS5Oh9TArBZHsmFk14Xv3GY=",
+      "github.com/ncruces/julianday@v1.0.0#h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M=",
+      "golang.org/x/sys@v0.47.0#h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs="
     ],
     "libraryRoots": [
       "internal",
@@ -754,6 +808,7 @@
     "documents",
     "jobs",
     "ollama_config_versions",
+    "schema_migrations",
     "settings"
   ]
 }
