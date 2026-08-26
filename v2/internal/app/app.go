@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mt-hub8/MindWeaver/v2/internal/backup"
 	"github.com/mt-hub8/MindWeaver/v2/internal/blob"
 	"github.com/mt-hub8/MindWeaver/v2/internal/ingest"
 	"github.com/mt-hub8/MindWeaver/v2/internal/lifecycle"
@@ -69,6 +70,7 @@ type App struct {
 	server   *localhttp.Server
 	worker   *ingestionWorker
 	rag      *ragRuntime
+	backups  *backupRuntime
 
 	bootstrap localhttp.BootstrapToken
 	startup   StartupEvidence
@@ -192,6 +194,26 @@ func Start(ctx context.Context, options Options) (*App, error) {
 		pdfReady = true
 	}
 	worker := newIngestionWorker(service, database, options.WorkerInterval, defaultWorkerLease)
+	backupCoordinator, err := backup.New(database, blobs, paths.Root)
+	if err != nil {
+		return nil, fmt.Errorf("app: initialize backup coordinator: %w", err)
+	}
+	backupScratch, err := defaultBackupScratch()
+	if err != nil {
+		_ = backupCoordinator.Close()
+		return nil, err
+	}
+	backupRuntime, err := newBackupRuntime(coordinatorBackupEngine{backupCoordinator}, backupScratch)
+	if err != nil {
+		_ = backupCoordinator.Close()
+		return nil, err
+	}
+	closeBackupOnError := true
+	defer func() {
+		if closeBackupOnError {
+			_ = backupRuntime.Close()
+		}
+	}()
 	evidence := StartupEvidence{
 		ConfigCreated: created, RecoveredJobs: recovered, CleanedStagingFiles: cleaned,
 		SweptBlobCandidates:      swept,
@@ -242,12 +264,14 @@ func Start(ctx context.Context, options Options) (*App, error) {
 
 	closeVaultOnError = false
 	closeDatabaseOnError = false
+	closeBackupOnError = false
 	return &App{
 		vault:        openedVault,
 		database:     database,
 		server:       server,
 		worker:       worker,
 		rag:          ragRuntime,
+		backups:      backupRuntime,
 		bootstrap:    bootstrap,
 		startup:      evidence,
 		shutdownDone: make(chan struct{}),
@@ -362,6 +386,13 @@ func (app *App) shutdown() {
 	if serverErr != nil {
 		serverErr = errors.Join(serverErr, app.server.Close())
 	}
+	// Backup Create is detached from its fast HTTP admission response. Once
+	// ingress is closed, cancel that local operation, wait for its filesystem
+	// cleanup/publication decision, then release its retained Vault capability
+	// before SQLite or the Vault lock can be closed.
+	app.backups.Quiesce()
+	backupErr := app.backups.Wait(grace)
+	backupErr = errors.Join(backupErr, app.backups.Wait(context.Background()), app.backups.Close())
 	// Closing ingress may cancel an active provider call. Ask owns a bounded
 	// WithoutCancel terminal write; do not close SQLite until it has returned.
 	ragErr := app.rag.Wait(context.Background())
@@ -374,7 +405,7 @@ func (app *App) shutdown() {
 	// bound, while this cleanup goroutine continues until the bounded local file
 	// operation observes cancellation and exits.
 	workerErr = errors.Join(workerErr, app.worker.Wait(context.Background()))
-	app.shutdownErr = errors.Join(serverErr, ragErr, workerErr, app.database.Close(), app.vault.Close())
+	app.shutdownErr = errors.Join(serverErr, backupErr, ragErr, workerErr, app.database.Close(), app.vault.Close())
 }
 
 func ensureConfig(ctx context.Context, path, firstVault string) (bool, error) {
