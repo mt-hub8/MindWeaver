@@ -2,8 +2,10 @@
 
 (() => {
   let csrfToken = "";
-  let uploadKey = "";
-  let collectionKey = "";
+  let uploadAttempt = null;
+  let uploadInFlight = false;
+  let collectionAttempt = null;
+  let collectionInFlight = false;
   let activeCollection = "";
   let activeCollectionRevision = null;
   let documentCursor = "";
@@ -16,7 +18,8 @@
   let purgeGeneration = 0;
   let modelConfigVersion = 0;
   let modelConfigured = false;
-  let conversationKey = "";
+  let conversationAttempt = null;
+  let conversationInFlight = false;
   let conversationCursor = "";
   let messageCursor = "";
   let conversationGeneration = 0;
@@ -115,6 +118,10 @@
     }
     if (response.status === 204) return null;
     return response.json();
+  }
+
+  function definiteMutationFailure(error) {
+    return Number.isInteger(error.status) && error.status < 500;
   }
 
   async function bootstrap() {
@@ -469,40 +476,67 @@
     }
   }
 
+  function updateUploadAttemptAvailability() {
+    const locked = uploadAttempt !== null;
+    byId("title").disabled = locked;
+    byId("file").disabled = locked;
+    byId("upload-form").querySelector("button[type=submit]").disabled = uploadInFlight;
+  }
+
+  function clearUploadAttempt() {
+    uploadAttempt = null;
+    updateUploadAttemptAvailability();
+  }
+
   byId("upload-form").addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (uploadInFlight) return;
     const submit = event.submitter || event.currentTarget.querySelector("button[type=submit]");
-    const file = byId("file").files[0];
-    const title = byId("title").value;
-    if (!file) return;
-    if (file.size > maxUploadBytes) {
-      showToast("文件超过 4 MiB 安全处理上限。");
-      return;
+    if (!uploadAttempt) {
+      const file = byId("file").files[0];
+      const title = byId("title").value;
+      if (!file) return;
+      if (file.size > maxUploadBytes) {
+        showToast("文件超过 4 MiB 安全处理上限。");
+        return;
+      }
+      uploadAttempt = Object.freeze({
+        key: crypto.randomUUID(), title, filename: file.name, file
+      });
     }
-    if (!uploadKey) uploadKey = crypto.randomUUID();
-    submit.disabled = true;
+    const attempt = uploadAttempt;
+    let admitted = false;
+    uploadInFlight = true;
+    updateUploadAttemptAvailability();
     byId("upload-progress").textContent = "正在发布不可变源文件……";
     try {
       const payload = await api("/api/v1/documents/upload", {
         method: "POST",
         headers: {
-          "Idempotency-Key": uploadKey,
-          "X-MindWeaver-Title-B64": encodeTextHeader(title),
-          "X-MindWeaver-Filename-B64": encodeTextHeader(file.name),
+          "Idempotency-Key": attempt.key,
+          "X-MindWeaver-Title-B64": encodeTextHeader(attempt.title),
+          "X-MindWeaver-Filename-B64": encodeTextHeader(attempt.filename),
           "Content-Type": "application/octet-stream"
         },
-        body: file
+        body: attempt.file
       });
+      admitted = true;
       byId("upload-progress").textContent = payload.created ? "上传完成，正在建立索引……" : "已识别重复请求，继续跟踪原任务……";
       await pollJob(payload.jobId);
-      uploadKey = "";
+      clearUploadAttempt();
     } catch (error) {
-      byId("upload-progress").textContent = error.message;
-      showToast(error.message);
-    } finally { submit.disabled = false; }
+      if (!admitted && definiteMutationFailure(error)) clearUploadAttempt();
+      const detail = uploadAttempt === attempt
+        ? `${error.message}；结果不确定，再次提交将精确重放同一文件、标题与幂等键。`
+        : error.message;
+      byId("upload-progress").textContent = detail;
+      showToast(detail);
+    } finally {
+      uploadInFlight = false;
+      submit.disabled = false;
+      updateUploadAttemptAvailability();
+    }
   });
-  byId("title").addEventListener("input", () => { uploadKey = ""; });
-  byId("file").addEventListener("change", () => { uploadKey = ""; });
 
   async function loadSearchPage(offset, append, generation) {
     if (!currentSearch) return;
@@ -603,28 +637,56 @@
     await Promise.all([loadCollections(true), loadMembers(true), loadDocuments(true)]).catch((error) => showToast(error.message));
   }
 
+  function updateCollectionAttemptAvailability() {
+    byId("collection-name").disabled = collectionAttempt !== null;
+    byId("collection-form").querySelector("button[type=submit]").disabled = collectionInFlight;
+  }
+
+  function clearCollectionAttempt() {
+    collectionAttempt = null;
+    updateCollectionAttemptAvailability();
+  }
+
   byId("collection-form").addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (collectionInFlight) return;
     const submit = event.submitter || event.currentTarget.querySelector("button[type=submit]");
-    if (!collectionKey) collectionKey = crypto.randomUUID();
-    submit.disabled = true;
+    if (!collectionAttempt) {
+      const name = byId("collection-name").value;
+      collectionAttempt = Object.freeze({
+        key: crypto.randomUUID(), name, body: JSON.stringify({ name })
+      });
+    }
+    const attempt = collectionAttempt;
+    collectionInFlight = true;
+    updateCollectionAttemptAvailability();
     try {
       const payload = await api("/api/v1/collections", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": collectionKey },
-        body: JSON.stringify({ name: byId("collection-name").value })
+        headers: { "Content-Type": "application/json", "Idempotency-Key": attempt.key },
+        body: attempt.body
       });
-      activeCollection = payload.collection.id;
-      activeCollectionRevision = payload.collection.revision;
+      const collection = payload && payload.collection;
+      if (!collection || typeof collection.id !== "string" || !Number.isInteger(collection.revision) || typeof collection.name !== "string") {
+        throw new Error("本地服务返回了无效的集合结果。");
+      }
+      activeCollection = collection.id;
+      activeCollectionRevision = collection.revision;
       byId("search-collection").value = activeCollection;
-      byId("collection-result").textContent = `${payload.created ? "已创建" : "已识别重复请求"}：${payload.collection.name}（${activeCollection}）`;
-      collectionKey = "";
+      byId("collection-result").textContent = `${payload.created ? "已创建" : "已识别重复请求"}：${collection.name}（${activeCollection}）`;
+      clearCollectionAttempt();
       await Promise.all([loadCollections(true), loadMembers(true), loadDocuments(true)]);
     } catch (error) {
-      showToast(error.message);
-    } finally { submit.disabled = false; }
+      if (definiteMutationFailure(error)) clearCollectionAttempt();
+      showToast(collectionAttempt === attempt
+        ? `${error.message}；结果不确定，再次提交将精确重放同一集合名称与幂等键。`
+        : error.message);
+    } finally {
+      collectionInFlight = false;
+      submit.disabled = false;
+      updateCollectionAttemptAvailability();
+    }
   });
-  byId("collection-name").addEventListener("input", () => { collectionKey = ""; });
 
   async function loadMembers(reset) {
     const collectionID = activeCollection;
@@ -802,9 +864,32 @@
     };
   }
 
+  function askReplayLocked() {
+    return askAttempt !== null && (askInFlight || askOutcomeUncertain ||
+      (activeConversation !== null && activeConversation.pendingAnswer === true));
+  }
+
+  function restoreAskAttemptInputs(attempt) {
+    byId("ask-question").value = attempt.question;
+    byId("ask-collection").value = attempt.scope;
+  }
+
+  function updateConversationControls() {
+    const askLocked = askReplayLocked();
+    byId("conversation-title").disabled = conversationAttempt !== null || askLocked;
+    byId("conversation-form").querySelector("button[type=submit]").disabled = conversationInFlight || askLocked;
+    for (const select of document.querySelectorAll("#conversations button[data-conversation-select-id]")) {
+      select.disabled = askLocked;
+      select.title = askLocked ? "当前 Ask 的结果不确定或仍在等待终态；只能先精确重放或等待完成。" : "";
+    }
+  }
+
   function updateAskAvailability() {
     const enabled = modelConfigured && activeConversation !== null && activeConversation.pendingAnswer !== true && !askInFlight;
+    const replayLocked = askReplayLocked();
     byId("ask-submit").disabled = !enabled;
+    byId("ask-question").disabled = replayLocked;
+    byId("ask-collection").disabled = replayLocked;
     if (!modelConfigured) {
       byId("ask-status").textContent = "尚未配置本地模型；文档、集合与全文检索仍可正常使用。";
     } else if (!activeConversation) {
@@ -816,6 +901,7 @@
     } else if (askOutcomeUncertain) {
       byId("ask-status").textContent = "上次传输结果不确定；可再次提交以复用完全相同的请求与幂等键。";
     }
+    updateConversationControls();
   }
 
   async function loadOllamaConfiguration() {
@@ -895,6 +981,7 @@
     const actions = document.createElement("div");
     actions.className = "actions";
     const select = actionButton(activeConversation && activeConversation.id === conversation.id ? "当前会话" : "打开", () => selectConversation(conversation));
+    select.dataset.conversationSelectId = conversation.id;
     select.setAttribute("aria-pressed", String(activeConversation && activeConversation.id === conversation.id));
     const remove = actionButton("删除并解除引用", () => deleteConversation(conversation), true);
     remove.dataset.conversationId = conversation.id;
@@ -972,6 +1059,10 @@
   }
 
   async function selectConversation(conversation) {
+    if (askReplayLocked()) {
+      showToast("当前 Ask 的结果不确定或仍在等待终态；只能先精确重放或等待完成。");
+      return;
+    }
     activeConversation = conversation;
     askAttempt = null;
     askInFlight = false;
@@ -984,19 +1075,39 @@
     await Promise.all([loadConversations(true), loadMessages(true)]).catch((error) => showToast(error.message));
   }
 
+  function clearConversationAttempt() {
+    conversationAttempt = null;
+    updateConversationControls();
+  }
+
   byId("conversation-form").addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (conversationInFlight || askReplayLocked()) {
+      updateConversationControls();
+      return;
+    }
     const submit = event.submitter || event.currentTarget.querySelector("button[type=submit]");
-    if (!conversationKey) conversationKey = crypto.randomUUID();
-    submit.disabled = true;
+    if (!conversationAttempt) {
+      const title = byId("conversation-title").value;
+      conversationAttempt = Object.freeze({
+        key: crypto.randomUUID(), title, body: JSON.stringify({ title })
+      });
+    }
+    const attempt = conversationAttempt;
+    conversationInFlight = true;
+    updateConversationControls();
     try {
       const payload = await api("/api/v1/conversations", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": conversationKey },
-        body: JSON.stringify({ title: byId("conversation-title").value })
+        headers: { "Content-Type": "application/json", "Idempotency-Key": attempt.key },
+        body: attempt.body
       });
-      activeConversation = payload.conversation;
-      conversationKey = "";
+      const conversation = payload && payload.conversation;
+      if (!conversation || typeof conversation.id !== "string" || !Number.isInteger(conversation.revision) || typeof conversation.title !== "string") {
+        throw new Error("本地服务返回了无效的会话结果。");
+      }
+      activeConversation = conversation;
+      clearConversationAttempt();
       askAttempt = null;
       askInFlight = false;
       askOutcomeUncertain = false;
@@ -1007,12 +1118,16 @@
       updateActiveConversationLabel();
       await Promise.all([loadConversations(true), loadMessages(true)]);
     } catch (error) {
-      showToast(error.message);
+      if (definiteMutationFailure(error)) clearConversationAttempt();
+      showToast(conversationAttempt === attempt
+        ? `${error.message}；结果不确定，再次提交将精确重放同一会话标题与幂等键。`
+        : error.message);
     } finally {
+      conversationInFlight = false;
       submit.disabled = false;
+      updateConversationControls();
     }
   });
-  byId("conversation-title").addEventListener("input", () => { conversationKey = ""; });
 
   async function deleteConversation(conversation) {
     if (conversationDeleteBlocked(conversation)) {
@@ -1217,13 +1332,16 @@
         question
       };
       if (scope) requestBody.scopeCollectionId = scope;
-      askAttempt = {
+      askAttempt = Object.freeze({
         conversationID: activeConversation.id,
         key: crypto.randomUUID(),
-        body: JSON.stringify(requestBody)
-      };
+        body: JSON.stringify(requestBody),
+        question,
+        scope
+      });
     }
     const attempt = askAttempt;
+    restoreAskAttemptInputs(attempt);
     const generation = ++askGeneration;
     askInFlight = true;
     askOutcomeUncertain = false;
@@ -1242,13 +1360,12 @@
       activeConversation.revision = payload.answer.conversationRevision;
       activeConversation.pendingAnswer = payload.answer.status === "pending";
       activeConversation.pendingAnswerId = payload.answer.status === "pending" ? payload.answer.id : null;
+      if (payload.answer.status !== "pending") askAttempt = null;
       updateActiveConversationLabel();
       byId("ask-status").textContent = answerStateText(payload.answer);
       await Promise.all([loadMessages(true), loadConversations(true)]);
       if (payload.answer.status === "pending") {
         startAnswerPoll(payload.answer.id, attempt.conversationID);
-      } else {
-        askAttempt = null;
       }
     } catch (error) {
       if (generation !== askGeneration || !activeConversation || activeConversation.id !== attempt.conversationID) return;

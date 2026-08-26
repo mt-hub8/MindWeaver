@@ -26,7 +26,7 @@ func TestEmbeddedClientRefreshesCSRFAndConsumesBoundedSearchPages(t *testing.T) 
 		t.Fatal("embedded JavaScript still consumes unbounded hit.content")
 	}
 	for _, contract := range []string{
-		`expectedRevision: documentItem.revision`, `"Idempotency-Key": collectionKey`,
+		`expectedRevision: documentItem.revision`, `"Idempotency-Key": attempt.key`,
 		`method: "DELETE"`, `payload.nextCursor`, `/api/v1/documents/purge-status`,
 		`payload.complete === true && payload.state === "complete"`, "无进行中的清理", "重试清理",
 		`/api/v1/documents/retry-ingestion`, `documentItem.ingestionErrorCode`, "重试摄取", "取消摄取",
@@ -90,6 +90,160 @@ func TestEmbeddedClientRefreshesCSRFAndConsumesBoundedSearchPages(t *testing.T) 
 		if !strings.Contains(index.String(), id) {
 			t.Fatalf("embedded shell is missing %s", id)
 		}
+	}
+}
+
+func TestEmbeddedClientBindsImmutableMutationAttemptsAndFreezesAskReplay(t *testing.T) {
+	javascript, err := assets.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(javascript)
+	for _, legacy := range []string{"uploadKey", "collectionKey", "conversationKey"} {
+		if strings.Contains(source, legacy) {
+			t.Fatalf("embedded client retains legacy unbound key %q", legacy)
+		}
+	}
+	for _, contract := range []string{
+		"function definiteMutationFailure(error)",
+		"return Number.isInteger(error.status) && error.status < 500;",
+		`byId("ask-question").disabled = replayLocked`,
+		`byId("ask-collection").disabled = replayLocked`,
+		`select.dataset.conversationSelectId = conversation.id`,
+		`if (askReplayLocked()) {`,
+		`if (conversationInFlight || askReplayLocked()) {`,
+	} {
+		if !strings.Contains(source, contract) {
+			t.Fatalf("embedded client is missing mutation-attempt contract %q", contract)
+		}
+	}
+
+	upload := javascriptSection(t, source,
+		`function updateUploadAttemptAvailability()`, `async function loadSearchPage`)
+	assertJSContracts(t, "upload", upload, []string{
+		`uploadAttempt = Object.freeze({`,
+		`const attempt = uploadAttempt`,
+		`"Idempotency-Key": attempt.key`,
+		`encodeTextHeader(attempt.title)`,
+		`encodeTextHeader(attempt.filename)`,
+		`body: attempt.file`,
+		`if (!admitted && definiteMutationFailure(error)) clearUploadAttempt()`,
+		`uploadAttempt === attempt`,
+	})
+	assertFrozenSendReadsNoLiveInput(t, "upload", upload, `const attempt = uploadAttempt`,
+		[]string{`byId("title").value`, `byId("file").files[0]`})
+
+	collection := javascriptSection(t, source,
+		`function updateCollectionAttemptAvailability()`, `async function loadMembers`)
+	assertJSContracts(t, "collection", collection, []string{
+		`collectionAttempt = Object.freeze({`,
+		`body: JSON.stringify({ name })`,
+		`const attempt = collectionAttempt`,
+		`"Idempotency-Key": attempt.key`,
+		`body: attempt.body`,
+		`const collection = payload && payload.collection`,
+		`throw new Error("本地服务返回了无效的集合结果。")`,
+		`if (definiteMutationFailure(error)) clearCollectionAttempt()`,
+		`collectionAttempt === attempt`,
+	})
+	assertFrozenSendReadsNoLiveInput(t, "collection", collection, `const attempt = collectionAttempt`,
+		[]string{`byId("collection-name").value`, `JSON.stringify({ name: byId(`})
+	assertJSOrder(t, "collection", collection, `const attempt = collectionAttempt`,
+		`const collection = payload && payload.collection`, `clearCollectionAttempt();`)
+
+	conversation := javascriptSection(t, source,
+		`function clearConversationAttempt()`, `async function deleteConversation`)
+	assertJSContracts(t, "conversation", conversation, []string{
+		`conversationAttempt = Object.freeze({`,
+		`body: JSON.stringify({ title })`,
+		`const attempt = conversationAttempt`,
+		`"Idempotency-Key": attempt.key`,
+		`body: attempt.body`,
+		`const conversation = payload && payload.conversation`,
+		`throw new Error("本地服务返回了无效的会话结果。")`,
+		`if (definiteMutationFailure(error)) clearConversationAttempt()`,
+		`conversationAttempt === attempt`,
+	})
+	assertFrozenSendReadsNoLiveInput(t, "conversation", conversation, `const attempt = conversationAttempt`,
+		[]string{`body: JSON.stringify({ title: byId(`})
+	assertJSOrder(t, "conversation", conversation, `const attempt = conversationAttempt`,
+		`const conversation = payload && payload.conversation`, `clearConversationAttempt();`)
+
+	askControls := javascriptSection(t, source,
+		`function askReplayLocked()`, `async function loadOllamaConfiguration`)
+	ask := javascriptSection(t, source,
+		`byId("ask-form").addEventListener`, `byId("documents-more").addEventListener`)
+	assertJSContracts(t, "Ask", ask, []string{
+		`askAttempt = Object.freeze({`,
+		`body: JSON.stringify(requestBody)`,
+		`question,`,
+		`scope`,
+		`const attempt = askAttempt`,
+		`restoreAskAttemptInputs(attempt)`,
+		`"Idempotency-Key": attempt.key`,
+		`body: attempt.body`,
+		`askOutcomeUncertain = true`,
+	})
+	if !strings.Contains(askControls, `askAttempt !== null && (askInFlight || askOutcomeUncertain ||`) {
+		t.Fatal("Ask visible-input lock is not bound to the retained uncertain attempt")
+	}
+	assertFrozenSendReadsNoLiveInput(t, "Ask", ask, `const attempt = askAttempt`,
+		[]string{`byId("ask-question").value`, `byId("ask-collection").value.trim()`})
+
+	for name, section := range map[string]string{
+		"upload": upload, "collection": collection, "conversation": conversation, "Ask": ask,
+	} {
+		if count := strings.Count(section, "crypto.randomUUID()"); count != 1 {
+			t.Fatalf("%s attempt creates %d idempotency keys, want exactly one", name, count)
+		}
+	}
+}
+
+func javascriptSection(t *testing.T, source, start, end string) string {
+	t.Helper()
+	startAt := strings.Index(source, start)
+	if startAt < 0 {
+		t.Fatalf("JavaScript section start %q is missing", start)
+	}
+	endAt := strings.Index(source[startAt:], end)
+	if endAt < 0 {
+		t.Fatalf("JavaScript section end %q is missing after %q", end, start)
+	}
+	return source[startAt : startAt+endAt]
+}
+
+func assertJSContracts(t *testing.T, name, section string, contracts []string) {
+	t.Helper()
+	for _, contract := range contracts {
+		if !strings.Contains(section, contract) {
+			t.Fatalf("%s attempt is missing %q", name, contract)
+		}
+	}
+}
+
+func assertFrozenSendReadsNoLiveInput(t *testing.T, name, section, sendStart string, forbidden []string) {
+	t.Helper()
+	startAt := strings.Index(section, sendStart)
+	if startAt < 0 {
+		t.Fatalf("%s send boundary %q is missing", name, sendStart)
+	}
+	send := section[startAt:]
+	for _, value := range forbidden {
+		if strings.Contains(send, value) {
+			t.Fatalf("%s send still reads live input %q after freezing its attempt", name, value)
+		}
+	}
+}
+
+func assertJSOrder(t *testing.T, name, section string, contracts ...string) {
+	t.Helper()
+	position := 0
+	for _, contract := range contracts {
+		next := strings.Index(section[position:], contract)
+		if next < 0 {
+			t.Fatalf("%s attempt is missing ordered contract %q", name, contract)
+		}
+		position += next + len(contract)
 	}
 }
 
