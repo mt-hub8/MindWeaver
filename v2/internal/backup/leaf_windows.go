@@ -4,6 +4,10 @@ package backup
 
 import "strings"
 
+func hasPlatformReservedPrefix(name, prefix string) bool {
+	return len(name) >= len(prefix) && strings.EqualFold(name[:len(prefix)], prefix)
+}
+
 func validPlatformDestinationInput(raw string) bool {
 	separator := strings.LastIndexAny(raw, `/\\`)
 	leaf := raw[separator+1:]

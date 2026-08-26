@@ -269,7 +269,7 @@ func TestStartupRestoreResidueRecoveryRecoversOnlyExactForcedExitResidues(t *tes
 		runRestoreResidueForcedExit(t, parentPath, "binding", 95)
 		runRestoreResidueForcedExit(t, parentPath, "copy", 93)
 
-		recovery, err := NewStartupRestoreResidueRecovery(parentPath)
+		recovery, err := NewStartupRestoreResidueRecovery(t.TempDir(), parentPath)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -312,7 +312,7 @@ func TestStartupRestoreResidueRecoveryRecoversOnlyExactForcedExitResidues(t *tes
 	t.Run("receipt only", func(t *testing.T) {
 		parentPath := t.TempDir()
 		runRestoreResidueForcedExit(t, parentPath, "receipt", 91)
-		recovery, err := NewStartupRestoreResidueRecovery(parentPath)
+		recovery, err := NewStartupRestoreResidueRecovery(t.TempDir(), parentPath)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -330,7 +330,7 @@ func TestStartupRestoreResidueRecoveryRecoversOnlyExactForcedExitResidues(t *tes
 	t.Run("prebinding conflict", func(t *testing.T) {
 		parentPath := t.TempDir()
 		runRestoreResidueForcedExit(t, parentPath, "directory", 92)
-		recovery, err := NewStartupRestoreResidueRecovery(parentPath)
+		recovery, err := NewStartupRestoreResidueRecovery(t.TempDir(), parentPath)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -355,7 +355,7 @@ func TestStartupRestoreResidueRecoveryRecoversOnlyExactForcedExitResidues(t *tes
 	t.Run("publication uncertain", func(t *testing.T) {
 		parentPath := t.TempDir()
 		runRestoreResidueForcedExit(t, parentPath, "rename", 94)
-		recovery, err := NewStartupRestoreResidueRecovery(parentPath)
+		recovery, err := NewStartupRestoreResidueRecovery(t.TempDir(), parentPath)
 		if err != nil {
 			t.Fatal(err)
 		}

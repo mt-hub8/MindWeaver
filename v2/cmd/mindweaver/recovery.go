@@ -6,9 +6,7 @@ import (
 	"errors"
 	"flag"
 	"io"
-	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/mt-hub8/MindWeaver/v2/internal/backup"
@@ -16,10 +14,11 @@ import (
 )
 
 const (
-	recoveryResidueLimit       = 256
-	recoveryCleanupPassLimit   = 32
-	recoveryScratchApplication = "MindWeaver"
+	recoveryResidueLimit     = 256
+	recoveryCleanupPassLimit = 32
 )
+
+var prepareRecoveryVerifyScratch = backup.PrepareStartupVerifyScratch
 
 type recoveryRecord struct {
 	Type      string           `json:"type"`
@@ -108,11 +107,11 @@ func runRecoveryVerify(parent context.Context, source string, stdout io.Writer) 
 	if err != nil {
 		return err
 	}
-	scratch, err := recoveryScratchParent()
+	scratch, err := prepareRecoveryVerifyScratch(source)
 	if err != nil {
 		return reportRecoveryFailure(reporter, "verify", err)
 	}
-	if err := cleanupVerifyResidues(ctx, scratch, reporter); err != nil {
+	if err := cleanupVerifyResidues(ctx, source, scratch, reporter); err != nil {
 		return reportRecoveryFailure(reporter, "verify", err)
 	}
 	outcome, operationErr := backup.VerifyStandalone(ctx, source, backup.VerifyOptions{
@@ -142,7 +141,7 @@ func runRecoveryRestore(parent context.Context, source, destination string, stdo
 	if err != nil {
 		return reportRecoveryFailure(reporter, "restore", err)
 	}
-	if err := cleanupRestoreResidues(ctx, parentPath, destinationName, reporter); err != nil {
+	if err := cleanupRestoreResidues(ctx, source, parentPath, destinationName, reporter); err != nil {
 		return reportRecoveryFailure(reporter, "restore", err)
 	}
 
@@ -167,23 +166,13 @@ func runRecoveryRestore(parent context.Context, source, destination string, stdo
 	return wrapRecoveryError("restore", operationErr)
 }
 
-func recoveryScratchParent() (string, error) {
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		return "", apperror.Wrap(err, apperror.KindUnavailable, "recovery.scratch_unavailable", "recovery.scratch", "recovery scratch is unavailable")
-	}
-	if strings.TrimSpace(cache) == "" {
-		return "", apperror.New(apperror.KindUnavailable, "recovery.scratch_unavailable", "recovery scratch is unavailable")
-	}
-	parent := filepath.Join(cache, recoveryScratchApplication, "recovery", "verify")
-	if err := os.MkdirAll(parent, 0o700); err != nil {
-		return "", apperror.Wrap(err, apperror.KindUnavailable, "recovery.scratch_unavailable", "recovery.scratch", "recovery scratch is unavailable")
-	}
-	return parent, nil
-}
-
-func cleanupVerifyResidues(ctx context.Context, scratch string, reporter *recoveryReporter) (resultErr error) {
-	recovery, err := backup.NewStartupVerifyScratchRecovery(scratch)
+func cleanupVerifyResidues(
+	ctx context.Context,
+	source string,
+	scratch string,
+	reporter *recoveryReporter,
+) (resultErr error) {
+	recovery, err := backup.NewStartupVerifyScratchRecovery(source, scratch)
 	if err != nil {
 		return err
 	}
@@ -209,11 +198,12 @@ func cleanupVerifyResidues(ctx context.Context, scratch string, reporter *recove
 
 func cleanupRestoreResidues(
 	ctx context.Context,
+	source string,
 	parentPath string,
 	destinationName string,
 	reporter *recoveryReporter,
 ) (resultErr error) {
-	recovery, err := backup.NewStartupRestoreResidueRecovery(parentPath)
+	recovery, err := backup.NewStartupRestoreResidueRecovery(source, parentPath)
 	if err != nil {
 		return err
 	}
@@ -279,9 +269,6 @@ func canonicalRecoveryDestination(raw string) (destination, parent, name string,
 }
 
 func sameRecoveryLeaf(left, right string) bool {
-	if runtime.GOOS == "windows" {
-		return strings.EqualFold(left, right)
-	}
 	return left == right
 }
 

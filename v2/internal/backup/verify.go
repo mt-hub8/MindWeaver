@@ -197,9 +197,7 @@ func (c *Coordinator) Verify(ctx context.Context, source string, options VerifyO
 // retained and independently proven fixed-local before any temporary write;
 // source/scratch overlap is rejected by the shared verification kernel.
 func VerifyStandalone(ctx context.Context, source string, options VerifyOptions) (Outcome, error) {
-	summary, err := verifyBackup(ctx, source, options, verifyHooks{}, func(*retainedDirectory) error {
-		return nil
-	})
+	summary, err := verifyBackup(ctx, source, options, verifyHooks{}, validateOwnerOnlyVerifyScratch)
 	return outcomeFromResult(summary, err)
 }
 
@@ -312,10 +310,10 @@ func cleanupVerifyScratchRoot(
 			return result, err
 		}
 		result.Examined++
-		if item.Kind != "verify" {
+		if item.Kind != "verify" || item.DestinationName != verifyScratchDestination {
 			return result, failVerify(
 				FailureInvalid,
-				errors.New("backup: verification scratch parent contains another residue kind"),
+				errors.New("backup: verification scratch parent contains another residue target"),
 			)
 		}
 		if item.State == ResidueStateConflict {
@@ -323,6 +321,12 @@ func cleanupVerifyScratchRoot(
 		}
 		if item.State == ResidueStatePublicationUncertain {
 			return result, ErrPublicationUncertain
+		}
+		if item.State != ResidueStateStaging && item.State != ResidueStateReceiptOnly {
+			return result, errors.Join(
+				ErrCleanupResidual,
+				errors.New("backup: unsupported verification residue state"),
+			)
 		}
 		if err := capability.verifyPath(); err != nil {
 			return result, errors.Join(ErrCleanupResidual, err)

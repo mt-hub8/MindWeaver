@@ -3,13 +3,16 @@ package backup
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
 )
 
 type startupResidueCapability struct {
-	mu       sync.Mutex
-	parent   *retainedDirectory
-	validate func(*retainedDirectory) error
+	mu                     sync.Mutex
+	source                 *retainedDirectory
+	parent                 *retainedDirectory
+	validate               func(*retainedDirectory) error
+	sourceMayBeBelowParent bool
 }
 
 // StartupVerifyScratchRecovery is an identity-bound cleanup capability for the
@@ -23,8 +26,8 @@ type StartupVerifyScratchRecovery struct {
 
 // NewStartupVerifyScratchRecovery retains and fixed-local validates an existing
 // scratch parent without writing it.
-func NewStartupVerifyScratchRecovery(scratchParent string) (*StartupVerifyScratchRecovery, error) {
-	capability, err := newStartupResidueCapability(scratchParent, validateVerifyScratchParent)
+func NewStartupVerifyScratchRecovery(source, scratchParent string) (*StartupVerifyScratchRecovery, error) {
+	capability, err := newStartupResidueCapability(source, scratchParent, validateOwnerOnlyVerifyScratch, false)
 	if err != nil {
 		return nil, err
 	}
@@ -47,6 +50,12 @@ func (recovery *StartupVerifyScratchRecovery) Cleanup(
 		return ScratchCleanupSummary{}, classifiedBackupError(
 			failOperation(FailureInvalid, errors.New("backup: startup verification recovery is closed")),
 		)
+	}
+	if err := capability.validate(capability.parent); err != nil {
+		return ScratchCleanupSummary{}, classifiedBackupError(classifyStartupResidueFailure(err))
+	}
+	if err := validateStartupSourceBoundary(capability); err != nil {
+		return ScratchCleanupSummary{}, classifiedBackupError(failOperation(FailureInvalid, err))
 	}
 	result, err := cleanupVerifyScratchRoot(
 		ctx,
@@ -81,8 +90,8 @@ type StartupRestoreResidueRecovery struct {
 
 // NewStartupRestoreResidueRecovery retains and fixed-local validates an
 // existing restore destination parent without writing it.
-func NewStartupRestoreResidueRecovery(parent string) (*StartupRestoreResidueRecovery, error) {
-	capability, err := newStartupResidueCapability(parent, validateRestoreDestinationParent)
+func NewStartupRestoreResidueRecovery(source, parent string) (*StartupRestoreResidueRecovery, error) {
+	capability, err := newStartupResidueCapability(source, parent, validateRestoreDestinationParent, true)
 	if err != nil {
 		return nil, err
 	}
@@ -115,6 +124,9 @@ func (recovery *StartupRestoreResidueRecovery) List(
 	if err := capability.validate(capability.parent); err != nil {
 		return ResiduePage{}, classifiedBackupError(classifyRestoreDestinationValidation(err))
 	}
+	if err := validateStartupSourceBoundary(capability); err != nil {
+		return ResiduePage{}, classifiedBackupError(failOperation(FailureInvalid, err))
+	}
 	page, err := listResiduesRoot(ctx, capability.parent, limit)
 	if err != nil {
 		return page, classifiedBackupError(classifyStartupResidueFailure(err))
@@ -144,7 +156,10 @@ func (recovery *StartupRestoreResidueRecovery) Recover(
 	if err := capability.validate(capability.parent); err != nil {
 		return outcomeFromResult(Summary{}, classifyRestoreDestinationValidation(err))
 	}
-	err = recoverResidueRoot(ctx, capability.parent, expected, func(*destinationTarget) error { return nil })
+	if err := validateStartupSourceBoundary(capability); err != nil {
+		return outcomeFromResult(Summary{}, failOperation(FailureInvalid, err))
+	}
+	err = recoverResidueRoot(ctx, capability.parent, expected, capability.rejectSourceOverlap)
 	return outcomeFromResult(Summary{}, classifyStartupResidueFailure(err))
 }
 
@@ -158,8 +173,10 @@ func (recovery *StartupRestoreResidueRecovery) Close() error {
 }
 
 func newStartupResidueCapability(
+	source string,
 	parent string,
 	validate func(*retainedDirectory) error,
+	sourceMayBeBelowParent bool,
 ) (*startupResidueCapability, error) {
 	if validate == nil {
 		return nil, classifiedBackupError(
@@ -169,17 +186,108 @@ func newStartupResidueCapability(
 	if err := ensureResidueRecoverySupported(); err != nil {
 		return nil, classifiedBackupError(err)
 	}
+	sourceRoot, err := openRetainedDirectory(source)
+	if err != nil {
+		return nil, classifiedBackupError(failOperation(
+			FailureInvalid,
+			errors.New("backup: startup recovery source is unavailable"),
+		))
+	}
 	directory, err := openRetainedDirectory(parent)
 	if err != nil {
-		return nil, classifiedBackupError(failOperation(FailureInvalid, err))
+		return nil, classifiedBackupError(errors.Join(failOperation(FailureInvalid, err), sourceRoot.Close()))
 	}
 	fail := func(cause error) (*startupResidueCapability, error) {
-		return nil, classifiedBackupError(errors.Join(cause, directory.Close()))
+		return nil, classifiedBackupError(errors.Join(cause, directory.Close(), sourceRoot.Close()))
 	}
 	if err := validate(directory); err != nil {
 		return fail(err)
 	}
-	return &startupResidueCapability{parent: directory, validate: validate}, nil
+	capability := &startupResidueCapability{
+		source: sourceRoot, parent: directory, validate: validate,
+		sourceMayBeBelowParent: sourceMayBeBelowParent,
+	}
+	if err := validateStartupSourceBoundary(capability); err != nil {
+		return fail(failOperation(FailureInvalid, err))
+	}
+	return capability, nil
+}
+
+func validateStartupSourceBoundary(capability *startupResidueCapability) error {
+	if capability == nil || capability.source == nil || capability.parent == nil {
+		return errors.New("backup: startup recovery source boundary is unavailable")
+	}
+	if err := capability.source.verifyPath(); err != nil {
+		return errors.New("backup: startup recovery source identity changed")
+	}
+	if err := capability.parent.verifyPath(); err != nil {
+		return errors.New("backup: startup recovery parent identity changed")
+	}
+	if capability.sourceMayBeBelowParent {
+		return rejectRetainedAncestor(capability.source, capability.parent)
+	}
+	return rejectRetainedDirectoryOverlap(capability.source, capability.parent,
+		errors.New("backup: startup recovery source overlaps writable parent"))
+}
+
+func (capability *startupResidueCapability) rejectSourceOverlap(target *destinationTarget) error {
+	if capability == nil || capability.source == nil || target == nil || target.parent == nil {
+		return errors.New("backup: startup recovery overlap guard is unavailable")
+	}
+	if err := capability.source.verifyPath(); err != nil {
+		return errors.New("backup: startup recovery source identity changed")
+	}
+	if err := visitRetainedAncestorsFromWitness(target.parent, func(directory *retainedDirectory) error {
+		if os.SameFile(directory.identity.info, capability.source.identity.info) {
+			return errors.New("backup: startup recovery target is inside source")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	finalInfo, err := target.parent.root.Lstat(target.finalName)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if finalInfo.Mode()&os.ModeSymlink != 0 || !finalInfo.IsDir() {
+		return errors.New("backup: startup recovery target is not a real directory")
+	}
+	finalDirectory, err := openExpectedDirectory(
+		target.parent,
+		target.finalName,
+		directoryIdentity{info: finalInfo},
+	)
+	if err != nil {
+		return err
+	}
+	finalIdentity := finalDirectory.identity.info
+	if err := finalDirectory.Close(); err != nil {
+		return err
+	}
+	if os.SameFile(finalIdentity, capability.source.identity.info) {
+		return errors.New("backup: startup recovery target is source")
+	}
+	return visitRetainedAncestorsFromWitness(capability.source, func(directory *retainedDirectory) error {
+		if os.SameFile(directory.identity.info, finalIdentity) {
+			return errors.New("backup: startup recovery target contains source")
+		}
+		return nil
+	})
+}
+
+func rejectRetainedAncestor(ancestor, directory *retainedDirectory) error {
+	if ancestor == nil || ancestor.identity.info == nil || directory == nil || directory.identity.info == nil {
+		return errors.New("backup: startup verification identities are unavailable")
+	}
+	return visitRetainedAncestorsFromWitness(directory, func(candidate *retainedDirectory) error {
+		if os.SameFile(ancestor.identity.info, candidate.identity.info) {
+			return errors.New("backup: trusted scratch location is inside verification source")
+		}
+		return nil
+	})
 }
 
 func closeStartupResidueCapability(capability *startupResidueCapability) error {
@@ -192,8 +300,10 @@ func closeStartupResidueCapability(capability *startupResidueCapability) error {
 		return nil
 	}
 	parent := capability.parent
+	source := capability.source
 	capability.parent = nil
-	if err := parent.Close(); err != nil {
+	capability.source = nil
+	if err := errors.Join(parent.Close(), source.Close()); err != nil {
 		return classifiedBackupError(failOperation(FailureInternal, err))
 	}
 	return nil

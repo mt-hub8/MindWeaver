@@ -124,7 +124,7 @@ func validDestinationLeaf(name string) bool {
 		residueReceiptPrefix,
 		residueTempPrefix,
 	} {
-		if strings.HasPrefix(name, prefix) {
+		if hasPlatformReservedPrefix(name, prefix) {
 			return false
 		}
 	}

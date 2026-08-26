@@ -36,8 +36,8 @@ func TestVerifyStandaloneNeedsNoLiveCoordinator(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	scratch := filepath.Join(fixture.root, "standalone-verify-scratch")
-	if err := os.Mkdir(scratch, 0o700); err != nil {
+	scratch, err := prepareStartupVerifyScratchAt(backupPath, t.TempDir())
+	if err != nil {
 		t.Fatal(err)
 	}
 	outcome, err := VerifyStandalone(t.Context(), backupPath, VerifyOptions{ScratchParent: scratch})

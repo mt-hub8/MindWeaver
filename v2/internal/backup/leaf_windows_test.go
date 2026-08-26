@@ -4,6 +4,7 @@ package backup
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -39,6 +40,20 @@ func TestWindowsLeafValidationRejectsAliasesDevicesAndADS(t *testing.T) {
 	for _, name := range []string{"concrete", "com10", "auxiliary", "report.txt", ".hidden"} {
 		if !validResidueLeaf(name) {
 			t.Fatalf("valid Windows leaf rejected: %q", name)
+		}
+	}
+}
+
+func TestWindowsDestinationRejectsCaseVariantReservedPrefixes(t *testing.T) {
+	for _, name := range []string{
+		strings.ToUpper(stagingPrefix) + "canary",
+		strings.ToUpper(restorePrefix) + "canary",
+		strings.ToUpper(verifyScratchPrefix) + "canary",
+		strings.ToUpper(residueReceiptPrefix) + "canary",
+		strings.ToUpper(residueTempPrefix) + "canary",
+	} {
+		if validDestinationLeaf(name) {
+			t.Fatalf("case-variant managed prefix accepted as destination: %q", name)
 		}
 	}
 }

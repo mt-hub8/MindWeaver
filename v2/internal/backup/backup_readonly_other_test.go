@@ -79,12 +79,12 @@ func TestNonWindowsMutatingBackupPathsFailBeforeFilesystemWrites(t *testing.T) {
 	if !errors.Is(err, ErrUnsupportedPlatform) || cleanup != (ScratchCleanupSummary{}) {
 		t.Fatalf("non-Windows scratch cleanup = %+v, %v", cleanup, err)
 	}
-	startupVerifyRecovery, err := NewStartupVerifyScratchRecovery(verifyScratch)
+	startupVerifyRecovery, err := NewStartupVerifyScratchRecovery(root, verifyScratch)
 	if startupVerifyRecovery != nil || !errors.Is(err, ErrUnsupportedPlatform) ||
 		FailureClassOf(err) != FailureUnsupported {
 		t.Fatalf("non-Windows startup verify recovery = %#v, %v", startupVerifyRecovery, err)
 	}
-	startupRestoreRecovery, err := NewStartupRestoreResidueRecovery(root)
+	startupRestoreRecovery, err := NewStartupRestoreResidueRecovery(root, root)
 	if startupRestoreRecovery != nil || !errors.Is(err, ErrUnsupportedPlatform) ||
 		FailureClassOf(err) != FailureUnsupported {
 		t.Fatalf("non-Windows startup restore recovery = %#v, %v", startupRestoreRecovery, err)

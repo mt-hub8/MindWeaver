@@ -619,12 +619,12 @@ func TestVerifyCleanupNeverDeletesReplacementScratch(t *testing.T) {
 	if _, err := fixture.coordinator.Create(t.Context(), backupPath); err != nil {
 		t.Fatal(err)
 	}
-	scratchParent := filepath.Join(fixture.root, "cleanup-swap-parent")
-	if err := os.Mkdir(scratchParent, 0o700); err != nil {
+	scratchParent, err := prepareStartupVerifyScratchAt(backupPath, t.TempDir())
+	if err != nil {
 		t.Fatal(err)
 	}
 	var replacementCanary string
-	_, err := verifyBackup(t.Context(), backupPath, VerifyOptions{ScratchParent: scratchParent}, verifyHooks{
+	_, err = verifyBackup(t.Context(), backupPath, VerifyOptions{ScratchParent: scratchParent}, verifyHooks{
 		beforeScratchCleanup: func(staging *stagingDirectory) error {
 			original := staging.directory.path + "-original"
 			if err := errors.Join(
@@ -660,7 +660,7 @@ func TestVerifyCleanupNeverDeletesReplacementScratch(t *testing.T) {
 	if err := fixture.database.Close(); err != nil {
 		t.Fatal(err)
 	}
-	recovery, err := NewStartupVerifyScratchRecovery(scratchParent)
+	recovery, err := NewStartupVerifyScratchRecovery(t.TempDir(), scratchParent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -707,8 +707,8 @@ func TestStartupVerifyScratchRecoveryRecoversForcedExitAndExposesTruncation(t *t
 	if _, err := fixture.coordinator.Create(t.Context(), backupPath); err != nil {
 		t.Fatal(err)
 	}
-	scratchParent := filepath.Join(fixture.root, "kill-scratch")
-	if err := os.Mkdir(scratchParent, 0o700); err != nil {
+	scratchParent, err := prepareStartupVerifyScratchAt(backupPath, t.TempDir())
+	if err != nil {
 		t.Fatal(err)
 	}
 	runForcedExit := func() {
@@ -737,7 +737,7 @@ func TestStartupVerifyScratchRecoveryRecoversForcedExitAndExposesTruncation(t *t
 		page.Items[0].State != ResidueStateStaging || page.Items[1].State != ResidueStateStaging {
 		t.Fatalf("Verify crash residue = %+v, %v", page, err)
 	}
-	recovery, err := NewStartupVerifyScratchRecovery(scratchParent)
+	recovery, err := NewStartupVerifyScratchRecovery(t.TempDir(), scratchParent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -756,7 +756,10 @@ func TestStartupVerifyScratchRecoveryRecoversForcedExitAndExposesTruncation(t *t
 }
 
 func TestCleanupVerifyScratchNeverDeletesAnotherResidueKind(t *testing.T) {
-	parentPath := t.TempDir()
+	parentPath, err := prepareStartupVerifyScratchAt(t.TempDir(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	parent, err := openRetainedDirectory(parentPath)
 	if err != nil {
 		t.Fatal(err)
@@ -779,7 +782,7 @@ func TestCleanupVerifyScratchNeverDeletesAnotherResidueKind(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	recovery, err := NewStartupVerifyScratchRecovery(parentPath)
+	recovery, err := NewStartupVerifyScratchRecovery(t.TempDir(), parentPath)
 	if err != nil {
 		t.Fatal(err)
 	}
