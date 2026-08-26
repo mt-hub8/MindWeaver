@@ -48,11 +48,10 @@ callers can mechanically classify publication uncertainty.
 
 ## Deliberately open acceptance work
 
-Only the publish-to-database-reference point of the frozen six-checkpoint
-forced-termination matrix has real-process coverage here. Staging
-copy/durability, candidate creation, pre-publish rename, database-apply
-uncertainty, and committed response/exact-replay process-kill points remain
-open.
+Only the publish-to-database-reference point has real-process coverage here.
+The superseding checkpoint definitions and their exact open/closed status are
+frozen in `blob001-persistence-checkpoint-matrix-b99fb42.md`; that matrix does
+not treat the earlier same-process boundary tests as forced-termination proof.
 
 The following also prevent a PASS recommendation:
 
