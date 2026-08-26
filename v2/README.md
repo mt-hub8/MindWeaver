@@ -29,9 +29,11 @@ incompatible file is reported as unavailable without disabling TXT/Markdown.
 This is still a development build, not a qualified release. The implemented
 paths above have automated evidence, but they have not passed the complete
 release, durability, security, and platform qualification matrix. Ask and
-citations, a product-reachable backup/restore workflow, legacy migration,
-packaging, and release qualification remain incomplete; the presence of
-lower-level code must not be read as a supported product promise.
+citations, a product-reachable backup/restore workflow, Go schema-upgrade
+qualification, packaging, and release qualification remain incomplete; the
+presence of lower-level code must not be read as a supported product promise.
+The product intentionally creates a fresh Vault and exposes no Java/MySQL data
+import command or compatibility path.
 
 The isolated `spikes/sqlite` module is dependency qualification evidence, not a
 production storage implementation.

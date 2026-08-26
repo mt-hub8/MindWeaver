@@ -4,7 +4,8 @@
 - Date: 2026-08-23
 - Supersedes: the generic job/event protocol in ADR 0004, the durable
   invocation ledger in ADR 0005, the persisted retrieval-snapshot and semantic
-  verification model in ADR 0006, and the broad migration scope in ADR 0008
+  verification model in ADR 0006, and (historically) the broad migration scope
+  in ADR 0008; ADR 0014 now supersedes that migration decision in full
 
 ## Context
 
@@ -45,7 +46,7 @@ event system.
 ### Documents and retrieval
 
 SQLite owns documents, revisions, chunks, collection membership, lifecycle,
-and which revision is active. Immutable content-addressed files own imported
+and which revision is active. Immutable content-addressed files own newly ingested
 source bytes. New chunks and FTS rows are built for one document revision and
 become visible through one SQLite activation transaction; a failed build leaves
 the prior active revision searchable.
@@ -81,7 +82,7 @@ message fails as outcome-uncertain and is never automatically replayed. A user
 retry creates a new message. The provider is not claimed to enforce local lease
 or fencing metadata.
 
-### Deletion and migration
+### Deletion and historical migration decision
 
 Trash immediately removes a document from retrieval and remains reversible.
 Permanent deletion transactionally removes known in-scope SQLite/FTS ownership;
@@ -90,13 +91,17 @@ failure is reported as failure. The first release does not issue a signed
 erasure receipt, retain an unbounded command ledger, or claim deletion from
 future subsystems that do not exist.
 
-Migration is written only after the target schema stabilizes. The read-only
+The following migration decision is superseded in full by ADR 0014. The read-only
 legacy exporter includes canonical documents that still exist, verified
 collection membership, consistent lifecycle, and non-secret provider intent.
 Derived chunks/vectors/caches, executable jobs, Agent/Memory/Batch/Evaluation
 state, and legacy ciphertext do not become live Go state. Selected task/history
 material may enter a checksummed non-executable archive. There is no generic
 incremental interchange framework in the first release.
+
+The current product instead creates a fresh Vault and exposes no legacy import
+surface. Ordinary Go SQLite schema upgrades are not legacy-data migration and
+remain required.
 
 ## Consequences
 

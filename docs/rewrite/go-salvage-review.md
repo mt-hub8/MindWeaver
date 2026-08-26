@@ -19,7 +19,7 @@ None of the following candidate commits is accepted as a unit:
 | --- | --- | --- |
 | `238ea04` platform/data kernel | Reject whole commit | Adds 3,594 lines without a SQLite/Event/Job adapter. Six overlapping coordination fields and caller-constructed before/after snapshots are not justified for one local writer. |
 | `049ebb4` purge and ingestion hardening | Reject whole commit | An unbounded command-receipt ledger and a fourteen-class purge commitment model future subsystems that are not in the core. |
-| RAG/provider/security/migration WIP in `5a8d` | Reject whole worktree | Roughly 9,938 lines still provide no HTTP handler, provider client, or completed RAG path. The 1,483-line invocation protocol is larger than the missing user workflow it is meant to protect. |
+| RAG/provider/security and abandoned migration WIP in `5a8d` | Reject whole worktree | Roughly 9,938 lines still provide no HTTP handler, provider client, or completed RAG path. The 1,483-line invocation protocol is larger than the missing user workflow it is meant to protect. |
 
 Review decisions apply to code, not just packages. A named invariant below may
 be reimplemented in a smaller vertical slice; that is not authorization to copy
@@ -44,16 +44,16 @@ threshold.
 
 | Surface | Decision | What survives | Replacement gate |
 | --- | --- | --- | --- |
-| `go.mod`, build scripts, `platform/version` | `CORE_KEEP_SEMANTICS` | Standalone Go module, reproducible build, embedded version | Clean-checkout build remains green after every slice |
-| `spikes/sqlite` | `ARCHIVE_ONLY` as qualification evidence | CGO-free Windows measurements for `ncruces/go-sqlite3`, including WAL, FTS5, cancellation, disk-full, backup and process-kill probes | Production store must independently pass integration and recovery tests |
+| `go.mod`, build scripts, `platform/version` | `SIMPLIFY_NOW` | Standalone Go module, reproducible build, embedded version | Clean-checkout build remains green after every slice |
+| `spikes/sqlite` | qualification evidence only | CGO-free Windows measurements for `ncruces/go-sqlite3`, including WAL, FTS5, cancellation, disk-full, backup and process-kill probes | Production store must independently pass integration and recovery tests |
 | `platform/clock.go` | `SIMPLIFY_NOW` | A tiny injectable clock where a real persisted timeout needs it | At least one production consumer |
 | `platform/id.go` | `SIMPLIFY_NOW` | Opaque UUID parsing/generation | Use a maintained UUID implementation; database sequence/cursor supplies ordering |
 | `platform/config/**` | `CORE_REBUILD_FROM_ZERO` | Explicit Vault location and only options actually exposed by the product | Start the application with a fresh and existing Vault; reject unsafe locations |
 | `platform/apperror/**` | `SIMPLIFY_NOW` | Safe internal error chain and stable code | One mapping table to the small HTTP Problem surface |
 | `platform/event/**` | `DROP` | No generic envelope | Add a typed SQLite change log only when a real cross-restart UI stream requires it |
 | `job/contracts.go` | `CORE_REBUILD_FROM_ZERO` | Durable local background work, bounded retry, cancellation, lease takeover | Real SQLite store with one `lease_token` CAS and two-connection/restart tests |
-| `internal/document/**` | `DROP` code; `CORE_KEEP_SEMANTICS` invariants | Source/content hash, extractor version, and failed rebuild cannot replace a usable revision | Upload-to-search integration through SQLite and Blob storage |
-| `internal/collection/**` | `DROP` code; `CORE_KEEP_SEMANTICS` invariants | True many-to-many membership; an explicitly empty scope returns no results | Normalized SQL tables and public search test |
+| `internal/document/**` | `DROP` code; `SIMPLIFY_NOW` invariants | Source/content hash, extractor version, and failed rebuild cannot replace a usable revision | Upload-to-search integration through SQLite and Blob storage |
+| `internal/collection/**` | `DROP` code; `CORE_REQUIREMENT_ONLY` | True many-to-many membership; an explicitly empty scope returns no results | Normalized SQL tables and public search test |
 | `internal/ingestion/**` | `DROP` | No separate execution state machine | One actual `INGEST_DOCUMENT` job handler with a bounded payload/checkpoint |
 | `internal/indexing/**` | `DROP` code; `SIMPLIFY_NOW` invariant | New derived rows become visible atomically for one document; failure leaves the prior revision searchable | SQLite transaction and two-document regression test |
 | `internal/provider/capability.go` | `DROP` then rebuild small | Only capabilities exercised by a real adapter | Minimal `ChatClient`; add streaming/embedding only with a consumer |
@@ -100,11 +100,12 @@ Retained behavior is limited to:
 - a deletion operation cannot report success while a known in-scope database
   or blob removal failed.
 
-### RAG/provider/security/migration WIP
+### RAG/provider/security and abandoned migration WIP
 
 Delete the invocation proof hierarchy, capability registry, retrieval snapshot
 ledger, answer-verification aggregate, speculative OpenAPI changes, and generic
-full/incremental migration format.
+full/incremental migration format. The Java exporter, neutral package, Go
+importer, migration CLI, and legacy-import schema are discarded under ADR 0014.
 
 One small implementation fragment is eligible for manual extraction after
 review: a secret-token type that refuses ordinary formatting and JSON
@@ -117,9 +118,9 @@ Citation structure is rebuilt as a server-owned
 actually included in that answer's model context. Structural citation checks
 must never be labelled semantic verification.
 
-Migration is designed only after the target schema is stable. It will be a
-one-time, read-only Java exporter and idempotent Go importer for data explicitly
-classified as canonical by the legacy salvage review.
+The product creates a fresh Vault and accepts content only through ordinary
+bounded Go upload. Go's own SQLite schema upgrades and new-Vault backup/restore
+remain required.
 
 ## First release surface
 
@@ -170,7 +171,8 @@ The protocol tests being removed are replaced by tests of these outcomes:
 
 Agent, Agent Profile, Memory, Batch, Notification, Evaluation, Qdrant, vector
 retrieval, hybrid fusion, reranking, query understanding, retrieval trace,
-permanent-delete proofs, generic external-call forensics, generic incremental
-migration, LAN exposure, accounts, collaboration and cloud synchronization are
+permanent-delete proofs, generic external-call forensics, LAN exposure,
+accounts, collaboration and cloud synchronization are
 not dormant first-release implementations. They are absent and must earn a new
-zero-to-one design and promotion ADR later.
+zero-to-one design and promotion ADR later. Java/MySQL data conversion is
+`DROP`, not a dormant later slice.

@@ -1,9 +1,9 @@
 # ADR 0008: Migration, cutover, and rollback
 
-- Status: Superseded in part by ADR 0012
+- Status: Superseded by ADR 0014
 - Date: 2026-08-23
 
-## Decision
+## Historical decision
 
 Migration crosses a neutral, versioned package produced by a read-only Java
 exporter and consumed idempotently by Go. Canonical source files, document
@@ -26,3 +26,8 @@ exception review. The old Java data stays read-only through the rollback window.
   pre-cutover backup; Go never writes legacy stores.
 - Go becomes the sole writer only after Gate 8 passes, and repository extraction
   follows the final verified migration package.
+
+None of the above is a current product requirement. ADR 0014 removes the Java
+exporter, neutral package, Go importer, migration CLI, legacy-import SQLite
+schema, and largest-legacy-Vault qualification from the release. This record is
+retained only to explain why abandoned candidate branches exist.

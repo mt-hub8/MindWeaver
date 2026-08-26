@@ -3,7 +3,7 @@
 Status values are `NOT_IMPLEMENTED`, `IMPLEMENTED`, `PASS`, and `BLOCKED`.
 `PASS` requires a committed automated test or a versioned release artifact plus
 the exact command/report location. Manual inspection alone cannot close a row.
-Only `Phase=CORE` rows are release blockers. `LATER` and `ARCHIVE` preserve
+Only `Phase=CORE` rows are release blockers. `LATER` rows preserve
 traceability without expanding the first Go release.
 
 | ID | Required outcome | Phase | Core gate | Current status | Required evidence |
@@ -50,14 +50,9 @@ traceability without expanding the first Go release.
 | SEC-002 | Logs/events/artifacts exclude secrets, prompts and source content by policy | CORE | YES | NOT_IMPLEMENTED | canary leakage scan |
 | UI-001 | Enabled CORE first-run, offline/no-model, progress, recovery and diagnostics are operable | CORE | YES | NOT_IMPLEMENTED | browser E2E screenshots and assertions |
 | UI-002 | Enabled CORE workflows pass keyboard, focus, scaling, high contrast and Chinese input checks | CORE | YES | NOT_IMPLEMENTED | accessibility acceptance report |
-| MIG-001 | Java exporter is read-only and emits a neutral checksummed package | CORE | YES | NOT_IMPLEMENTED | exporter tests against versioned fixtures |
-| MIG-002 | Go import is idempotent, rebuilds CORE derivatives and quarantines unsupported legacy data | CORE | YES | NOT_IMPLEMENTED | import-twice and quarantine report |
-| MIG-003 | Largest real Vault verifies hashes, CORE relations, lifecycle and exceptions | CORE | YES | NOT_IMPLEMENTED | sanitized signed verification report |
-| HIS-001 | Ordinary task and prompt history is checksummed, readable and permanently non-executable | ARCHIVE | NO | NOT_IMPLEMENTED | archive import/read/export test and execution-surface absence audit |
-| HIS-002 | Legacy benchmark/worker outputs are leakage-reviewed, checksummed and labeled non-authoritative | ARCHIVE | NO | NOT_IMPLEMENTED | archive manifest and sensitive-content scan |
 | REL-001 | Race, fuzz, fault, performance and soak gates pass for CORE scope | CORE | YES | NOT_IMPLEMENTED | core release qualification bundle |
 | REL-002 | Windows package is signed, offline installable, upgradable and uninstallable | CORE | YES | NOT_IMPLEMENTED | clean-machine matrix, SBOM and signatures |
-| CUT-001 | Go is sole writer; Java is frozen read-only with supported migration exit | CORE | YES | NOT_IMPLEMENTED | final cutover record |
+| CUT-001 | Go is the sole product writer; installation creates a fresh Vault and exposes no Java/MySQL data-import path | CORE | YES | NOT_IMPLEMENTED | production dependency/surface audit and clean first-run record |
 | CUT-002 | Extracted repository builds/packages with no parent dependency | CORE | YES | NOT_IMPLEMENTED | clean-clone release CI |
 
 `ARC-001` records the current walking-skeleton evidence only. It must be rerun

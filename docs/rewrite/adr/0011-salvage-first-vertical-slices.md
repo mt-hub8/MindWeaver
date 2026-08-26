@@ -21,16 +21,14 @@ code merely because work has been invested in it.
 Every legacy capability and every Go package receives an explicit salvage
 decision. The allowed outcomes are:
 
-- `CORE_KEEP_SEMANTICS`: preserve a proven user-visible behavior or canonical
-  user data, but not the legacy implementation.
+- `CORE_REQUIREMENT_ONLY`: preserve a proven narrow user-visible requirement,
+  but no legacy code, schema, identifier, or stored record.
 - `CORE_REBUILD_FROM_ZERO`: the need belongs in the first local-workbench
   release, while the existing Java/Go implementation is discarded.
 - `SIMPLIFY_NOW`: retain only a named invariant or small implementation fragment
   and replace the surrounding abstraction with the smallest working design.
 - `LATER_FROM_ZERO`: exclude it from the first release and design it later from
   current product evidence, not from legacy compatibility.
-- `ARCHIVE_ONLY`: keep readable, checksummed history without importing it into
-  an executable state machine.
 - `DROP`: neither code nor behavior enters the Go product.
 
 Code, documentation, tests, and endpoint count are not value evidence by
@@ -55,7 +53,7 @@ The initial Go core is limited to:
 3. provider configuration and safe transport, a minimal crash-aware call
    journal, answer context, citations/refusal, and conversations;
 4. a loopback-only authenticated API and embedded UI;
-5. migration of only canonical data selected by the salvage review.
+5. new-Vault backup/restore and versioned Go schema upgrades.
 
 Agent workflows, agent profiles, memory, batch ingestion, notifications,
 evaluation, Qdrant, advanced hybrid/rerank/query-understanding experiments, and
@@ -89,7 +87,7 @@ Before implementation resumes, the repository must contain:
 1. a complete Java feature/data salvage matrix;
 2. a package-by-package Go keep/simplify/defer/delete review;
 3. a first-release surface small enough to exercise end to end;
-4. acceptance rows explicitly marked `CORE`, `LATER`, or `ARCHIVE`.
+4. acceptance rows explicitly marked `CORE` or `LATER`.
 
 No candidate branch is merged solely because it is internally consistent or
 test-green.

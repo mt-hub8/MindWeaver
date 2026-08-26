@@ -4,14 +4,15 @@ This is the Gate 0 inventory of the legacy Java/Python implementation. The
 machine-readable source of truth is [`legacy-inventory.csv`](./legacy-inventory.csv);
 [`scripts/validate-legacy-inventory.ps1`](./scripts/validate-legacy-inventory.ps1)
 rescans the repository and fails if a covered artifact is missing, stale, mapped
-to an unknown disposition, or lacks a Go target, migration rule, or acceptance
+to an unknown disposition, or lacks a Go target, data-disposition rule, or acceptance
 ledger row.
 
 The inventory records what static source inspection proves. `SOURCE_IDENTIFIED`
 means that the artifact/declaration/data field was found in source; it does not
 mean that its full runtime or user-visible semantics have been confirmed.
-`UNCONFIRMED_GAP` is used for questions that require a live database, deployment
-evidence, or real migration fixture.
+`UNCONFIRMED_GAP` is used for questions that would require a live legacy
+database or deployment evidence. Those unknowns are recorded as reasons not to
+read or convert legacy data; they are not release work.
 
 ## Coverage snapshot
 
@@ -35,8 +36,8 @@ The current inventory contains 705 rows:
 | User/operational data categories | 25 | Canonical, sensitive, derived, archival, and ephemeral ownership groups |
 | Explicit unresolved gaps | 8 | Items that static repository inspection cannot safely claim as known |
 
-The disposition totals are 32 `KEEP_SEMANTICS`, 482 `REDESIGN`, 36
-`REBUILD`, 26 `ARCHIVE_ONLY`, 23 `DEFER`, and 106 `DROP`. These totals count
+The disposition totals are 31 `KEEP_SEMANTICS`, 402 `REDESIGN`, 80
+`REBUILD`, 23 `DEFER`, and 169 `DROP`. These totals count
 artifacts, not independent product features.
 
 ## Salvage boundary
@@ -49,14 +50,13 @@ CSV row:
 
 | Salvage decision | Feature count | Artifact count | First-release meaning |
 | --- | ---: | ---: | --- |
-| `CORE_KEEP_SEMANTICS` | 2 | 20 | Preserve only Collection M:N and Trash/restore user semantics; reuse no Java code |
-| `CORE_REBUILD_FROM_ZERO` | 16 | 202 | Need is core, but Java implementation, schema, and protocols are rejected |
+| `CORE_REQUIREMENT_ONLY` | 2 | 20 | Preserve only Collection M:N and Trash/restore requirements; reuse no Java code, schema, identifier, or stored record |
+| `CORE_REBUILD_FROM_ZERO` | 15 | 165 | Need is core, but Java implementation, schema, protocols, and stored state are rejected |
 | `LATER_FROM_ZERO` | 13 | 351 | Capability, route, schema, job, and UI must be absent from the first release |
-| `ARCHIVE_ONLY` | 2 | 26 | Retain checksummed readable history with no executable path |
-| `DROP` | 7 | 106 | Do not carry the product or implementation surface into Go |
+| `DROP` | 10 | 169 | Do not carry the product, implementation, or legacy data surface into Go |
 
-Thus 222 artifact rows trace to 18 CORE features, but only 20 rows trace to the
-two narrow semantics-retention decisions. Artifact volume is not reuse evidence.
+Thus 185 artifact rows trace to 17 CORE features, but only 20 rows trace to the
+two narrow requirements-retention decisions. Artifact volume is not reuse evidence.
 Agent/Profile, Memory, Batch, Notification, Evaluation, Qdrant, advanced
 Hybrid/RRF/rerank/query-understanding, all embeddings/vector retrieval, reindex,
 storage/cache controls, and advanced health/repair are all `LATER_FROM_ZERO`.
@@ -64,9 +64,10 @@ Ordinary Task execution,
 development mutation endpoints, Java/Spring/Maven, MySQL, RabbitMQ, Python
 workers, and the legacy production Compose topology are not Go product scope.
 
-The acceptance ledger now has 41 `CORE` blockers, 8 `LATER` non-blockers, and
-2 `ARCHIVE` non-blockers. A later or archive row cannot hold the lean core
-release open, and promotion requires a separate accepted vertical slice.
+The acceptance ledger now has 38 `CORE` blockers and 8 `LATER` non-blockers.
+A later row cannot hold the lean core release open, and promotion requires a
+separate accepted vertical slice. Retired `MIG-*` and `HIS-*` IDs are rejected
+by the validator and cannot re-enter the inventory.
 
 Shared shell/navigation/landing assets remain under `MW-UI-001`. Business
 assets are not allowed to collapse into a generic UI row: for example,
@@ -89,9 +90,9 @@ surfaces. Gate 0 adds these IDs so no inventory row is left without an owner:
 | `MW-RUN-001` | Local launch/shutdown/environment tooling |
 | `MW-STO-001` | Storage summary and cache controls |
 | `MW-CCH-001` | Embedding/retrieval caches |
-| `MW-TSK-001` | Ordinary task history, prompts, and results |
+| `MW-TSK-001` | Dropped ordinary task history, prompts, and results |
 | `MW-DEV-001` | Development-only task mutation/dispatch endpoints |
-| `MW-RPT-001` | Legacy generated evaluation/benchmark outputs |
+| `MW-RPT-001` | Dropped legacy generated evaluation/benchmark outputs |
 | `MW-INF-004` | Java/Spring/Maven runtime and build stack |
 | `MW-INF-005` | Optional local Ollama runtime |
 | `MW-INF-006` | Legacy Docker Compose development stack |
@@ -101,51 +102,47 @@ machine inventory has zero unowned artifacts. This is traceability closure, not
 implementation closure; acceptance rows remain open until their required tests
 and reports pass.
 
-## Binding migration rules
+## Binding historical data dispositions
 
-- Canonical user inputs and relations are exported read-only, checksummed,
-  validated, and imported idempotently. Ambiguous references go to quarantine.
-- Chunks, embeddings, vector indexes, and caches are derived data. Their legacy
-  rows/volumes can support diagnostics, but Go rebuilds them from verified
-  canonical inputs and frozen fingerprints.
-- Legacy task, agent, scheduler, outbox, and Rabbit delivery state never enters
-  the Go Job state machine. Completed history may be archived; unresolved work
-  is reported and requires an explicit user decision.
-- Provider secrets and settings never become live Go configuration. The neutral
-  package records only a content-free requirement to configure and freshly
-  probe loopback Ollama; credentials and cloud-provider values are neither
-  exported nor imported.
-- PID files, Python environments/bytecode, and broker delivery metadata are not
-  migrated. Legacy report files are checksummed and labeled archival, and cannot
-  satisfy Go acceptance evidence.
-- Qdrant remains optional/deferred and non-authoritative. Its vectors are rebuilt
-  only after the backend conformance suite passes.
+- The Go product does not read, export, translate, quarantine, archive into the
+  product, or import any Java/MySQL user or operational state.
+- Users create a fresh Vault and add supported TXT, Markdown, and text PDF files
+  through the ordinary bounded Go upload path. Only those new Go-owned bytes and
+  records can become canonical product state.
+- Legacy chunks, embeddings, vector indexes, caches, task/agent/scheduler state,
+  reports, worker outputs, broker messages, and container volumes remain outside
+  the Go product and release evidence.
+- Legacy provider settings, ciphertext, credentials, environment values, and
+  process metadata are not read or translated. Optional loopback Ollama is
+  configured and probed afresh through the Go product.
+- Java source and schemas remain only historical review evidence in this parent
+  repository. They are absent from the extracted repository and the exact two-
+  executable Windows release.
+- Normal SQLite `001` through `006` migrations remain Go-to-Go schema evolution;
+  they do not authorize a legacy-data adapter or compatibility path.
 
 ## Unconfirmed findings that must not be promoted to facts
 
-1. The 101-index count is the migration-declared logical schema. MySQL may create
-   or rename supporting foreign-key indexes; supported fixtures and a sanitized
-   real migration rehearsal must capture `SHOW CREATE TABLE` and `SHOW INDEX`.
+1. The 101-index count is the Flyway-declared logical schema. MySQL may create or
+   rename supporting foreign-key indexes; no product claim is made about a live
+   legacy database and no live-schema probe ships.
 2. Single-file upload code persists extracted `source_text`, while durable source
-   bytes were found only in batch staging. Migration must report every document
-   lacking original bytes and either import verified text with a degraded-source
-   marker or require re-upload.
+   bytes were found only in batch staging. This is one reason database conversion
+   is unsupported; users re-upload available supported source files.
 3. Conversation history is a retained target requirement, but no production
-   controller/entity/Flyway implementation was found. Migration must not invent
-   conversations from one-shot answers.
+   controller/entity/Flyway implementation was found. Go creates conversation
+   state only from new product interactions.
 4. No application-level HTTP authentication/session enforcement was found in the
    scanned production sources. That does not prove that every historical
    deployment lacked an external control; Go still must pass its own bootstrap,
    session, CSRF, Host, Origin, and CSP attack suite.
 5. Source inspection cannot establish real row counts, encodings, orphan rates,
-   staging-file availability, or largest-Vault size. `MIG-003` requires a
-   sanitized, signed rehearsal report before cutover.
+   staging-file availability, or largest-Vault size. No conversion or capacity
+   promise is inferred from the repository.
 6. Default and Docker profiles name different MySQL databases and ports. The
-   exporter must require explicit read-only source selection/fingerprinting and
-   may not guess which schema contains the user's data.
-7. Encrypted provider keys and their legacy master keys are outside the v1 live
-   migration scope. The exporter never decrypts or emits them; reports contain
-   only bounded content-free classification, never ciphertext or plaintext.
+   Go product must not guess, probe, or open either legacy schema.
+7. Encrypted provider keys and their legacy master keys are outside the Go
+   product. No exporter exists and neither ciphertext nor plaintext is read.
 8. `pom.xml` requires Java 21, while the Windows check script says JDK 17+.
    Java 17 compatibility is unproven; the conflict is archived and must not be
    copied into Go release prerequisites.
@@ -159,8 +156,9 @@ From the repository root:
 ```
 
 `-ListDiscovered` prints the current mapping, and `-EmitInventory` emits a
-candidate CSV to standard output for review. Emission never overwrites the
-committed inventory; reviewed edits must still be applied deliberately. The
-validator also requires every feature to have exactly one ten-field salvage
-review, enforces the salvage/scope pairing in all 705 rows, and verifies that
-only `CORE` acceptance rows have `Core gate=YES`.
+candidate CSV to standard output for review. The validator first validates the
+feature matrix, salvage review, and acceptance ledger even in emission mode. It
+requires every feature to have exactly one ten-field salvage review, enforces
+the salvage/scope pairing and exact twelve-column schema in all 705 rows, rejects
+retired migration/history acceptance IDs, and verifies that only `CORE`
+acceptance rows have `Core gate=YES`.

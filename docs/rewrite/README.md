@@ -3,13 +3,13 @@
 ## Objective
 
 Replace the Java implementation with a local-first Go application that can be
-installed, operated, backed up, restored, migrated, and removed without MySQL,
-RabbitMQ, or Python workers. The Java tree is a read-only source of product
-knowledge and legacy data, not an implementation template.
+installed, operated, backed up, restored, upgraded, and removed without MySQL,
+RabbitMQ, or Python workers. The Java tree is read-only historical product
+evidence, not an implementation template or a supported user-data source.
 
 The Go implementation is developed under `v2/` and must be independently
 buildable from its first executable milestone. It will be extracted to a new
-repository only after migration and release qualification pass.
+repository only after release qualification passes.
 
 ## Product boundary
 
@@ -25,7 +25,7 @@ The first release is salvage-first, not a Java parity rewrite. Its product slice
 is canonical documents and lifecycle, true M:N collections, controlled keyword
 retrieval, Ask with refusal and same-context citations, optional loopback Ollama
 with durable message outcomes, conversation, secure local UI/session, plaintext
-Vault backup/restore, and legacy migration. Agent,
+Vault backup/restore, and versioned Go-to-Go schema upgrades. Agent,
 Profile, Memory, Batch, Notification, Evaluation, Qdrant, reindex, advanced
 retrieval/rerank/query understanding, cache/storage consoles, and advanced index
 repair are absent until separately rebuilt from zero and accepted.
@@ -33,7 +33,7 @@ repair are absent until separately rebuilt from zero and accepted.
 ## Architectural invariants
 
 1. SQLite is authoritative for first-release state, membership, and lifecycle.
-2. Immutable blobs are authoritative for imported source bytes.
+2. Immutable blobs are authoritative for source bytes ingested by the Go product.
 3. FTS and chunks are rebuildable first-release derivatives. Embeddings, vector
    indexes, and caches belong to later independently accepted slices.
 4. Core background work uses one durable job protocol that prevents concurrent
@@ -62,7 +62,7 @@ repair are absent until separately rebuilt from zero and accepted.
 | --- | --- |
 | Platform and data kernel | runtime, configuration, storage, jobs, recovery, backup, purge foundations |
 | Knowledge pipeline | documents, collections, ingestion, deterministic chunking, SQLite FTS retrieval |
-| RAG and product | providers, egress, answers, citations, conversations, API/UI, migration, advanced AI capabilities |
+| RAG and product | providers, egress, answers, citations, conversations, API/UI, advanced AI capabilities |
 | Integration control | architecture decisions, interface arbitration, commit integration, end-to-end gates, release qualification |
 
 ## Delivery discipline
@@ -76,8 +76,9 @@ repair are absent until separately rebuilt from zero and accepted.
   database/model service.
 - A feature flag cannot conceal an incomplete invariant or preserve duplicate
   production paths indefinitely.
-- Java receives no new product features; only export, migration, or critical data
-  safety fixes are allowed.
+- Java receives no new product features or migration tooling. It remains frozen
+  historical reference and is excluded from Go build, runtime, release, and
+  user-data flows.
 
 ## Accepted decisions
 
@@ -87,7 +88,7 @@ superseded explicitly; implementation convenience is not an exception.
 
 End-to-end completion is tracked in
 [`acceptance-ledger.md`](./acceptance-ledger.md). A green unit test does not close
-a row that requires crash, migration, security, or clean-machine evidence.
+a row that requires crash, schema-upgrade, security, or clean-machine evidence.
 
 Gate 0 legacy coverage is tracked in the machine-readable
 [`legacy-inventory.csv`](./legacy-inventory.csv), with its human review in
@@ -95,14 +96,14 @@ Gate 0 legacy coverage is tracked in the machine-readable
 salvage decisions and their evidence are in
 [`legacy-salvage-review.md`](./legacy-salvage-review.md). Run
 `docs/rewrite/scripts/validate-legacy-inventory.ps1` whenever a legacy artifact,
-feature disposition, salvage decision, migration rule, or acceptance binding
+feature disposition, salvage decision, data-disposition rule, or acceptance binding
 changes.
 
 ## Definition of complete
 
 The lean rewrite is complete when every `CORE` capability has a closed
-traceability row, all in-scope canonical data migrates with a machine-readable
-verification report, core release and disaster-recovery gates pass, Go is the
-sole writer, `v2/` builds from a clean standalone checkout, and the Java
-repository is archived with a supported migration exit. `LATER` and `ARCHIVE`
-acceptance rows preserve traceability but cannot block this release.
+traceability row, core release and disaster-recovery gates pass, Go is the sole
+writer of newly created Vaults, `v2/` builds from a clean standalone checkout,
+and the extracted product has no Java/MySQL import path or parent-repository
+dependency. `LATER` review rows preserve traceability but cannot block this
+release.

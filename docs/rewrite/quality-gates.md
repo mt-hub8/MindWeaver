@@ -34,7 +34,7 @@
 
 ## Gate 4: knowledge lifecycle
 
-- TXT, Markdown, and supported PDF import flows close success, failure, retry,
+- TXT, Markdown, and supported PDF upload flows close success, failure, retry,
   cancellation, crash, trash, restore, and purge paths.
 - No old, failed, trashed, purging, or foreign-scope generation is retrievable.
 - Reindex remains absent until a later accepted slice proves its isolation.
@@ -55,27 +55,30 @@
   document, path traversal, and oversized response tests pass.
 - Keyboard, focus, high-contrast, scaling, and Chinese input acceptance pass.
 
-## Gate 7: migration
+## Gate 7: fresh-Vault adoption and Go upgrades
 
-- Read-only export and idempotent import succeed twice on the largest real Vault.
-- File hashes, document lifecycle, collection membership, and quarantine
-  differences are fully reported. Unsupported legacy state never becomes live.
-- Derived indexes are rebuilt rather than copied from inconsistent legacy stores.
+- A clean installation creates and reopens a new Go Vault, then ordinary
+  TXT/Markdown/PDF upload builds the only supported initial dataset.
+- Every declared supported Go SQLite schema version upgrades through the normal
+  application path with backup, rollback/failure, and compatibility evidence.
+- Command, dependency, and package audits prove that no Java/MySQL exporter,
+  neutral legacy package, legacy importer, or migration executable is shipped.
 
 ## Gate 8: release qualification
 
 - Race, fuzz, fault injection, E2E, performance, soak, N-1/N-2 upgrade, backup
   restore, offline egress, signing, SBOM, vulnerability, and license gates pass.
-- No unaccepted P0/P1 data, security, migration, or release risk remains.
+- No unaccepted P0/P1 data, security, upgrade, or release risk remains.
 
-## Gate 9: cutover and repository extraction
+## Gate 9: fresh-Vault release and repository extraction
 
-- Java is frozen read-only and Go is the only writer.
-- Final migration package and verification report are archived.
+- Java is frozen historical reference and Go is the only product writer.
+- A clean first-run record proves the fresh-Vault path; no legacy data exit is
+  advertised or packaged.
 - The extracted Go repository builds and packages from a clean clone without any
   parent-directory or Java dependency.
-- The legacy repository publishes the final exporter and points users to the new
-  product and migration guide.
+- The legacy repository points users to the new product and explicitly states
+  that supported source files must be uploaded into a fresh Vault.
 
 ## Per-capability closure matrix
 
@@ -98,7 +101,7 @@ sleep/low disk
 security/privacy
 diagnostics
 backup/upgrade
-migration/rollback
+Go schema upgrade/rollback
 automated acceptance test
 user documentation
 ```
