@@ -139,7 +139,7 @@ foreach ($line in Get-Content $ledgerPath) {
 if ($acceptanceIds.Count -ne 46) { throw "Acceptance ledger has $($acceptanceIds.Count) rows, want 46" }
 $coreAcceptanceCount = @($acceptanceIds.Values | Where-Object phase -eq "CORE").Count
 $laterAcceptanceCount = @($acceptanceIds.Values | Where-Object phase -eq "LATER").Count
-if ($coreAcceptanceCount -ne 38 -or $laterAcceptanceCount -ne 8) {
+if ($coreAcceptanceCount -ne 37 -or $laterAcceptanceCount -ne 9) {
     throw "Acceptance ledger phase totals drift: CORE=$coreAcceptanceCount, LATER=$laterAcceptanceCount"
 }
 

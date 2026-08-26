@@ -64,7 +64,7 @@ Ordinary Task execution,
 development mutation endpoints, Java/Spring/Maven, MySQL, RabbitMQ, Python
 workers, and the legacy production Compose topology are not Go product scope.
 
-The acceptance ledger now has 38 `CORE` blockers and 8 `LATER` non-blockers.
+The acceptance ledger now has 37 `CORE` blockers and 9 `LATER` non-blockers.
 A later row cannot hold the lean core release open, and promotion requires a
 separate accepted vertical slice. Retired `MIG-*` and `HIS-*` IDs are rejected
 by the validator and cannot re-enter the inventory.
