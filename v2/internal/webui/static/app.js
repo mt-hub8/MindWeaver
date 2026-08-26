@@ -928,7 +928,7 @@
       byId("ollama-timeout").value = String(timeoutValid ? payload.config.timeoutMilliseconds : 60000);
       if (timeoutValid) {
         byId("ollama-status").textContent = `已配置 ${payload.config.model} · version ${payload.config.version}`;
-        byId("model-detail").textContent = `本机模型 ${payload.config.model} 已配置；Ask 只会发布指向本次所用资料的结构化引用。`;
+        byId("model-detail").textContent = `本机模型 ${payload.config.model} 已配置；Ask 只会发布指向本次所用资料的结构化引用，并且只按连续原文短语检索。`;
       } else {
         byId("ollama-status").textContent = "已有模型配置超出 60 秒产品上限；请保存当前表单以修复，期间 Ask 不可用。";
         byId("model-detail").textContent = "模型配置需要修复；上传、集合和本地全文检索仍可正常使用。";
@@ -954,7 +954,7 @@
       modelConfigVersion = payload.config.version;
       modelConfigured = true;
       byId("ollama-status").textContent = `已保存 ${payload.config.model} · version ${payload.config.version}`;
-      byId("model-detail").textContent = `本机模型 ${payload.config.model} 已配置；Ask 只会发布指向本次所用资料的结构化引用。`;
+      byId("model-detail").textContent = `本机模型 ${payload.config.model} 已配置；Ask 只会发布指向本次所用资料的结构化引用，并且只按连续原文短语检索。`;
       updateAskAvailability();
       await loadDiagnostics();
     } catch (error) {
@@ -1172,6 +1172,7 @@
 
   function answerStateText(answer) {
     if (answer.status === "pending") return "回答仍在等待终态，正在安全轮询。";
+    if (answer.status === "refused" && answer.limitationCode === "NO_CONTEXT") return "未命中完整的连续原文短语；未调用模型。首版不会拆分或理解自然问句。";
     if (answer.status === "refused") return `回答受限：${answer.limitationCode || "资料不足"}`;
     if (answer.status === "failed") {
       if (answer.limitationCode === "OUTCOME_UNCERTAIN") return "应用中断或调用超时，结果无法确认；为避免重复调用，本次不会自动重放模型。";
@@ -1334,8 +1335,9 @@
     if (!askAttempt) {
       const question = byId("ask-question").value;
       const questionBytes = new TextEncoder().encode(question).length;
-      if (questionBytes < 1 || questionBytes > 1024) {
-        byId("ask-status").textContent = "问题必须为 1 到 1024 个 UTF-8 字节。";
+      const questionCharacters = Array.from(question).length;
+      if (questionCharacters < 3 || questionBytes > 1024 || question.trim() !== question) {
+        byId("ask-status").textContent = "原文关键词或连续短语必须至少 3 个字符、最多 1024 UTF-8 字节，且首尾不能有空白。";
         return;
       }
       const scope = byId("ask-collection").value.trim();

@@ -28,9 +28,16 @@ incompatible file is reported as unavailable without disabling TXT/Markdown.
 
 This is still a development build, not a qualified release. The implemented
 paths above have automated evidence, but they have not passed the complete
-release, durability, security, and platform qualification matrix. Ask/citation
-architecture and structural citation checks are implemented, but natural-question
-retrieval quality remains explicitly blocked by `RET-003`. Clean-machine
+release, durability, security, and platform qualification matrix. CORE Search
+and Ask accept one literal continuous source phrase of at least three Unicode
+code points and at most 1024 UTF-8 bytes. The complete trimmed Search input, or
+the complete unpadded Ask input, is searched unchanged; there is no word
+segmentation, term OR, query rewriting, synonym expansion, or semantic search.
+Two-code-point queries are unsupported. Ask is therefore keyword/phrase-driven
+grounded generation, not general natural-language question answering. Future
+natural-question retrieval quality and its recall/ranking/FDR/capacity budgets
+are `RET-003` LATER and remain unimplemented; every previous candidate has
+`Selection=NONE`. Clean-machine
 backup restore/reopen rehearsal, long-running SQLite stress, real browser
 qualification, packaging, and release qualification also remain incomplete.
 Live no-replace backup creation and startup-only verify/restore are

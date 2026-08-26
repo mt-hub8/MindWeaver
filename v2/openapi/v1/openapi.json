@@ -395,7 +395,7 @@
             "type": "integer"
           },
           "question": {
-            "description": "Trimmed display text bounded to 1024 UTF-8 bytes by the implementation.",
+            "description": "Exact unpadded Ask input persisted for display. CORE searches the complete value unchanged as one literal continuous source phrase; it does not perform natural-question understanding, token OR, rewriting, or semantic expansion.",
             "minLength": 1,
             "type": "string"
           },
@@ -518,8 +518,8 @@
             "type": "integer"
           },
           "question": {
-            "description": "Trimmed display text bounded to 1024 UTF-8 bytes by the implementation.",
-            "minLength": 1,
+            "description": "Exact unpadded input with at least three Unicode code points and at most 1024 UTF-8 bytes. CORE searches the complete value unchanged as one literal continuous source phrase. Natural-question understanding, word segmentation, token OR, rewriting, synonym expansion, and semantic retrieval are unsupported.",
+            "minLength": 3,
             "type": "string"
           },
           "scopeCollectionId": {
@@ -2223,6 +2223,7 @@
     },
     "/api/v1/ask": {
       "post": {
+        "description": "Creates one durable keyword/continuous-phrase-driven grounded generation attempt. Before any model call, the complete question value is passed unchanged to the same scoped literal continuous-phrase FTS query used by Search. A fact-related natural question whose full text is not contiguous in a source normally returns a controlled NO_CONTEXT refusal; CORE does not claim natural-language retrieval.",
         "operationId": "ask",
         "parameters": [
           {
@@ -2240,7 +2241,7 @@
               }
             }
           },
-          "description": "Strict JSON; unknown, duplicate, mis-cased, or trailing fields are rejected.",
+          "description": "Strict JSON; unknown, duplicate, mis-cased, or trailing fields are rejected. The question is a literal source phrase, despite the stable field name.",
           "required": true
         },
         "responses": {
@@ -2300,7 +2301,7 @@
             "$ref": "#/components/responses/Problem503"
           }
         },
-        "summary": "Create and converge one durable Ask pair",
+        "summary": "Create one durable literal-phrase-grounded Ask pair",
         "x-mindweaver-csrf": "required",
         "x-mindweaver-optimistic-control": "expectedRevision in strict JSON body; ETag and If-Match are unsupported",
         "x-mindweaver-retry-safety": "durable Idempotency-Key plus request hash",
@@ -3731,10 +3732,11 @@
     },
     "/api/v1/search": {
       "get": {
+        "description": "Searches active chunks for one literal continuous source phrase. The complete trimmed q value is FTS-quoted and parameter-bound unchanged; FTS syntax, word segmentation, token OR, rewriting, synonym expansion, and semantic retrieval are unsupported.",
         "operationId": "search",
         "parameters": [
           {
-            "description": "Trimmed UTF-8 query with at least three Unicode characters and at most 1024 encoded bytes.",
+            "description": "Literal continuous source phrase. The complete trimmed UTF-8 value must contain at least three Unicode code points and at most 1024 encoded bytes; two-code-point queries are unsupported.",
             "in": "query",
             "name": "q",
             "required": true,
@@ -3774,7 +3776,7 @@
                 }
               }
             },
-            "description": "Bounded lexical result page."
+            "description": "Bounded literal continuous-phrase result page."
           },
           "400": {
             "$ref": "#/components/responses/Problem400"
@@ -3792,7 +3794,7 @@
             "$ref": "#/components/responses/Problem503"
           }
         },
-        "summary": "Search active chunks",
+        "summary": "Search active chunks by one literal continuous phrase",
         "x-mindweaver-csrf": "none",
         "x-mindweaver-retry-safety": "read-only",
         "x-mindweaver-session": "required"

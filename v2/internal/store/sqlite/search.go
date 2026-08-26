@@ -27,10 +27,11 @@ type ChunkHit struct {
 	Rank       float64
 }
 
-// Search searches active revisions of active documents. text is ordinary user
-// text, never an FTS5 expression. The trigram index requires at least 3 runes;
-// shorter queries return ErrQueryTooShort instead of silently scanning or
-// omitting part of the scope.
+// Search searches active revisions of active documents. text is one literal
+// continuous source phrase, never an FTS5 expression or a natural-language
+// query to split, rewrite, or expand. The trigram index requires at least 3
+// runes; shorter queries return ErrQueryTooShort instead of silently scanning
+// or omitting part of the scope.
 func (s *Store) Search(ctx context.Context, text string, limit int) ([]ChunkHit, error) {
 	query, err := prepareSearch(text, limit)
 	if err != nil {

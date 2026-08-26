@@ -22,13 +22,16 @@ repository only after release qualification passes.
 - No account, collaboration, cloud synchronization, or implicit LAN mode.
 
 The first release is salvage-first, not a Java parity rewrite. Its product slice
-is canonical documents and lifecycle, true M:N collections, controlled keyword
-retrieval, Ask with refusal and same-context citations, optional loopback Ollama
-with durable message outcomes, conversation, secure local UI/session, plaintext
-Vault backup/restore, and versioned Go-to-Go schema upgrades. Agent,
-Profile, Memory, Batch, Notification, Evaluation, Qdrant, reindex, advanced
-retrieval/rerank/query understanding, cache/storage consoles, and advanced index
-repair are absent until separately rebuilt from zero and accepted.
+is canonical documents and lifecycle, true M:N collections, controlled literal
+continuous-phrase retrieval, keyword/phrase-driven Ask with refusal and
+same-context citations, optional loopback Ollama with durable message outcomes,
+conversation, secure local UI/session, plaintext Vault backup/restore, and
+versioned Go-to-Go schema upgrades. The complete Search or Ask input is searched
+unchanged as one source-contiguous phrase; the product does not claim
+natural-question retrieval. Agent, Profile, Memory, Batch, Notification,
+Evaluation, Qdrant, reindex, natural-question query understanding, advanced
+retrieval/rerank, cache/storage consoles, and advanced index repair are absent
+until separately rebuilt from zero and accepted.
 
 ## Architectural invariants
 
@@ -40,8 +43,9 @@ repair are absent until separately rebuilt from zero and accepted.
    duplicate execution and makes retry, cancellation, restart, and final failure
    visible.
 5. External I/O never runs inside a database transaction.
-6. Core Search and Ask use the same scoped SQLite FTS path; later entrants must
-   conform to its lifecycle and collection rules before promotion.
+6. Core Search and Ask use the same scoped SQLite FTS literal-phrase path; later
+   natural-question or semantic entrants must conform to its lifecycle and
+   collection rules before promotion.
 7. A citation can reference only a stable source chunk supplied for that answer.
 8. No-hit and structurally invalid citation cases refuse or show an explicit
    limitation label; the product does not claim semantic truth verification.

@@ -16,10 +16,10 @@ Statuses:
 | MW-DOC-003 | Reindex | REDESIGN | LATER_FROM_ZERO | LATER | generation coordinator | old generation remains queryable; per-document atomic activation |
 | MW-DOC-004 | Deterministic chunks and FTS indexing | REBUILD | CORE_REBUILD_FROM_ZERO | CORE | chunking/SQLite FTS pipeline | deterministic golden chunks, transactional FTS refresh and lifecycle filtering |
 | MW-COL-001 | Collections | KEEP_SEMANTICS | CORE_REQUIREMENT_ONLY | CORE | collection membership | true many-to-many scope; empty scope never becomes global |
-| MW-RET-001 | Simple lexical retrieval | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | controlled SQLite FTS retrieval | active lifecycle and collection isolation; stable source chunk IDs |
-| MW-RET-002 | Hybrid/RRF/rerank/expansion | REDESIGN | LATER_FROM_ZERO | LATER | retrieval stages | one executable path; backend/stage conformance and quality gates |
+| MW-RET-001 | Literal continuous-phrase lexical retrieval | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | controlled SQLite FTS retrieval | three-plus-code-point Chinese and English source phrases; deterministic order; active lifecycle and exact collection isolation; stable source chunk IDs |
+| MW-RET-002 | Natural-question query understanding, hybrid/RRF/rerank/expansion | REDESIGN | LATER_FROM_ZERO | LATER | retrieval stages | representative recall/ranking/FDR, accepted 100k capacity/latency/disk budgets, incremental maintenance and restart conformance before one executable path is selected |
 | MW-EMB-001 | Embeddings and vector retrieval | REBUILD | LATER_FROM_ZERO | LATER | future embedding/vector slice | no first-release schema/provider/route; later corpus, capacity and backend conformance |
-| MW-RAG-001 | Ask | KEEP_SEMANTICS | CORE_REBUILD_FROM_ZERO | CORE | answer run | scoped lexical answer records final source chunk IDs and handles provider failure honestly |
+| MW-RAG-001 | Keyword/continuous-phrase-driven Ask | KEEP_SEMANTICS | CORE_REBUILD_FROM_ZERO | CORE | answer run | the complete input uses the same scoped literal-phrase search; final source chunk IDs and provider failure are recorded honestly; natural-question retrieval is not claimed |
 | MW-RAG-002 | Citations | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | answer citations | every citation resolves to a source chunk supplied for that answer |
 | MW-RAG-003 | Honest refusal and labeling | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | answer policy | no-hit and structurally invalid citation cases refuse or carry an explicit limitation label |
 | MW-CON-001 | Conversation history | KEEP_SEMANTICS | CORE_REBUILD_FROM_ZERO | CORE | conversation/message/answer | immutable answer provenance and purge behavior |

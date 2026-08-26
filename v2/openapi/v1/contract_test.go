@@ -80,6 +80,53 @@ func TestBackupCreateContractDoesNotClaimExistingTargetAsFresh(t *testing.T) {
 	}
 }
 
+func TestOpenAPIDisclosesLiteralPhraseRetrievalBoundary(t *testing.T) {
+	t.Parallel()
+	openAPI, _ := contract.Documents()
+	var document map[string]any
+	if err := json.Unmarshal(openAPI, &document); err != nil {
+		t.Fatal(err)
+	}
+	schemas := document["components"].(map[string]any)["schemas"].(map[string]any)
+	askQuestion := schemas["AskRequest"].(map[string]any)["properties"].(map[string]any)["question"].(map[string]any)
+	answerQuestion := schemas["Answer"].(map[string]any)["properties"].(map[string]any)["question"].(map[string]any)
+	if askQuestion["minLength"] != float64(3) || answerQuestion["minLength"] != float64(1) {
+		t.Fatalf("question minimums = AskRequest %v, Answer %v", askQuestion["minLength"], answerQuestion["minLength"])
+	}
+	for name, description := range map[string]string{
+		"Ask request question": askQuestion["description"].(string),
+		"Answer question":      answerQuestion["description"].(string),
+	} {
+		description = strings.ToLower(description)
+		for _, required := range []string{"complete value unchanged", "literal continuous source phrase", "natural-question"} {
+			if !strings.Contains(description, required) {
+				t.Fatalf("%s description %q omits %q", name, description, required)
+			}
+		}
+	}
+
+	paths := document["paths"].(map[string]any)
+	ask := paths["/api/v1/ask"].(map[string]any)["post"].(map[string]any)
+	search := paths["/api/v1/search"].(map[string]any)["get"].(map[string]any)
+	q := search["parameters"].([]any)[0].(map[string]any)
+	for name, value := range map[string]string{
+		"Ask operation":    ask["description"].(string),
+		"Search operation": search["description"].(string),
+		"Search q":         q["description"].(string),
+	} {
+		lower := strings.ToLower(value)
+		if !strings.Contains(lower, "literal continuous") || !strings.Contains(lower, "complete") {
+			t.Fatalf("%s does not disclose complete literal-continuous input: %q", name, value)
+		}
+	}
+	if !strings.Contains(ask["description"].(string), "NO_CONTEXT") ||
+		!strings.Contains(ask["description"].(string), "does not claim natural-language retrieval") ||
+		!strings.Contains(search["description"].(string), "semantic retrieval are unsupported") ||
+		!strings.Contains(q["description"].(string), "two-code-point queries are unsupported") {
+		t.Fatal("OpenAPI overstates natural-question or two-code-point retrieval")
+	}
+}
+
 func TestContractFailsClosed(t *testing.T) {
 	t.Parallel()
 	openAPI, surface := contract.Documents()

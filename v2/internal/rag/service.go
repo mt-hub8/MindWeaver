@@ -178,8 +178,10 @@ type AskRequest struct {
 }
 
 // Ask first reserves a durable pending message and provider configuration,
-// then uses the shared scoped FTS path, freezes final sources, calls concrete
-// Ollama outside a transaction, and atomically publishes a structurally cited result.
+// then passes the complete input unchanged to the shared scoped literal-phrase
+// FTS path, freezes final sources, calls concrete Ollama outside a transaction,
+// and atomically publishes a structurally cited result. It does not implement
+// natural-question query understanding, rewriting, or expansion.
 func (s *Service) Ask(ctx context.Context, request AskRequest) (store.Answer, error) {
 	if ctx == nil {
 		return store.Answer{}, errors.New("rag: nil context")

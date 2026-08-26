@@ -2,6 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-08-23
+- Amended: 2026-08-27 to freeze literal continuous-phrase retrieval as the
+  first-release product boundary and move natural-question retrieval quality
+  to LATER
 - Supersedes: the generic job/event protocol in ADR 0004, the durable
   invocation ledger in ADR 0005, the persisted retrieval-snapshot and semantic
   verification model in ADR 0006, and (historically) the broad migration scope
@@ -51,15 +54,31 @@ source bytes. New chunks and FTS rows are built for one document revision and
 become visible through one SQLite activation transaction; a failed build leaves
 the prior active revision searchable.
 
-The core retriever is one bounded FTS5 query over active, non-trashed documents.
+The core retriever is one bounded FTS5 trigram query over active, non-trashed
+documents. The complete trimmed input is quoted and bound as one literal
+continuous phrase; it is not parsed as FTS syntax and is not split, rewritten,
+expanded, or semantically interpreted. Inputs must contain at least three
+Unicode code points and at most 1024 UTF-8 bytes. Two-code-point CJK terms are
+explicitly unsupported instead of falling back to a whole-catalog scan.
 Collection scope is expressed by normalized SQL joins, and an explicit empty or
 unknown collection selection returns no results. Vector search, hybrid fusion,
-reranking, query expansion, and persisted candidate traces are absent.
+reranking, query expansion, query understanding, and persisted candidate traces
+are absent.
 
-Search and Ask call the same query function. Ask persists only the final source
-chunk IDs and server-generated display metadata used for that message. It does
-not persist every candidate, rejection, score stage, or a generic
-`RetrievalSnapshot` aggregate.
+Search and Ask call the same literal-phrase query function. First-release Ask is
+keyword/continuous-phrase-driven grounded generation, not a promise that a
+natural question will retrieve a document containing related facts. The API,
+embedded UI, and user documentation must disclose that the entire Ask input is
+searched unchanged and that a non-contiguous natural question normally refuses
+with no context. Ask persists only the final source chunk IDs and
+server-generated display metadata used for that message. It does not persist
+every candidate, rejection, score stage, or a generic `RetrievalSnapshot`
+aggregate.
+
+Natural-question query understanding, Chinese word segmentation, term OR,
+semantic expansion, and their recall/ranking/FDR/capacity budgets are one LATER
+retrieval capability. Qualification candidates with `Selection=NONE` are
+elimination evidence only and cannot be copied into production.
 
 A citation is structurally valid only when it refers to one of those final
 source chunks. This proves provenance, not semantic entailment. The product
@@ -112,6 +131,9 @@ remain required.
   replay or concurrent editing is a demonstrated user boundary; it is not a
   blanket rule for every local mutation.
 - Advanced capabilities are absent rather than compiled behind flags.
+- Natural-question retrieval is absent rather than inferred from the `Ask`
+  label; the retained model call can answer only after the literal phrase has
+  selected scoped source chunks.
 - A future ADR may add an event log, provider invocation evidence, vector
   retrieval, or richer deletion proof after a concrete consumer and failure
   model exist.
@@ -130,4 +152,8 @@ The replacement architecture is accepted through observable integration tests:
 6. the real provider transport passes hostile resolver, redirect, proxy,
    timeout, cancellation, and response-size tests; and
 7. a fake provider answer can reference only the exact final chunks supplied to
-   that call.
+   that call; and
+8. production Search and Ask regressions prove three-plus-code-point Chinese and
+   English continuous phrases, two-code-point refusal, deterministic order,
+   exact collection/lifecycle exclusion, and no provider call for a
+   fact-related but non-contiguous natural question.

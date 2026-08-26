@@ -11,6 +11,15 @@ outside OpenAPI. There are no path parameters, wildcard routes, SSE endpoints,
 accounts, remote authentication, browser restore endpoints, or LATER
 Agent/vector protocols.
 
+The CORE retrieval contract is deliberately literal. Search trims its input;
+Ask requires an unpadded input; both then bind the complete value unchanged as
+one FTS5 trigram continuous phrase. Inputs contain at least three Unicode code
+points and at most 1024 UTF-8 bytes. Two-code-point queries, word segmentation,
+term OR, query rewriting, synonym expansion, semantic search, and general
+natural-question retrieval are unsupported. Ask is a keyword/phrase-driven
+grounded generation path and refuses without calling the model when that exact
+phrase finds no scoped source chunks.
+
 The local transport has two distinct error boundaries:
 
 - An authenticated business handler returns the versioned RFC 9457-shaped

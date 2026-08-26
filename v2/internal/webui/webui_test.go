@@ -47,6 +47,9 @@ func TestEmbeddedClientRefreshesCSRFAndConsumesBoundedSearchPages(t *testing.T) 
 		`backupAttempt !== attempt || attempt.operationID !== operationID`, `attempt.polling = false`,
 		"如需重试，请重新提交相同目标，新请求会先检查受控暂存残留",
 		"无法证明它由本次新请求创建；未将其冒充为新备份",
+		`const questionCharacters = Array.from(question).length`,
+		`questionCharacters < 3`,
+		"未命中完整的连续原文短语；未调用模型。首版不会拆分或理解自然问句。",
 	} {
 		if !strings.Contains(source, contract) {
 			t.Fatalf("embedded product workflow is missing %q", contract)
@@ -81,6 +84,18 @@ func TestEmbeddedClientRefreshesCSRFAndConsumesBoundedSearchPages(t *testing.T) 
 	}
 	if !strings.Contains(index.String(), `id="ask-question" maxlength="1024"`) || !strings.Contains(index.String(), "最多 1024 UTF-8 字节") {
 		t.Fatal("embedded Ask form does not expose the search-compatible question byte limit")
+	}
+	for _, disclosure := range []string{
+		"首版不会理解或改写自然问句",
+		"整段输入会原样检索，未命中时将拒绝回答",
+		"连续原文短语 Ask 与历史",
+		"按连续原文短语搜索",
+		"不会拆词、扩写或进行语义搜索",
+		"两个字符的查询不受支持",
+	} {
+		if !strings.Contains(index.String(), disclosure) {
+			t.Fatalf("embedded product boundary is missing %q", disclosure)
+		}
 	}
 	if !strings.Contains(index.String(), "备份包是未加密的明文 SQLite 与资料对象") ||
 		!strings.Contains(index.String(), "磁盘加密和访问控制") {

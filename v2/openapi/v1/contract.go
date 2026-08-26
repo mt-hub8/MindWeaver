@@ -745,7 +745,7 @@ func validateRAGResponseSchemas(components componentsWire) error {
 		"conversationId": identifier, "conversationRevision": {Type: "integer", Minimum: &one},
 		"createdAt": dateTime, "errorCode": {Type: "string"}, "id": identifier,
 		"limitationCode": {Type: "string"}, "providerConfigVersion": {Type: "integer", Minimum: &one},
-		"question":       {Type: "string", Description: "Trimmed display text bounded to 1024 UTF-8 bytes by the implementation.", MinLength: intPointer(1)},
+		"question":       {Type: "string", Description: "Exact unpadded Ask input persisted for display. CORE searches the complete value unchanged as one literal continuous source phrase; it does not perform natural-question understanding, token OR, rewriting, or semantic expansion.", MinLength: intPointer(1)},
 		"reconcileAfter": dateTime, "scopeCollectionId": nullableIdentifier,
 		"sources": sources, "status": {Type: "string", Enum: []string{"completed", "failed", "pending", "refused"}},
 	}

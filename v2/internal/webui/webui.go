@@ -41,7 +41,7 @@ var indexTemplate = template.Must(template.New("index").Parse(`<!doctype html>
     <div id="workspace" hidden>
       <section class="panel notice" aria-labelledby="model-title">
         <div><p class="kicker">离线优先</p><h2 id="model-title">本地检索可用，AI 模型为可选能力</h2>
-        <p id="model-detail">未配置模型不会阻止上传、整理和搜索；配置本机 Ollama 后可使用带引用的 Ask。</p></div>
+        <p id="model-detail">未配置模型不会阻止上传、整理和搜索；配置本机 Ollama 后可使用基于连续原文短语和引用的 Ask。</p></div>
       </section>
 
       <div class="grid two">
@@ -57,7 +57,7 @@ var indexTemplate = template.Must(template.New("index").Parse(`<!doctype html>
         </section>
 
         <section class="panel" aria-labelledby="conversations-title">
-          <div class="section-head"><div><p class="kicker">问答空间</p><h2 id="conversations-title">会话</h2></div><button id="refresh-conversations" class="secondary" type="button">刷新</button></div>
+          <div class="section-head"><div><p class="kicker">短语驱动 Ask</p><h2 id="conversations-title">会话</h2></div><button id="refresh-conversations" class="secondary" type="button">刷新</button></div>
           <form id="conversation-form">
             <label for="conversation-title">新会话标题</label><input id="conversation-title" maxlength="1024" required autocomplete="off">
             <button type="submit">创建会话</button>
@@ -68,14 +68,15 @@ var indexTemplate = template.Must(template.New("index").Parse(`<!doctype html>
       </div>
 
       <section class="panel ask-panel" aria-labelledby="ask-title">
-        <div class="section-head"><div><p class="kicker">有据可查</p><h2 id="ask-title">Ask 与历史</h2></div><button id="refresh-messages" class="secondary" type="button">刷新历史</button></div>
+        <div class="section-head"><div><p class="kicker">有据可查</p><h2 id="ask-title">连续原文短语 Ask 与历史</h2></div><button id="refresh-messages" class="secondary" type="button">刷新历史</button></div>
         <p id="active-conversation" class="meta">请先创建或选择会话。</p>
+        <p class="meta">首版不会理解或改写自然问句。请输入资料中连续出现的完整关键词或短语；整段输入会原样检索，未命中时将拒绝回答。</p>
         <form id="ask-form">
-          <label for="ask-question">问题（最多 1024 UTF-8 字节）</label><textarea id="ask-question" maxlength="1024" rows="4" required></textarea>
+          <label for="ask-question">原文关键词或连续短语（至少 3 个字符，最多 1024 UTF-8 字节）</label><textarea id="ask-question" maxlength="1024" rows="4" required></textarea>
           <label for="ask-collection">集合 ID（留空为全部已激活文档）</label><input id="ask-collection" maxlength="255" autocomplete="off">
-          <button id="ask-submit" type="submit">Ask</button>
+          <button id="ask-submit" type="submit">按原文短语 Ask</button>
         </form>
-        <div id="ask-status" class="status" role="status" aria-live="polite">尚未提问。</div>
+        <div id="ask-status" class="status" role="status" aria-live="polite">尚未提交原文短语。</div>
         <ol id="messages" class="messages" aria-live="polite"></ol>
         <button id="messages-more" class="secondary catalog-more" type="button" hidden>加载后续历史</button>
       </section>
@@ -92,9 +93,10 @@ var indexTemplate = template.Must(template.New("index").Parse(`<!doctype html>
         </section>
 
         <section class="panel" aria-labelledby="search-title">
-          <p class="kicker">受控检索</p><h2 id="search-title">搜索已激活内容</h2>
+          <p class="kicker">受控检索</p><h2 id="search-title">按连续原文短语搜索</h2>
+          <p class="meta">整段输入会作为一个连续短语原样匹配；不会拆词、扩写或进行语义搜索。两个字符的查询不受支持。</p>
           <form id="search-form">
-            <label for="query">搜索词（至少 3 个字符）</label><input id="query" name="query" maxlength="1024" required autocomplete="off">
+            <label for="query">原文关键词或连续短语（至少 3 个字符）</label><input id="query" name="query" maxlength="1024" required autocomplete="off">
             <label for="search-collection">集合 ID（留空为全部文档）</label><input id="search-collection" name="collection" maxlength="255" autocomplete="off">
             <button type="submit">搜索</button>
           </form>

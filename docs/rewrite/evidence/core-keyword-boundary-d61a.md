@@ -1,5 +1,10 @@
 # CORE keyword-search boundary on `d61a158`
 
+> Historical evidence. ADR 0012, the current acceptance ledger, and
+> `core-keyword-boundary.8aadf60.v2.json` supersede this file's CORE/LATER
+> product classification. This file's `Selection: NONE` and all candidate
+> limitations remain binding; it does not authorize a retrieval implementation.
+
 Status: **RET-003 BLOCKED**
 
 Selection: **NONE**

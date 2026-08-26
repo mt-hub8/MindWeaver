@@ -6,8 +6,8 @@ the exact command/report location. Manual inspection alone cannot close a row.
 Only `Phase=CORE` rows are release blockers. `LATER` rows preserve
 traceability without expanding the first Go release.
 
-Current CORE reconciliation: `20 PASS`, `9 IMPLEMENTED`, `5 BLOCKED`, and
-`4 NOT_IMPLEMENTED`. All eight `LATER` rows remain `NOT_IMPLEMENTED` and are
+Current CORE reconciliation: `20 PASS`, `9 IMPLEMENTED`, `4 BLOCKED`, and
+`4 NOT_IMPLEMENTED`. All nine `LATER` rows remain `NOT_IMPLEMENTED` and are
 not part of the first Go release.
 
 | ID | Required outcome | Phase | Core gate | Current status | Required evidence |
@@ -32,15 +32,15 @@ not part of the first Go release.
 | DOC-002 | Trash excludes immediately; restore is reversible; purge is not overstated | CORE | YES | PASS | lifecycle trash/restore/purge projection and restart E2E |
 | GEN-001 | A future reindex slice keeps old generation live and activates only its document | LATER | NO | NOT_IMPLEMENTED | two-document same-generation regression test before promotion |
 | COL-001 | Membership is true many-to-many and empty scope stays empty | CORE | YES | PASS | SQLite/API M:N, revision, restart and explicit-empty-scope tests |
-| RET-001 | Simple SQLite FTS returns only active documents in the requested collection scope | CORE | YES | PASS | `v2/qualification/knowledge/core_keyword_boundary_test.go`; lifecycle/empty/cross-collection corpus |
-| RET-002 | Future fusion/rerank/expansion stages preserve score provenance and fingerprint | LATER | NO | NOT_IMPLEMENTED | deterministic conformance suite before promotion |
-| RET-003 | Core Chinese SQLite FTS tokenization and bounded result quality are measured | CORE | YES | BLOCKED | `v2/qualification/knowledge/core_keyword_boundary_test.go`; `v2/testdata/qualification/knowledge/core-keyword-boundary.d61a.v1.json`; `docs/rewrite/evidence/core-keyword-boundary-d61a.md` |
+| RET-001 | Literal continuous-phrase SQLite FTS returns only active documents in the requested collection scope | CORE | YES | PASS | `v2/qualification/knowledge/core_keyword_boundary_test.go`; `v2/testdata/qualification/knowledge/core-keyword-boundary.8aadf60.v2.json`; Chinese/English, deterministic order, two-code-point refusal, lifecycle/empty/cross-collection corpus |
+| RET-002 | Future natural-question query understanding/fusion/rerank/expansion preserves scope, lifecycle and score provenance | LATER | NO | NOT_IMPLEMENTED | representative deterministic conformance suite and accepted budgets before promotion; all existing candidates remain `Selection=NONE` |
+| RET-003 | Future Chinese/English natural-question retrieval has accepted recall, ranking, FDR, 100k capacity/latency/disk, incremental-maintenance and restart budgets | LATER | NO | NOT_IMPLEMENTED | `v2/qualification/knowledge/core_keyword_boundary_test.go`; `v2/testdata/qualification/knowledge/core-keyword-boundary.8aadf60.v2.json`; prior bounded-instr, FTS5 hybrid and relational term-index candidates remain rejected and must not enter production |
 | EMB-001 | A future embedding/vector slice proves model, capacity, lifecycle and backend conformance | LATER | NO | NOT_IMPLEMENTED | representative corpus and backend suite before promotion |
 | PRV-001 | Each message records the chosen versioned, non-secret loopback Ollama configuration; no credential surface exists | CORE | YES | PASS | configure/probe/invoke/restart source-binding integration tests |
 | PRV-002 | Ollama dials only a fixed literal loopback address and rejects DNS names, ambient proxy, and redirect authority changes | CORE | YES | PASS | `v2/internal/ollama/client_test.go`; DNS/proxy/redirect/literal-loopback suite |
 | INV-001 | A provider call has bounded timeout/cancel behavior and ends in one durable user-visible success or failure | CORE | YES | PASS | timeout/cancel/truncated-body/restart tests; post-write ambiguity persists as `OUTCOME_UNCERTAIN` |
 | INV-002 | A future enhanced invocation protocol classifies ambiguous transmitted requests without unsafe automatic replay | LATER | NO | NOT_IMPLEMENTED | crash-window and duplicate-cost suite before promotion |
-| RAG-001 | Ask uses scoped SQLite FTS and stores the final source chunk IDs with the answer | CORE | YES | PASS | lexical Ask persistence, scope, restart and source-change tests |
+| RAG-001 | Keyword/continuous-phrase-driven Ask uses scoped SQLite FTS and stores the final source chunk IDs with the answer | CORE | YES | PASS | literal-phrase/no-expansion, scope, persistence, restart and source-change tests; natural-question retrieval is LATER |
 | RAG-002 | Every citation resolves to a source chunk supplied for that answer | CORE | YES | PASS | foreign, missing, changed and malformed citation rejection tests |
 | RAG-003 | No-hit or structurally invalid citation cases refuse or show an explicit limitation label | CORE | YES | IMPLEMENTED | backend refusal and honest static UI wording pass; real-browser label evidence remains |
 | CON-001 | Conversation/messages preserve immutable provenance and version conflicts | CORE | YES | IMPLEMENTED | durable provenance/retry/restart tests pass; true two-tab browser conflict remains |
