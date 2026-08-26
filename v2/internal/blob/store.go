@@ -72,6 +72,34 @@ type ImportResult struct {
 	Created bool
 }
 
+// PublicationOutcomeUncertainError reports that a content-addressed
+// destination was observed or a no-replace rename succeeded before a later
+// durability, verification, close, staging-cleanup, or cancellation failure.
+// ID and Size bind the exact attempted object. Renamed is true only when this
+// Store's rename operation returned success; false includes existing-object
+// dedupe and a rename that returned an error before the destination was
+// recovered.
+//
+// Callers must use their owning recovery protocol before retrying. Unwrap
+// preserves the original cancellation, corruption, or filesystem cause.
+type PublicationOutcomeUncertainError struct {
+	ID      BlobID
+	Size    int64
+	Renamed bool
+	Cause   error
+}
+
+func (err *PublicationOutcomeUncertainError) Error() string {
+	return "blob publication outcome uncertain"
+}
+
+func (err *PublicationOutcomeUncertainError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+	return err.Cause
+}
+
 type preparedState uint8
 
 const (
@@ -358,8 +386,9 @@ func (s *Store) discardUninspectedPrepared(file *os.File) error {
 
 // Publish makes the prepared bytes visible at their content address using the
 // Store's no-replace publication and deduplication path. Exactly one call may
-// attempt publication. A returned error can follow the atomic rename, so a
-// database-backed caller must queue the address for reference-aware GC first.
+// attempt publication. A PublicationOutcomeUncertainError can follow the
+// atomic rename or observation of an existing destination; callers must retain
+// an owning recovery record such as an upload GC candidate or restore residue.
 func (prepared *preparedImport) Publish(ctx context.Context) (ImportResult, error) {
 	if prepared == nil || prepared.store == nil {
 		return ImportResult{}, errors.New("nil prepared blob")
@@ -376,14 +405,23 @@ func (prepared *preparedImport) Publish(ctx context.Context) (ImportResult, erro
 		return ImportResult{}, err
 	}
 
-	created, publishErr := prepared.store.publish(prepared)
+	created, publishErr := prepared.store.publish(ctx, prepared)
+	result := ImportResult{ID: prepared.id, Size: prepared.size, Created: created}
 	prepared.state = preparedPublished
 	cleanupErr := prepared.cleanupStagingLocked()
 	prepared.finishActiveLocked()
-	if err := errors.Join(publishErr, cleanupErr); err != nil {
-		return ImportResult{}, err
+	resultErr := errors.Join(publishErr, cleanupErr)
+	if publishErr == nil && cleanupErr != nil {
+		resultErr = publicationOutcomeUncertain(prepared, created, cleanupErr)
 	}
-	return ImportResult{ID: prepared.id, Size: prepared.size, Created: created}, nil
+	if resultErr != nil {
+		var uncertain *PublicationOutcomeUncertainError
+		if publishErr == nil || errors.As(publishErr, &uncertain) {
+			return result, resultErr
+		}
+		return ImportResult{}, resultErr
+	}
+	return result, nil
 }
 
 // Abort permanently revokes publication and removes only this capability's
@@ -436,8 +474,8 @@ func (prepared *preparedImport) finishActiveLocked() {
 // Import prepares and immediately publishes a blob through the same one-shot
 // implementation used by transactional callers. An exact maxBytes payload is
 // accepted, including an empty payload when maxBytes is zero. An error returned
-// after the atomic rename may still leave an unreferenced object; callers that
-// need crash-closed reference creation must queue a GC candidate before Publish.
+// with a non-zero result can leave an object at that exact address. Callers must
+// resolve PublicationOutcomeUncertainError through their own recovery protocol.
 func (s *Store) Import(ctx context.Context, src io.Reader, maxBytes int64) (ImportResult, error) {
 	prepared, err := s.Prepare(ctx, src, maxBytes)
 	if err != nil {
@@ -445,7 +483,7 @@ func (s *Store) Import(ctx context.Context, src io.Reader, maxBytes int64) (Impo
 	}
 	result, err := prepared.Publish(ctx)
 	if err != nil {
-		return ImportResult{}, errors.Join(err, prepared.Abort())
+		return result, errors.Join(err, prepared.Abort())
 	}
 	return result, nil
 }
@@ -546,11 +584,14 @@ func (s *Store) CleanupStaging(ctx context.Context, cutoff time.Time) (int, erro
 	}
 }
 
-func (s *Store) publish(prepared *preparedImport) (bool, error) {
+func (s *Store) publish(ctx context.Context, prepared *preparedImport) (bool, error) {
 	lock := s.lockForDigest(prepared.digest)
 	lock.Lock()
 	defer lock.Unlock()
-	if err := verifyPreparedSource(prepared); err != nil {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if err := verifyPreparedSource(ctx, prepared); err != nil {
 		return false, err
 	}
 
@@ -558,17 +599,25 @@ func (s *Store) publish(prepared *preparedImport) (bool, error) {
 	if err := ensureDirectory(prefixDir, s.objectsDir, s.syncDir); err != nil {
 		return false, err
 	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	destination := filepath.Join(prefixDir, prepared.digest[2:])
 
 	if _, err := os.Lstat(destination); err == nil {
 		if err := s.syncDir(prefixDir); err != nil {
-			return false, fmt.Errorf("sync existing blob object directory: %w", err)
+			return false, publicationOutcomeUncertain(prepared, false,
+				fmt.Errorf("sync existing blob object directory: %w", err))
 		}
-		if _, err := verifyObject(destination, prepared.digest, prepared.size); err != nil {
-			return false, err
+		if _, err := verifyObject(ctx, destination, prepared.digest, prepared.size); err != nil {
+			return false, publicationOutcomeUncertain(prepared, false, err)
 		}
 		if err := verifyPreparedSourceIdentity(prepared); err != nil {
-			return false, fmt.Errorf("reverify deduplicated blob staging source: %w", err)
+			return false, publicationOutcomeUncertain(prepared, false,
+				fmt.Errorf("reverify deduplicated blob staging source: %w", err))
+		}
+		if err := ctx.Err(); err != nil {
+			return false, publicationOutcomeUncertain(prepared, false, err)
 		}
 		return false, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -584,7 +633,8 @@ func (s *Store) publish(prepared *preparedImport) (bool, error) {
 		// mistaken for a completed rename.
 		destinationState, stateErr := inspectPathIdentity(destination, prepared.original)
 		if stateErr != nil {
-			return false, errors.Join(fmt.Errorf("publish blob: %w", err), stateErr)
+			return false, publicationOutcomeUncertain(prepared, false,
+				errors.Join(fmt.Errorf("publish blob: %w", err), stateErr))
 		}
 		if destinationState == pathIdentityAbsent {
 			return false, fmt.Errorf("publish blob: %w", err)
@@ -602,22 +652,31 @@ func (s *Store) publish(prepared *preparedImport) (bool, error) {
 			syncErr = fmt.Errorf("sync concurrently published blob directory: %w", syncErr)
 		}
 		if movedErr != nil || syncErr != nil {
-			return false, errors.Join(fmt.Errorf("publish blob: %w", err), movedErr, syncErr)
+			return false, publicationOutcomeUncertain(prepared, false,
+				errors.Join(fmt.Errorf("publish blob: %w", err), movedErr, syncErr))
 		}
 		if prepared.sourceMoved {
-			if verifyErr := verifyPublishedPrepared(prepared, destination); verifyErr != nil {
-				return false, errors.Join(fmt.Errorf("publish blob: %w", err), verifyErr)
+			if verifyErr := verifyPublishedPrepared(ctx, prepared, destination); verifyErr != nil {
+				return false, publicationOutcomeUncertain(prepared, false,
+					errors.Join(fmt.Errorf("publish blob: %w", err), verifyErr))
 			}
 			if closeErr := prepared.closeMovedSource(); closeErr != nil {
-				return false, errors.Join(fmt.Errorf("publish blob: %w", err), closeErr)
+				return false, publicationOutcomeUncertain(prepared, false,
+					errors.Join(fmt.Errorf("publish blob: %w", err), closeErr))
 			}
 		} else {
-			if _, verifyErr := verifyObject(destination, prepared.digest, prepared.size); verifyErr != nil {
-				return false, errors.Join(fmt.Errorf("publish blob: %w", err), verifyErr)
+			if _, verifyErr := verifyObject(ctx, destination, prepared.digest, prepared.size); verifyErr != nil {
+				return false, publicationOutcomeUncertain(prepared, false,
+					errors.Join(fmt.Errorf("publish blob: %w", err), verifyErr))
 			}
 			if sourceErr := verifyPreparedSourceIdentity(prepared); sourceErr != nil {
-				return false, errors.Join(fmt.Errorf("publish blob: %w", err), sourceErr)
+				return false, publicationOutcomeUncertain(prepared, false,
+					errors.Join(fmt.Errorf("publish blob: %w", err), sourceErr))
 			}
+		}
+		if contextErr := ctx.Err(); contextErr != nil {
+			return false, publicationOutcomeUncertain(prepared, false,
+				errors.Join(fmt.Errorf("publish blob: %w", err), contextErr))
 		}
 		// The bytes are durably usable, but a rename that returned an error
 		// cannot prove which actor created the destination.
@@ -630,28 +689,42 @@ func (s *Store) publish(prepared *preparedImport) (bool, error) {
 	prepared.sourceMoved = true
 
 	if err := s.syncDir(prefixDir); err != nil {
-		return false, fmt.Errorf("sync blob object directory: %w", err)
+		return true, publicationOutcomeUncertain(prepared, true,
+			fmt.Errorf("sync blob object directory: %w", err))
 	}
-	if err := verifyPublishedPrepared(prepared, destination); err != nil {
-		return false, fmt.Errorf("verify published blob: %w", err)
+	if err := verifyPublishedPrepared(ctx, prepared, destination); err != nil {
+		return true, publicationOutcomeUncertain(prepared, true,
+			fmt.Errorf("verify published blob: %w", err))
 	}
 	if err := prepared.closeMovedSource(); err != nil {
-		return false, err
+		return true, publicationOutcomeUncertain(prepared, true, err)
+	}
+	if err := ctx.Err(); err != nil {
+		return true, publicationOutcomeUncertain(prepared, true, err)
 	}
 	return true, nil
 }
 
-func verifyPreparedSource(prepared *preparedImport) error {
+func publicationOutcomeUncertain(prepared *preparedImport, renamed bool, cause error) error {
+	if cause == nil {
+		return nil
+	}
+	return &PublicationOutcomeUncertainError{
+		ID: prepared.id, Size: prepared.size, Renamed: renamed, Cause: cause,
+	}
+}
+
+func verifyPreparedSource(ctx context.Context, prepared *preparedImport) error {
 	if err := verifyPreparedSourceIdentity(prepared); err != nil {
 		return err
 	}
-	if err := verifyOpenFile(prepared.file, prepared.digest, prepared.size); err != nil {
+	if err := verifyOpenFile(ctx, prepared.file, prepared.digest, prepared.size); err != nil {
 		return fmt.Errorf("verify prepared blob handle: %w", err)
 	}
 	if err := verifyPreparedSourceIdentity(prepared); err != nil {
 		return fmt.Errorf("reinspect prepared blob after verification: %w", err)
 	}
-	return nil
+	return ctx.Err()
 }
 
 func verifyPreparedSourceIdentity(prepared *preparedImport) error {
@@ -734,7 +807,7 @@ func provePreparedIdentityMoved(prepared *preparedImport, destination string) er
 	return nil
 }
 
-func verifyPublishedPrepared(prepared *preparedImport, destination string) error {
+func verifyPublishedPrepared(ctx context.Context, prepared *preparedImport, destination string) error {
 	current, err := prepared.file.Stat()
 	if err != nil {
 		return fmt.Errorf("inspect published blob handle: %w", err)
@@ -748,7 +821,7 @@ func verifyPublishedPrepared(prepared *preparedImport, destination string) error
 	if err := provePublishedNames(prepared, destination, current); err != nil {
 		return err
 	}
-	if err := verifyOpenFile(prepared.file, prepared.digest, prepared.size); err != nil {
+	if err := verifyOpenFile(ctx, prepared.file, prepared.digest, prepared.size); err != nil {
 		return err
 	}
 	current, err = prepared.file.Stat()
@@ -764,7 +837,7 @@ func verifyPublishedPrepared(prepared *preparedImport, destination string) error
 	if err := provePublishedNames(prepared, destination, current); err != nil {
 		return err
 	}
-	return nil
+	return ctx.Err()
 }
 
 func provePublishedNames(prepared *preparedImport, destination string, current os.FileInfo) error {
@@ -900,7 +973,7 @@ func writeFull(dst *os.File, data []byte) error {
 	return nil
 }
 
-func verifyObject(path, digest string, expectedSize int64) (os.FileInfo, error) {
+func verifyObject(ctx context.Context, path, digest string, expectedSize int64) (os.FileInfo, error) {
 	entry, err := os.Lstat(path)
 	if err != nil {
 		return nil, fmt.Errorf("inspect existing blob: %w", err)
@@ -926,7 +999,7 @@ func verifyObject(path, digest string, expectedSize int64) (os.FileInfo, error) 
 		_ = file.Close()
 		return nil, err
 	}
-	verifyErr := verifyOpenFile(file, digest, expectedSize)
+	verifyErr := verifyOpenFile(ctx, file, digest, expectedSize)
 	openedAfter, openedAfterErr := file.Stat()
 	if openedAfterErr == nil {
 		if !openedAfter.Mode().IsRegular() || openedAfter.Size() != expectedSize || !os.SameFile(opened, openedAfter) {
@@ -948,17 +1021,46 @@ func verifyObject(path, digest string, expectedSize int64) (os.FileInfo, error) 
 	if !after.Mode().IsRegular() || !os.SameFile(opened, after) {
 		return nil, fmt.Errorf("%w: verified object path was replaced", ErrCorrupt)
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	return openedAfter, nil
 }
 
-func verifyOpenFile(file *os.File, digest string, expectedSize int64) error {
+func verifyOpenFile(ctx context.Context, file *os.File, digest string, expectedSize int64) error {
+	if ctx == nil {
+		return errors.New("nil blob verification context")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("seek blob for verification: %w", err)
 	}
 	hasher := sha256.New()
-	size, copyErr := io.CopyBuffer(hasher, file, make([]byte, copyBufferSize))
-	if copyErr != nil {
-		return fmt.Errorf("verify blob bytes: %w", copyErr)
+	buffer := make([]byte, copyBufferSize)
+	var size int64
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		n, readErr := file.Read(buffer)
+		if n < 0 || n > len(buffer) {
+			return fmt.Errorf("verify blob bytes: invalid Read count %d", n)
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if n > 0 {
+			_, _ = hasher.Write(buffer[:n])
+			size += int64(n)
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			return fmt.Errorf("verify blob bytes: %w", readErr)
+		}
 	}
 	if size != expectedSize || hex.EncodeToString(hasher.Sum(nil)) != digest {
 		return fmt.Errorf("%w: blob size or hash differs", ErrCorrupt)

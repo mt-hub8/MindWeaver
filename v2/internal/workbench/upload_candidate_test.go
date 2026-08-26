@@ -2,12 +2,14 @@ package workbench
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/mt-hub8/MindWeaver/v2/internal/blob"
@@ -99,6 +101,70 @@ func TestUploadCreateFailureAfterPublishLeavesExactRecoverableCandidate(t *testi
 	if err != nil || !firstReferenced {
 		t.Fatalf("first upload BlobReferenced = %v, %v", firstReferenced, err)
 	}
+}
+
+func TestUploadPostRenameCancellationRetainsCandidateAndTypedOutcome(t *testing.T) {
+	root := t.TempDir()
+	database, blobs, service := newUploadCandidateFixture(t, root)
+	content := []byte("upload cancellation after content-addressed rename")
+	digest := sha256.Sum256(content)
+	id, err := blob.ParseID("sha256:" + hex.EncodeToString(digest[:]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := newCancelWhenUploadObjectPublishedContext(t.Context(), root, id)
+	result, err := service.Upload(ctx, UploadRequest{
+		IdempotencyKey: "post-rename-cancel", Title: "Post rename cancel", Filename: "cancel.txt",
+		Source: bytes.NewReader(content),
+	})
+	var uncertain *blob.PublicationOutcomeUncertainError
+	if result != (UploadResult{}) || !ctx.observed.Load() || !errors.Is(err, context.Canceled) ||
+		!errors.As(err, &uncertain) || uncertain.ID != id || uncertain.Size != int64(len(content)) || !uncertain.Renamed {
+		t.Fatalf("post-rename canceled Upload = %#v, observed=%v, error=%v, uncertain=%#v",
+			result, ctx.observed.Load(), err, uncertain)
+	}
+	assertUploadCandidateCount(t, database, 1)
+	referenced, err := database.BlobReferenced(t.Context(), id.String())
+	if err != nil || referenced {
+		t.Fatalf("post-rename canceled BlobReferenced = %v, %v", referenced, err)
+	}
+	file, err := blobs.Open(id)
+	if err != nil {
+		t.Fatalf("post-rename canceled object: %v", err)
+	}
+	_ = file.Close()
+}
+
+type cancelWhenUploadObjectPublishedContext struct {
+	context.Context
+	cancel   context.CancelFunc
+	object   string
+	observed atomic.Bool
+}
+
+func newCancelWhenUploadObjectPublishedContext(
+	parent context.Context,
+	root string,
+	id blob.BlobID,
+) *cancelWhenUploadObjectPublishedContext {
+	digest := strings.TrimPrefix(id.String(), "sha256:")
+	ctx, cancel := context.WithCancel(parent)
+	return &cancelWhenUploadObjectPublishedContext{
+		Context: ctx,
+		cancel:  cancel,
+		object:  filepath.Join(root, "blobs", "objects", "sha256", digest[:2], digest[2:]),
+	}
+}
+
+func (ctx *cancelWhenUploadObjectPublishedContext) Err() error {
+	if err := ctx.Context.Err(); err != nil {
+		return err
+	}
+	if info, err := os.Lstat(ctx.object); err == nil && info.Mode().IsRegular() {
+		ctx.observed.Store(true)
+		ctx.cancel()
+	}
+	return ctx.Context.Err()
 }
 
 func TestExactUploadReplayRemovesRequeuedCandidate(t *testing.T) {
