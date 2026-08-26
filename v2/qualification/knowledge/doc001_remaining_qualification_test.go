@@ -502,6 +502,7 @@ func waitForDOC001Marker(ctx context.Context, path string, timeout time.Duration
 	defer deadline.Stop()
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
+	var lastReadError error
 	for {
 		raw, err := os.ReadFile(path)
 		if err == nil {
@@ -510,12 +511,18 @@ func waitForDOC001Marker(ctx context.Context, path string, timeout time.Duration
 				return marker, nil
 			}
 		} else if !errors.Is(err, os.ErrNotExist) {
-			return doc001ForcedMarker{}, err
+			// Windows can briefly deny a read while the child is closing and
+			// atomically publishing the marker. Keep polling the bounded,
+			// test-owned path; report the last error if it never becomes readable.
+			lastReadError = err
 		}
 		select {
 		case <-ctx.Done():
 			return doc001ForcedMarker{}, ctx.Err()
 		case <-deadline.C:
+			if lastReadError != nil {
+				return doc001ForcedMarker{}, fmt.Errorf("timed out waiting for committed running job: %w", lastReadError)
+			}
 			return doc001ForcedMarker{}, errors.New("timed out waiting for committed running job")
 		case <-ticker.C:
 		}

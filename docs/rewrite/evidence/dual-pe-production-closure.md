@@ -18,6 +18,11 @@ The replay preserves the current RET boundary corpus
 `core-keyword-boundary.8aadf60.v2.json` and the current evidence-only runtime
 helper classification. Neither conflict adds a shipped command: the exact
 production command set remains `mindweaver.exe` and `mindweaver-pdf.exe`.
+The final qualification-only follow-up also puts the runtime interruption
+harness's nested Go builds into vendor mode and makes its Windows child-marker
+reader tolerate only a bounded publication interval. Those changes are test
+infrastructure, not production-source inputs, and do not change either PE
+identity.
 
 The frozen build uses Go 1.27.0 on Windows/amd64 with `CGO_ENABLED=0` while
 `go.mod` remains at `go 1.26`. Every module-resolving Go subprocess is forced to

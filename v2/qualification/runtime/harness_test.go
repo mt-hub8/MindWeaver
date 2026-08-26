@@ -134,8 +134,10 @@ func frozenGoTool(t *testing.T) string {
 
 func hermeticEnvironment(extra map[string]string) []string {
 	overrides := map[string]string{
-		"CGO_ENABLED": "0", "GOPROXY": "off", "GOSUMDB": "off",
-		"GOTOOLCHAIN": "local", "GOWORK": "off", "GOFLAGS": "-mod=readonly -buildvcs=false",
+		"CGO_ENABLED": "0", "GOARCH": "amd64", "GOAMD64": "v1", "GOOS": "windows",
+		"GOENV": "off", "GOEXPERIMENT": "", "GOFIPS140": "off", "GOFLAGS": "-mod=vendor -trimpath -buildvcs=false",
+		"GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local", "GOTELEMETRY": "off",
+		"GOVCS": "*:off", "GOWORK": "off",
 	}
 	for key, value := range extra {
 		overrides[key] = value
