@@ -84,7 +84,6 @@
     ],
     "excludedRootPrefixes": [
       "docs",
-      "migration",
       "openapi",
       "qualification",
       "release",

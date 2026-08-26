@@ -33,6 +33,7 @@ func TestEmbeddedContractMatchesProduction(t *testing.T) {
 	assertProblemMapping(t, snapshot.ProblemStatusByCode)
 	assertRouteSurface(t, root, snapshot.Routes)
 	assertProductionPackages(t, root, snapshot.Surface)
+	assertNoLegacyMigrationSurface(t, root)
 	assertMigrationsAndTables(t, root, snapshot.Surface)
 	assertCommandSurface(t, root, snapshot.Surface)
 	assertNoLaterSurface(t, snapshot.Surface)
@@ -361,7 +362,7 @@ func assertProductionPackages(t *testing.T, root string, surface contract.Surfac
 	t.Helper()
 	if !reflect.DeepEqual(surface.ProductionDiscovery.LibraryRoots, []string{"internal", "platform"}) ||
 		!reflect.DeepEqual(surface.ProductionDiscovery.ExcludedFileSuffixes, []string{"_test.go"}) ||
-		!reflect.DeepEqual(surface.ProductionDiscovery.ExcludedRootPrefixes, []string{"docs", "migration", "openapi", "qualification", "release", "spikes", "testdata"}) {
+		!reflect.DeepEqual(surface.ProductionDiscovery.ExcludedRootPrefixes, []string{"docs", "openapi", "qualification", "release", "spikes", "testdata"}) {
 		t.Fatal("production discovery policy drift")
 	}
 	set := map[string]struct{}{}
@@ -388,6 +389,131 @@ func assertProductionPackages(t *testing.T, root string, surface contract.Surfac
 	actual := sortedKeys(set)
 	if !reflect.DeepEqual(actual, surface.Packages) {
 		t.Fatalf("production packages = %#v, contract = %#v", actual, surface.Packages)
+	}
+}
+
+func assertNoLegacyMigrationSurface(t *testing.T, root string) {
+	t.Helper()
+	if err := legacyMigrationSurfaceError(root); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func legacyMigrationSurfaceError(root string) error {
+	for _, relative := range []string{
+		"migration",
+		"internal/migration",
+		"cmd/mindweaver-migrate",
+		"internal/store/sqlite/legacy_import.go",
+		"internal/store/sqlite/legacy_import_test.go",
+		"internal/store/sqlite/migrations/007_legacy_import.sql",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(relative))
+		if _, err := os.Lstat(path); err == nil {
+			return fmt.Errorf("legacy migration surface exists: %s", relative)
+		} else if !os.IsNotExist(err) {
+			return fmt.Errorf("inspect forbidden legacy migration surface %s: %w", relative, err)
+		}
+	}
+
+	stableTokens := [][]byte{
+		[]byte("mindweaver-migrate"),
+		[]byte("mindweaver-neutral-export"),
+		[]byte("mindweaver-neutral-export/v1"),
+		[]byte("legacyimport"),
+		[]byte("legacy_import"),
+		[]byte("legacy_ollama_intents"),
+		[]byte("LEGACY_OLLAMA_RECONFIGURE_REQUIRED"),
+		[]byte("007_legacy_import"),
+	}
+	for _, relative := range []string{"cmd", "internal", "platform"} {
+		base := filepath.Join(root, relative)
+		err := filepath.WalkDir(base, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.Type()&os.ModeSymlink != 0 {
+				return fmt.Errorf("production source tree contains link: %s", filepath.ToSlash(path))
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			lowerName := strings.ToLower(entry.Name())
+			if strings.HasPrefix(lowerName, "legacy_import") {
+				return fmt.Errorf("legacy import adapter exists: %s", filepath.ToSlash(path))
+			}
+			if filepath.Ext(lowerName) != ".go" && filepath.Ext(lowerName) != ".sql" {
+				return nil
+			}
+			if strings.HasSuffix(lowerName, "_test.go") {
+				return nil
+			}
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			if info.Size() > 4<<20 {
+				return fmt.Errorf("production source exceeds absence-scan bound: %s", filepath.ToSlash(path))
+			}
+			contents, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			for _, forbidden := range stableTokens {
+				if bytes.Contains(contents, forbidden) {
+					return fmt.Errorf("legacy migration token %q exists in %s", forbidden, filepath.ToSlash(path))
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func TestLegacyMigrationAbsenceGateRejectsForbiddenSurfaces(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		relative string
+		contents string
+	}{
+		{name: "root package", relative: "migration/neutral.go", contents: "package migration\n"},
+		{name: "internal package", relative: "internal/migration/import.go", contents: "package migration\n"},
+		{name: "command", relative: "cmd/mindweaver-migrate/main.go", contents: "package main\n"},
+		{name: "adapter case variant", relative: "internal/store/sqlite/Legacy_Import_Adapter.go", contents: "package sqlite\n"},
+		{name: "schema", relative: "internal/store/sqlite/migrations/007_legacy_import.sql", contents: "SELECT 1;\n"},
+		{name: "migrate command token", relative: "internal/store/sqlite/token.go", contents: "package sqlite\nconst stale = \"mindweaver-migrate\"\n"},
+		{name: "neutral exporter token", relative: "internal/store/sqlite/token.go", contents: "package sqlite\nconst stale = \"mindweaver-neutral-export/v1\"\n"},
+		{name: "legacy importer token", relative: "internal/store/sqlite/token.go", contents: "package sqlite\nconst stale = \"legacyimport\"\n"},
+		{name: "legacy table token", relative: "internal/store/sqlite/token.go", contents: "package sqlite\nconst stale = \"legacy_imports\"\n"},
+		{name: "legacy Ollama table token", relative: "internal/store/sqlite/token.go", contents: "package sqlite\nconst stale = \"legacy_ollama_intents\"\n"},
+		{name: "legacy reconfigure token", relative: "internal/store/sqlite/token.go", contents: "package sqlite\nconst stale = \"LEGACY_OLLAMA_RECONFIGURE_REQUIRED\"\n"},
+		{name: "legacy schema token", relative: "internal/store/sqlite/token.go", contents: "package sqlite\nconst stale = \"007_legacy_import\"\n"},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			for _, directory := range []string{"cmd", "internal", "platform"} {
+				if err := os.MkdirAll(filepath.Join(root, directory), 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			path := filepath.Join(root, filepath.FromSlash(test.relative))
+			if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(test.contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := legacyMigrationSurfaceError(root); err == nil {
+				t.Fatal("forbidden legacy migration surface unexpectedly passed")
+			}
+		})
 	}
 }
 
@@ -435,6 +561,9 @@ func assertMigrationsAndTables(t *testing.T, root string, surface contract.Surfa
 
 func assertCommandSurface(t *testing.T, root string, surface contract.Surface) {
 	t.Helper()
+	if len(surface.Commands) != 2 || surface.Commands[0].Name != "mindweaver" || surface.Commands[1].Name != "mindweaver-pdf" {
+		t.Fatalf("command contract must contain exactly mindweaver and mindweaver-pdf, got %#v", surface.Commands)
+	}
 	entries, err := os.ReadDir(filepath.Join(root, "cmd"))
 	if err != nil {
 		t.Fatal(err)

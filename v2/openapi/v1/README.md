@@ -38,8 +38,13 @@ rejects an invented ETag/`If-Match` parameter or response header.
 Go library packages, HTTP operations, migration filenames, application-declared
 final SQLite tables, and executable command surfaces. Package discovery scans
 only non-test `.go` files under `internal/` and `platform/`; `_test.go` files
-and root-level `docs`, `migration`, `openapi`, `qualification`, `release`,
+and root-level `docs`, `openapi`, `qualification`, `release`,
 `spikes`, and `testdata` evidence/tooling roots are not production packages.
+The contract test separately requires the legacy migration root, importer
+package, migration command, SQLite adapter, `007_legacy_import.sql`, and stable
+legacy-import production tokens to be absent. It also freezes the command-source
+set to exactly `mindweaver` and the internal `mindweaver-pdf` helper; final PE
+and installer contents still require the release artifact gate.
 The SQLite list covers application-declared tables, including the FTS virtual
 table, but not SQLite-owned `sqlite_*` or FTS shadow implementation tables.
 Exact token matching prevents Agent, memory, vector, embedding, rerank,
@@ -54,7 +59,7 @@ idempotency, success, Problem, and transport status metadata to the surface
 manifest. `contract_test.go` then extracts the real app route literal with the
 Go AST, compares the local transport allowlist, discovers production packages,
 derives the final declared table set across ordered migrations, and inspects
-the real CLI switches.
+the real CLI switches and fresh-Vault absence boundary.
 
 This is implementation-closure evidence for API-001 and ARC-003. It is not a
 browser compatibility, accessibility, usability, penetration-test, release,
