@@ -121,6 +121,31 @@ func TestRAGProductHTTPDurableOutcomesAndRestartReconciliation(t *testing.T) {
 		t.Fatal("uploaded document id is empty")
 	}
 
+	bodyBoundConversation := createRAGConversation(t, client, application, session, "body-bound", "请求体边界")
+	const bodyCanary = "OVERSIZED-ASK-BODY-CANARY-5f65d7"
+	oversizedBody := `{"conversationId":"` + bodyBoundConversation.ID + `","expectedRevision":0,"question":"quantum coffee machine","padding":"` +
+		bodyCanary + strings.Repeat("x", int(maxJSONBodyBytes)) + `"}`
+	oversizedRequest := appRequest(t, application, session, http.MethodPost, "/api/v1/ask", strings.NewReader(oversizedBody))
+	oversizedRequest.Header.Set("Content-Type", "application/json")
+	oversizedRequest.Header.Set("Idempotency-Key", "ask-body-bound")
+	beforeBodyBound := fake.calls.Load()
+	oversizedResult := do(t, client, oversizedRequest)
+	if oversizedResult.StatusCode != http.StatusBadRequest || bytes.Contains(oversizedResult.body, []byte(bodyCanary)) || fake.calls.Load() != beforeBodyBound {
+		t.Fatalf("oversized Ask status/body/calls = %d %q / %d->%d", oversizedResult.StatusCode, oversizedResult.body, beforeBodyBound, fake.calls.Load())
+	}
+	bodyBoundRequest := map[string]any{
+		"conversationId": bodyBoundConversation.ID, "expectedRevision": int64(0), "question": "quantum coffee machine",
+	}
+	bodyBoundAnswer := askRAG(t, client, application, session, "ask-body-bound", bodyBoundRequest)
+	if bodyBoundAnswer.StatusCode != http.StatusOK || !bytes.Contains(bodyBoundAnswer.body, []byte(`"status":"completed"`)) ||
+		fake.calls.Load() != beforeBodyBound+1 {
+		t.Fatalf("post-rejection Ask status/body/calls = %d %q / %d", bodyBoundAnswer.StatusCode, bodyBoundAnswer.body, fake.calls.Load())
+	}
+	bodyBoundReplay := askRAG(t, client, application, session, "ask-body-bound", bodyBoundRequest)
+	if !bytes.Equal(bodyBoundReplay.body, bodyBoundAnswer.body) || fake.calls.Load() != beforeBodyBound+1 {
+		t.Fatalf("body-bound replay status/body/calls = %d %q / %d", bodyBoundReplay.StatusCode, bodyBoundReplay.body, fake.calls.Load())
+	}
+
 	successConversation := createRAGConversation(t, client, application, session, "success", "成功问答")
 	overLimitQuestion := askRAG(t, client, application, session, "ask-over-question-limit", map[string]any{
 		"conversationId": successConversation.ID, "expectedRevision": int64(0), "question": strings.Repeat("界", 342),

@@ -190,6 +190,80 @@ func TestGenerateBoundsAndCancellation(t *testing.T) {
 	}
 }
 
+func TestGenerateExactPromptBoundAndCancellationWhileWaitingForHeaders(t *testing.T) {
+	t.Run("exact prompt bound is sent once", func(t *testing.T) {
+		var calls atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			calls.Add(1)
+			var body struct {
+				Messages []struct {
+					Content string `json:"content"`
+				} `json:"messages"`
+			}
+			decodeErr := json.NewDecoder(request.Body).Decode(&body)
+			messageCount := len(body.Messages)
+			promptBytes := 0
+			if messageCount == 1 {
+				promptBytes = len(body.Messages[0].Content)
+			}
+			if decodeErr != nil || messageCount != 1 || promptBytes != MaxPromptBytes {
+				t.Errorf("exact-bound request decode/messages/prompt-bytes = %v/%d/%d", decodeErr, messageCount, promptBytes)
+			}
+			writer.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(writer, `{"message":{"role":"assistant","content":"bounded"},"done":true}`)
+		}))
+		defer server.Close()
+		client := newTestClient(t, server.URL, time.Second)
+		answer, err := client.Generate(context.Background(), strings.Repeat("x", MaxPromptBytes))
+		if err != nil || answer != "bounded" || calls.Load() != 1 {
+			t.Fatalf("exact-bound Generate = %q, %v; calls=%d", answer, err, calls.Load())
+		}
+		if _, err := client.Generate(context.Background(), strings.Repeat("x", MaxPromptBytes+1)); !errors.Is(err, ErrRequestTooLarge) || calls.Load() != 1 {
+			t.Fatalf("over-bound Generate error/calls = %v/%d", err, calls.Load())
+		}
+	})
+
+	t.Run("caller cancellation interrupts response headers", func(t *testing.T) {
+		started := make(chan struct{})
+		release := make(chan struct{})
+		server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+			close(started)
+			select {
+			case <-request.Context().Done():
+			case <-release:
+			}
+		}))
+		defer server.Close()
+		defer close(release)
+		client := newTestClient(t, server.URL, time.Second)
+		ctx, cancel := context.WithCancel(context.Background())
+		result := make(chan error, 1)
+		const promptCanary = "HEADER-CANCEL-PROMPT-CANARY-36cc0c"
+		go func() {
+			_, err := client.Generate(ctx, promptCanary)
+			result <- err
+		}()
+		select {
+		case <-started:
+			cancel()
+		case <-time.After(time.Second):
+			cancel()
+			t.Fatal("request did not reach the response-header boundary")
+		}
+		select {
+		case err := <-result:
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("header cancellation error = %v", err)
+			}
+			if strings.Contains(err.Error(), promptCanary) {
+				t.Fatalf("header cancellation leaked prompt: %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("Generate remained blocked after caller cancellation")
+		}
+	})
+}
+
 func TestProbeUsesLiteralIPv6Loopback(t *testing.T) {
 	t.Parallel()
 	listener, err := net.Listen("tcp6", "[::1]:0")

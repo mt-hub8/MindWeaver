@@ -409,6 +409,65 @@ func TestAskPersistsProviderFailureAndPostResponseCommitUncertainty(t *testing.T
 		if err != nil || replayed.ID != answer.ID || calls.Load() != 1 {
 			t.Fatalf("uncertain replay = %#v, %v; calls=%d", replayed, err, calls.Load())
 		}
+		fixture.reopen(t)
+		reopenedReplay, err := fixture.rag.Ask(context.Background(), request)
+		if err != nil || reopenedReplay.ID != answer.ID || reopenedReplay.Status != store.MessageFailed ||
+			reopenedReplay.ErrorCode != "OUTCOME_UNCERTAIN" || calls.Load() != 1 {
+			t.Fatalf("reopened uncertain replay = %#v, %v; calls=%d", reopenedReplay, err, calls.Load())
+		}
+	})
+
+	t.Run("provider cancellation persists and exact replay after reopen does not regenerate", func(t *testing.T) {
+		fixture := newRAGFixture(t)
+		fixture.upload(t, "cancelled.txt", "Cancelled", "取消知识库答案来自这里。")
+		conversation, err := fixture.rag.CreateConversation(t.Context(), "Cancelled")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		entered := make(chan struct{})
+		var calls atomic.Int32
+		fixture.rag.generate = func(callContext context.Context, _ store.OllamaConfig, _ string) (string, error) {
+			calls.Add(1)
+			close(entered)
+			<-callContext.Done()
+			return "", callContext.Err()
+		}
+		request := AskRequest{
+			ConversationID: conversation.ID, ExpectedRevision: 0,
+			IdempotencyKey: "cancelled-provider", Question: "取消知识库答案",
+		}
+		type askResult struct {
+			answer store.Answer
+			err    error
+		}
+		result := make(chan askResult, 1)
+		go func() {
+			answer, askErr := fixture.rag.Ask(ctx, request)
+			result <- askResult{answer: answer, err: askErr}
+		}()
+		select {
+		case <-entered:
+			cancel()
+		case <-time.After(5 * time.Second):
+			cancel()
+			t.Fatal("Ask did not reach the provider boundary")
+		}
+		var completed askResult
+		select {
+		case completed = <-result:
+		case <-time.After(20 * time.Second):
+			t.Fatal("cancelled Ask did not converge to a durable terminal state")
+		}
+		if !errors.Is(completed.err, context.Canceled) || completed.answer.Status != store.MessageFailed ||
+			completed.answer.ErrorCode != "OUTCOME_UNCERTAIN" || calls.Load() != 1 {
+			t.Fatalf("cancelled Ask = %#v, %v; calls=%d", completed.answer, completed.err, calls.Load())
+		}
+		fixture.reopen(t)
+		replayed, err := fixture.rag.Ask(context.Background(), request)
+		if err != nil || replayed.ID != completed.answer.ID || replayed.ErrorCode != "OUTCOME_UNCERTAIN" || calls.Load() != 1 {
+			t.Fatalf("reopened cancelled replay = %#v, %v; calls=%d", replayed, err, calls.Load())
+		}
 	})
 }
 
