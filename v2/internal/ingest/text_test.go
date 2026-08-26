@@ -54,6 +54,72 @@ func FuzzChunkTextDeterministicAndBounded(f *testing.F) {
 	})
 }
 
+func FuzzReadTextCanonicalAndBounded(f *testing.F) {
+	for _, seed := range []struct {
+		data     []byte
+		maxBytes uint16
+	}{
+		{data: []byte("\xef\xbb\xbf\xe6\xa0\x87\xe9\xa2\x98\r\nfirst\rsecond\n"), maxBytes: 64},
+		{data: []byte{0xff, 0xfe, 0xfd}, maxBytes: 3},
+		{data: []byte("before\x00after"), maxBytes: 32},
+		{data: []byte(" \r\n\t "), maxBytes: 8},
+		{data: []byte("exact"), maxBytes: 4},
+		{data: []byte("over-limit"), maxBytes: 3},
+	} {
+		f.Add(seed.data, seed.maxBytes)
+	}
+
+	f.Fuzz(func(t *testing.T, data []byte, maxSeed uint16) {
+		// The public 4 MiB limit is covered by bounded DOC-001 qualification.
+		// Keep mutation iterations small while still exercising every ReadText
+		// validation and normalization branch.
+		if len(data) > 64<<10 {
+			t.Skip()
+		}
+		maxBytes := int64(maxSeed) + 1
+		want, wantErr := canonicalReadTextResult(data, maxBytes)
+
+		first, firstErr := ReadText(context.Background(), bytes.NewReader(data), maxBytes)
+		second, secondErr := ReadText(context.Background(), bytes.NewReader(data), maxBytes)
+		if wantErr != nil {
+			if !errors.Is(firstErr, wantErr) || !errors.Is(secondErr, wantErr) || first != "" || second != "" {
+				t.Fatalf("ReadText result = %q/%v then %q/%v; want empty/%v", first, firstErr, second, secondErr, wantErr)
+			}
+			return
+		}
+		if firstErr != nil || secondErr != nil {
+			t.Fatalf("ReadText error = %v then %v; want success", firstErr, secondErr)
+		}
+		if first != want || second != want {
+			t.Fatalf("ReadText result = %q then %q; want %q", first, second, want)
+		}
+		if len(first) > int(maxBytes) || !utf8.ValidString(first) || strings.ContainsAny(first, "\r\x00") || strings.TrimSpace(first) == "" {
+			t.Fatalf("ReadText success violates byte/UTF-8/canonical-text bounds: %q", first)
+		}
+	})
+}
+
+func canonicalReadTextResult(data []byte, maxBytes int64) (string, error) {
+	if int64(len(data)) > maxBytes {
+		return "", ErrSourceTooLarge
+	}
+	if bytes.HasPrefix(data, []byte{0xef, 0xbb, 0xbf}) {
+		data = data[3:]
+	}
+	if !utf8.Valid(data) {
+		return "", ErrInvalidUTF8
+	}
+	if bytes.IndexByte(data, 0) >= 0 {
+		return "", ErrBinaryText
+	}
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	if strings.TrimSpace(text) == "" {
+		return "", ErrEmptyText
+	}
+	return text, nil
+}
+
 func TestDetectTextFormat(t *testing.T) {
 	t.Parallel()
 	tests := map[string]TextFormat{
