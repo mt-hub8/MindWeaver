@@ -1,19 +1,29 @@
 # Dual-PE production dependency closure
 
-Status: **CUT-002 candidate qualified on its frozen branch; not integrated and
-not release-qualified**
+Status: **CUT-002 offline mechanics candidate qualified; production identities
+are obsolete and CUT-002 is not integrated, PASS, or release-qualified**
 
-## CUT-002 vendored extraction candidate
+## CUT-002 vendored extraction mechanics candidate
 
 This final adaptation is based on exact committed main
 `0dff1d45eee689cb119cd6be20bf19ac40e9d5f6`. It selectively replays the
 accepted mechanics as `16f4ef4` (canonical vendor), `2877016` (empty-cache
 gates), `d40d9db` (whitespace and extraction evidence), `ca6b06a` (current
 CORE adaptation), and `8151f7c` (nested qualification offline closure), then
-refreshes identities and evidence in one final commit. The final adaptation
-hash is reported by the handoff rather than self-referenced inside its own
-contents. It is not merged and does not claim the identity of a later
-controller branch.
+refreshed identities in `d680fbd`. Those identities are retained below only as
+historical mechanics evidence. They were invalidated by later BLOB production
+integration and will change again with the pending ARC/OpenAPI integration;
+they are not candidates for final integration.
+
+Two later test-only commits close the remaining invocation defects without
+refreshing any production identity. `3bdd06a` derives and restores GOROOT from
+the explicitly selected Go binary, makes `ci.sh` fail closed when that same
+toolchain lacks gofmt, and makes the browser runner build support both source
+layouts under its own empty-cache/offline environment. `0c90fdc` makes the
+reliability fuzz harness prefer and validate `MW_GO`, derive the child GOROOT
+from that exact executable, and replace inherited Go variables
+case-insensitively. No production, OpenAPI, vendor, or schema file changes in
+either follow-up.
 
 This baseline includes migration
 `007_drop_unused_settings.sql`, whose migration tests remove the production-dead
@@ -33,15 +43,15 @@ infrastructure, not production-source inputs, and do not change either PE
 identity.
 
 The frozen build uses Go 1.27.0 on Windows/amd64 with `CGO_ENABLED=0` while
-`go.mod` remains at `go 1.26`. Every module-resolving Go subprocess is forced to
-`-mod=vendor` under the offline controls, and every shipped build uses
+`go.mod` remains at `go 1.26`. Every CUT-002 delivery or qualification Go
+subprocess is forced to `-mod=vendor` under the offline controls, and every shipped build uses
 `-trimpath -buildvcs=false`. `GOAMD64=v1`, an empty `GOEXPERIMENT`,
 `GOFIPS140=off`, and `GOTELEMETRY=off` are explicit. `GOPROXY`, `GOSUMDB`,
 toolchain resolution, workspaces, and VCS lookup are disabled. Each CI
 invocation creates new empty `GOMODCACHE`, `GOCACHE`, and `GOTMPDIR`
 directories and rejects any module-cache write.
 
-The resulting exact identities are:
+The now-obsolete `d680fbd` snapshot identities were:
 
 - `mindweaver.exe`: 78 first-party source files,
   `e06c6a3486c7b4b2683ec583df04620d725ce87e8d469c48f7f6110a55bfd723`;
@@ -69,9 +79,8 @@ tree. A temporary-repository regression test proves the same trailing-space
 mutation is ignored under `vendor/` but still makes `git diff --check` fail for
 a first-party file; no upstream vendor byte is rewritten to satisfy that gate.
 
-At the final adaptation checkpoint reported by the handoff, both supported
-repository layouts are exercised with the same Windows toolchain and offline
-controls:
+At mechanics checkpoint `0c90fdc`, both supported repository layouts were
+exercised with the same Windows toolchain and offline controls:
 
 - monorepo `HEAD:v2` tracked-only archive: full tests, vet, dual-PE builds, and
   empty-module-cache assertion **PASS**;
@@ -86,7 +95,13 @@ lossy temporary-Git reconstruction evidence. Git whitespace diagnostics still
 exclude only canonical vendor bytes, with a regression proving a first-party
 whitespace defect fails. These results qualify the candidate's
 build/extraction boundary; they do not close the project LICENSE, SBOM, MSI,
-signing, or clean-VM release blockers.
+signing, or clean-VM release blockers. A direct `ci.ps1 -Go <Go1.27>` run from
+a parent with both `GOROOT` and `MW_GO` absent passed all tests, nested fuzz,
+vet, and both builds, left the temporary module cache empty, and restored the
+absent GOROOT. Browser `-SelfTest` passed in both monorepo and committed
+extracted repo-root layouts; one first attempt conservatively blocked when an
+unrelated Edge child appeared during the global process-difference window, and
+the stable-window rerun passed. That environment sensitivity remains P2.
 
 ## Earlier non-vendored integration refresh
 
