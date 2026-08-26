@@ -120,8 +120,13 @@
     return response.json();
   }
 
+  const definiteMutationCodes = new Set([
+    "INVALID_ARGUMENT", "UNAUTHENTICATED", "FORBIDDEN", "NOT_FOUND",
+    "CONFLICT", "RESOURCE_LIMIT"
+  ]);
+
   function definiteMutationFailure(error) {
-    return Number.isInteger(error.status) && error.status < 500;
+    return definiteMutationCodes.has(error.code);
   }
 
   async function bootstrap() {
@@ -520,6 +525,12 @@
         },
         body: attempt.file
       });
+      if (!payload || typeof payload.documentId !== "string" || payload.documentId.length === 0 ||
+          typeof payload.revisionId !== "string" || payload.revisionId.length === 0 ||
+          typeof payload.jobId !== "string" || payload.jobId.length === 0 ||
+          typeof payload.created !== "boolean") {
+        throw new Error("本地服务返回了无效的上传结果。");
+      }
       admitted = true;
       byId("upload-progress").textContent = payload.created ? "上传完成，正在建立索引……" : "已识别重复请求，继续跟踪原任务……";
       await pollJob(payload.jobId);
@@ -667,7 +678,8 @@
         body: attempt.body
       });
       const collection = payload && payload.collection;
-      if (!collection || typeof collection.id !== "string" || !Number.isInteger(collection.revision) || typeof collection.name !== "string") {
+      if (!collection || typeof collection.id !== "string" || collection.id.length === 0 ||
+          !Number.isInteger(collection.revision) || collection.revision < 0 || collection.name !== attempt.name) {
         throw new Error("本地服务返回了无效的集合结果。");
       }
       activeCollection = collection.id;
@@ -1103,7 +1115,8 @@
         body: attempt.body
       });
       const conversation = payload && payload.conversation;
-      if (!conversation || typeof conversation.id !== "string" || !Number.isInteger(conversation.revision) || typeof conversation.title !== "string") {
+      if (!conversation || typeof conversation.id !== "string" || conversation.id.length === 0 ||
+          !Number.isInteger(conversation.revision) || conversation.revision < 0 || conversation.title !== attempt.title) {
         throw new Error("本地服务返回了无效的会话结果。");
       }
       activeConversation = conversation;
@@ -1357,7 +1370,11 @@
       });
       if (generation !== askGeneration || !activeConversation || activeConversation.id !== attempt.conversationID) return;
       const answer = payload && payload.answer;
-      if (!answer || typeof answer.id !== "string" || !Number.isInteger(answer.conversationRevision) ||
+      if (!answer || typeof answer.id !== "string" || answer.id.length === 0 ||
+          answer.conversationId !== attempt.conversationID || answer.question !== attempt.question ||
+          !Number.isInteger(answer.conversationRevision) || answer.conversationRevision < 0 ||
+          (answer.scopeCollectionId !== null && typeof answer.scopeCollectionId !== "string") ||
+          (answer.scopeCollectionId === null ? "" : answer.scopeCollectionId) !== attempt.scope ||
           !["pending", "completed", "refused", "failed"].includes(answer.status)) {
         throw new Error("本地服务返回了无效的 Ask 结果。");
       }
@@ -1383,7 +1400,7 @@
         return;
       }
       byId("ask-status").textContent = `${error.message}；网络或服务不确定时再次提交会复用完全相同的请求与幂等键。`;
-      if (Number.isInteger(error.status) && error.status < 500) {
+      if (definiteMutationFailure(error)) {
         askAttempt = null;
         askOutcomeUncertain = false;
         if (error.status === 404 || error.status === 409) {

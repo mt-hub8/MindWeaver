@@ -105,8 +105,9 @@ func TestEmbeddedClientBindsImmutableMutationAttemptsAndFreezesAskReplay(t *test
 		}
 	}
 	for _, contract := range []string{
+		"const definiteMutationCodes = new Set([",
 		"function definiteMutationFailure(error)",
-		"return Number.isInteger(error.status) && error.status < 500;",
+		"return definiteMutationCodes.has(error.code);",
 		`byId("ask-question").disabled = replayLocked`,
 		`byId("ask-collection").disabled = replayLocked`,
 		`select.dataset.conversationSelectId = conversation.id`,
@@ -127,6 +128,7 @@ func TestEmbeddedClientBindsImmutableMutationAttemptsAndFreezesAskReplay(t *test
 		`encodeTextHeader(attempt.title)`,
 		`encodeTextHeader(attempt.filename)`,
 		`body: attempt.file`,
+		`throw new Error("本地服务返回了无效的上传结果。")`,
 		`if (!admitted && definiteMutationFailure(error)) clearUploadAttempt()`,
 		`uploadAttempt === attempt`,
 	})
@@ -142,6 +144,7 @@ func TestEmbeddedClientBindsImmutableMutationAttemptsAndFreezesAskReplay(t *test
 		`"Idempotency-Key": attempt.key`,
 		`body: attempt.body`,
 		`const collection = payload && payload.collection`,
+		`collection.name !== attempt.name`,
 		`throw new Error("本地服务返回了无效的集合结果。")`,
 		`if (definiteMutationFailure(error)) clearCollectionAttempt()`,
 		`collectionAttempt === attempt`,
@@ -160,6 +163,7 @@ func TestEmbeddedClientBindsImmutableMutationAttemptsAndFreezesAskReplay(t *test
 		`"Idempotency-Key": attempt.key`,
 		`body: attempt.body`,
 		`const conversation = payload && payload.conversation`,
+		`conversation.title !== attempt.title`,
 		`throw new Error("本地服务返回了无效的会话结果。")`,
 		`if (definiteMutationFailure(error)) clearConversationAttempt()`,
 		`conversationAttempt === attempt`,
@@ -183,10 +187,14 @@ func TestEmbeddedClientBindsImmutableMutationAttemptsAndFreezesAskReplay(t *test
 		`"Idempotency-Key": attempt.key`,
 		`body: attempt.body`,
 		`const answer = payload && payload.answer`,
+		`answer.conversationId !== attempt.conversationID`,
+		`answer.question !== attempt.question`,
+		`) !== attempt.scope`,
 		`throw new Error("本地服务返回了无效的 Ask 结果。")`,
 		`admittedAnswer = answer`,
 		`if (admittedAnswer !== null) {`,
 		`answerStateText(admittedAnswer)`,
+		`if (definiteMutationFailure(error)) {`,
 		`askOutcomeUncertain = true`,
 	})
 	if !strings.Contains(askControls, `askAttempt !== null && (askInFlight || askOutcomeUncertain ||`) {
