@@ -82,12 +82,12 @@ func openApprovedArtifacts(approval artifactApproval, rootPath string) (_ *appro
 	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
 		return nil, errors.New("invalid artifact bundle")
 	}
-	root, err := os.Open(cleanRoot)
+	root, err := openApprovedArtifactRoot(cleanRoot)
 	if err != nil {
 		return nil, errors.New("invalid artifact bundle")
 	}
 	openedRootInfo, err := root.Stat()
-	if err != nil || !openedRootInfo.IsDir() || !os.SameFile(rootInfo, openedRootInfo) {
+	if err != nil || !openedRootInfo.IsDir() || !os.SameFile(rootInfo, openedRootInfo) || verifyApprovedArtifactHandle(root, true) != nil {
 		_ = root.Close()
 		return nil, errors.New("invalid artifact bundle")
 	}
@@ -139,12 +139,13 @@ func openRetainedArtifact(root string, approval binaryApproval) (retainedArtifac
 	if err != nil || linkInfo.Mode()&os.ModeSymlink != 0 || !linkInfo.Mode().IsRegular() || linkInfo.Size() != approval.Size {
 		return retainedArtifact{}, errors.New("invalid artifact bundle")
 	}
-	file, err := os.Open(path)
+	file, err := openApprovedArtifactFile(path)
 	if err != nil {
 		return retainedArtifact{}, errors.New("invalid artifact bundle")
 	}
 	identity, err := file.Stat()
-	if err != nil || !identity.Mode().IsRegular() || identity.Size() != approval.Size || !os.SameFile(linkInfo, identity) {
+	if err != nil || !identity.Mode().IsRegular() || identity.Size() != approval.Size || !os.SameFile(linkInfo, identity) ||
+		verifyApprovedArtifactHandle(file, false) != nil {
 		_ = file.Close()
 		return retainedArtifact{}, errors.New("invalid artifact bundle")
 	}
@@ -166,6 +167,9 @@ func (artifact *retainedArtifact) verify() error {
 	}
 	current, err := artifact.file.Stat()
 	if err != nil || !os.SameFile(artifact.identity, current) || current.Size() != artifact.approval.Size || !singleLink(artifact.file) {
+		return errors.New("invalid artifact bundle")
+	}
+	if verifyApprovedArtifactHandle(artifact.file, false) != nil {
 		return errors.New("invalid artifact bundle")
 	}
 	pathInfo, err := os.Lstat(artifact.file.Name())
@@ -197,7 +201,7 @@ func (set *approvedArtifactSet) Reverify() error {
 	currentRoot, err := set.root.Stat()
 	pathRoot, pathErr := os.Lstat(set.root.Name())
 	if err != nil || pathErr != nil || !currentRoot.IsDir() || !pathRoot.IsDir() || pathRoot.Mode()&os.ModeSymlink != 0 ||
-		!os.SameFile(set.rootID, currentRoot) || !os.SameFile(currentRoot, pathRoot) {
+		!os.SameFile(set.rootID, currentRoot) || !os.SameFile(currentRoot, pathRoot) || verifyApprovedArtifactHandle(set.root, true) != nil {
 		return errors.New("invalid artifact bundle")
 	}
 	return errors.Join(set.browser.verify(), set.driver.verify(), set.mindweaver.verify())

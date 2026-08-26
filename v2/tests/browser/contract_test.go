@@ -83,13 +83,17 @@ func TestApprovalParserAcceptsOneExactBundleAndRejectsHostileInput(t *testing.T)
 	}
 }
 
-func TestApprovedArtifactDefaultBoundaryReverifiesThenBlocksBeforeProcessStart(t *testing.T) {
+func TestApprovedArtifactDefaultBoundaryReverifiesThenReportsNextPlatformPrerequisite(t *testing.T) {
 	approval := testArtifactApproval()
 	bundle := writeArtifactBundle(t, approval)
 	report := RunQualification(context.Background(), Approval{artifact: &approval}, RunOptions{
 		SourceRevision: testRevision, BundleRoot: bundle, Now: fixedClock(),
 	})
-	assertBlocked(t, report, BlockerProcessSandboxUnavailable)
+	expected := BlockerProcessSandboxUnavailable
+	if processSandboxAvailable() {
+		expected = BlockerLaunchProfileNotApproved
+	}
+	assertBlocked(t, report, expected)
 
 	if err := os.WriteFile(filepath.Join(bundle, "extra.exe"), []byte("extra"), 0o600); err != nil {
 		t.Fatal(err)
@@ -120,6 +124,48 @@ func TestArtifactBundleRejectsWrongBytesAndHardLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	report = RunQualification(context.Background(), Approval{artifact: &approval}, RunOptions{
+		SourceRevision: testRevision, BundleRoot: bundle, Now: fixedClock(),
+	})
+	assertBlocked(t, report, BlockerArtifactBundleInvalid)
+}
+
+func TestRetainedArtifactCapabilitiesRejectACLExpansionWriteAndReplacement(t *testing.T) {
+	approval := testArtifactApproval()
+	bundle := writeArtifactBundle(t, approval)
+	artifacts, err := openApprovedArtifacts(approval, bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	browserPath := filepath.Join(bundle, approval.Browser.FileName)
+	if err := os.WriteFile(browserPath, []byte(strings.Repeat("x", int(approval.Browser.Size))), 0o600); err == nil {
+		_ = artifacts.Close()
+		t.Fatal("retained browser artifact allowed a concurrent write")
+	}
+	if err := os.Rename(browserPath, filepath.Join(bundle, "replacement.exe")); err == nil {
+		_ = artifacts.Close()
+		t.Fatal("retained browser artifact allowed a concurrent rename")
+	}
+	if err := artifacts.Reverify(); err != nil {
+		_ = artifacts.Close()
+		t.Fatalf("retained artifact changed after denied mutation: %v", err)
+	}
+	if err := expandTestArtifactACL(browserPath); err != nil {
+		_ = artifacts.Close()
+		t.Fatalf("expand retained artifact ACL: %v", err)
+	}
+	if err := artifacts.Reverify(); err == nil {
+		_ = artifacts.Close()
+		t.Fatal("retained artifact accepted an in-flight ACL expansion")
+	}
+	if err := artifacts.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	bundle = writeArtifactBundle(t, approval)
+	if err := expandTestArtifactACL(filepath.Join(bundle, approval.Driver.FileName)); err != nil {
+		t.Fatal(err)
+	}
+	report := RunQualification(context.Background(), Approval{artifact: &approval}, RunOptions{
 		SourceRevision: testRevision, BundleRoot: bundle, Now: fixedClock(),
 	})
 	assertBlocked(t, report, BlockerArtifactBundleInvalid)
@@ -163,7 +209,6 @@ func TestControlledHarnessFailuresCleanupAndFailClosed(t *testing.T) {
 		"scenario failure":   func(harness *fakeProcessHarness) { harness.failScenario = 4 },
 		"session delete":     func(harness *fakeProcessHarness) { harness.failDelete = true },
 		"cleanup failure":    func(harness *fakeProcessHarness) { harness.failCleanup = true },
-		"artifact tamper":    func(harness *fakeProcessHarness) { harness.tamperArtifact = true },
 		"webdriver redirect": func(harness *fakeProcessHarness) { harness.redirectSession = true },
 		"webdriver non-json": func(harness *fakeProcessHarness) { harness.nonJSONSession = true },
 		"extra process":      func(harness *fakeProcessHarness) { harness.extraProcess = true },
@@ -178,9 +223,6 @@ func TestControlledHarnessFailuresCleanupAndFailClosed(t *testing.T) {
 			}, boundary)
 			if report.Status() != "FAIL" || report.Code() != "PROCESS_OR_EVIDENCE_FAILED" || !harness.cleanupCalled {
 				t.Fatalf("failure report/cleanup = %#v/%v", report, harness.cleanupCalled)
-			}
-			if name == "artifact tamper" && harness.tamperErr != nil {
-				t.Fatalf("artifact tamper seam did not execute: %v", harness.tamperErr)
 			}
 			if _, err := MarshalReport(report); err != nil {
 				t.Fatal(err)
@@ -298,6 +340,8 @@ func writeArtifactBundle(t *testing.T, approval artifactApproval) string {
 			t.Fatal(err)
 		}
 	}
+	protectTestArtifactBundle(t, root, approval)
+	verifyTestArtifactBundleProtection(t, root, approval)
 	return root
 }
 
@@ -343,9 +387,6 @@ type fakeProcessHarness struct {
 	failDelete      bool
 	failCleanup     bool
 	blockScenario   bool
-	tamperArtifact  bool
-	tamperPath      string
-	tamperErr       error
 	redirectSession bool
 	nonJSONSession  bool
 	extraProcess    bool
@@ -353,7 +394,6 @@ type fakeProcessHarness struct {
 
 func (harness *fakeProcessHarness) Start(_ context.Context, artifacts *approvedArtifactSet) (managedProcessTree, error) {
 	harness.approval = artifacts.approval
-	harness.tamperPath = artifacts.browser.file.Name()
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
@@ -422,9 +462,6 @@ func (harness *fakeProcessHarness) serveWebDriver(writer http.ResponseWriter, re
 		current := harness.seenScenario
 		block := harness.blockScenario
 		fail := harness.failScenario == current
-		if harness.tamperArtifact && current == 1 {
-			harness.tamperErr = os.WriteFile(harness.tamperPath, []byte(strings.Repeat("x", int(harness.approval.Browser.Size))), 0o600)
-		}
 		harness.mu.Unlock()
 		if block {
 			select {
