@@ -28,19 +28,37 @@ var embeddedApproval []byte
 type BlockerCode string
 
 const (
-	BlockerArtifactNotApproved  BlockerCode = "BROWSER_ARTIFACT_NOT_APPROVED"
-	BlockerRunnerNotImplemented BlockerCode = "BROWSER_SCENARIO_RUNNER_NOT_IMPLEMENTED"
+	BlockerArtifactNotApproved       BlockerCode = "BROWSER_ARTIFACT_NOT_APPROVED"
+	BlockerArtifactBundleInvalid     BlockerCode = "BROWSER_ARTIFACT_BUNDLE_INVALID"
+	BlockerProcessSandboxUnavailable BlockerCode = "BROWSER_PROCESS_SANDBOX_NOT_IMPLEMENTED"
+	BlockerControlledHarness         BlockerCode = "CONTROLLED_HARNESS_NOT_QUALIFIED"
 )
 
 // Approval is opaque: only a repository-owned, strictly parsed document can
-// create it. V1 deliberately supports the empty approval set only.
+// create it. The checked-in V1 document deliberately has no approved entry.
 type Approval struct {
-	browserApproved bool
+	artifact *artifactApproval
 }
 
 type approvalWire struct {
-	SchemaVersion int               `json:"schemaVersion"`
-	Artifacts     []json.RawMessage `json:"artifacts"`
+	SchemaVersion int                `json:"schemaVersion"`
+	Artifacts     []artifactApproval `json:"artifacts"`
+}
+
+type artifactApproval struct {
+	ID         string         `json:"id"`
+	OS         string         `json:"os"`
+	Arch       string         `json:"arch"`
+	Browser    binaryApproval `json:"browser"`
+	Driver     binaryApproval `json:"driver"`
+	MindWeaver binaryApproval `json:"mindweaver"`
+}
+
+type binaryApproval struct {
+	FileName string `json:"fileName"`
+	SHA256   string `json:"sha256"`
+	Size     int64  `json:"size"`
+	Version  string `json:"version"`
 }
 
 func ParseEmbeddedApproval() (Approval, error) {
@@ -48,7 +66,7 @@ func ParseEmbeddedApproval() (Approval, error) {
 }
 
 // ParseApproval rejects duplicate keys, trailing values, unknown fields,
-// oversized input, and any unimplemented artifact approval.
+// oversized input, ambiguous platform entries, and unsafe artifact identity.
 func ParseApproval(data []byte) (Approval, error) {
 	if len(data) == 0 || len(data) > maxApprovalBytes || !utf8.Valid(data) || rejectDuplicateJSONKeys(data) != nil {
 		return Approval{}, errors.New("browser qualification: invalid approval document")
@@ -62,16 +80,24 @@ func ParseApproval(data []byte) (Approval, error) {
 	if wire.SchemaVersion != approvalSchemaVersion || wire.Artifacts == nil {
 		return Approval{}, errors.New("browser qualification: unsupported approval document")
 	}
-	if len(wire.Artifacts) != 0 {
-		return Approval{}, errors.New("browser qualification: artifact approval is not implemented")
+	if len(wire.Artifacts) == 0 {
+		return Approval{}, nil
 	}
-	return Approval{}, nil
+	if len(wire.Artifacts) != 1 || validateArtifactApproval(wire.Artifacts[0]) != nil {
+		return Approval{}, errors.New("browser qualification: invalid artifact approval")
+	}
+	artifact := wire.Artifacts[0]
+	return Approval{artifact: &artifact}, nil
 }
 
 type ScenarioResult struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
-	Code   string `json:"code"`
+	ID               string `json:"id"`
+	Status           string `json:"status"`
+	Code             string `json:"code"`
+	ScreenshotSHA256 string `json:"screenshotSha256,omitempty"`
+	ScreenshotBytes  int64  `json:"screenshotBytes,omitempty"`
+	TraceSHA256      string `json:"traceSha256,omitempty"`
+	TraceBytes       int64  `json:"traceBytes,omitempty"`
 }
 
 var requiredScenarioIDs = []string{
@@ -98,7 +124,7 @@ func RequiredScenarios() []string {
 // or launch mindweaver.exe, fake Ollama, WebDriver, or a browser. It remains
 // unexported so another package cannot inject synthetic PASS evidence.
 type processBoundary interface {
-	Run(context.Context) (processEvidence, error)
+	Run(context.Context) (processEvidence, BlockerCode, error)
 }
 
 type processEvidence struct {
@@ -110,7 +136,14 @@ type processEvidence struct {
 	ExecutableSHA256 string
 	Scenarios        []ScenarioResult
 	CleanupStatus    string
+	CleanupSHA256    string
+	CleanupProcesses int
+	realProof        *realQualificationProof
 }
+
+// Only a future Windows Job/ACL-backed implementation in this package may
+// construct this proof. Controlled harnesses intentionally leave it nil.
+type realQualificationProof struct{}
 
 type artifactEvidence struct {
 	ApprovalID     string `json:"approvalId"`
@@ -140,18 +173,20 @@ type reportWire struct {
 	ExecutableSHA256 string            `json:"executableSha256,omitempty"`
 	Scenarios        []ScenarioResult  `json:"scenarios"`
 	CleanupStatus    string            `json:"cleanupStatus"`
+	CleanupSHA256    string            `json:"cleanupReceiptSha256,omitempty"`
+	CleanupProcesses int               `json:"cleanupProcessCount,omitempty"`
 }
 
 type RunOptions struct {
 	SourceRevision string
+	BundleRoot     string
 	Now            func() time.Time
 }
 
-// RunQualification is the public fail-closed entry point. Until artifact
-// approval and a real process implementation are committed in this package it
-// can return only BLOCKED.
+// RunQualification is the public fail-closed entry point. Without repository
+// approval and a real package-owned process proof it cannot return PASS.
 func RunQualification(ctx context.Context, approval Approval, options RunOptions) Report {
-	return runQualification(ctx, approval, options, nil)
+	return runQualification(ctx, approval, options, defaultProcessBoundary(approval, options))
 }
 
 func runQualification(ctx context.Context, approval Approval, options RunOptions, processes processBoundary) Report {
@@ -160,15 +195,24 @@ func runQualification(ctx context.Context, approval Approval, options RunOptions
 		now = time.Now
 	}
 	started := now().UTC()
-	if !approval.browserApproved {
+	if approval.artifact == nil {
 		return blockedReport(options.SourceRevision, started, now().UTC(), BlockerArtifactNotApproved)
 	}
 	if processes == nil {
-		return blockedReport(options.SourceRevision, started, now().UTC(), BlockerRunnerNotImplemented)
+		return blockedReport(options.SourceRevision, started, now().UTC(), BlockerProcessSandboxUnavailable)
 	}
-	evidence, err := processes.Run(ctx)
+	evidence, blocker, err := processes.Run(ctx)
 	completed := now().UTC()
-	if err != nil || !validProcessEvidence(evidence) {
+	if err != nil {
+		return failedReport(options.SourceRevision, started, completed)
+	}
+	if blocker == BlockerControlledHarness && validHarnessEvidence(evidence) {
+		return harnessReport(options.SourceRevision, started, completed, evidence)
+	}
+	if blocker != "" {
+		return blockedReport(options.SourceRevision, started, completed, blocker)
+	}
+	if !validProcessEvidence(evidence) {
 		return failedReport(options.SourceRevision, started, completed)
 	}
 	return Report{wire: reportWire{
@@ -180,7 +224,7 @@ func runQualification(ctx context.Context, approval Approval, options RunOptions
 			BrowserVersion: evidence.BrowserVersion, DriverVersion: evidence.DriverVersion,
 		},
 		ExecutableSHA256: evidence.ExecutableSHA256, Scenarios: append([]ScenarioResult(nil), evidence.Scenarios...),
-		CleanupStatus: evidence.CleanupStatus,
+		CleanupStatus: evidence.CleanupStatus, CleanupSHA256: evidence.CleanupSHA256, CleanupProcesses: evidence.CleanupProcesses,
 	}}
 }
 
@@ -210,14 +254,49 @@ func failedReport(revision string, started, completed time.Time) Report {
 	}}
 }
 
+func harnessReport(revision string, started, completed time.Time, evidence processEvidence) Report {
+	return Report{wire: reportWire{
+		SchemaVersion: reportSchemaVersion, Qualification: "UI-001/UI-002", Status: "BLOCKED", Code: string(BlockerControlledHarness),
+		SourceRevision: revision, Platform: runtime.GOOS + "/" + runtime.GOARCH,
+		StartedAt: started.Format(time.RFC3339Nano), CompletedAt: completed.Format(time.RFC3339Nano),
+		Artifacts: &artifactEvidence{
+			ApprovalID: evidence.ApprovalID, BrowserSHA256: evidence.BrowserSHA256, DriverSHA256: evidence.DriverSHA256,
+			BrowserVersion: evidence.BrowserVersion, DriverVersion: evidence.DriverVersion,
+		},
+		ExecutableSHA256: evidence.ExecutableSHA256, Scenarios: append([]ScenarioResult(nil), evidence.Scenarios...),
+		CleanupStatus: evidence.CleanupStatus, CleanupSHA256: evidence.CleanupSHA256, CleanupProcesses: evidence.CleanupProcesses,
+	}}
+}
+
 func validProcessEvidence(evidence processEvidence) bool {
 	if !stableToken(evidence.ApprovalID, 64) || !lowerSHA256(evidence.BrowserSHA256) || !lowerSHA256(evidence.DriverSHA256) ||
 		!lowerSHA256(evidence.ExecutableSHA256) || !stableVersion(evidence.BrowserVersion) || !stableVersion(evidence.DriverVersion) ||
-		evidence.CleanupStatus != "PASS" || len(evidence.Scenarios) != len(requiredScenarioIDs) {
+		evidence.CleanupStatus != "PASS" || !lowerSHA256(evidence.CleanupSHA256) || evidence.CleanupProcesses != 3 ||
+		len(evidence.Scenarios) != len(requiredScenarioIDs) || evidence.realProof == nil {
 		return false
 	}
 	for index, result := range evidence.Scenarios {
-		if result.ID != requiredScenarioIDs[index] || result.Status != "PASS" || result.Code != "QUALIFIED" {
+		if result.ID != requiredScenarioIDs[index] || result.Status != "PASS" || result.Code != "QUALIFIED" ||
+			!lowerSHA256(result.ScreenshotSHA256) || result.ScreenshotBytes <= 0 || result.ScreenshotBytes > maxWebDriverBytes ||
+			!lowerSHA256(result.TraceSHA256) || result.TraceBytes <= 0 || result.TraceBytes > maxTraceBytes {
+			return false
+		}
+	}
+	return true
+}
+
+func validHarnessEvidence(evidence processEvidence) bool {
+	if evidence.realProof != nil || !stableToken(evidence.ApprovalID, 64) || !lowerSHA256(evidence.BrowserSHA256) ||
+		!lowerSHA256(evidence.DriverSHA256) || !lowerSHA256(evidence.ExecutableSHA256) ||
+		!stableVersion(evidence.BrowserVersion) || !stableVersion(evidence.DriverVersion) ||
+		evidence.CleanupStatus != "HARNESS_PASS" || !lowerSHA256(evidence.CleanupSHA256) || evidence.CleanupProcesses != 3 ||
+		len(evidence.Scenarios) != len(requiredScenarioIDs) {
+		return false
+	}
+	for index, result := range evidence.Scenarios {
+		if result.ID != requiredScenarioIDs[index] || result.Status != "HARNESS_PASS" || result.Code != "NOT_QUALIFIED" ||
+			!lowerSHA256(result.ScreenshotSHA256) || result.ScreenshotBytes <= 0 || result.ScreenshotBytes > maxWebDriverBytes ||
+			!lowerSHA256(result.TraceSHA256) || result.TraceBytes <= 0 || result.TraceBytes > maxTraceBytes {
 			return false
 		}
 	}
@@ -253,27 +332,56 @@ func (report Report) validate() error {
 	}
 	switch wire.Status {
 	case "BLOCKED":
-		if !allowedBlockerCode(wire.Code) || wire.Artifacts != nil || wire.ExecutableSHA256 != "" || wire.CleanupStatus != "NOT_STARTED" {
+		if !allowedBlockerCode(wire.Code) {
 			return errors.New("browser qualification: invalid blocked report")
 		}
-		for _, scenario := range wire.Scenarios {
-			if scenario.Status != "NOT_RUN" || scenario.Code != "PREREQUISITE_BLOCKED" {
+		if wire.Code == string(BlockerControlledHarness) {
+			if wire.Artifacts == nil || !validArtifactEvidence(*wire.Artifacts) || !lowerSHA256(wire.ExecutableSHA256) ||
+				wire.CleanupStatus != "HARNESS_PASS" || !lowerSHA256(wire.CleanupSHA256) || wire.CleanupProcesses != 3 {
 				return errors.New("browser qualification: invalid blocked report")
+			}
+			for _, scenario := range wire.Scenarios {
+				if scenario.Status != "HARNESS_PASS" || scenario.Code != "NOT_QUALIFIED" ||
+					!lowerSHA256(scenario.ScreenshotSHA256) || scenario.ScreenshotBytes <= 0 || scenario.ScreenshotBytes > maxWebDriverBytes ||
+					!lowerSHA256(scenario.TraceSHA256) || scenario.TraceBytes <= 0 || scenario.TraceBytes > maxTraceBytes {
+					return errors.New("browser qualification: invalid blocked report")
+				}
+			}
+		} else {
+			if wire.Artifacts != nil || wire.ExecutableSHA256 != "" || wire.CleanupStatus != "NOT_STARTED" ||
+				wire.CleanupSHA256 != "" || wire.CleanupProcesses != 0 {
+				return errors.New("browser qualification: invalid blocked report")
+			}
+			for _, scenario := range wire.Scenarios {
+				if scenario.Status != "NOT_RUN" || scenario.Code != "PREREQUISITE_BLOCKED" ||
+					scenario.ScreenshotSHA256 != "" || scenario.ScreenshotBytes != 0 || scenario.TraceSHA256 != "" || scenario.TraceBytes != 0 {
+					return errors.New("browser qualification: invalid blocked report")
+				}
 			}
 		}
 	case "PASS":
-		if wire.Code != "QUALIFIED" || wire.Artifacts == nil || !lowerSHA256(wire.ExecutableSHA256) || wire.CleanupStatus != "PASS" {
+		if wire.Code != "QUALIFIED" || wire.Artifacts == nil || !validArtifactEvidence(*wire.Artifacts) ||
+			!lowerSHA256(wire.ExecutableSHA256) || wire.CleanupStatus != "PASS" || !lowerSHA256(wire.CleanupSHA256) ||
+			wire.CleanupProcesses != 3 {
 			return errors.New("browser qualification: invalid pass report")
 		}
 		for _, scenario := range wire.Scenarios {
-			if scenario.Status != "PASS" || scenario.Code != "QUALIFIED" {
+			if scenario.Status != "PASS" || scenario.Code != "QUALIFIED" ||
+				!lowerSHA256(scenario.ScreenshotSHA256) || scenario.ScreenshotBytes <= 0 || scenario.ScreenshotBytes > maxWebDriverBytes ||
+				!lowerSHA256(scenario.TraceSHA256) || scenario.TraceBytes <= 0 || scenario.TraceBytes > maxTraceBytes {
 				return errors.New("browser qualification: invalid pass report")
 			}
 		}
 	case "FAIL":
 		if wire.Code != "PROCESS_OR_EVIDENCE_FAILED" || wire.Artifacts != nil || wire.ExecutableSHA256 != "" ||
-			wire.CleanupStatus != "FAILED_OR_UNKNOWN" {
+			wire.CleanupStatus != "FAILED_OR_UNKNOWN" || wire.CleanupSHA256 != "" || wire.CleanupProcesses != 0 {
 			return errors.New("browser qualification: invalid failure report")
+		}
+		for _, scenario := range wire.Scenarios {
+			if scenario.Status != "FAIL" || scenario.Code != "QUALIFICATION_ABORTED" ||
+				scenario.ScreenshotSHA256 != "" || scenario.ScreenshotBytes != 0 || scenario.TraceSHA256 != "" || scenario.TraceBytes != 0 {
+				return errors.New("browser qualification: invalid failure report")
+			}
 		}
 	default:
 		return errors.New("browser qualification: invalid report status")
@@ -397,5 +505,11 @@ func stableVersion(value string) bool {
 }
 
 func allowedBlockerCode(value string) bool {
-	return value == string(BlockerArtifactNotApproved) || value == string(BlockerRunnerNotImplemented)
+	return value == string(BlockerArtifactNotApproved) || value == string(BlockerArtifactBundleInvalid) ||
+		value == string(BlockerProcessSandboxUnavailable) || value == string(BlockerControlledHarness)
+}
+
+func validArtifactEvidence(evidence artifactEvidence) bool {
+	return stableToken(evidence.ApprovalID, 64) && lowerSHA256(evidence.BrowserSHA256) && lowerSHA256(evidence.DriverSHA256) &&
+		stableVersion(evidence.BrowserVersion) && stableVersion(evidence.DriverVersion)
 }

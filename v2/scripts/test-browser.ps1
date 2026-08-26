@@ -2,6 +2,7 @@
 param(
     [string]$Report = "",
     [string]$GoExecutable = "",
+    [string]$ArtifactBundle = "",
     [switch]$SelfTest
 )
 
@@ -123,7 +124,15 @@ try {
         Pop-Location
     }
 
-    $runnerOutput = @(& $runnerPath -source-revision $revision -report $reportPath 2>$null)
+    $runnerArguments = @("-source-revision", $revision, "-report", $reportPath)
+    $artifactOpenCanary = ""
+    if ($SelfTest) {
+        $artifactOpenCanary = Join-Path $temporaryRoot "artifact-open-canary"
+        $runnerArguments += @("-artifact-bundle", $artifactOpenCanary)
+    } elseif (-not [string]::IsNullOrWhiteSpace($ArtifactBundle)) {
+        $runnerArguments += @("-artifact-bundle", $ArtifactBundle)
+    }
+    $runnerOutput = @(& $runnerPath @runnerArguments 2>$null)
     $runnerExit = $LASTEXITCODE
     if ($runnerExit -ne 3 -or $runnerOutput.Count -ne 1 -or
         $runnerOutput[0] -cne "UI-001/UI-002 BLOCKED BROWSER_ARTIFACT_NOT_APPROVED") {
@@ -143,7 +152,8 @@ try {
             $reportDocument.code -cne "BROWSER_ARTIFACT_NOT_APPROVED" -or
             $reportDocument.cleanupStatus -cne "NOT_STARTED" -or
             @($reportDocument.scenarios).Count -ne 13 -or $notRun.Count -ne 13 -or
-            [Text.Encoding]::UTF8.GetString($reportBytes).Contains($temporaryRoot)) {
+            [Text.Encoding]::UTF8.GetString($reportBytes).Contains($temporaryRoot) -or
+            (Test-Path -LiteralPath $artifactOpenCanary)) {
             Fail-Stable "browser qualification: self-test evidence contract failed"
         }
         $afterProcesses = Get-TargetProcessIdentities

@@ -46,6 +46,24 @@ func TestRunWritesNewBlockedContentFreeReport(t *testing.T) {
 	}
 }
 
+func TestEmptyApprovalIgnoresArtifactBundleBeforeAnyOpen(t *testing.T) {
+	root := t.TempDir()
+	missingBundle := filepath.Join(root, "artifact-open-canary")
+	reportPath := filepath.Join(root, "blocked.json")
+	var stdout, stderr bytes.Buffer
+	exitCode := run([]string{
+		"-source-revision", runnerTestRevision,
+		"-report", reportPath,
+		"-artifact-bundle", missingBundle,
+	}, &stdout, &stderr)
+	if exitCode != exitBlocked || stdout.String() != "UI-001/UI-002 BLOCKED BROWSER_ARTIFACT_NOT_APPROVED\n" || stderr.Len() != 0 {
+		t.Fatalf("exit/stdout/stderr = %d/%q/%q", exitCode, stdout.String(), stderr.String())
+	}
+	if _, err := os.Stat(missingBundle); !os.IsNotExist(err) {
+		t.Fatalf("empty approval touched artifact bundle: %v", err)
+	}
+}
+
 func TestRunNeverOverwritesEvidence(t *testing.T) {
 	root := t.TempDir()
 	reportPath := filepath.Join(root, "ui-browser-report.json")

@@ -29,6 +29,7 @@ func run(arguments []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(io.Discard)
 	revision := flags.String("source-revision", "", "full source revision")
 	reportPath := flags.String("report", "", "new JSON report path")
+	bundleRoot := flags.String("artifact-bundle", "", "approved offline artifact bundle")
 	if err := flags.Parse(arguments); err != nil || flags.NArg() != 0 || !lowerSHA1(*revision) || !safeReportPath(*reportPath) {
 		_, _ = io.WriteString(stderr, "browser qualification: invalid arguments\n")
 		return exitInvalid
@@ -39,7 +40,10 @@ func run(arguments []string, stdout, stderr io.Writer) int {
 		_, _ = io.WriteString(stderr, "browser qualification: approval unavailable\n")
 		return exitFailed
 	}
-	report := browserqualification.RunQualification(context.Background(), approval, browserqualification.RunOptions{SourceRevision: *revision})
+	report := browserqualification.RunQualification(context.Background(), approval, browserqualification.RunOptions{
+		SourceRevision: *revision,
+		BundleRoot:     *bundleRoot,
+	})
 	data, err := browserqualification.MarshalReport(report)
 	if err != nil || writeNewReport(*reportPath, data) != nil {
 		_, _ = io.WriteString(stderr, "browser qualification: report unavailable\n")

@@ -26,15 +26,22 @@ CSRF value, environment variable, prompt, source text, or process output.
 ## Implemented fail-closed boundary
 
 - `v2/tests/browser/approval.v1.json` is the repository-owned approval record.
-  Its artifact set is empty. Duplicate keys, unknown/trailing input, oversized
-  input, and non-empty unimplemented approvals are rejected.
+  Its artifact set is empty. The parser permits at most one exact Windows/amd64
+  browser/driver/mindweaver tuple and rejects duplicate keys, unknown/trailing
+  input, unsafe leaves, ambiguous names, oversized input, and invalid identity.
 - `v2/tests/browser` freezes all 13 required UI-001/UI-002 scenario IDs and an
   opaque evidence report. A blocked prerequisite marks every scenario
   `NOT_RUN/PREREQUISITE_BLOCKED` and cleanup `NOT_STARTED`.
-- A PASS record requires fixed SHA-256 identities for the approved browser,
-  matching driver, and built `mindweaver.exe`; every required scenario and
-  cleanup must be `PASS`. That process boundary is package-owned and cannot be
-  supplied by another package to forge evidence.
+- The approved path retains opened handles for all three artifacts, verifies
+  file identity/size/SHA-256 before and after orchestration, rejects extra
+  bundle entries, symbolic links, and hard links, and accepts only a literal `127.0.0.1` WebDriver
+  endpoint. The package-owned protocol bounds time and a three-process tree,
+  aggregates all 13 scenario screenshot/trace hashes, deletes the WebDriver
+  session, and emits a content-free cleanup receipt hash.
+- The repository-controlled fake WebDriver/process harness exercises that
+  protocol and its cleanup/failure seams only. Its success tuple is permanently
+  `BLOCKED/CONTROLLED_HARNESS_NOT_QUALIFIED`; it has no package-owned real-run
+  proof and therefore cannot emit PASS or close UI-001/UI-002.
 - `v2/tests/browser/runner` writes a bounded JSON report without overwriting an
   existing target. It publishes a fully written sibling atomically and emits
   only a stable status/code line.
@@ -62,7 +69,8 @@ nor stopped.
 | Content-free bounded report | Go and script tests | `PASS` |
 | Real `mindweaver.exe` + fresh Vault | Not started because prerequisite failed | `NOT_RUN` |
 | Literal-loopback fake Ollama | Not started because prerequisite failed | `NOT_RUN` |
-| Independent browser scenarios | All 13 required scenarios fixed, none executed | `NOT_RUN` |
+| Controlled protocol scenarios | 13 fake WebDriver flows plus fault injection; explicitly not qualification | `NOT_QUALIFIED` |
+| Independent real browser scenarios | Empty approval prevents any product process | `NOT_RUN` |
 
 ## P0/P1 review
 
@@ -70,9 +78,10 @@ nor stopped.
   and cannot cross the process boundary.
 - P1: a versioned, redistribution-approved browser plus matching driver bundle
   is external evidence still missing.
-- P1: the real process implementation, retained process identities, cleanup
-  receipts, screenshots/traces, and all 13 browser workflows remain
-  unimplemented. They cannot be qualified until the artifact P1 is resolved.
+- P1: a real Windows Job/ACL-backed launcher, fresh-Vault lifecycle, actual
+  browser interaction implementation, and OS-verified descendant cleanup are
+  not implemented. Adding them would expand the production/release boundary,
+  so this slice stops at the reviewable protocol boundary.
 
 System Edge and Codex browser-control capabilities must not be substituted for
 that evidence. UI-001 and UI-002 remain BLOCKED rather than degraded to DOM,

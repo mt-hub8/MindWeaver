@@ -2,11 +2,13 @@
 
 ## Current status
 
-The fail-closed approval, runner-report, and process-before-prerequisite
-boundary now exists under `v2/tests/browser/**` with the offline PowerShell
-entry point `v2/scripts/test-browser.ps1`. The local capability audit found no
-repository-approved browser/driver bundle, so the approval list remains empty
-and every real scenario is still `BLOCKED/NOT_RUN`. See
+The fail-closed approval, runner-report, opened-artifact, controlled WebDriver,
+bounded process-contract, and process-before-prerequisite boundaries now exist
+under `v2/tests/browser/**` with the offline PowerShell entry point
+`v2/scripts/test-browser.ps1`. The controlled fake harness can prove only
+protocol and cleanup behavior and always reports `NOT_QUALIFIED`. The local
+capability audit found no repository-approved browser/driver bundle, so the
+approval list remains empty and every real scenario is still `BLOCKED/NOT_RUN`. See
 [`../browser-qualification/offline-capability-2026-08-27.md`](../browser-qualification/offline-capability-2026-08-27.md).
 
 This does not change the release decision below: no real browser PASS exists.
@@ -25,10 +27,11 @@ available offline. If the pinned binary is missing, the gate reports `BLOCKED`;
 it must not download a browser or silently replace the run with DOM/string
 tests.
 
-## Planned file boundary
+## Remaining real-run file boundary
 
-The gate is intentionally not implemented in this evidence commit. When the
-pinned browser artifact is approved, implementation is limited to:
+The real browser gate is intentionally not implemented. When the pinned
+browser artifact and a Windows Job/ACL process design are approved, remaining
+implementation is limited to:
 
 ```text
 v2/tests/browser/**                 # browser scenarios and bounded fixtures
