@@ -17,7 +17,13 @@ export MW_GO="$mw_go"
 mw_go_dir=$(dirname -- "$mw_go")
 mw_gofmt="$mw_go_dir/gofmt"
 if [ ! -x "$mw_gofmt" ]; then
-    mw_gofmt=$(command -v gofmt)
+    printf 'gofmt was not found next to %s\n' "$mw_go" >&2
+    exit 1
+fi
+mw_go_root=$(GOROOT= "$mw_go" env GOROOT)
+if [ -z "$mw_go_root" ]; then
+    printf 'Go toolchain root is unavailable\n' >&2
+    exit 1
 fi
 
 mw_build_root=$(mktemp -d "${TMPDIR:-/tmp}/mindweaver-v2-build.XXXXXX")
@@ -25,6 +31,7 @@ trap 'rm -rf -- "$mw_build_root"' EXIT HUP INT TERM
 mkdir "$mw_build_root/gomodcache" "$mw_build_root/gocache" "$mw_build_root/gotmp"
 
 export CGO_ENABLED=0
+export GO111MODULE=on
 export GOARCH=amd64
 export GOAMD64=v1
 export GOENV=off
@@ -41,6 +48,7 @@ export GOTELEMETRY=off
 export GOTMPDIR="$mw_build_root/gotmp"
 export GOVCS='*:off'
 export GOWORK=off
+export GOROOT="$mw_go_root"
 
 cd "$mw_module_root"
 mw_go_version=$("$mw_go" version)

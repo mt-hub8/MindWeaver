@@ -55,8 +55,28 @@ if (-not $SelfTest -and [string]::IsNullOrWhiteSpace($Report)) {
     Fail-Stable "browser qualification: a new report path is required"
 }
 
-$repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
-$moduleRoot = Join-Path $repositoryRoot "v2"
+$moduleRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+if (-not (Test-Path -LiteralPath (Join-Path $moduleRoot "go.mod") -PathType Leaf)) {
+    Fail-Stable "browser qualification: module root unavailable"
+}
+$gitCommand = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $gitCommand) {
+    Fail-Stable "browser qualification: source revision unavailable"
+}
+$git = $gitCommand.Source
+$repositoryRoot = (& $git -C $moduleRoot rev-parse --show-toplevel 2>$null | Select-Object -First 1)
+if ([string]::IsNullOrWhiteSpace($repositoryRoot)) {
+    Fail-Stable "browser qualification: source revision unavailable"
+}
+$repositoryRoot = [IO.Path]::GetFullPath($repositoryRoot)
+$sourceRelative = [IO.Path]::GetRelativePath($repositoryRoot, $moduleRoot).Replace('\', '/')
+if ($sourceRelative -ceq '.') {
+    $sourceStatusPath = '.'
+} elseif ($sourceRelative -ceq 'v2') {
+    $sourceStatusPath = 'v2'
+} else {
+    Fail-Stable "browser qualification: source layout unsupported"
+}
 $requestedReportPath = ""
 if (-not $SelfTest) {
     try {
@@ -71,16 +91,17 @@ if (-not $SelfTest -and
     Fail-Stable "browser qualification: report must be outside the source worktree"
 }
 $go = Resolve-GoExecutable $GoExecutable
-$goVersion = (& $go version 2>$null | Select-Object -First 1)
-if ($goVersion -notmatch '^go version go1\.27\.[0-9]+ windows/amd64$') {
-    Fail-Stable "browser qualification: unsupported Go toolchain"
+$goRoot = [IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $go) ".."))
+$rootGo = [IO.Path]::GetFullPath((Join-Path $goRoot "bin\go.exe"))
+if (-not $rootGo.Equals([IO.Path]::GetFullPath($go), [StringComparison]::OrdinalIgnoreCase)) {
+    Fail-Stable "browser qualification: Go toolchain unavailable"
 }
-$revision = (& git -C $repositoryRoot rev-parse HEAD 2>$null | Select-Object -First 1)
+$revision = (& $git -C $repositoryRoot rev-parse HEAD 2>$null | Select-Object -First 1)
 if ($revision -notmatch '^[0-9a-f]{40}$') {
     Fail-Stable "browser qualification: source revision unavailable"
 }
 if (-not $SelfTest) {
-    $dirty = @(& git -C $repositoryRoot status --porcelain --untracked-files=all 2>$null)
+    $dirty = @(& $git -C $repositoryRoot status --porcelain --untracked-files=all -- $sourceStatusPath 2>$null)
     if ($dirty.Count -ne 0) {
         Fail-Stable "browser qualification: source worktree is not clean"
     }
@@ -95,24 +116,61 @@ if (-not $temporaryRoot.StartsWith($temporaryParent, [StringComparison]::Ordinal
 $runnerPath = Join-Path $temporaryRoot "browser-qualification-runner.exe"
 $reportPath = if ($SelfTest) { Join-Path $temporaryRoot "self-test-report.json" } else { $requestedReportPath }
 $beforeProcesses = if ($SelfTest) { Get-TargetProcessIdentities } else { $null }
+$moduleCache = Join-Path $temporaryRoot "gomodcache"
+$buildCache = Join-Path $temporaryRoot "gocache"
+$goTemp = Join-Path $temporaryRoot "gotmp"
+[void](New-Item -ItemType Directory -Path $moduleCache, $buildCache, $goTemp -ErrorAction Stop)
 
 $savedEnvironment = @{
-    GOTOOLCHAIN = $env:GOTOOLCHAIN
-    GOPROXY = $env:GOPROXY
-    GOSUMDB = $env:GOSUMDB
     CGO_ENABLED = $env:CGO_ENABLED
-    GOOS = $env:GOOS
+    GO111MODULE = $env:GO111MODULE
     GOARCH = $env:GOARCH
+    GOAMD64 = $env:GOAMD64
+    GOENV = $env:GOENV
+    GOEXPERIMENT = $env:GOEXPERIMENT
+    GOFIPS140 = $env:GOFIPS140
+    GOFLAGS = $env:GOFLAGS
+    GOCACHE = $env:GOCACHE
+    GOMODCACHE = $env:GOMODCACHE
+    GOOS = $env:GOOS
+    GOPROXY = $env:GOPROXY
+    GOROOT = $env:GOROOT
+    GOSUMDB = $env:GOSUMDB
+    GOTELEMETRY = $env:GOTELEMETRY
+    GOTOOLCHAIN = $env:GOTOOLCHAIN
+    GOTMPDIR = $env:GOTMPDIR
+    GOVCS = $env:GOVCS
+    GOWORK = $env:GOWORK
+    MW_GO = $env:MW_GO
 }
 
 $scriptExit = 1
 try {
-    $env:GOTOOLCHAIN = "local"
-    $env:GOPROXY = "off"
-    $env:GOSUMDB = "off"
     $env:CGO_ENABLED = "0"
-    $env:GOOS = "windows"
+    $env:GO111MODULE = "on"
     $env:GOARCH = "amd64"
+    $env:GOAMD64 = "v1"
+    $env:GOENV = "off"
+    $env:GOEXPERIMENT = ""
+    $env:GOFIPS140 = "off"
+    $env:GOFLAGS = "-mod=vendor -trimpath -buildvcs=false"
+    $env:GOCACHE = $buildCache
+    $env:GOMODCACHE = $moduleCache
+    $env:GOOS = "windows"
+    $env:GOPROXY = "off"
+    $env:GOROOT = $goRoot
+    $env:GOSUMDB = "off"
+    $env:GOTELEMETRY = "off"
+    $env:GOTOOLCHAIN = "local"
+    $env:GOTMPDIR = $goTemp
+    $env:GOVCS = "*:off"
+    $env:GOWORK = "off"
+    $env:MW_GO = $go
+
+    $goVersion = (& $go version 2>$null | Select-Object -First 1)
+    if ($goVersion -cne 'go version go1.27.0 windows/amd64') {
+        Fail-Stable "browser qualification: unsupported Go toolchain"
+    }
 
     Push-Location $moduleRoot
     try {
@@ -122,6 +180,9 @@ try {
         }
     } finally {
         Pop-Location
+    }
+    if (@(Get-ChildItem -LiteralPath $moduleCache -Force -Recurse).Count -ne 0) {
+        Fail-Stable "browser qualification: vendored build wrote to module cache"
     }
 
     $runnerArguments = @("-source-revision", $revision, "-report", $reportPath)
@@ -184,4 +245,8 @@ try {
     }
 }
 
+if ($scriptExit -eq 0) {
+    $global:LASTEXITCODE = 0
+    return
+}
 exit $scriptExit

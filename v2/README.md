@@ -46,8 +46,9 @@ release promise.
 The product intentionally creates a fresh Vault and exposes no Java/MySQL data
 import command or compatibility path.
 
-The isolated `spikes/sqlite` module is dependency qualification evidence, not a
-production storage implementation.
+The isolated `spikes/sqlite` module and its `run.ps1` are historical dependency
+qualification evidence, not a production storage implementation or a CUT-002
+delivery/standalone entry point. They are not invoked by the gates below.
 
 ## Run the local workbench
 
@@ -78,6 +79,7 @@ shortcut or another working directory.
 ```powershell
 ./scripts/ci.ps1 -Go C:\path\to\go.exe
 ./scripts/verify-standalone.ps1 -Go C:\path\to\go.exe
+./scripts/test-browser.ps1 -GoExecutable C:\path\to\go.exe -SelfTest
 ```
 
 ```sh
@@ -95,7 +97,8 @@ freeze `GOAMD64=v1` with no optional Go experiments and FIPS mode off, force
 `-mod=vendor`, disable telemetry plus module, checksum, VCS, workspace, and
 toolchain network resolution, and create new empty `GOMODCACHE`, `GOCACHE`,
 and `GOTMPDIR` directories for every run. No pre-populated module cache is an
-input.
+input. The browser self-test applies the same isolation to its nested runner
+build and restores every Go environment variable it temporarily overrides.
 
 Standalone verification accepts either this `v2/` directory in the monorepo or
 the root of an extracted repository. In both layouts it requires a clean

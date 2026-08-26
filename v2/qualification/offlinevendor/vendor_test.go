@@ -122,11 +122,59 @@ func TestVendoredModuleAndLicenseContract(t *testing.T) {
 	root := moduleRoot(t)
 	assertRepositoryAttributes(t, filepath.Join(root, ".gitattributes"))
 	assertPinnedWorkflow(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
+	assertOfflineEntrypointPolicies(t, root)
 	assertToolchainAndNoReplace(t, filepath.Join(root, "go.mod"))
 	assertVendoredModuleSet(t, filepath.Join(root, "vendor", "modules.txt"))
 	assertModuleSums(t, filepath.Join(root, "go.sum"))
 	assertVendoredLicenseSet(t, root)
 	assertVendorTreeIdentity(t, filepath.Join(root, "vendor"))
+}
+
+func assertOfflineEntrypointPolicies(t *testing.T, root string) {
+	t.Helper()
+	ciPowerShell := string(readRegularFile(t, filepath.Join(root, "scripts", "ci.ps1"), 1<<20))
+	for _, required := range []string{
+		"$env:GOROOT = $mwGoRoot",
+		"$mwSavedGoRoot = [Environment]::GetEnvironmentVariable('GOROOT', 'Process')",
+		"$env:GO111MODULE = 'on'",
+	} {
+		if strings.Count(ciPowerShell, required) != 1 {
+			t.Fatalf("ci.ps1 must contain exactly one %q", required)
+		}
+	}
+
+	ciShell := string(readRegularFile(t, filepath.Join(root, "scripts", "ci.sh"), 1<<20))
+	if strings.Contains(ciShell, "command -v gofmt") {
+		t.Fatal("ci.sh must not fall back to an ambient gofmt")
+	}
+	for _, required := range []string{
+		`mw_go_root=$(GOROOT= "$mw_go" env GOROOT)`,
+		`export GOROOT="$mw_go_root"`,
+		"export GO111MODULE=on",
+	} {
+		if strings.Count(ciShell, required) != 1 {
+			t.Fatalf("ci.sh must contain exactly one %q", required)
+		}
+	}
+
+	browser := string(readRegularFile(t, filepath.Join(root, "scripts", "test-browser.ps1"), 1<<20))
+	for _, required := range []string{
+		"$sourceRelative -ceq '.'",
+		"$sourceRelative -ceq 'v2'",
+		`$env:GOFLAGS = "-mod=vendor -trimpath -buildvcs=false"`,
+		`$env:GOMODCACHE = $moduleCache`,
+		`$env:GOCACHE = $buildCache`,
+		`$env:GOTMPDIR = $goTemp`,
+		`$env:GOROOT = $goRoot`,
+		`$env:GOVCS = "*:off"`,
+	} {
+		if strings.Count(browser, required) != 1 {
+			t.Fatalf("test-browser.ps1 must contain exactly one %q", required)
+		}
+	}
+	if strings.Contains(ciPowerShell+ciShell, "spikes/sqlite") {
+		t.Fatal("SQLite spike must not be a CUT-002 delivery entry point")
+	}
 }
 
 func TestVendorWhitespacePolicyDoesNotMaskFirstPartyErrors(t *testing.T) {

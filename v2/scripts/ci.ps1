@@ -19,6 +19,12 @@ $mwGofmt = Join-Path (Split-Path -Parent $Go) 'gofmt.exe'
 if (-not (Test-Path -LiteralPath $mwGofmt)) {
     throw "gofmt was not found next to $Go"
 }
+$mwGoRoot = (Resolve-Path -LiteralPath (Join-Path (Split-Path -Parent $Go) '..')).Path
+$mwRootGo = (Resolve-Path -LiteralPath (Join-Path $mwGoRoot 'bin\go.exe')).Path
+if (-not $mwRootGo.Equals($Go, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Go executable is outside its inferred toolchain root: $Go"
+}
+$mwSavedGoRoot = [Environment]::GetEnvironmentVariable('GOROOT', 'Process')
 
 $mwBuildRoot = Join-Path ([IO.Path]::GetTempPath()) ('mindweaver-v2-build-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $mwBuildRoot | Out-Null
@@ -28,6 +34,7 @@ $mwGoTemp = Join-Path $mwBuildRoot 'gotmp'
 New-Item -ItemType Directory -Path $mwModuleCache, $mwBuildCache, $mwGoTemp | Out-Null
 
 $env:CGO_ENABLED = '0'
+$env:GO111MODULE = 'on'
 $env:GOARCH = 'amd64'
 $env:GOAMD64 = 'v1'
 $env:GOENV = 'off'
@@ -44,6 +51,7 @@ $env:GOTELEMETRY = 'off'
 $env:GOTMPDIR = $mwGoTemp
 $env:GOVCS = '*:off'
 $env:GOWORK = 'off'
+$env:GOROOT = $mwGoRoot
 
 Push-Location $mwModuleRoot
 try {
@@ -78,12 +86,20 @@ try {
         throw ('vendored build wrote to the empty module cache: ' + (($mwModuleCacheEntries | Select-Object -ExpandProperty FullName) -join ', '))
     }
 } finally {
-    Pop-Location
-    $mwResolvedBuild = (Resolve-Path -LiteralPath $mwBuildRoot).Path
-    $mwResolvedTemp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
-    if (-not $mwResolvedBuild.StartsWith($mwResolvedTemp, [StringComparison]::OrdinalIgnoreCase) -or
-        -not (Split-Path -Leaf $mwResolvedBuild).StartsWith('mindweaver-v2-build-')) {
-        throw "refusing to remove unexpected build directory: $mwResolvedBuild"
+    try {
+        Pop-Location
+        $mwResolvedBuild = (Resolve-Path -LiteralPath $mwBuildRoot).Path
+        $mwResolvedTemp = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+        if (-not $mwResolvedBuild.StartsWith($mwResolvedTemp, [StringComparison]::OrdinalIgnoreCase) -or
+            -not (Split-Path -Leaf $mwResolvedBuild).StartsWith('mindweaver-v2-build-')) {
+            throw "refusing to remove unexpected build directory: $mwResolvedBuild"
+        }
+        Remove-Item -LiteralPath $mwResolvedBuild -Recurse -Force
+    } finally {
+        if ($null -eq $mwSavedGoRoot) {
+            Remove-Item Env:GOROOT -ErrorAction SilentlyContinue
+        } else {
+            $env:GOROOT = $mwSavedGoRoot
+        }
     }
-    Remove-Item -LiteralPath $mwResolvedBuild -Recurse -Force
 }
