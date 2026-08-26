@@ -20,6 +20,7 @@ const modulePath = "github.com/mt-hub8/MindWeaver/v2"
 type artifactContract struct {
 	name              string
 	target            string
+	firstParty        []string
 	requiredPackages  []string
 	forbiddenPackages []string
 	requiredSymbols   []string
@@ -31,6 +32,28 @@ var shippedArtifacts = []artifactContract{
 	{
 		name:   "mindweaver.exe",
 		target: "./cmd/mindweaver",
+		firstParty: []string{
+			modulePath + "/cmd/mindweaver",
+			modulePath + "/internal/app",
+			modulePath + "/internal/backup",
+			modulePath + "/internal/blob",
+			modulePath + "/internal/ingest",
+			modulePath + "/internal/lifecycle",
+			modulePath + "/internal/localhttp",
+			modulePath + "/internal/ollama",
+			modulePath + "/internal/pdfextract/client",
+			modulePath + "/internal/pdfextract/protocol",
+			modulePath + "/internal/rag",
+			modulePath + "/internal/store/sqlite",
+			modulePath + "/internal/transport",
+			modulePath + "/internal/vault",
+			modulePath + "/internal/webui",
+			modulePath + "/internal/workbench",
+			modulePath + "/platform",
+			modulePath + "/platform/apperror",
+			modulePath + "/platform/config",
+			modulePath + "/platform/version",
+		},
 		requiredPackages: []string{
 			modulePath + "/internal/app",
 			modulePath + "/internal/backup",
@@ -61,6 +84,11 @@ var shippedArtifacts = []artifactContract{
 	{
 		name:   "mindweaver-pdf.exe",
 		target: "./cmd/mindweaver-pdf",
+		firstParty: []string{
+			modulePath + "/cmd/mindweaver-pdf",
+			modulePath + "/internal/pdfextract/parser",
+			modulePath + "/internal/pdfextract/protocol",
+		},
 		requiredPackages: []string{
 			modulePath + "/internal/pdfextract/parser",
 			modulePath + "/internal/pdfextract/protocol",
@@ -124,7 +152,7 @@ func TestWindowsAMD64ShippedDualPEClosure(t *testing.T) {
 		artifact := artifact
 		t.Run(artifact.name, func(t *testing.T) {
 			graph := packageGraph(t, goTool, root, environment, artifact.target)
-			assertGraph(t, artifact.name, graph, artifact.requiredPackages, artifact.forbiddenPackages)
+			assertGraph(t, artifact, graph)
 
 			path := filepath.Join(output, artifact.name)
 			runGo(t, goTool, root, environment, "build", "-trimpath", "-buildvcs=false", "-o", path, artifact.target)
@@ -175,16 +203,47 @@ func packageGraph(t *testing.T, goTool, root string, environment []string, targe
 	return graph
 }
 
-func assertGraph(t *testing.T, name string, graph map[string]bool, required, forbidden []string) {
+func assertGraph(t *testing.T, artifact artifactContract, graph map[string]bool) {
 	t.Helper()
-	for _, imported := range required {
+	for _, imported := range artifact.requiredPackages {
 		if !graph[imported] {
-			t.Errorf("%s package graph is missing %s", name, imported)
+			t.Errorf("%s package graph is missing %s", artifact.name, imported)
 		}
 	}
-	for _, imported := range forbidden {
+	for _, imported := range artifact.forbiddenPackages {
 		if graph[imported] {
-			t.Errorf("%s package graph contains forbidden %s", name, imported)
+			t.Errorf("%s package graph contains forbidden %s", artifact.name, imported)
+		}
+	}
+
+	var gotFirstParty []string
+	for imported := range graph {
+		if imported == modulePath || strings.HasPrefix(imported, modulePath+"/") {
+			gotFirstParty = append(gotFirstParty, imported)
+			assertNoLaterSegment(t, artifact.name, imported)
+		}
+	}
+	sort.Strings(gotFirstParty)
+	wantFirstParty := append([]string(nil), artifact.firstParty...)
+	sort.Strings(wantFirstParty)
+	if strings.Join(gotFirstParty, "\n") != strings.Join(wantFirstParty, "\n") {
+		t.Errorf("%s first-party package exact-set:\n got %q\nwant %q", artifact.name, gotFirstParty, wantFirstParty)
+	}
+}
+
+func assertNoLaterSegment(t *testing.T, artifactName, imported string) {
+	t.Helper()
+	forbidden := map[string]bool{
+		"agent": true, "agents": true, "batch": true, "batches": true,
+		"embedding": true, "embeddings": true, "evaluation": true, "evaluations": true,
+		"kbhealth": true, "memories": true, "memory": true, "notification": true,
+		"notifications": true, "reindex": true, "reindexing": true, "rerank": true,
+		"reranker": true, "vector": true, "vectors": true,
+	}
+	relative := strings.TrimPrefix(strings.TrimPrefix(imported, modulePath), "/")
+	for _, segment := range strings.Split(relative, "/") {
+		if forbidden[strings.ToLower(segment)] {
+			t.Errorf("%s reaches forbidden LATER package %s", artifactName, imported)
 		}
 	}
 }
@@ -212,6 +271,12 @@ func assertBuildInfo(t *testing.T, artifact artifactContract, information *build
 	for _, dependency := range information.Deps {
 		if dependency.Replace != nil {
 			t.Fatalf("module replacement retained for %s", dependency.Path)
+		}
+		lowerPath := strings.ToLower(dependency.Path)
+		for _, forbidden := range []string{"mysql", "mariadb", "flyway", "springframework"} {
+			if strings.Contains(lowerPath, forbidden) {
+				t.Errorf("legacy Java/MySQL dependency %s retained in %s", dependency.Path, artifact.name)
+			}
 		}
 		gotModules = append(gotModules, dependency.Path+"@"+dependency.Version+"#"+dependency.Sum)
 	}

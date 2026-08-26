@@ -15,7 +15,9 @@ Status: **QUALIFIED; repository-wide CI BLOCKED by a pre-existing contract diges
 The gate is `TestWindowsAMD64ShippedDualPEClosure` in
 `v2/qualification/production/dual_pe_test.go`. It creates both final PE files
 in a new test-owned directory, checks the `MZ` header, reads Go buildinfo, and
-scans the final linker symbol table. It does not rely only on source imports.
+scans the final linker symbol table. It also freezes the complete reachable
+first-party package exact-set for each command. It does not rely only on source
+imports or on a few forbidden-package spot checks.
 
 ## Qualified exact-set
 
@@ -29,7 +31,11 @@ artifact directory contains exactly these two regular files:
 
 The gate also rejects `cmd/mindweaver-migrate`,
 `cmd/mindweaver-neutral-export`, any third main package under `cmd`, and any
-third file in the built artifact directory.
+third file in the built artifact directory. Exact first-party reachability
+rejects any unreviewed package, with explicit diagnostics for Agent, vector,
+embedding, reindex, rerank, memory, notification, evaluation, and batch LATER
+segments. Exact module reachability additionally emits explicit failures for
+MySQL, MariaDB, Flyway, or Spring dependencies.
 
 Exact `mindweaver.exe` external module closure:
 
