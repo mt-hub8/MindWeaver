@@ -29,7 +29,10 @@ New-Item -ItemType Directory -Path $mwModuleCache, $mwBuildCache, $mwGoTemp | Ou
 
 $env:CGO_ENABLED = '0'
 $env:GOARCH = 'amd64'
+$env:GOAMD64 = 'v1'
 $env:GOENV = 'off'
+$env:GOEXPERIMENT = ''
+$env:GOFIPS140 = 'off'
 $env:GOFLAGS = '-mod=vendor -trimpath -buildvcs=false'
 $env:GOCACHE = $mwBuildCache
 $env:GOMODCACHE = $mwModuleCache
@@ -37,6 +40,7 @@ $env:GOOS = 'windows'
 $env:GOPROXY = 'off'
 $env:GOSUMDB = 'off'
 $env:GOTOOLCHAIN = 'local'
+$env:GOTELEMETRY = 'off'
 $env:GOTMPDIR = $mwGoTemp
 $env:GOVCS = '*:off'
 $env:GOWORK = 'off'

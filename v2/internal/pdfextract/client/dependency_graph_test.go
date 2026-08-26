@@ -446,16 +446,20 @@ func nestedGoTool(t *testing.T) string {
 
 func hermeticBuildEnvironment(goos, goarch string) []string {
 	overrides := map[string]string{
-		"CGO_ENABLED": "0",
-		"GOARCH":      goarch,
-		"GOENV":       "off",
-		"GOFLAGS":     "-mod=vendor -buildvcs=false",
-		"GOOS":        goos,
-		"GOPROXY":     "off",
-		"GOSUMDB":     "off",
-		"GOTOOLCHAIN": "local",
-		"GOVCS":       "*:off",
-		"GOWORK":      "off",
+		"CGO_ENABLED":  "0",
+		"GOARCH":       goarch,
+		"GOAMD64":      "v1",
+		"GOENV":        "off",
+		"GOEXPERIMENT": "",
+		"GOFIPS140":    "off",
+		"GOFLAGS":      "-mod=vendor -buildvcs=false",
+		"GOOS":         goos,
+		"GOPROXY":      "off",
+		"GOSUMDB":      "off",
+		"GOTOOLCHAIN":  "local",
+		"GOTELEMETRY":  "off",
+		"GOVCS":        "*:off",
+		"GOWORK":       "off",
 	}
 	environment := make([]string, 0, len(os.Environ())+len(overrides))
 	for _, entry := range os.Environ() {

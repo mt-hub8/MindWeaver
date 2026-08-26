@@ -13,12 +13,16 @@ jobs:
     env:
       CGO_ENABLED: "0"
       GOARCH: amd64
+      GOAMD64: v1
       GOENV: "off"
+      GOEXPERIMENT: ""
+      GOFIPS140: "off"
       GOFLAGS: -mod=vendor -trimpath -buildvcs=false
       GOOS: windows
       GOPROXY: "off"
       GOSUMDB: "off"
       GOTOOLCHAIN: local
+      GOTELEMETRY: "off"
       GOVCS: "*:off"
       GOWORK: "off"
     steps:

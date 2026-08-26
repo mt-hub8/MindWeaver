@@ -136,6 +136,7 @@ func offlineGoEnvironment(environment []string) []string {
 		"GOPROXY":      "off",
 		"GOSUMDB":      "off",
 		"GOTOOLCHAIN":  "local",
+		"GOTELEMETRY":  "off",
 		"GOVCS":        "*:off",
 		"GOWORK":       "off",
 		"GOROOT":       frozenGoRoot(),
@@ -941,12 +942,14 @@ func TestOfflineGoEnvironmentOverridesHostileAmbientTargetSettings(t *testing.T)
 		"goamd64=v4",
 		"GOEXPERIMENT=hostile",
 		"GoFiPs140=on",
+		"GOTELEMETRY=on",
 		"GOROOT=C:\\hostile",
 	})
 	want := map[string]string{
 		"GOAMD64":      "v1",
 		"GOEXPERIMENT": "",
 		"GOFIPS140":    "off",
+		"GOTELEMETRY":  "off",
 		"GOROOT":       frozenGoRoot(),
 	}
 	counts := map[string]int{}

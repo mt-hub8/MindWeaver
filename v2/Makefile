@@ -9,8 +9,8 @@ verify-standalone:
 	MW_GO="$(GO)" ./scripts/verify-standalone.sh
 
 test:
-	GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOVCS='*:off' GOFLAGS='-mod=vendor -trimpath -buildvcs=false' "$(GO)" test ./...
+	GOAMD64=v1 GOEXPERIMENT='' GOFIPS140=off GOTELEMETRY=off GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOVCS='*:off' GOFLAGS='-mod=vendor -trimpath -buildvcs=false' "$(GO)" test ./...
 
 build:
-	GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOVCS='*:off' GOFLAGS='-mod=vendor -trimpath -buildvcs=false' "$(GO)" build ./cmd/mindweaver
-	GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOVCS='*:off' GOFLAGS='-mod=vendor -trimpath -buildvcs=false' "$(GO)" build ./cmd/mindweaver-pdf
+	GOAMD64=v1 GOEXPERIMENT='' GOFIPS140=off GOTELEMETRY=off GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOVCS='*:off' GOFLAGS='-mod=vendor -trimpath -buildvcs=false' "$(GO)" build ./cmd/mindweaver
+	GOAMD64=v1 GOEXPERIMENT='' GOFIPS140=off GOTELEMETRY=off GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off GOVCS='*:off' GOFLAGS='-mod=vendor -trimpath -buildvcs=false' "$(GO)" build ./cmd/mindweaver-pdf

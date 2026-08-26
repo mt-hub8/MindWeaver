@@ -85,18 +85,27 @@ MW_GO=/path/to/go ./scripts/ci.sh
 MW_GO=/path/to/go ./scripts/verify-standalone.sh
 ```
 
+The `.sh` entry points above target Windows Git Bash. They intentionally set
+`GOOS=windows` and run the repository's Windows qualification; they are not a
+claim that the application or its Windows tests run natively on Linux.
+
 The scripts format-check, test, vet, and build with the exact Go 1.27.0
 toolchain while `go.mod` retains its Go 1.26 language/module directive. They
-force `-mod=vendor`, disable module, checksum, VCS, workspace, and toolchain
-network resolution, and create new empty `GOMODCACHE`, `GOCACHE`, and
-`GOTMPDIR` directories for every run. No pre-populated module cache is an input.
+freeze `GOAMD64=v1` with no optional Go experiments and FIPS mode off, force
+`-mod=vendor`, disable telemetry plus module, checksum, VCS, workspace, and
+toolchain network resolution, and create new empty `GOMODCACHE`, `GOCACHE`,
+and `GOTMPDIR` directories for every run. No pre-populated module cache is an
+input.
 
 Standalone verification accepts either this `v2/` directory in the monorepo or
 the root of an extracted repository. In both layouts it requires a clean
 committed tree and builds a tracked-only `git archive` (`HEAD:v2` or `HEAD`),
-which contains no `.git` metadata. The nested `.github/workflows/ci.yml`
-becomes active after extraction and pins Go 1.27.0 explicitly. A passing
-development gate is necessary evidence, not release qualification.
+which contains no `.git` metadata. It compares the archive's exact path set
+with the Git tree and fails unless `scripts/ci.sh` and
+`scripts/verify-standalone.sh` are the only `100755` entries. The nested
+`.github/workflows/ci.yml` becomes active after extraction and pins Go 1.27.0
+explicitly. A passing development gate is necessary evidence, not release
+qualification.
 
 ## Closed local workflow
 

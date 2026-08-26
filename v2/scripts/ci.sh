@@ -26,7 +26,10 @@ mkdir "$mw_build_root/gomodcache" "$mw_build_root/gocache" "$mw_build_root/gotmp
 
 export CGO_ENABLED=0
 export GOARCH=amd64
+export GOAMD64=v1
 export GOENV=off
+export GOEXPERIMENT=
+export GOFIPS140=off
 export GOFLAGS='-mod=vendor -trimpath -buildvcs=false'
 export GOCACHE="$mw_build_root/gocache"
 export GOMODCACHE="$mw_build_root/gomodcache"
@@ -34,6 +37,7 @@ export GOOS=windows
 export GOPROXY=off
 export GOSUMDB=off
 export GOTOOLCHAIN=local
+export GOTELEMETRY=off
 export GOTMPDIR="$mw_build_root/gotmp"
 export GOVCS='*:off'
 export GOWORK=off

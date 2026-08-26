@@ -5,34 +5,41 @@ not release-qualified**
 
 ## CUT-002 vendored extraction candidate
 
-This candidate is based on
-`8aadf6085436dac4c7081dda18c8274c0d6b61e8`. Its implementation commits are
-`c2871b1` (canonical `go mod vendor` output) and `583536d` (empty-cache
-extraction gates); the selection chain also includes this follow-up whitespace
-policy and evidence commit. It does not refresh to, merge, or claim the identity
-of any later controller branch. The final follow-up hash is reported by the
-handoff rather than self-referenced inside its own contents.
+This final adaptation is based on exact committed main
+`3c2e4637b67ab3563389668472b9442454c3492e`. It selectively replays
+`c2871b1`, `583536da3beddfdb7fbb0d39fc5f7734ea4cc25e`, and
+`7dddb2a2c09bff5e2f60ce54320b8524c236ca27` as `4bed0dc`, `4b8fb30`, and
+`686e5d3`, then refreshes the identities and extraction evidence in one
+adaptation commit. The final adaptation hash is reported by the handoff rather
+than self-referenced inside its own contents. It is not merged and does not
+claim the identity of a later controller branch.
+
+The replay preserves the current RET boundary corpus
+`core-keyword-boundary.8aadf60.v2.json` and the current evidence-only runtime
+helper classification. Neither conflict adds a shipped command: the exact
+production command set remains `mindweaver.exe` and `mindweaver-pdf.exe`.
 
 The frozen build uses Go 1.27.0 on Windows/amd64 with `CGO_ENABLED=0` while
 `go.mod` remains at `go 1.26`. Every module-resolving Go subprocess is forced to
 `-mod=vendor` under the offline controls, and every shipped build uses
-`-trimpath -buildvcs=false`. `GOPROXY`, `GOSUMDB`, toolchain resolution,
-workspaces, and VCS lookup are disabled. Each CI invocation creates new empty
-`GOMODCACHE`, `GOCACHE`, and `GOTMPDIR` directories and rejects any module-cache
-write.
+`-trimpath -buildvcs=false`. `GOAMD64=v1`, an empty `GOEXPERIMENT`,
+`GOFIPS140=off`, and `GOTELEMETRY=off` are explicit. `GOPROXY`, `GOSUMDB`,
+toolchain resolution, workspaces, and VCS lookup are disabled. Each CI
+invocation creates new empty `GOMODCACHE`, `GOCACHE`, and `GOTMPDIR`
+directories and rejects any module-cache write.
 
 The resulting exact identities are:
 
 - `mindweaver.exe`: 77 first-party source files,
-  `a69b2533e24a16b96b70e3cfe22bb91968cc81b3e1694b0cf1f87e65ac0e571e`;
+  `ba61947c93896ac083c0517f9e10df8f6e540eb7fda5074389363169af17ff06`;
   PE SHA-256
-  `019c1cdf4f2229f1f26f4dbfd29799f7e63810d9428b3d6c1397e5fad2bf9486`
+  `ca7c56bb8ec1144f989108d3f06d09e75a79a4a5aa0f4bdb928ba9e1f6cf7316`
 - `mindweaver-pdf.exe`: 5 first-party source files,
   `0bec9ddde1ea8778ffc3c20740ed55080d7ef0b537cfd070a2d563ccc5a087c6`;
   PE SHA-256
   `a2a6a04b4ade9367aab6cce35e9a3c87351f9c8fabd33d9ea2fe108f7e732241`
 - deduplicated dual-PE union: 81 first-party source files,
-  `8cd73f05f76afcb3edeb9692fc6d0620b22913097afc01680d8824a24ec8e434`
+  `73aca40cc25a29477f51559a9a3bd23180ee124a78e0f4a133ca663987f50cfc`
 
 Vendored buildinfo deliberately carries exact module path and version with an
 empty `Sum`. The independent vendor contract restores the trust chain by
@@ -49,20 +56,22 @@ tree. A temporary-repository regression test proves the same trailing-space
 mutation is ignored under `vendor/` but still makes `git diff --check` fail for
 a first-party file; no upstream vendor byte is rewritten to satisfy that gate.
 
-At exact implementation checkpoint `583536d`, both supported repository layouts
-were exercised with the same Windows toolchain and offline controls:
+At the final adaptation checkpoint reported by the handoff, both supported
+repository layouts are exercised with the same Windows toolchain and offline
+controls:
 
 - monorepo `HEAD:v2` tracked-only archive: full tests, vet, dual-PE builds, and
   empty-module-cache assertion **PASS**;
 - locally cloned extracted repository-root `HEAD` tracked-only archive: the
   same complete gate **PASS**.
 
-Both inner archives were generated only from clean committed trees and rejected
-`.git` metadata. The follow-up commit does not change production or vendor
-payload bytes; its new whitespace-policy regression passed focused test and vet
-in the monorepo worktree. Thus the two full layout runs remain evidence for the
-unchanged build/extraction inputs, while the new regression is not represented
-as having run in those earlier archives. These results qualify the candidate's
+Both inner archives are generated only from clean committed trees and reject
+`.git` metadata. The gate compares the archive's exact path set with the Git
+tree, accepts only ordinary blob modes, and requires the exact `100755` set to
+be `scripts/ci.sh` and `scripts/verify-standalone.sh`; this closes the earlier
+lossy temporary-Git reconstruction evidence. Git whitespace diagnostics still
+exclude only canonical vendor bytes, with a regression proving a first-party
+whitespace defect fails. These results qualify the candidate's
 build/extraction boundary; they do not close the project LICENSE, SBOM, MSI,
 signing, or clean-VM release blockers.
 
