@@ -217,6 +217,16 @@ func TestContractFailsClosed(t *testing.T) {
 			},
 		},
 		{
+			name: "closed inline success response",
+			mutate: func(raw []byte) []byte {
+				return mutateObject(t, raw, func(document map[string]any) {
+					page := document["components"].(map[string]any)["schemas"].(map[string]any)["CollectionMembersPage"].(map[string]any)
+					members := page["properties"].(map[string]any)["members"].(map[string]any)
+					members["items"].(map[string]any)["additionalProperties"] = false
+				})
+			},
+		},
+		{
 			name: "pending Answer completedAt drift",
 			mutate: func(raw []byte) []byte {
 				return mutateObject(t, raw, func(document map[string]any) {

@@ -760,7 +760,7 @@
           },
           "members": {
             "items": {
-              "additionalProperties": false,
+              "additionalProperties": true,
               "properties": {
                 "addedAt": {
                   "format": "date-time",

@@ -679,6 +679,9 @@ func validateOpenResponseSchema(name string, components componentsWire, seen map
 }
 
 func walkResponseSchema(schema schemaWire, components componentsWire, seen map[string]struct{}) error {
+	if schema.Type == "object" && schema.AdditionalProperties != nil && !*schema.AdditionalProperties {
+		return errors.New("inline response object is not additive-compatible")
+	}
 	if schema.Ref != "" {
 		const prefix = "#/components/schemas/"
 		if strings.HasPrefix(schema.Ref, prefix) {
@@ -732,6 +735,7 @@ func validateRAGResponseSchemas(components componentsWire) error {
 		object(map[string]schemaWire{"citations": emptyList, "completedAt": dateTime, "content": nonEmpty, "errorCode": code, "limitationCode": code, "status": status("failed")}),
 	}
 	if answer.Type != "object" || !reflect.DeepEqual(answer.OneOf, wantAnswerStates) ||
+		!equalStrings(answer.Required, []string{"citations", "completedAt", "content", "conversationId", "conversationRevision", "createdAt", "errorCode", "id", "limitationCode", "providerConfigVersion", "question", "reconcileAfter", "scopeCollectionId", "sources", "status"}) ||
 		!reflect.DeepEqual(answer.Properties["reconcileAfter"], dateTime) ||
 		!reflect.DeepEqual(answer.Properties["status"].Enum, []string{"completed", "failed", "pending", "refused"}) {
 		return errors.New("Answer state or recovery schema drift")
@@ -746,6 +750,7 @@ func validateRAGResponseSchemas(components componentsWire) error {
 		object(map[string]schemaWire{"citations": emptyList, "completedAt": dateTime, "content": nonEmpty, "errorCode": code, "limitationCode": code, "providerConfigVersion": version(&one, nil), "reconcileAfter": dateTime, "role": role("assistant"), "status": status("failed")}),
 	}
 	if message.Type != "object" || !reflect.DeepEqual(message.OneOf, wantMessageStates) ||
+		!equalStrings(message.Required, []string{"citations", "completedAt", "content", "conversationId", "createdAt", "errorCode", "id", "limitationCode", "ordinal", "providerConfigVersion", "reconcileAfter", "role", "scopeCollectionId", "sources", "status"}) ||
 		!reflect.DeepEqual(message.Properties["role"].Enum, []string{"assistant", "user"}) ||
 		!reflect.DeepEqual(message.Properties["status"].Enum, []string{"completed", "failed", "pending", "refused"}) ||
 		!reflect.DeepEqual(message.Properties["reconcileAfter"].OneOf, []schemaWire{dateTime, nullValue}) {
