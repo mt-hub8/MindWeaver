@@ -80,4 +80,34 @@ foreach ($row in $rows) {
     }
 }
 
+if ($rows[0].partition -eq "legacy-static-ui") {
+    $expectedPaths = @(
+        & git -C $repositoryRoot ls-tree -r --name-only $baselines[0] -- "src/main/resources/static"
+    )
+    if ($LASTEXITCODE -ne 0) {
+        throw "unable to enumerate frozen static UI tree"
+    }
+    $actualPaths = @($rows.path | Sort-Object)
+    $expectedPaths = @($expectedPaths | Sort-Object)
+    if ($actualPaths.Count -ne 47 -or $expectedPaths.Count -ne 47) {
+        throw "static UI exact-set count mismatch"
+    }
+    for ($index = 0; $index -lt $expectedPaths.Count; $index++) {
+        if ($actualPaths[$index] -cne $expectedPaths[$index]) {
+            throw "static UI exact-set path mismatch"
+        }
+    }
+    $totalLines = 0
+    foreach ($row in $rows) {
+        if ($row.role -cne "legacy-static-ui" -or $row.decision -cne "DROP" -or
+            [string]::IsNullOrWhiteSpace($row.owner)) {
+            throw "static UI row does not have one DROP owner decision"
+        }
+        $totalLines += [int]$row.line_count
+    }
+    if ($totalLines -ne 10223) {
+        throw "static UI exact line total mismatch"
+    }
+}
+
 Write-Output ("verified {0} unique files at {1}" -f $rows.Count, $rows[0].baseline)
