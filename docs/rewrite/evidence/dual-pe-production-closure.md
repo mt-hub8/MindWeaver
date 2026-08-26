@@ -19,6 +19,18 @@ scans the final linker symbol table. It also freezes the complete reachable
 first-party package exact-set for each command. It does not rely only on source
 imports or on a few forbidden-package spot checks.
 
+The same frozen Windows build selection inventories every module-local
+compiler input (`go`, cgo/native categories, syso, and embedded files),
+canonicalizes text line endings, hashes every selected file, and binds both
+per-command manifests plus their deduplicated source union:
+
+- `mindweaver.exe`: 76 files,
+  `7de68fba33368f4cfa74a44cb27a0c5add95c688f70c0c77b939bbb21d825dca`
+- `mindweaver-pdf.exe`: 5 files,
+  `bf8badaa11f215a4acd100a839d6e360017bdbc5d9ae18cbbb67e9222ab8849a`
+- deduplicated dual-PE union: 80 files,
+  `0d0999819779d9c7acde94fc734b70eb0b4d5defd315777cfc5e0547765eca48`
+
 ## Qualified exact-set
 
 `go list ./cmd/...` contains exactly these two main packages, and the isolated

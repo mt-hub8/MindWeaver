@@ -2,9 +2,11 @@ package production
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"debug/buildinfo"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -13,9 +15,11 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 const modulePath = "github.com/mt-hub8/MindWeaver/v2"
+const expectedSourceUnionSHA256 = "0d0999819779d9c7acde94fc734b70eb0b4d5defd315777cfc5e0547765eca48"
 
 type artifactContract struct {
 	name              string
@@ -26,6 +30,7 @@ type artifactContract struct {
 	requiredSymbols   []string
 	forbiddenSymbols  []string
 	modules           []string
+	sourceSHA256      string
 }
 
 var shippedArtifacts = []artifactContract{
@@ -80,6 +85,7 @@ var shippedArtifacts = []artifactContract{
 			"github.com/ncruces/julianday@v1.0.0#h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M=",
 			"golang.org/x/sys@v0.47.0#h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=",
 		},
+		sourceSHA256: "7de68fba33368f4cfa74a44cb27a0c5add95c688f70c0c77b939bbb21d825dca",
 	},
 	{
 		name:   "mindweaver-pdf.exe",
@@ -116,6 +122,7 @@ var shippedArtifacts = []artifactContract{
 			"github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2#h1:kdDIM4JNxn9gsRk5Zo6mtmcFpBqnl9gTVUwf9t6lIRk=",
 			"github.com/mgilbir/pdf0@v0.1.0#h1:rfBK18bcQ4kHQTXBmriAb07TafhG2w1fLflq9lHgaG4=",
 		},
+		sourceSHA256: "bf8badaa11f215a4acd100a839d6e360017bdbc5d9ae18cbbb67e9222ab8849a",
 	},
 }
 
@@ -148,11 +155,18 @@ func TestWindowsAMD64ShippedDualPEClosure(t *testing.T) {
 	}
 
 	output := t.TempDir()
+	sources := make(map[string][]sourceEntry, len(shippedArtifacts))
 	for _, artifact := range shippedArtifacts {
 		artifact := artifact
 		t.Run(artifact.name, func(t *testing.T) {
 			graph := packageGraph(t, goTool, root, environment, artifact.target)
 			assertGraph(t, artifact, graph)
+			entries, digest := commandSourceManifest(t, goTool, root, environment, artifact)
+			if digest != artifact.sourceSHA256 {
+				t.Errorf("source manifest SHA-256 = %s, want %s", digest, artifact.sourceSHA256)
+			}
+			sources[artifact.name] = entries
+			t.Logf("%s source files=%d sha256=%s", artifact.name, len(entries), digest)
 
 			path := filepath.Join(output, artifact.name)
 			runGo(t, goTool, root, environment, "build", "-trimpath", "-buildvcs=false", "-o", path, artifact.target)
@@ -183,6 +197,235 @@ func TestWindowsAMD64ShippedDualPEClosure(t *testing.T) {
 	if strings.Join(gotArtifacts, "\n") != strings.Join(wantArtifacts, "\n") {
 		t.Fatalf("built artifact exact-set:\n got %q\nwant %q", gotArtifacts, wantArtifacts)
 	}
+	unionDigest, unionFiles := sourceUnionDigest(t, sources)
+	if unionDigest != expectedSourceUnionSHA256 {
+		t.Errorf("dual-PE source union SHA-256 = %s, want %s", unionDigest, expectedSourceUnionSHA256)
+	}
+	t.Logf("dual-PE source union files=%d sha256=%s", unionFiles, unionDigest)
+}
+
+type listedSourcePackage struct {
+	Dir        string
+	ImportPath string
+	Standard   bool
+	Module     *struct {
+		Path string
+		Main bool
+	}
+	GoFiles      []string
+	CgoFiles     []string
+	CFiles       []string
+	CXXFiles     []string
+	MFiles       []string
+	HFiles       []string
+	FFiles       []string
+	SFiles       []string
+	SwigFiles    []string
+	SwigCXXFiles []string
+	SysoFiles    []string
+	EmbedFiles   []string
+}
+
+type sourceEntry struct {
+	importPath string
+	kind       string
+	relative   string
+	size       int
+	digest     string
+}
+
+func commandSourceManifest(
+	t *testing.T,
+	goTool, root string,
+	environment []string,
+	artifact artifactContract,
+) ([]sourceEntry, string) {
+	t.Helper()
+	raw := runGo(t, goTool, root, environment, "list", "-deps", "-json", artifact.target)
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	var entries []sourceEntry
+	seen := make(map[string]bool)
+	var totalBytes int64
+	for {
+		var record listedSourcePackage
+		if err := decoder.Decode(&record); err == io.EOF {
+			break
+		} else if err != nil {
+			t.Fatalf("decode source package graph: %v", err)
+		}
+		if record.Standard || record.Module == nil || !record.Module.Main || record.Module.Path != modulePath {
+			continue
+		}
+		packageRelative, err := filepath.Rel(root, record.Dir)
+		if err != nil || packageRelative == ".." || strings.HasPrefix(packageRelative, ".."+string(filepath.Separator)) {
+			t.Fatalf("first-party package directory escapes module root: %s", record.ImportPath)
+		}
+		packageRelative = filepath.ToSlash(packageRelative)
+		if record.ImportPath != modulePath+"/"+packageRelative {
+			t.Fatalf("first-party import path %s does not match directory %s", record.ImportPath, packageRelative)
+		}
+		categories := []struct {
+			kind  string
+			files []string
+			raw   bool
+		}{
+			{"go", record.GoFiles, false}, {"cgo", record.CgoFiles, false},
+			{"c", record.CFiles, false}, {"cxx", record.CXXFiles, false},
+			{"objective-c", record.MFiles, false}, {"header", record.HFiles, false},
+			{"fortran", record.FFiles, false}, {"assembly", record.SFiles, false},
+			{"swig", record.SwigFiles, false}, {"swig-cxx", record.SwigCXXFiles, false},
+			{"syso", record.SysoFiles, true}, {"embed", record.EmbedFiles, true},
+		}
+		for _, category := range categories {
+			for _, name := range category.files {
+				filename := filepath.Join(record.Dir, filepath.FromSlash(name))
+				relative, err := filepath.Rel(root, filename)
+				if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+					t.Fatalf("source file escapes module root: %s", name)
+				}
+				relative = filepath.ToSlash(relative)
+				if seen[strings.ToLower(relative)] {
+					t.Fatalf("source manifest contains duplicate or case-colliding file %s", relative)
+				}
+				seen[strings.ToLower(relative)] = true
+				contents := readBoundedSource(t, root, filename, relative)
+				if !category.raw {
+					contents = canonicalText(t, relative, contents)
+				}
+				totalBytes += int64(len(contents))
+				if totalBytes > 32<<20 {
+					t.Fatalf("source manifest bytes exceed 32 MiB")
+				}
+				digest := sha256.Sum256(contents)
+				entries = append(entries, sourceEntry{
+					importPath: record.ImportPath,
+					kind:       category.kind, relative: relative, size: len(contents),
+					digest: hex.EncodeToString(digest[:]),
+				})
+			}
+		}
+	}
+	if len(entries) == 0 || len(entries) > 512 {
+		t.Fatalf("source manifest file count = %d, want 1..512", len(entries))
+	}
+	sortSourceEntries(entries)
+	var manifest strings.Builder
+	manifest.WriteString("mindweaver.command-source.v1\n")
+	fmt.Fprintf(&manifest, "command\t%s/cmd/%s\n", modulePath, strings.TrimPrefix(artifact.target, "./cmd/"))
+	manifest.WriteString("target\twindows\tamd64\tcgo=0\n")
+	for _, entry := range entries {
+		fmt.Fprintf(&manifest, "file\t%s\t%s\t%s\t%d\t%s\n",
+			entry.importPath, entry.kind, entry.relative, entry.size, entry.digest)
+	}
+	digest := sha256.Sum256([]byte(manifest.String()))
+	return entries, hex.EncodeToString(digest[:])
+}
+
+func readBoundedSource(t *testing.T, root, filename, relative string) []byte {
+	t.Helper()
+	rootResolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("resolve module root: %v", err)
+	}
+	fileResolved, err := filepath.EvalSymlinks(filename)
+	if err != nil {
+		t.Fatalf("resolve source file %s: %v", relative, err)
+	}
+	resolvedRelative, err := filepath.Rel(rootResolved, fileResolved)
+	if err != nil || resolvedRelative == ".." || strings.HasPrefix(resolvedRelative, ".."+string(filepath.Separator)) {
+		t.Fatalf("source file %s resolves outside module root", relative)
+	}
+	info, err := os.Lstat(filename)
+	if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.Size() > 4<<20 {
+		t.Fatalf("source file %s is missing, linked, non-regular, or oversized", relative)
+	}
+	file, err := os.Open(filename)
+	if err != nil {
+		t.Fatalf("open source file %s: %v", relative, err)
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !os.SameFile(info, opened) {
+		t.Fatalf("source file %s identity changed before read", relative)
+	}
+	contents, err := io.ReadAll(io.LimitReader(file, (4<<20)+1))
+	if err != nil || len(contents) > 4<<20 || int64(len(contents)) != opened.Size() {
+		t.Fatalf("read source file %s within bound: %v", relative, err)
+	}
+	current, err := os.Lstat(filename)
+	if err != nil || current.Mode()&os.ModeSymlink != 0 || !os.SameFile(opened, current) {
+		t.Fatalf("source file %s identity changed during read", relative)
+	}
+	return contents
+}
+
+func sourceUnionDigest(t *testing.T, commands map[string][]sourceEntry) (string, int) {
+	t.Helper()
+	union := make(map[string]sourceEntry)
+	for command, entries := range commands {
+		for _, entry := range entries {
+			key := strings.ToLower(entry.relative)
+			if previous, exists := union[key]; exists && previous != entry {
+				t.Fatalf("source union disagrees for %s through %s", entry.relative, command)
+			}
+			union[key] = entry
+		}
+	}
+	entries := make([]sourceEntry, 0, len(union))
+	for _, entry := range union {
+		entries = append(entries, entry)
+	}
+	sortSourceEntries(entries)
+	var manifest strings.Builder
+	manifest.WriteString("mindweaver.dual-pe-source-union.v1\n")
+	manifest.WriteString("target\twindows\tamd64\tcgo=0\n")
+	for _, artifact := range shippedArtifacts {
+		fmt.Fprintf(&manifest, "command\t%s\t%s\n", artifact.name, artifact.sourceSHA256)
+	}
+	for _, entry := range entries {
+		fmt.Fprintf(&manifest, "file\t%s\t%s\t%s\t%d\t%s\n",
+			entry.importPath, entry.kind, entry.relative, entry.size, entry.digest)
+	}
+	digest := sha256.Sum256([]byte(manifest.String()))
+	return hex.EncodeToString(digest[:]), len(entries)
+}
+
+func sortSourceEntries(entries []sourceEntry) {
+	sort.Slice(entries, func(left, right int) bool {
+		if entries[left].relative != entries[right].relative {
+			return entries[left].relative < entries[right].relative
+		}
+		if entries[left].kind != entries[right].kind {
+			return entries[left].kind < entries[right].kind
+		}
+		return entries[left].importPath < entries[right].importPath
+	})
+}
+
+func canonicalText(t *testing.T, name string, contents []byte) []byte {
+	t.Helper()
+	if !utf8.Valid(contents) {
+		t.Fatalf("text source %s is not UTF-8", name)
+	}
+	if !bytes.Contains(contents, []byte{'\r'}) {
+		return contents
+	}
+	canonical := make([]byte, 0, len(contents))
+	for index := 0; index < len(contents); index++ {
+		switch contents[index] {
+		case '\r':
+			if index+1 >= len(contents) || contents[index+1] != '\n' {
+				t.Fatalf("text source %s has a lone carriage return", name)
+			}
+			canonical = append(canonical, '\n')
+			index++
+		case '\n':
+			t.Fatalf("text source %s mixes LF and CRLF", name)
+		default:
+			canonical = append(canonical, contents[index])
+		}
+	}
+	return canonical
 }
 
 func commandMainPackages(t *testing.T, goTool, root string, environment []string) []string {
