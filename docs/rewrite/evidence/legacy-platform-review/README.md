@@ -42,3 +42,4 @@ Completed partitions:
 
 - `review-01-config-security-common-state.md`
 - `review-02-entity-repository-storage-flyway.md`
+- `review-03-mq-scheduler.md`
