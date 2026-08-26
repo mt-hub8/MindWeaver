@@ -40,9 +40,13 @@ original `d61a158` run; they are not the current repository status.
 The gate is `TestWindowsAMD64ShippedDualPEClosure` in
 `v2/qualification/production/dual_pe_test.go`. It creates both final PE files
 in a new test-owned directory, checks the `MZ` header, reads Go buildinfo, and
-scans the final linker symbol table. It also freezes the complete reachable
-first-party package exact-set for each command. It does not rely only on source
-imports or on a few forbidden-package spot checks.
+scans the final linker symbol table. Each PE SHA-256 is an executable assertion,
+and the gate rebuilds each command with two separate initially empty `GOCACHE`
+directories before accepting reproducibility. It also freezes the complete
+reachable first-party package exact-set for each command. It does not rely only
+on source imports or on a few forbidden-package spot checks. These hashes bind
+this exact integrated source tree; a later WebUI or other production-source
+change must fail the gate and be explicitly reviewed and re-frozen.
 
 The same frozen Windows build selection inventories every module-local
 compiler input (`go`, cgo/native categories, syso, and embedded files),

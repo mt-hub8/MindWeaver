@@ -31,6 +31,7 @@ type artifactContract struct {
 	forbiddenSymbols  []string
 	modules           []string
 	sourceSHA256      string
+	artifactSHA256    string
 }
 
 var shippedArtifacts = []artifactContract{
@@ -85,7 +86,8 @@ var shippedArtifacts = []artifactContract{
 			"github.com/ncruces/julianday@v1.0.0#h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M=",
 			"golang.org/x/sys@v0.47.0#h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=",
 		},
-		sourceSHA256: "b7d8ca3e12648fd472c5f9eb1d774fe5aef7b91b694080b2a813380295ddc748",
+		sourceSHA256:   "b7d8ca3e12648fd472c5f9eb1d774fe5aef7b91b694080b2a813380295ddc748",
+		artifactSHA256: "e9415f981d538b7588610e4984d89d09dcc8867b7519d47abef80e4e22b8262c",
 	},
 	{
 		name:   "mindweaver-pdf.exe",
@@ -122,7 +124,8 @@ var shippedArtifacts = []artifactContract{
 			"github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2#h1:kdDIM4JNxn9gsRk5Zo6mtmcFpBqnl9gTVUwf9t6lIRk=",
 			"github.com/mgilbir/pdf0@v0.1.0#h1:rfBK18bcQ4kHQTXBmriAb07TafhG2w1fLflq9lHgaG4=",
 		},
-		sourceSHA256: "bf8badaa11f215a4acd100a839d6e360017bdbc5d9ae18cbbb67e9222ab8849a",
+		sourceSHA256:   "bf8badaa11f215a4acd100a839d6e360017bdbc5d9ae18cbbb67e9222ab8849a",
+		artifactSHA256: "411ed538b53d533600ae5466427f3d3f30a7a81405885d92b79167e52ff32b87",
 	},
 }
 
@@ -155,6 +158,8 @@ func TestWindowsAMD64ShippedDualPEClosure(t *testing.T) {
 	}
 
 	output := t.TempDir()
+	reproduction := t.TempDir()
+	cacheRoot := t.TempDir()
 	sources := make(map[string][]sourceEntry, len(shippedArtifacts))
 	for _, artifact := range shippedArtifacts {
 		artifact := artifact
@@ -169,7 +174,8 @@ func TestWindowsAMD64ShippedDualPEClosure(t *testing.T) {
 			t.Logf("%s source files=%d sha256=%s", artifact.name, len(entries), digest)
 
 			path := filepath.Join(output, artifact.name)
-			runGo(t, goTool, root, environment, "build", "-trimpath", "-buildvcs=false", "-o", path, artifact.target)
+			firstEnvironment := environmentWith(environment, "GOCACHE", filepath.Join(cacheRoot, artifact.name+"-first"))
+			runGo(t, goTool, root, firstEnvironment, "build", "-trimpath", "-buildvcs=false", "-o", path, artifact.target)
 			assertPortableExecutable(t, path)
 			information, err := buildinfo.ReadFile(path)
 			if err != nil {
@@ -177,7 +183,19 @@ func TestWindowsAMD64ShippedDualPEClosure(t *testing.T) {
 			}
 			assertBuildInfo(t, artifact, information)
 			assertSymbols(t, goTool, environment, path, artifact.requiredSymbols, artifact.forbiddenSymbols)
-			t.Logf("%s sha256=%s", artifact.name, fileSHA256(t, path))
+			artifactDigest := fileSHA256(t, path)
+			if artifactDigest != artifact.artifactSHA256 {
+				t.Errorf("artifact SHA-256 = %s, want %s", artifactDigest, artifact.artifactSHA256)
+			}
+
+			reproductionPath := filepath.Join(reproduction, artifact.name)
+			secondEnvironment := environmentWith(environment, "GOCACHE", filepath.Join(cacheRoot, artifact.name+"-second"))
+			runGo(t, goTool, root, secondEnvironment, "build", "-trimpath", "-buildvcs=false", "-o", reproductionPath, artifact.target)
+			reproductionDigest := fileSHA256(t, reproductionPath)
+			if reproductionDigest != artifactDigest {
+				t.Errorf("two clean builds differ: first %s, second %s", artifactDigest, reproductionDigest)
+			}
+			t.Logf("%s sha256=%s clean-builds=2", artifact.name, artifactDigest)
 		})
 	}
 
@@ -680,4 +698,16 @@ func offlineWindowsAMD64Environment() []string {
 		environment = append(environment, fmt.Sprintf("%s=%s", key, value))
 	}
 	return environment
+}
+
+func environmentWith(environment []string, key, value string) []string {
+	result := make([]string, 0, len(environment)+1)
+	for _, entry := range environment {
+		name, _, found := strings.Cut(entry, "=")
+		if found && strings.EqualFold(name, key) {
+			continue
+		}
+		result = append(result, entry)
+	}
+	return append(result, key+"="+value)
 }
