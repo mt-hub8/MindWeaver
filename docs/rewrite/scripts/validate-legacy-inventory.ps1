@@ -13,9 +13,10 @@ $featurePath = Join-Path $repoRoot "docs\rewrite\feature-disposition.md"
 $ledgerPath = Join-Path $repoRoot "docs\rewrite\acceptance-ledger.md"
 $salvageReviewPath = Join-Path $repoRoot "docs\rewrite\legacy-salvage-review.md"
 
-$legalDispositions = @("KEEP_SEMANTICS", "REDESIGN", "REBUILD", "ARCHIVE_ONLY", "DEFER", "DROP")
-$legalSalvageDecisions = @("CORE_KEEP_SEMANTICS", "CORE_REBUILD_FROM_ZERO", "LATER_FROM_ZERO", "ARCHIVE_ONLY", "DROP")
-$legalFirstReleaseScopes = @("CORE", "LATER", "ARCHIVE", "DROP")
+$legalDispositions = @("KEEP_SEMANTICS", "REDESIGN", "REBUILD", "DEFER", "DROP")
+$legalSalvageDecisions = @("CORE_REQUIREMENT_ONLY", "CORE_REBUILD_FROM_ZERO", "LATER_FROM_ZERO", "DROP")
+$legalFirstReleaseScopes = @("CORE", "LATER", "DROP")
+$retiredAcceptanceIds = @("MIG-001", "MIG-002", "MIG-003", "HIS-001", "HIS-002")
 
 function Get-MarkdownCells {
     param([string]$Line)
@@ -45,20 +46,16 @@ foreach ($line in Get-Content $featurePath) {
     if ($legalSalvageDecisions -notcontains $salvageDecision) { throw "Illegal salvage decision $salvageDecision for $id" }
     if ($legalFirstReleaseScopes -notcontains $firstReleaseScope) { throw "Illegal first-release scope $firstReleaseScope for $id" }
     $requiredScope = switch ($salvageDecision) {
-        "CORE_KEEP_SEMANTICS" { "CORE" }
+        "CORE_REQUIREMENT_ONLY" { "CORE" }
         "CORE_REBUILD_FROM_ZERO" { "CORE" }
         "LATER_FROM_ZERO" { "LATER" }
-        "ARCHIVE_ONLY" { "ARCHIVE" }
         "DROP" { "DROP" }
     }
     if ($firstReleaseScope -ne $requiredScope) {
         throw "Salvage/scope mismatch for ${id}: $salvageDecision requires $requiredScope, found $firstReleaseScope"
     }
-    if ($salvageDecision -eq "CORE_KEEP_SEMANTICS" -and $disposition -ne "KEEP_SEMANTICS") {
-        throw "CORE_KEEP_SEMANTICS requires legacy disposition KEEP_SEMANTICS for $id"
-    }
-    if ($salvageDecision -eq "ARCHIVE_ONLY" -and $disposition -ne "ARCHIVE_ONLY") {
-        throw "ARCHIVE_ONLY salvage requires ARCHIVE_ONLY legacy disposition for $id"
+    if ($salvageDecision -eq "CORE_REQUIREMENT_ONLY" -and $disposition -ne "KEEP_SEMANTICS") {
+        throw "CORE_REQUIREMENT_ONLY requires legacy disposition KEEP_SEMANTICS for $id"
     }
     if ($salvageDecision -eq "DROP" -and $disposition -ne "DROP") {
         throw "DROP salvage requires DROP legacy disposition for $id"
@@ -70,6 +67,10 @@ foreach ($line in Get-Content $featurePath) {
     }
 }
 if ($features.Count -eq 0) { throw "Feature disposition matrix is empty" }
+$requirementOnlyFeatures = @($features.Keys | Where-Object { $features[$_].salvage_decision -eq "CORE_REQUIREMENT_ONLY" } | Sort-Object)
+if (($requirementOnlyFeatures -join ',') -cne "MW-COL-001,MW-TRS-001") {
+    throw "CORE_REQUIREMENT_ONLY must be exactly MW-COL-001 and MW-TRS-001; found $($requirementOnlyFeatures -join ',')"
+}
 $infrastructureNumbers = @($features.Keys | Where-Object { $_ -match '^MW-INF-(\d{3})$' } | ForEach-Object { [int]($_ -replace '^MW-INF-', '') } | Sort-Object)
 if ($infrastructureNumbers.Count -gt 0) {
     $expectedInfrastructureNumbers = @(1..($infrastructureNumbers[-1]))
@@ -98,7 +99,6 @@ foreach ($line in Get-Content $salvageReviewPath) {
     $expectedFirstRelease = switch ($feature.first_release_scope) {
         "CORE" { "YES" }
         "LATER" { "NO" }
-        "ARCHIVE" { "ARCHIVE" }
         "DROP" { "DROP" }
     }
     if ($cells[8] -ne $expectedFirstRelease) {
@@ -111,6 +111,36 @@ foreach ($id in $features.Keys) {
 }
 if ($salvageReviews.Count -ne $features.Count) {
     throw "Salvage review count $($salvageReviews.Count) does not match feature count $($features.Count)"
+}
+
+# The ledger is validated before discovery/emission so -EmitInventory can never
+# generate rows bound to a missing, malformed, or retired acceptance decision.
+$acceptanceIds = @{}
+foreach ($line in Get-Content $ledgerPath) {
+    if ($line -notmatch '^\|\s*[A-Z]+-[0-9]{3}\s*\|') { continue }
+    $cells = @(Get-MarkdownCells $line)
+    if ($cells.Count -ne 6) { throw "Acceptance row must have exactly 6 columns: $line" }
+    $acceptanceId = $cells[0]
+    $phase = $cells[2]
+    $coreGate = $cells[3]
+    $status = $cells[4]
+    if ($retiredAcceptanceIds -contains $acceptanceId) { throw "Retired acceptance ID $acceptanceId must not reappear" }
+    if ($acceptanceIds.ContainsKey($acceptanceId)) { throw "Duplicate acceptance ledger ID $acceptanceId" }
+    if ($phase -notin @("CORE", "LATER")) { throw "Illegal acceptance phase $phase for $acceptanceId" }
+    if ($coreGate -notin @("YES", "NO")) { throw "Illegal Core gate value $coreGate for $acceptanceId" }
+    if (($phase -eq "CORE" -and $coreGate -ne "YES") -or ($phase -ne "CORE" -and $coreGate -ne "NO")) {
+        throw "Acceptance phase/core-gate mismatch for ${acceptanceId}: phase=$phase, core_gate=$coreGate"
+    }
+    if ($status -notin @("NOT_IMPLEMENTED", "IMPLEMENTED", "PASS", "BLOCKED")) {
+        throw "Illegal acceptance status $status for $acceptanceId"
+    }
+    $acceptanceIds[$acceptanceId] = [pscustomobject]@{ phase = $phase; core_gate = $coreGate }
+}
+if ($acceptanceIds.Count -ne 46) { throw "Acceptance ledger has $($acceptanceIds.Count) rows, want 46" }
+$coreAcceptanceCount = @($acceptanceIds.Values | Where-Object phase -eq "CORE").Count
+$laterAcceptanceCount = @($acceptanceIds.Values | Where-Object phase -eq "LATER").Count
+if ($coreAcceptanceCount -ne 38 -or $laterAcceptanceCount -ne 8) {
+    throw "Acceptance ledger phase totals drift: CORE=$coreAcceptanceCount, LATER=$laterAcceptanceCount"
 }
 
 function To-RepoPath {
@@ -236,7 +266,7 @@ $migrations = Get-ChildItem $migrationRoot -Recurse -Filter "*.sql" -File | Sort
 foreach ($migration in $migrations) {
     $relative = To-RepoPath $migration
     $sql = Get-Content $migration.FullName -Raw
-    Add-Discovered "flyway_migration" $relative "Legacy Flyway migration $($migration.Name). SQL meaning is preserved as migration-source evidence, not replayed into SQLite."
+    Add-Discovered "flyway_migration" $relative "Legacy Flyway migration $($migration.Name) is historical schema evidence only; the Go product neither executes it nor reads a legacy database."
 
     $createTableMatches = [regex]::Matches(
         $sql,
@@ -545,8 +575,8 @@ Get-ChildItem (Join-Path $repoRoot "workers") -Recurse -Filter "*.py" -File | So
 }
 
 # User-owned and operational data categories. These are intentionally higher-level than a
-# table list: they define migration ownership and distinguish canonical, sensitive, derived,
-# archival and ephemeral bytes.
+# table list: they record historical ownership and distinguish canonical, sensitive, derived,
+# report-like, and ephemeral bytes without authorizing a product reader.
 $dataCategories = [ordered]@{
     "data:document-original-upload-bytes" = "Original uploaded bytes survive only for staged batch items; ordinary upload persistence was not found."
     "data:document-extracted-text-metadata-lifecycle" = "Document source text, filename/type/size, hashes, tags, status, lifecycle, purge and generation metadata in MySQL."
@@ -580,13 +610,13 @@ foreach ($entry in $dataCategories.GetEnumerator()) {
 
 # Explicit unknowns: these are not treated as confirmed runtime semantics.
 $gaps = [ordered]@{
-    "gap:live-mysql-show-index-not-captured" = "Migration SQL proves declared indexes, but live MySQL engine-created/renamed indexes require SHOW INDEX evidence."
+    "gap:live-mysql-show-index-not-captured" = "Flyway SQL proves declared indexes, but live MySQL engine-created or renamed indexes are unknown; the Go product does not probe the legacy schema."
     "gap:ordinary-upload-original-bytes-not-persisted" = "Static review found source_text persistence and batch staging bytes, but no durable original bytes for ordinary single-file uploads."
     "gap:conversation-persistence-not-implemented" = "Conversation history is in the target disposition, while no legacy controller/entity/migration implementation was found."
     "gap:legacy-http-auth-session-not-found" = "No legacy HTTP authentication/session enforcement was identified in the scanned production sources; this is not proof about deployment-layer controls."
-    "gap:real-user-data-cardinality-and-largest-vault" = "Repository sources cannot establish real row counts, blob sizes, encodings or orphan rates; sanitized migration rehearsal evidence is required."
-    "gap:legacy-database-profile-is-ambiguous" = "Default and docker profiles name different MySQL databases/ports; source inspection cannot identify which instance contains a user's canonical data."
-    "gap:provider-master-key-availability-unknown" = "Provider API keys require the legacy app.security.secret-key or MODEL_PROVIDER_SECRET_KEY; repository inspection cannot establish whether the user still has that key."
+    "gap:real-user-data-cardinality-and-largest-vault" = "Repository sources cannot establish real row counts, blob sizes, encodings or orphan rates; none is a Go product input or capacity promise."
+    "gap:legacy-database-profile-is-ambiguous" = "Default and docker profiles name different MySQL databases or ports; the Go product does not guess, probe, or open either legacy schema."
+    "gap:provider-master-key-availability-unknown" = "Provider API keys require a legacy master key whose availability is unknown; the Go product reads neither legacy ciphertext nor plaintext."
     "gap:java-version-check-conflicts-with-build" = "pom.xml declares Java 21 while scripts/windows/check-env.ps1 tells users to install JDK 17+; Java 17 is not proven sufficient for this build."
 }
 foreach ($entry in $gaps.GetEnumerator()) {
@@ -594,7 +624,7 @@ foreach ($entry in $gaps.GetEnumerator()) {
 }
 
 function Decision {
-    param([string]$Id, [string]$Disposition, [string]$Target, [string]$Migration, [string]$Evidence)
+    param([string]$Id, [string]$Disposition, [string]$Target, [string]$DataDisposition, [string]$Evidence)
     # ADR 0013 makes v1 provider disposition uniform regardless of which
     # legacy controller, table, key, or implementation exposed the value. No
     # legacy provider value becomes live configuration and no credential-store
@@ -602,19 +632,32 @@ function Decision {
     # discovery rules from silently recreating the superseded broad provider
     # scope.
     if ($Id -eq "MW-PRO-001") {
-        $Target = "internal/ollama;migration/neutral report"
-        $Migration = "Do not port legacy provider behavior or values. V1 exposes only explicit non-secret literal-loopback Ollama configuration; migration emits a content-free reconfiguration requirement."
+        $Target = "internal/ollama"
     }
     if ($Id -eq "MW-CFG-001" -and $Target -like "*credential-store*") {
-        $Target = "platform/config;migration/neutral exceptions"
-        $Migration = "Never export or import secret values; only explicitly supported non-secret v1 settings may be entered through the new application."
+        $Target = "platform/config"
     }
     $Target = $Target.Replace("internal/provider/ollama", "internal/ollama")
+    if ([string]::IsNullOrWhiteSpace($Target) -or [string]::IsNullOrWhiteSpace($DataDisposition) -or [string]::IsNullOrWhiteSpace($Evidence)) {
+        throw "Decision rule for $Id has an empty target, data disposition, or acceptance binding"
+    }
+    $evidenceIds = @($Evidence -split ';')
+    if ($evidenceIds.Count -ne @($evidenceIds | Sort-Object -Unique).Count) {
+        throw "Decision rule for $Id contains duplicate acceptance IDs: $Evidence"
+    }
+    if ($retiredAcceptanceIds | Where-Object { $evidenceIds -contains $_ }) {
+        throw "Decision rule for $Id still emits retired acceptance IDs: $Evidence"
+    }
+    foreach ($acceptanceId in $evidenceIds) {
+        if (-not $acceptanceIds.ContainsKey($acceptanceId)) {
+            throw "Decision rule for $Id emits unknown acceptance ID $acceptanceId"
+        }
+    }
     return [pscustomobject][ordered]@{
         disposition_id = $Id
         disposition = $Disposition
         go_target = $Target
-        migration_rule = $Migration
+        data_disposition = $DataDisposition
         acceptance_ids = $Evidence
     }
 }
@@ -623,52 +666,52 @@ function Get-TableDecision {
     param([string]$Table)
     switch -Regex ($Table) {
         '^task$|^task_event$|^task_attempt$|^task_output_chunk$|^prompt_template$' {
-            return Decision "MW-TSK-001" "ARCHIVE_ONLY" "migration/archive/task-history" "Export checksummed history with content classification; import into a read-only archive and never enqueue it." "MIG-001;MIG-002;HIS-001;CUT-001"
+            return Decision "MW-TSK-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;ARC-003;CUT-001;CUT-002"
         }
         '^task_outbox$' {
-            return Decision "MW-JOB-001" "DROP" "job" "Do not import executable outbox state; freeze/drain and report every unresolved row before cutover." "JOB-001;JOB-002;CUT-001"
+            return Decision "MW-JOB-001" "DROP" "job" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "JOB-001;JOB-002;CUT-001"
         }
         '^document$|^document_ingestion_task$|^document_ingestion_event$' {
-            return Decision "MW-DOC-001" "REDESIGN" "internal/document;internal/ingestion;blob;job" "Export canonical document text/metadata/lifecycle and ingestion history; hash, validate and quarantine ambiguous rows before idempotent import." "DOC-001;DOC-002;MIG-001;MIG-002"
+            return Decision "MW-DOC-001" "REDESIGN" "internal/document;internal/ingestion;blob;job" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "DOC-001;DOC-002"
         }
         '^document_chunk$' {
-            return Decision "MW-DOC-004" "REBUILD" "internal/chunking;storage/fts" "Do not trust legacy chunks as canonical; rebuild deterministic chunks and SQLite FTS rows from verified document inputs." "DOC-001;RET-001;MIG-002"
+            return Decision "MW-DOC-004" "REBUILD" "internal/chunking;storage/fts" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "DOC-001;RET-001"
         }
         '^document_chunk_embedding$' {
-            return Decision "MW-EMB-001" "REBUILD" "future embedding/vector slice" "Discard legacy vectors; the first release has no embedding/vector schema or provider, and any later slice rebuilds from canonical chunks." "EMB-001;MIG-002"
+            return Decision "MW-EMB-001" "REBUILD" "future embedding/vector slice" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EMB-001"
         }
         '^embedding_cache$|^embedding_cache_metric$' {
-            return Decision "MW-CCH-001" "REBUILD" "internal/indexing/cache;internal/retrieval/cache" "Discard cache values after exporting diagnostic counts; regenerate only from canonical inputs and compatible fingerprints." "RET-002;MIG-002;PUR-001"
+            return Decision "MW-CCH-001" "REBUILD" "internal/indexing/cache;internal/retrieval/cache" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "RET-002;PUR-001"
         }
         '^knowledge_collection$|^document_collection$' {
-            return Decision "MW-COL-001" "KEEP_SEMANTICS" "internal/collection" "Preserve collection identity and true many-to-many memberships; quarantine missing/duplicate references and never widen empty scope." "COL-001;MIG-001;MIG-002"
+            return Decision "MW-COL-001" "KEEP_SEMANTICS" "internal/collection" "Do not read or import any legacy row or identifier. Preserve only the narrow user requirement and implement it against records created in a fresh Go Vault." "COL-001"
         }
         '^agent_task$|^agent_task_event$|^agent_task_step$|^agent_task_citation$' {
-            return Decision "MW-AGT-001" "REDESIGN" "internal/agent;job" "Import completed legacy runs as immutable provenance only; never resume legacy execution state or replay provider calls." "AGT-001;MIG-001;MIG-002"
+            return Decision "MW-AGT-001" "REDESIGN" "internal/agent;job" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "AGT-001"
         }
         '^agent_profile$' {
-            return Decision "MW-AGT-002" "REDESIGN" "internal/agent/profile" "Translate profiles and tool allowlists explicitly; validate references and version every imported profile." "AGT-001;MEM-001;MIG-002"
+            return Decision "MW-AGT-002" "REDESIGN" "internal/agent/profile" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "AGT-001;MEM-001"
         }
         '^memory_item$' {
-            return Decision "MW-MEM-001" "REDESIGN" "internal/memory" "Import only with source/scope/visibility/retention provenance; quarantine ambiguous ownership and support verified purge." "MEM-001;MIG-002;PUR-001"
+            return Decision "MW-MEM-001" "REDESIGN" "internal/memory" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "MEM-001;PUR-001"
         }
         '^model_provider_config$' {
-            return Decision "MW-PRO-001" "REDESIGN" "internal/provider;credential-store" "Export text-generation settings only; embedding fields remain later-only. Rebind credentials with explicit local authorization or require re-entry without leaking plaintext." "PRV-001;PRV-002;MIG-001;SEC-002"
+            return Decision "MW-PRO-001" "REDESIGN" "internal/provider;credential-store" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "PRV-001;PRV-002;SEC-002"
         }
         '^upload_batch$|^upload_batch_item$' {
-            return Decision "MW-BAT-001" "REDESIGN" "internal/ingestion/batch;job;blob" "Preserve batch/item results and hash staged bytes; do not resume legacy workers, and quarantine missing staging files." "BAT-001;MIG-001;MIG-002"
+            return Decision "MW-BAT-001" "REDESIGN" "internal/ingestion/batch;job;blob" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "BAT-001"
         }
         '^notification$' {
-            return Decision "MW-NOT-001" "REDESIGN" "internal/notification" "Import user-visible history with deduplication provenance; do not turn legacy unread rows into executable work." "JOB-002;BAT-001;UI-001;MIG-002"
+            return Decision "MW-NOT-001" "REDESIGN" "internal/notification" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "JOB-002;BAT-001;UI-001"
         }
         '^rag_evaluation_' {
-            return Decision "MW-EVL-001" "REDESIGN" "internal/evaluation" "Preserve datasets/cases and archive old results; reruns require frozen Go pipeline/model/retrieval fingerprints." "EVL-001;RAG-001;MIG-002"
+            return Decision "MW-EVL-001" "REDESIGN" "internal/evaluation" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EVL-001;RAG-001"
         }
         '^retrieval_reindex_event$|^vector_index_generation$' {
-            return Decision "MW-DOC-003" "REDESIGN" "internal/indexing/generation;job" "Archive legacy events/generations; rebuild and atomically activate a verified per-document Go generation." "GEN-001;MIG-002"
+            return Decision "MW-DOC-003" "REDESIGN" "internal/indexing/generation;job" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "GEN-001"
         }
         '^vector_audit_run$|^vector_audit_issue$' {
-            return Decision "MW-HLT-001" "REDESIGN" "internal/diagnostics/index" "Archive legacy audit evidence; new repair actions require dry-run, backup and verified receipts." "PUR-001;BKP-001;REL-001"
+            return Decision "MW-HLT-001" "REDESIGN" "internal/diagnostics/index" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "PUR-001;BKP-001;REL-001"
         }
         default { throw "No table disposition for $Table" }
     }
@@ -677,36 +720,36 @@ function Get-TableDecision {
 function Get-EndpointDecision {
     param([string]$Locator)
     $route = ($Locator -split '#', 2)[1]
-    if ($route -match ' /agent-profiles(?:/|$)') { return Decision "MW-AGT-002" "REDESIGN" "api/v1 agent profiles;internal/agent/profile" "No endpoint state is migrated; profile data follows MW-AGT-002 migration rules and the HTTP contract is versioned anew." "AGT-001;MEM-001;API-001;API-002" }
-    if ($route -match ' /agent/(tasks|tools)(?:/|$)') { return Decision "MW-AGT-001" "REDESIGN" "api/v1 agent runs;internal/agent" "Replace the endpoint contract; legacy completed data imports as immutable provenance and in-flight execution is not resumed." "AGT-001;API-001;API-002" }
-    if ($route -match ' /documents/batches(?:/|$)') { return Decision "MW-BAT-001" "REDESIGN" "api/v1 batches;internal/ingestion/batch" "Replace the endpoint contract; import batch/item data and staged bytes only through verified migration rules." "BAT-001;API-001;MIG-002" }
-    if ($route -match ' /collections(?:/|$)') { return Decision "MW-COL-001" "KEEP_SEMANTICS" "api/v1 collections;internal/collection" "Preserve user-visible collection semantics while translating IDs/memberships through the neutral package." "COL-001;API-001;MIG-002" }
-    if ($route -match ' /dev/tasks(?:/|$)') { return Decision "MW-DEV-001" "DROP" "none" "Do not expose or migrate development mutation/dispatch behavior into the production Go API." "ARC-003;SEC-001;CUT-001" }
-    if ($route -match ' /documents/ingestions(?:/|$)') { return Decision "MW-DOC-001" "REDESIGN" "api/v1 ingestion jobs;internal/ingestion" "Replace the endpoint contract; import history without resuming legacy claims or retry counters." "DOC-001;JOB-001;JOB-002;API-001" }
-    if ($route -match ' /embedding-cache(?:/|$)') { return Decision "MW-CCH-001" "REBUILD" "api/v1 diagnostics/cache;derived cache" "Do not migrate cache values; expose regenerated metrics and safe cache plans through the new API." "RET-002;UI-001;API-001" }
-    if ($route -match ' /memories(?:/|$)') { return Decision "MW-MEM-001" "REDESIGN" "api/v1 memories;internal/memory" "Replace the endpoint contract; import only attributable/scoped memory records." "MEM-001;API-001;MIG-002" }
-    if ($route -match ' /model-providers/.+/set-default-embedding$') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector provider config" "The first release has no default-embedding route or active embedding provider state." "EMB-001;API-001" }
-    if ($route -match ' /model-providers(?:/|$)') { return Decision "MW-PRO-001" "REDESIGN" "api/v1 providers;internal/provider" "Replace the text-generation provider contract and explicitly rebind credentials/capabilities; never copy plaintext secrets." "PRV-001;PRV-002;API-001;SEC-002" }
-    if ($route -match ' /notifications(?:/|$)') { return Decision "MW-NOT-001" "REDESIGN" "api/v1 notifications;internal/notification" "Translate notification history with stable deduplication/provenance; no legacy row executes work." "JOB-002;BAT-001;UI-001;API-001" }
-    if ($route -eq 'GET /') { return Decision "MW-UI-001" "REDESIGN" "embedded web UI" "No route state migrates; the Go runtime serves a version-negotiated embedded UI." "RUN-004;SEC-001;UI-001" }
-    if ($route -match ' /rag/evaluation(?:/|$)' -or $route -match ' /evaluations(?:/|$)') { return Decision "MW-EVL-001" "REDESIGN" "api/v1 evaluations;internal/evaluation" "Version the contract; preserve datasets/cases and archive legacy results without implicit rerun." "EVL-001;RAG-001;API-001;MIG-002" }
-    if ($route -match ' /rag/answers(?:/|$)') { return Decision "MW-RAG-001" "KEEP_SEMANTICS" "api/v1 answers;internal/answer" "Preserve Ask intent with final source chunk IDs and honest failure/refusal; no transient HTTP state migrates." "RAG-001;RAG-002;RAG-003;API-001" }
-    if ($route -match ' /retrieval/reindex(?:/|$)' -or $route -match ' /retrieval/collections/.+/reindex$') { return Decision "MW-DOC-003" "REDESIGN" "api/v1 generations;internal/indexing" "Replace with idempotent generation jobs; legacy in-flight reindex state is archived, never resumed." "GEN-001;JOB-001;API-002" }
-    if ($route -match ' /retrieval/settings(?:/|$)') { return Decision "MW-RET-002" "REDESIGN" "api/v1 retrieval config;internal/retrieval" "Translate only explicitly supported settings with frozen pipeline fingerprints." "RET-002;RET-003;CFG-001;API-001" }
-    if ($route -match ' /runtime/test/embedding$') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector diagnostics" "The first release has no embedding test route." "EMB-001;API-001" }
-    if ($route -match ' /runtime(?:/|$)') { return Decision "MW-RUN-001" "REDESIGN" "api/v1 runtime diagnostics;runtime" "No endpoint state migrates; text-generation provider probes use the versioned egress protocol." "RUN-001;RUN-004;PRV-001;API-001" }
-    if ($route -match ' /storage/cache(?:/|$)' -or $route -eq 'GET /storage/summary') { return Decision "MW-STO-001" "REDESIGN" "api/v1 storage diagnostics;storage" "Recompute storage summaries and caches after import; destructive operations require plans/receipts." "BKP-001;PUR-001;UI-001;API-001" }
-    if ($route -match ' /documents/trash/purge-expired$') { return Decision "MW-TRS-002" "REDESIGN" "future retention automation" "Do not port scheduled bulk purge; first-release deletion is explicit and limited to known DB/FTS rows plus reference-aware blobs." "PUR-001;MIG-003" }
-    if ($route -match ' /documents/trash(?:/|$)' -or $route -match ' /documents/\{documentId\}/restore$') { return Decision "MW-TRS-001" "KEEP_SEMANTICS" "api/v1 trash;retention coordinator" "Preserve lifecycle intent and timestamps after relational validation; restore remains reversible." "DOC-002;PUR-001;API-001;MIG-002" }
-    if ($route -match ' /documents/\{documentId\}/purge$') { return Decision "MW-TRS-002" "REDESIGN" "api/v1 document deletion" "Delete known DB/FTS rows and reference-aware blobs; any failed in-scope deletion remains failed and visible." "PUR-001;API-002;MIG-003" }
-    if ($route -match ' /tasks(?:/|$)') { return Decision "MW-JOB-001" "DROP" "job" "Remove the ordinary-task HTTP execution surface; export history separately under MW-TSK-001 and never enqueue it." "JOB-001;JOB-002;ARC-003;CUT-001" }
-    if ($route -match ' /vector-index(?:/|$)') { return Decision "MW-HLT-001" "REDESIGN" "api/v1 diagnostics/index;repair coordinator" "Archive old audit data; all new repair/cleanup operations require dry-run and verified receipts." "BKP-001;PUR-001;REL-001;API-001" }
+    if ($route -match ' /agent-profiles(?:/|$)') { return Decision "MW-AGT-002" "REDESIGN" "api/v1 agent profiles;internal/agent/profile" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "AGT-001;MEM-001;API-001;API-002" }
+    if ($route -match ' /agent/(tasks|tools)(?:/|$)') { return Decision "MW-AGT-001" "REDESIGN" "api/v1 agent runs;internal/agent" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "AGT-001;API-001;API-002" }
+    if ($route -match ' /documents/batches(?:/|$)') { return Decision "MW-BAT-001" "REDESIGN" "api/v1 batches;internal/ingestion/batch" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "BAT-001;API-001" }
+    if ($route -match ' /collections(?:/|$)') { return Decision "MW-COL-001" "KEEP_SEMANTICS" "api/v1 collections;internal/collection" "Do not read or import any legacy row or identifier. Preserve only the narrow user requirement and implement it against records created in a fresh Go Vault." "COL-001;API-001" }
+    if ($route -match ' /dev/tasks(?:/|$)') { return Decision "MW-DEV-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-003;SEC-001;CUT-001" }
+    if ($route -match ' /documents/ingestions(?:/|$)') { return Decision "MW-DOC-001" "REDESIGN" "api/v1 ingestion jobs;internal/ingestion" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "DOC-001;JOB-001;JOB-002;API-001" }
+    if ($route -match ' /embedding-cache(?:/|$)') { return Decision "MW-CCH-001" "REBUILD" "api/v1 diagnostics/cache;derived cache" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "RET-002;UI-001;API-001" }
+    if ($route -match ' /memories(?:/|$)') { return Decision "MW-MEM-001" "REDESIGN" "api/v1 memories;internal/memory" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "MEM-001;API-001" }
+    if ($route -match ' /model-providers/.+/set-default-embedding$') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector provider config" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EMB-001;API-001" }
+    if ($route -match ' /model-providers(?:/|$)') { return Decision "MW-PRO-001" "REDESIGN" "api/v1 providers;internal/provider" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "PRV-001;PRV-002;API-001;SEC-002" }
+    if ($route -match ' /notifications(?:/|$)') { return Decision "MW-NOT-001" "REDESIGN" "api/v1 notifications;internal/notification" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "JOB-002;BAT-001;UI-001;API-001" }
+    if ($route -eq 'GET /') { return Decision "MW-UI-001" "REDESIGN" "embedded web UI" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "RUN-004;SEC-001;UI-001" }
+    if ($route -match ' /rag/evaluation(?:/|$)' -or $route -match ' /evaluations(?:/|$)') { return Decision "MW-EVL-001" "REDESIGN" "api/v1 evaluations;internal/evaluation" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EVL-001;RAG-001;API-001" }
+    if ($route -match ' /rag/answers(?:/|$)') { return Decision "MW-RAG-001" "KEEP_SEMANTICS" "api/v1 answers;internal/answer" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "RAG-001;RAG-002;RAG-003;API-001" }
+    if ($route -match ' /retrieval/reindex(?:/|$)' -or $route -match ' /retrieval/collections/.+/reindex$') { return Decision "MW-DOC-003" "REDESIGN" "api/v1 generations;internal/indexing" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "GEN-001;JOB-001;API-002" }
+    if ($route -match ' /retrieval/settings(?:/|$)') { return Decision "MW-RET-002" "REDESIGN" "api/v1 retrieval config;internal/retrieval" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "RET-002;RET-003;CFG-001;API-001" }
+    if ($route -match ' /runtime/test/embedding$') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector diagnostics" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EMB-001;API-001" }
+    if ($route -match ' /runtime(?:/|$)') { return Decision "MW-RUN-001" "REDESIGN" "api/v1 runtime diagnostics;runtime" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "RUN-001;RUN-004;PRV-001;API-001" }
+    if ($route -match ' /storage/cache(?:/|$)' -or $route -eq 'GET /storage/summary') { return Decision "MW-STO-001" "REDESIGN" "api/v1 storage diagnostics;storage" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "BKP-001;PUR-001;UI-001;API-001" }
+    if ($route -match ' /documents/trash/purge-expired$') { return Decision "MW-TRS-002" "REDESIGN" "future retention automation" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "PUR-001" }
+    if ($route -match ' /documents/trash(?:/|$)' -or $route -match ' /documents/\{documentId\}/restore$') { return Decision "MW-TRS-001" "KEEP_SEMANTICS" "api/v1 trash;retention coordinator" "Do not read or import any legacy row or identifier. Preserve only the narrow user requirement and implement it against records created in a fresh Go Vault." "DOC-002;PUR-001;API-001" }
+    if ($route -match ' /documents/\{documentId\}/purge$') { return Decision "MW-TRS-002" "REDESIGN" "api/v1 document deletion" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "PUR-001;API-002" }
+    if ($route -match ' /tasks(?:/|$)') { return Decision "MW-JOB-001" "DROP" "job" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "JOB-001;JOB-002;ARC-003;CUT-001" }
+    if ($route -match ' /vector-index(?:/|$)') { return Decision "MW-HLT-001" "REDESIGN" "api/v1 diagnostics/index;repair coordinator" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "BKP-001;PUR-001;REL-001;API-001" }
     if ($route -match ' /documents(?:/|$)') {
-        if ($route -match '^DELETE ') { return Decision "MW-TRS-001" "KEEP_SEMANTICS" "api/v1 documents lifecycle;retention coordinator" "Translate soft-delete/lifecycle timestamps and verify immediate retrieval exclusion." "DOC-002;RET-001;MIG-002" }
-        if ($route -match '/reindex$') { return Decision "MW-DOC-003" "REDESIGN" "api/v1 generations;internal/indexing" "Replace with idempotent generation job; do not resume legacy in-flight work." "GEN-001;JOB-001;API-002" }
-        if ($route -match '/embeddings$') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector slice" "Drop the direct mutation route; the first release has no embedding endpoint." "EMB-001;API-001" }
-        if ($route -match '/search$') { return Decision "MW-RET-001" "REDESIGN" "api/v1 search;storage/fts" "Replace with controlled SQLite FTS scoped by active lifecycle and collection membership." "RET-001;RAG-001;API-001" }
-        return Decision "MW-DOC-001" "REDESIGN" "api/v1 documents;blob;internal/ingestion" "Replace the endpoint contract and import canonical document inputs through verified neutral packages." "DOC-001;DOC-002;API-001;MIG-002"
+        if ($route -match '^DELETE ') { return Decision "MW-TRS-001" "KEEP_SEMANTICS" "api/v1 documents lifecycle;retention coordinator" "Do not read or import any legacy row or identifier. Preserve only the narrow user requirement and implement it against records created in a fresh Go Vault." "DOC-002;RET-001" }
+        if ($route -match '/reindex$') { return Decision "MW-DOC-003" "REDESIGN" "api/v1 generations;internal/indexing" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "GEN-001;JOB-001;API-002" }
+        if ($route -match '/embeddings$') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector slice" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EMB-001;API-001" }
+        if ($route -match '/search$') { return Decision "MW-RET-001" "REDESIGN" "api/v1 search;storage/fts" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "RET-001;RAG-001;API-001" }
+        return Decision "MW-DOC-001" "REDESIGN" "api/v1 documents;blob;internal/ingestion" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "DOC-001;DOC-002;API-001"
     }
     throw "No endpoint disposition for $Locator"
 }
@@ -720,38 +763,38 @@ function Get-Decision {
         "static_ui" {
             $stem = [System.IO.Path]::GetFileNameWithoutExtension($locator)
             switch ($stem) {
-                { $_ -in @("app-shell", "app", "mindweaver", "app-nav", "guidance", "guide", "index") } { return Decision "MW-UI-001" "REDESIGN" "embedded web UI/shared shell" "Do not port the asset verbatim; rebuild the shared shell against the versioned Go API and browser security/accessibility contract." "API-001;SEC-001;UI-001;UI-002" }
-                "agent-profiles" { return Decision "MW-AGT-002" "REDESIGN" "embedded web UI/agent profiles;internal/agent/profile" "Rebuild the workflow against versioned profile APIs; profile data follows MW-AGT-002 migration rules." "AGT-001;MEM-001;API-001;UI-001;UI-002" }
-                "agent-tasks" { return Decision "MW-AGT-001" "REDESIGN" "embedded web UI/agent runs;internal/agent" "Rebuild durable agent-run progress, cancellation and recovery views; never resume legacy in-flight state." "AGT-001;JOB-002;API-001;UI-001;UI-002" }
-                "agent-tools" { return Decision "MW-AGT-001" "REDESIGN" "embedded web UI/agent tools;internal/agent" "Rebuild read-only tool discovery/constraints against the versioned agent contract." "AGT-001;API-001;SEC-001;UI-001;UI-002" }
-                "ask" { return Decision "MW-RAG-001" "KEEP_SEMANTICS" "embedded web UI/ask;internal/answer" "Preserve the Ask workflow with lexical evidence, final source chunk IDs, honest failure/refusal and citations." "RAG-001;RAG-002;RAG-003;API-001;UI-001;UI-002" }
-                "batch-ingestion" { return Decision "MW-BAT-001" "REDESIGN" "embedded web UI/batch ingestion;internal/ingestion/batch" "Rebuild bounded batch progress, cancellation, partial failure and cleanup recovery; staged bytes migrate only after verification." "BAT-001;JOB-002;API-001;UI-001;UI-002" }
-                "collections" { return Decision "MW-COL-001" "KEEP_SEMANTICS" "embedded web UI/collections;internal/collection" "Preserve collection membership/scope behavior while rebuilding versioned conflict and empty-scope handling." "COL-001;API-002;UI-001;UI-002;MIG-002" }
-                "documents" { return Decision "MW-DOC-001" "REDESIGN" "embedded web UI/documents;blob;internal/ingestion" "Rebuild upload/list/detail/ingestion progress and recovery on canonical blob/Job contracts; migrate verified document inputs only." "DOC-001;DOC-002;JOB-002;API-001;UI-001;UI-002" }
-                "evaluation" { return Decision "MW-EVL-001" "REDESIGN" "embedded web UI/evaluation;internal/evaluation" "Rebuild evaluation execution/results around frozen datasets, retrieval snapshots and fingerprints; legacy reports are archival." "EVL-001;RAG-001;API-001;UI-001;UI-002" }
-                "ingestion-analytics" { return Decision "MW-DOC-001" "REDESIGN" "embedded web UI/ingestion diagnostics;internal/ingestion" "Rebuild safe, bounded progress diagnostics without persisting raw source/provider failures." "DOC-001;JOB-002;PROG-001;SEC-002;UI-001;UI-002" }
-                "knowledge-health" { return Decision "MW-EVL-001" "REDESIGN" "embedded web UI/knowledge health;internal/evaluation" "Rebuild health runs/comparisons from frozen dataset/pipeline/model snapshots; repairs remain separate verified plans." "EVL-001;RAG-001;REL-001;API-001;UI-001;UI-002" }
-                "memory" { return Decision "MW-MEM-001" "REDESIGN" "embedded web UI/memory;internal/memory" "Rebuild explicit scoped memory workflows with provenance, retention, conflicts and purge visibility." "MEM-001;PUR-001;API-001;UI-001;UI-002" }
-                "memory-center" { return Decision "MW-MEM-001" "REDESIGN" "embedded web UI/memory;internal/memory" "Rebuild explicit scoped memory workflows with provenance, retention, conflicts and purge visibility." "MEM-001;PUR-001;API-001;UI-001;UI-002" }
-                "model-settings" { return Decision "MW-PRO-001" "REDESIGN" "embedded web UI/provider settings;internal/provider;credential-store" "Rebuild versioned provider/capability/credential workflows; never expose or silently migrate plaintext secrets." "PRV-001;PRV-002;SEC-002;API-001;UI-001;UI-002" }
-                "notifications" { return Decision "MW-NOT-001" "REDESIGN" "embedded web UI/notifications;internal/notification" "Rebuild deduplicated, attributable job outcome/recovery notifications; legacy rows remain non-executable." "JOB-002;BAT-001;API-001;UI-001;UI-002" }
-                "quality" { return Decision "MW-EVL-001" "REDESIGN" "embedded web UI/quality;internal/evaluation" "Rebuild quality evidence from versioned evaluations and exact RetrievalSnapshots; static guidance alone cannot close the gate." "EVL-001;RAG-001;RAG-003;UI-001;UI-002" }
-                "rag-demo" { return Decision "MW-RAG-001" "KEEP_SEMANTICS" "embedded web UI/ask demonstration;internal/answer" "Preserve the demonstrable Ask/citation loop against the production answer contract; no parallel demo-only backend path." "RAG-001;RAG-002;RAG-003;API-001;UI-001;UI-002" }
-                "retrieval-settings" { return Decision "MW-RET-002" "REDESIGN" "embedded web UI/retrieval settings;internal/retrieval" "Rebuild bounded, versioned pipeline configuration and expose the resulting fingerprint." "RET-002;RET-003;CFG-001;API-001;UI-001;UI-002" }
-                "settings" { return Decision "MW-STO-001" "REDESIGN" "embedded web UI/settings;storage diagnostics;platform/config" "Rebuild the multi-purpose settings/storage page against versioned config, runtime, cache and batch diagnostics; destructive actions require plans/receipts." "CFG-001;BKP-001;BAT-001;PRV-001;API-001;UI-001;UI-002" }
-                "trash" { return Decision "MW-TRS-002" "REDESIGN" "embedded web UI/trash and document deletion" "Preserve trash/restore and rebuild explicit deletion for known DB/FTS rows and reference-aware blobs; failures remain visible." "DOC-002;PUR-001;API-002;UI-001;UI-002" }
-                "vector-index-health" { return Decision "MW-HLT-001" "REDESIGN" "embedded web UI/index health;diagnostics/repair coordinator" "Rebuild real backend diagnostics, dry-run repair plans, backup prerequisites and verified receipts." "BKP-001;PUR-001;RET-002;REL-001;UI-001;UI-002" }
+                { $_ -in @("app-shell", "app", "mindweaver", "app-nav", "guidance", "guide", "index") } { return Decision "MW-UI-001" "REDESIGN" "embedded web UI/shared shell" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "API-001;SEC-001;UI-001;UI-002" }
+                "agent-profiles" { return Decision "MW-AGT-002" "REDESIGN" "embedded web UI/agent profiles;internal/agent/profile" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "AGT-001;MEM-001;API-001;UI-001;UI-002" }
+                "agent-tasks" { return Decision "MW-AGT-001" "REDESIGN" "embedded web UI/agent runs;internal/agent" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "AGT-001;JOB-002;API-001;UI-001;UI-002" }
+                "agent-tools" { return Decision "MW-AGT-001" "REDESIGN" "embedded web UI/agent tools;internal/agent" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "AGT-001;API-001;SEC-001;UI-001;UI-002" }
+                "ask" { return Decision "MW-RAG-001" "KEEP_SEMANTICS" "embedded web UI/ask;internal/answer" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "RAG-001;RAG-002;RAG-003;API-001;UI-001;UI-002" }
+                "batch-ingestion" { return Decision "MW-BAT-001" "REDESIGN" "embedded web UI/batch ingestion;internal/ingestion/batch" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "BAT-001;JOB-002;API-001;UI-001;UI-002" }
+                "collections" { return Decision "MW-COL-001" "KEEP_SEMANTICS" "embedded web UI/collections;internal/collection" "Do not read or import any legacy row or identifier. Preserve only the narrow user requirement and implement it against records created in a fresh Go Vault." "COL-001;API-002;UI-001;UI-002" }
+                "documents" { return Decision "MW-DOC-001" "REDESIGN" "embedded web UI/documents;blob;internal/ingestion" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "DOC-001;DOC-002;JOB-002;API-001;UI-001;UI-002" }
+                "evaluation" { return Decision "MW-EVL-001" "REDESIGN" "embedded web UI/evaluation;internal/evaluation" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EVL-001;RAG-001;API-001;UI-001;UI-002" }
+                "ingestion-analytics" { return Decision "MW-DOC-001" "REDESIGN" "embedded web UI/ingestion diagnostics;internal/ingestion" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "DOC-001;JOB-002;PROG-001;SEC-002;UI-001;UI-002" }
+                "knowledge-health" { return Decision "MW-EVL-001" "REDESIGN" "embedded web UI/knowledge health;internal/evaluation" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EVL-001;RAG-001;REL-001;API-001;UI-001;UI-002" }
+                "memory" { return Decision "MW-MEM-001" "REDESIGN" "embedded web UI/memory;internal/memory" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "MEM-001;PUR-001;API-001;UI-001;UI-002" }
+                "memory-center" { return Decision "MW-MEM-001" "REDESIGN" "embedded web UI/memory;internal/memory" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "MEM-001;PUR-001;API-001;UI-001;UI-002" }
+                "model-settings" { return Decision "MW-PRO-001" "REDESIGN" "embedded web UI/provider settings;internal/provider;credential-store" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "PRV-001;PRV-002;SEC-002;API-001;UI-001;UI-002" }
+                "notifications" { return Decision "MW-NOT-001" "REDESIGN" "embedded web UI/notifications;internal/notification" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "JOB-002;BAT-001;API-001;UI-001;UI-002" }
+                "quality" { return Decision "MW-EVL-001" "REDESIGN" "embedded web UI/quality;internal/evaluation" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EVL-001;RAG-001;RAG-003;UI-001;UI-002" }
+                "rag-demo" { return Decision "MW-RAG-001" "KEEP_SEMANTICS" "embedded web UI/ask demonstration;internal/answer" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "RAG-001;RAG-002;RAG-003;API-001;UI-001;UI-002" }
+                "retrieval-settings" { return Decision "MW-RET-002" "REDESIGN" "embedded web UI/retrieval settings;internal/retrieval" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "RET-002;RET-003;CFG-001;API-001;UI-001;UI-002" }
+                "settings" { return Decision "MW-STO-001" "REDESIGN" "embedded web UI/settings;storage diagnostics;platform/config" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "CFG-001;BKP-001;BAT-001;PRV-001;API-001;UI-001;UI-002" }
+                "trash" { return Decision "MW-TRS-002" "REDESIGN" "embedded web UI/trash and document deletion" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "DOC-002;PUR-001;API-002;UI-001;UI-002" }
+                "vector-index-health" { return Decision "MW-HLT-001" "REDESIGN" "embedded web UI/index health;diagnostics/repair coordinator" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "BKP-001;PUR-001;RET-002;REL-001;UI-001;UI-002" }
                 default { throw "No fail-closed static UI business mapping for $locator (stem $stem)" }
             }
         }
-        "flyway_migration" { return Decision "MW-MIG-001" "REDESIGN" "migration/export-java;internal/migration" "Use as read-only source-schema evidence and fixtures; never execute MySQL migration SQL against the Go SQLite Vault." "DB-001;MIG-001;MIG-002;MIG-003" }
+        "flyway_migration" { return Decision "MW-MIG-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;ARC-003;CUT-001;CUT-002" }
         "schema_table" {
             $table = ($locator -split ':')[-1]
             return Get-TableDecision $table
         }
         "schema_index" {
             if ($locator -notmatch '^mysql-schema#index:([^.]+)\.') { throw "Invalid schema index locator $locator" }
-            if ($locator -match 'default_embedding') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector config" "Do not reproduce the default-embedding index or state in the first release." "EMB-001;MIG-001" }
+            if ($locator -match 'default_embedding') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector config" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EMB-001" }
             return Get-TableDecision $Matches[1]
         }
         "persistence_entity" {
@@ -768,75 +811,75 @@ function Get-Decision {
             return Get-TableDecision $entityMap[$file]
         }
         "background_component" {
-            if ($locator -match 'RabbitMQConfig|TaskDispatch|TaskOutbox|TaskRetry|TaskTimeout') { return Decision "MW-INF-002" "DROP" "job;scheduler" "Do not migrate broker/scheduler executable state; drain/freeze and report unresolved work before cutover." "JOB-001;JOB-002;CUT-001" }
-            if ($locator -match 'Rabbit(Document|Agent)') { return Decision "MW-INF-002" "DROP" "job" "Replace Rabbit transport with transactional SQLite jobs and visible durable outcomes; never replay broker deliveries during import." "JOB-001;JOB-002;PROG-001;CUT-001" }
-            if ($locator -match 'DocumentIngestion') { return Decision "MW-DOC-001" "REDESIGN" "internal/ingestion;job" "Replace background execution with fenced Job claims; import only immutable history/checkpoints that pass validation." "DOC-001;JOB-001;JOB-002" }
-            if ($locator -match 'AgentTask') { return Decision "MW-AGT-001" "REDESIGN" "internal/agent;job" "Replace with durable, budgeted agent steps; completed legacy evidence is archival and in-flight work is not resumed." "AGT-001;JOB-001;INV-002" }
-            if ($locator -match 'BatchItem') { return Decision "MW-BAT-001" "REDESIGN" "internal/ingestion/batch;job" "Replace with bounded Job groups and verify every staging byte before import." "BAT-001;JOB-001;MIG-002" }
-            if ($locator -match 'TrashCleanup') { return Decision "MW-TRS-002" "REDESIGN" "retention/purge coordinator;job" "Do not copy schedule state; recalculate eligible plans after import and require verified purge receipts." "PUR-001;JOB-002" }
-            if ($locator -match 'Evaluation|Benchmark|RetrievalStrategy') { return Decision "MW-EVL-001" "REDESIGN" "internal/evaluation;job" "Archive legacy reports/runs; execute new evaluations only with frozen fingerprints." "EVL-001;RAG-001;REL-001" }
-            if ($locator -match 'ModelProviderConfiguration') { return Decision "MW-PRO-001" "REDESIGN" "internal/provider/config" "Do not seed mutable provider state implicitly; import explicit non-secret config versions and rebind credentials." "PRV-001;CFG-001;SEC-002" }
-            if ($locator -match 'AiTaskOrchestratorApplication') { return Decision "MW-RUN-001" "REDESIGN" "cmd/mindweaver;runtime scheduler" "Replace framework scheduling bootstrap with the staged Go runtime and unified durable Job scheduler; no scheduler process state migrates." "RUN-002;RUN-003;JOB-001;CUT-002" }
+            if ($locator -match 'RabbitMQConfig|TaskDispatch|TaskOutbox|TaskRetry|TaskTimeout') { return Decision "MW-INF-002" "DROP" "job;scheduler" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "JOB-001;JOB-002;CUT-001" }
+            if ($locator -match 'Rabbit(Document|Agent)') { return Decision "MW-INF-002" "DROP" "job" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "JOB-001;JOB-002;PROG-001;CUT-001" }
+            if ($locator -match 'DocumentIngestion') { return Decision "MW-DOC-001" "REDESIGN" "internal/ingestion;job" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "DOC-001;JOB-001;JOB-002" }
+            if ($locator -match 'AgentTask') { return Decision "MW-AGT-001" "REDESIGN" "internal/agent;job" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "AGT-001;JOB-001;INV-002" }
+            if ($locator -match 'BatchItem') { return Decision "MW-BAT-001" "REDESIGN" "internal/ingestion/batch;job" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "BAT-001;JOB-001" }
+            if ($locator -match 'TrashCleanup') { return Decision "MW-TRS-002" "REDESIGN" "retention/purge coordinator;job" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "PUR-001;JOB-002" }
+            if ($locator -match 'Evaluation|Benchmark|RetrievalStrategy') { return Decision "MW-EVL-001" "REDESIGN" "internal/evaluation;job" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EVL-001;RAG-001;REL-001" }
+            if ($locator -match 'ModelProviderConfiguration') { return Decision "MW-PRO-001" "REDESIGN" "internal/provider/config" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "PRV-001;CFG-001;SEC-002" }
+            if ($locator -match 'AiTaskOrchestratorApplication') { return Decision "MW-RUN-001" "REDESIGN" "cmd/mindweaver;runtime scheduler" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "RUN-002;RUN-003;JOB-001;CUT-002" }
             throw "No background component disposition for $locator"
         }
         "provider_backend" {
-            if ($locator -match '/vectorstore/qdrant/') { return Decision "MW-VEC-001" "DEFER" "internal/retrieval/backend/qdrant-experimental" "Do not import Qdrant vectors as canonical; rebuild only after optional backend conformance passes." "RET-001;RET-002;REL-001" }
-            if ($locator -match 'LocalPython|LocalEmbeddingWorker') { return Decision "MW-INF-003" "DROP" "internal/provider/ollama" "Remove the Python transport/runtime path; provider settings translate explicitly and derived vectors/results are not replayed." "ARC-002;PRV-001;CUT-002" }
-            if ($locator -match '/rerank/') { return Decision "MW-RET-002" "REDESIGN" "internal/retrieval/rerank" "Replace implementations behind one retrieval-stage contract and frozen fingerprint; no code/data migration." "RET-002;RAG-001;REL-001" }
-            if ($locator -match 'LatencyMeasuringVectorStore') { return Decision "MW-EVL-001" "REDESIGN" "internal/evaluation" "Replace benchmark wrapper with versioned Go measurement evidence; archive old reports only." "EVL-001;REL-001" }
-            if ($locator -match '/vectorstore/') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector slice" "Do not port or activate a vector backend in the first release; later rebuild from canonical chunks after conformance." "EMB-001;MIG-002" }
-            if ($locator -match '/embedding/.*Cache|/embedding/CachedEmbedding') { return Decision "MW-CCH-001" "REBUILD" "internal/indexing/cache" "Do not port cache persistence as canonical behavior; retain only metrics evidence and rebuild values from verified inputs/fingerprints." "RET-002;MIG-002;PUR-001" }
-            if ($locator -match '/embedding/ChunkHashService\.java$') { return Decision "MW-DOC-004" "REBUILD" "internal/chunking" "Replace with deterministic chunk identity derived from canonical inputs; no executable code migration." "DOC-001;RET-001;MIG-002" }
-            if ($locator -match '/embedding/') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector slice" "Do not port or configure embeddings in the first release; later start from a new provider and corpus contract." "EMB-001;MIG-002" }
-            return Decision "MW-PRO-001" "REDESIGN" "internal/provider" "Replace provider/routing/transports with immutable capability/config/invocation/egress contracts; migrate settings explicitly, never executable calls." "PRV-001;PRV-002;INV-001;INV-002"
+            if ($locator -match '/vectorstore/qdrant/') { return Decision "MW-VEC-001" "DEFER" "internal/retrieval/backend/qdrant-experimental" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "RET-001;RET-002;REL-001" }
+            if ($locator -match 'LocalPython|LocalEmbeddingWorker') { return Decision "MW-INF-003" "DROP" "internal/provider/ollama" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;PRV-001;CUT-002" }
+            if ($locator -match '/rerank/') { return Decision "MW-RET-002" "REDESIGN" "internal/retrieval/rerank" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "RET-002;RAG-001;REL-001" }
+            if ($locator -match 'LatencyMeasuringVectorStore') { return Decision "MW-EVL-001" "REDESIGN" "internal/evaluation" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EVL-001;REL-001" }
+            if ($locator -match '/vectorstore/') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector slice" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EMB-001" }
+            if ($locator -match '/embedding/.*Cache|/embedding/CachedEmbedding') { return Decision "MW-CCH-001" "REBUILD" "internal/indexing/cache" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "RET-002;PUR-001" }
+            if ($locator -match '/embedding/ChunkHashService\.java$') { return Decision "MW-DOC-004" "REBUILD" "internal/chunking" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "DOC-001;RET-001" }
+            if ($locator -match '/embedding/') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector slice" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EMB-001" }
+            return Decision "MW-PRO-001" "REDESIGN" "internal/provider" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "PRV-001;PRV-002;INV-001;INV-002"
         }
         "config_key" {
             $key = $locator.Substring("config:".Length)
-            if ($key -match '^spring\.(datasource|jpa|flyway)\.') { return Decision "MW-INF-001" "DROP" "platform/config;storage/sqlite" "Do not carry MySQL/JPA/Flyway settings into the Vault; import data through the neutral package only." "CFG-001;DB-001;MIG-001" }
-            if ($key -match '^spring\.rabbitmq\.') { return Decision "MW-INF-002" "DROP" "platform/config;job" "Drop broker connection settings; no RabbitMQ dependency remains." "CFG-001;JOB-001;ARC-002" }
-            if ($key -match '^app\.batch-ingestion\.') { return Decision "MW-BAT-001" "REDESIGN" "platform/config;internal/ingestion/batch" "Translate only supported limits; move staged files into verified blob intake and reject unsafe paths." "CFG-001;BAT-001;MIG-002" }
-            if ($key -match '^app\.memory\.') { return Decision "MW-MEM-001" "REDESIGN" "platform/config;internal/memory" "Translate explicit policy values with bounds; never infer consent from legacy defaults." "CFG-001;MEM-001" }
-            if ($key -match '^app\.agent\.') { return Decision "MW-AGT-001" "REDESIGN" "platform/config;internal/agent" "Translate supported bounded limits into versioned config." "CFG-001;AGT-001" }
-            if ($key -match '^app\.trash\.') { return Decision "MW-TRS-002" "REDESIGN" "platform/config;retention" "Translate retention policy explicitly; recompute schedules after import and do not copy scheduler state." "CFG-001;PUR-001" }
-            if ($key -match '^app\.embedding\.') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector config" "Do not translate embedding settings into the first release; archive non-secret intent and discard derived state." "EMB-001;CFG-001" }
-            if ($key -match '^app\.(llm|model-provider|security)\.') { return Decision "MW-PRO-001" "REDESIGN" "platform/config;internal/provider;credential-store" "Translate non-secret provider settings; credentials require explicit secure rebinding and must not enter reports/logs." "CFG-001;PRV-001;SEC-002" }
-            if ($key -match '^app\.vector-store\.qdrant\.') { return Decision "MW-VEC-001" "DEFER" "platform/config;experimental qdrant backend" "Do not enable/import optional Qdrant settings until backend conformance passes; never export API keys in plaintext." "CFG-001;RET-002;SEC-002" }
-            if ($key -match '^app\.vector-store\.') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector config" "Do not translate vector backend settings into the first release." "EMB-001;CFG-001" }
-            if ($key -match '^app\.evaluation\.') { return Decision "MW-EVL-001" "REDESIGN" "platform/config;internal/evaluation" "Translate supported inputs/limits to a versioned evaluation spec; output paths must stay inside the Vault." "CFG-001;EVL-001" }
-            if ($key -match '^(rag\.(rerank|hybrid)|app\.(retrieval|query-understanding))\.') { return Decision "MW-RET-002" "REDESIGN" "platform/config;internal/retrieval" "Translate accepted stage settings with bounds into a frozen pipeline fingerprint; reject unknown/duplicate keys." "CFG-001;RET-002;RET-003" }
-            if ($key -match '^app\.(chunking|document\.ingestion)\.') { return Decision "MW-DOC-001" "REDESIGN" "platform/config;internal/ingestion;internal/chunking" "Translate bounded ingest/chunk settings explicitly; a changed chunk policy forces derived rebuild." "CFG-001;DOC-001;RET-002" }
-            return Decision "MW-CFG-001" "REDESIGN" "platform/config;runtime" "Translate only explicitly supported fields into versioned config; reject unknown/duplicate keys and unsafe paths." "CFG-001;RUN-004;SEC-001"
+            if ($key -match '^spring\.(datasource|jpa|flyway)\.') { return Decision "MW-INF-001" "DROP" "platform/config;storage/sqlite" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "CFG-001;DB-001" }
+            if ($key -match '^spring\.rabbitmq\.') { return Decision "MW-INF-002" "DROP" "platform/config;job" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "CFG-001;JOB-001;ARC-002" }
+            if ($key -match '^app\.batch-ingestion\.') { return Decision "MW-BAT-001" "REDESIGN" "platform/config;internal/ingestion/batch" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "CFG-001;BAT-001" }
+            if ($key -match '^app\.memory\.') { return Decision "MW-MEM-001" "REDESIGN" "platform/config;internal/memory" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "CFG-001;MEM-001" }
+            if ($key -match '^app\.agent\.') { return Decision "MW-AGT-001" "REDESIGN" "platform/config;internal/agent" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "CFG-001;AGT-001" }
+            if ($key -match '^app\.trash\.') { return Decision "MW-TRS-002" "REDESIGN" "platform/config;retention" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "CFG-001;PUR-001" }
+            if ($key -match '^app\.embedding\.') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector config" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EMB-001;CFG-001" }
+            if ($key -match '^app\.(llm|model-provider|security)\.') { return Decision "MW-PRO-001" "REDESIGN" "platform/config;internal/provider;credential-store" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "CFG-001;PRV-001;SEC-002" }
+            if ($key -match '^app\.vector-store\.qdrant\.') { return Decision "MW-VEC-001" "DEFER" "platform/config;experimental qdrant backend" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "CFG-001;RET-002;SEC-002" }
+            if ($key -match '^app\.vector-store\.') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector config" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EMB-001;CFG-001" }
+            if ($key -match '^app\.evaluation\.') { return Decision "MW-EVL-001" "REDESIGN" "platform/config;internal/evaluation" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "CFG-001;EVL-001" }
+            if ($key -match '^(rag\.(rerank|hybrid)|app\.(retrieval|query-understanding))\.') { return Decision "MW-RET-002" "REDESIGN" "platform/config;internal/retrieval" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "CFG-001;RET-002;RET-003" }
+            if ($key -match '^app\.(chunking|document\.ingestion)\.') { return Decision "MW-DOC-001" "REDESIGN" "platform/config;internal/ingestion;internal/chunking" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "CFG-001;DOC-001;RET-002" }
+            return Decision "MW-CFG-001" "REDESIGN" "platform/config;runtime" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "CFG-001;RUN-004;SEC-001"
         }
         "environment_key" {
-            if ($locator -match 'MYSQL_') { return Decision "MW-INF-001" "DROP" "none" "Do not migrate MySQL credentials; use the read-only exporter only during an authorized migration session." "MIG-001;SEC-002;ARC-002" }
-            if ($locator -match 'RABBITMQ_') { return Decision "MW-INF-002" "DROP" "none" "Do not migrate broker credentials or connection state." "CUT-001;SEC-002;ARC-002" }
-            if ($locator -match 'EMBEDDING') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector config" "Do not translate embedding environment values into the first release." "EMB-001;SEC-002" }
-            return Decision "MW-PRO-001" "REDESIGN" "credential-store;internal/provider" "Never export the value; require explicit text-generation credential/model endpoint rebinding and record only redacted verification." "PRV-001;SEC-002;MIG-001"
+            if ($locator -match 'MYSQL_') { return Decision "MW-INF-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "SEC-002;ARC-002" }
+            if ($locator -match 'RABBITMQ_') { return Decision "MW-INF-002" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "CUT-001;SEC-002;ARC-002" }
+            if ($locator -match 'EMBEDDING') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector config" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EMB-001;SEC-002" }
+            return Decision "MW-PRO-001" "REDESIGN" "credential-store;internal/provider" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "PRV-001;SEC-002"
         }
         "external_dependency" {
-            if ($locator -match 'spring-boot-starter-amqp|container:rabbitmq') { return Decision "MW-INF-002" "DROP" "job" "Remove from production/runtime packaging; broker data follows freeze/drain verification only." "ARC-002;JOB-001;CUT-002" }
-            if ($locator -match 'mysql|flyway|spring-boot-starter-data-jpa') { return Decision "MW-INF-001" "DROP" "storage/sqlite;internal/migration" "Remove from the Go runtime; legacy data crosses only via the read-only neutral migration package." "ARC-002;DB-001;MIG-001;CUT-002" }
-            if ($locator -match '^python:|binary:python') { return Decision "MW-INF-003" "DROP" "internal/provider/ollama;standalone Go binary" "Remove from packaged production dependencies; do not migrate Python environments or bytecode." "ARC-002;REL-002;CUT-002" }
-            if ($locator -match 'container:qdrant') { return Decision "MW-VEC-001" "DEFER" "experimental qdrant backend" "Keep outside the core release; vectors are rebuilt only after conformance." "RET-002;REL-001" }
-            if ($locator -match 'pdfbox') { return Decision "MW-DOC-001" "REDESIGN" "parser isolation boundary" "Select and qualify a bounded Go/parser-isolation replacement; no executable dependency migration." "DOC-001;REL-001;CUT-002" }
-            if ($locator -match '^model:.*embedding') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector model" "Do not require, probe, or install an embedding model for the first release." "EMB-001;REL-002" }
-            if ($locator -match 'binary:ollama|^model:qwen') { return Decision "MW-INF-005" "KEEP_SEMANTICS" "internal/provider/ollama" "Keep Ollama text generation optional; probe through the versioned local provider adapter without a Python hop." "PRV-001;INV-001;REL-002" }
-            if ($locator -match 'binary:docker') { return Decision "MW-INF-006" "DROP" "optional isolated test fixtures" "Do not require Docker in production; any fixture use must be disposable and isolated from user Vaults." "ARC-002;REL-002;CUT-002" }
-            if ($locator -match '^model:.*embedding') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector model" "Do not require, probe, or install an embedding model for the first release." "EMB-001;REL-002" }
-            if ($locator -match '^model:|^external-service:') { return Decision "MW-PRO-001" "REDESIGN" "internal/provider" "Treat the text-generation model/service as explicitly configured; no network dependency is mandatory and egress is authorized per call." "PRV-001;PRV-002;INV-001" }
-            return Decision "MW-INF-004" "DROP" "standalone Go module and release toolchain" "Remove Java/Spring/Maven dependency from production and extracted repository; retain only archive evidence." "ARC-002;REL-002;CUT-002"
+            if ($locator -match 'spring-boot-starter-amqp|container:rabbitmq') { return Decision "MW-INF-002" "DROP" "job" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;JOB-001;CUT-002" }
+            if ($locator -match 'mysql|flyway|spring-boot-starter-data-jpa') { return Decision "MW-INF-001" "DROP" "storage/sqlite;internal/migration" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;DB-001;CUT-002" }
+            if ($locator -match '^python:|binary:python') { return Decision "MW-INF-003" "DROP" "internal/provider/ollama;standalone Go binary" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;REL-002;CUT-002" }
+            if ($locator -match 'container:qdrant') { return Decision "MW-VEC-001" "DEFER" "experimental qdrant backend" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "RET-002;REL-001" }
+            if ($locator -match 'pdfbox') { return Decision "MW-DOC-001" "REDESIGN" "parser isolation boundary" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "DOC-001;REL-001;CUT-002" }
+            if ($locator -match '^model:.*embedding') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector model" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EMB-001;REL-002" }
+            if ($locator -match 'binary:ollama|^model:qwen') { return Decision "MW-INF-005" "KEEP_SEMANTICS" "internal/provider/ollama" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "PRV-001;INV-001;REL-002" }
+            if ($locator -match 'binary:docker') { return Decision "MW-INF-006" "DROP" "optional isolated test fixtures" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;REL-002;CUT-002" }
+            if ($locator -match '^model:.*embedding') { return Decision "MW-EMB-001" "REBUILD" "future embedding/vector model" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "EMB-001;REL-002" }
+            if ($locator -match '^model:|^external-service:') { return Decision "MW-PRO-001" "REDESIGN" "internal/provider" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "PRV-001;PRV-002;INV-001" }
+            return Decision "MW-INF-004" "DROP" "standalone Go module and release toolchain" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;REL-002;CUT-002"
         }
-        "worker_file" { return Decision "MW-INF-003" "DROP" "internal/provider/ollama;legacy archive" "Do not copy worker code, environments, bytecode or output into the Go runtime; leakage-review text outputs and retain only checksummed archive evidence if needed." "ARC-002;SEC-002;REL-002;CUT-002" }
-        "worker_endpoint" { return Decision "MW-INF-003" "DROP" "internal/provider/ollama invocation adapter" "Remove the Python HTTP hop; preserve only confirmed provider capability intent behind the Go invocation contract." "PRV-001;INV-001;ARC-002" }
+        "worker_file" { return Decision "MW-INF-003" "DROP" "internal/provider/ollama;legacy archive" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;SEC-002;REL-002;CUT-002" }
+        "worker_endpoint" { return Decision "MW-INF-003" "DROP" "internal/provider/ollama invocation adapter" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "PRV-001;INV-001;ARC-002" }
         "legacy_script" {
-            if ($locator -eq 'docker-compose.qdrant.yml') { return Decision "MW-VEC-001" "DEFER" "optional isolated backend fixture" "Do not ship as a core runtime dependency; optional conformance fixtures must use disposable data." "REL-001;REL-002" }
-            if ($locator -match '^docker-compose\.yml$') { return Decision "MW-INF-006" "DROP" "optional isolated test fixtures" "Do not require Docker/MySQL/RabbitMQ in production; retain the file only in the archived legacy repository." "ARC-002;REL-002;CUT-002" }
-            if ($locator -match '(^|/)mvnw|pom\.xml|\.mvn/') { return Decision "MW-INF-004" "DROP" "v2/go.mod;release build" "Remove from the extracted Go repository and production package; archive with the frozen Java source." "ARC-002;REL-002;CUT-002" }
-            return Decision "MW-RUN-001" "REDESIGN" "cmd/mindweaver;Windows installer/service helpers" "Replace with one signed executable/package; do not migrate PID files or launch child Java/Python processes." "RUN-001;RUN-003;REL-002;CUT-002"
+            if ($locator -eq 'docker-compose.qdrant.yml') { return Decision "MW-VEC-001" "DEFER" "optional isolated backend fixture" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "REL-001;REL-002" }
+            if ($locator -match '^docker-compose\.yml$') { return Decision "MW-INF-006" "DROP" "optional isolated test fixtures" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;REL-002;CUT-002" }
+            if ($locator -match '(^|/)mvnw|pom\.xml|\.mvn/') { return Decision "MW-INF-004" "DROP" "v2/go.mod;release build" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;REL-002;CUT-002" }
+            return Decision "MW-RUN-001" "REDESIGN" "cmd/mindweaver;Windows installer/service helpers" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "RUN-001;RUN-003;REL-002;CUT-002"
         }
         "user_data" {
             switch ($locator) {
-                "data:document-original-upload-bytes" { return Decision "MW-DOC-001" "REDESIGN" "blob/source" "Hash and import every available staged source blob; report ordinary uploads with unavailable original bytes and retain verified extracted text as degraded canonical input." "BLOB-001;DOC-001;MIG-002;MIG-003" }
+                "data:document-original-upload-bytes" { return Decision "MW-DOC-001" "REDESIGN" "blob/source" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "BLOB-001;DOC-001" }
                 "data:document-extracted-text-metadata-lifecycle" { return Get-TableDecision "document" }
                 "data:document-chunks" { return Get-TableDecision "document_chunk" }
                 "data:document-embeddings" { return Get-TableDecision "document_chunk_embedding" }
@@ -854,26 +897,26 @@ function Get-Decision {
                 "data:evaluation-runs-results-grounding" { return Get-TableDecision "rag_evaluation_run" }
                 "data:embedding-cache-metrics" { return Get-TableDecision "embedding_cache" }
                 "data:index-generation-audit-history" { return Get-TableDecision "vector_audit_run" }
-                "data:qdrant-collection" { return Decision "MW-VEC-001" "DEFER" "optional qdrant derived index" "Do not import as canonical; rebuild from verified sources only after conformance, then compare counts/hashes and discard legacy volume." "RET-001;RET-002;MIG-003" }
-                "data:mysql-database-volume" { return Decision "MW-MIG-001" "REDESIGN" "neutral export package;SQLite Vault" "Open legacy MySQL read-only, export checksummed neutral records, import idempotently, and preserve the frozen source until signed verification." "MIG-001;MIG-002;MIG-003;CUT-001" }
-                "data:rabbitmq-queued-messages" { return Decision "MW-INF-002" "DROP" "job migration exception report" "Freeze producers, drain or classify every message, export unresolved intent as non-executable exceptions, and never import broker delivery state." "JOB-002;MIG-001;CUT-001" }
-                "data:evaluation-report-files" { return Decision "MW-RPT-001" "ARCHIVE_ONLY" "migration/archive/reports" "Checksum and label reports as legacy; never use them to close Go acceptance rows or seed executable evaluations." "HIS-002;MIG-001" }
-                "data:worker-output-samples" { return Decision "MW-RPT-001" "ARCHIVE_ONLY" "migration/quarantine" "Leakage-scan for prompts/results/secrets, quarantine if sensitive, and never package with the Go runtime." "HIS-002;SEC-002;MIG-001" }
-                "data:local-process-pid-file" { return Decision "MW-RUN-001" "REDESIGN" "runtime lock/instance metadata" "Do not migrate PID state; establish a fresh OS lock and runtime epoch on first Go start." "RUN-001;RUN-002;MIG-002" }
-                "data:legacy-config-and-environment-secrets" { return Decision "MW-CFG-001" "REDESIGN" "versioned config;credential-store" "Translate non-secret settings explicitly; never export secret values, require authorized rebinding/re-entry and emit redacted evidence." "CFG-001;PRV-001;SEC-002;MIG-001" }
+                "data:qdrant-collection" { return Decision "MW-VEC-001" "DEFER" "optional qdrant derived index" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "RET-001;RET-002" }
+                "data:mysql-database-volume" { return Decision "MW-MIG-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;ARC-003;CUT-001;CUT-002" }
+                "data:rabbitmq-queued-messages" { return Decision "MW-INF-002" "DROP" "job migration exception report" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "JOB-002;CUT-001" }
+                "data:evaluation-report-files" { return Decision "MW-RPT-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;ARC-003;CUT-001;CUT-002" }
+                "data:worker-output-samples" { return Decision "MW-RPT-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;ARC-003;CUT-001;CUT-002" }
+                "data:local-process-pid-file" { return Decision "MW-RUN-001" "REDESIGN" "runtime lock/instance metadata" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "RUN-001;RUN-002" }
+                "data:legacy-config-and-environment-secrets" { return Decision "MW-CFG-001" "REDESIGN" "versioned config;credential-store" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "CFG-001;PRV-001;SEC-002" }
                 default { throw "No user-data disposition for $locator" }
             }
         }
         "gap" {
             switch ($locator) {
-                "gap:live-mysql-show-index-not-captured" { return Decision "MW-MIG-001" "REDESIGN" "migration/schema-probe" "Capture versioned SHOW CREATE TABLE/SHOW INDEX output from supported fixtures and real migration rehearsal before declaring final physical schema coverage." "MIG-001;MIG-003;DB-001" }
-                "gap:ordinary-upload-original-bytes-not-persisted" { return Decision "MW-DOC-001" "REDESIGN" "migration/quarantine;blob/source" "Report each affected document; import verified extracted text with an explicit degraded-source marker or require user re-upload." "DOC-001;MIG-002;MIG-003" }
-                "gap:conversation-persistence-not-implemented" { return Decision "MW-CON-001" "KEEP_SEMANTICS" "internal/conversation" "Treat conversation as a target product requirement, not legacy data; do not fabricate conversation records from one-shot answers." "CON-001;MIG-001" }
-                "gap:legacy-http-auth-session-not-found" { return Decision "MW-UI-001" "REDESIGN" "runtime/session;api/v1 security" "Do not preserve absence of controls; implement and attack-test one-use bootstrap/session/CSRF/Host/Origin/CSP." "RUN-004;SEC-001;API-001" }
-                "gap:real-user-data-cardinality-and-largest-vault" { return Decision "MW-MIG-001" "REDESIGN" "migration/rehearsal reports" "Measure sanitized real fixtures and the largest Vault; sign counts, hashes, relations, lifecycle and quarantine exceptions." "MIG-003;REL-001" }
-                "gap:legacy-database-profile-is-ambiguous" { return Decision "MW-MIG-001" "REDESIGN" "migration/source discovery" "Require explicit read-only source selection, fingerprint the server/database/profile, and refuse silent fallback to another schema." "MIG-001;MIG-003;SEC-002" }
-                "gap:provider-master-key-availability-unknown" { return Decision "MW-PRO-001" "REDESIGN" "migration/credential rebinding;credential-store" "Attempt decryption only in the authorized read-only exporter; if the legacy master key is unavailable, import non-secret settings and require credential re-entry without exposing ciphertext/plaintext." "PRV-001;MIG-001;SEC-002" }
-                "gap:java-version-check-conflicts-with-build" { return Decision "MW-INF-004" "DROP" "standalone Go build/release documentation" "Do not carry the conflicting Java prerequisite forward; archive it and make the extracted Go clean-machine toolchain requirements executable and versioned." "ARC-002;REL-002;CUT-002" }
+                "gap:live-mysql-show-index-not-captured" { return Decision "MW-MIG-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;ARC-003;CUT-001;CUT-002" }
+                "gap:ordinary-upload-original-bytes-not-persisted" { return Decision "MW-DOC-001" "REDESIGN" "migration/quarantine;blob/source" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "DOC-001" }
+                "gap:conversation-persistence-not-implemented" { return Decision "MW-CON-001" "KEEP_SEMANTICS" "internal/conversation" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "CON-001" }
+                "gap:legacy-http-auth-session-not-found" { return Decision "MW-UI-001" "REDESIGN" "runtime/session;api/v1 security" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "RUN-004;SEC-001;API-001" }
+                "gap:real-user-data-cardinality-and-largest-vault" { return Decision "MW-MIG-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;ARC-003;CUT-001;CUT-002" }
+                "gap:legacy-database-profile-is-ambiguous" { return Decision "MW-MIG-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;ARC-003;CUT-001;CUT-002" }
+                "gap:provider-master-key-availability-unknown" { return Decision "MW-PRO-001" "REDESIGN" "migration/credential rebinding;credential-store" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "PRV-001;SEC-002" }
+                "gap:java-version-check-conflicts-with-build" { return Decision "MW-INF-004" "DROP" "standalone Go build/release documentation" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;REL-002;CUT-002" }
                 default { throw "No gap disposition for $locator" }
             }
         }
@@ -921,7 +964,7 @@ $expectedRows = foreach ($artifact in $discovered) {
         salvage_decision = $feature.salvage_decision
         first_release_scope = $feature.first_release_scope
         go_target = $decision.go_target
-        migration_rule = $decision.migration_rule
+        data_disposition = $decision.data_disposition
         acceptance_ids = $decision.acceptance_ids
     }
 }
@@ -944,14 +987,45 @@ $actualRows = @(Import-Csv $inventoryPath)
 $requiredColumns = @(
     "artifact_id", "category", "locator", "observed_fact", "semantic_confidence",
     "disposition_id", "disposition", "salvage_decision", "first_release_scope",
-    "go_target", "migration_rule", "acceptance_ids"
+    "go_target", "data_disposition", "acceptance_ids"
 )
 if ($actualRows.Count -eq 0) { throw "Inventory is empty" }
-foreach ($column in $requiredColumns) {
-    if (-not ($actualRows[0].PSObject.Properties.Name -contains $column)) {
-        throw "Inventory is missing required column $column"
+foreach ($row in $actualRows) {
+    $actualColumns = @($row.PSObject.Properties.Name)
+    if (($actualColumns -join "`n") -cne ($requiredColumns -join "`n")) {
+        throw "Inventory columns must be exactly '$($requiredColumns -join ',')'; found '$($actualColumns -join ',')'"
     }
 }
+
+function Assert-ExactCounts {
+    param(
+        [object[]]$Rows,
+        [string]$Property,
+        [hashtable]$Expected
+    )
+    $actual = @{}
+    foreach ($group in ($Rows | Group-Object -Property $Property)) { $actual[$group.Name] = $group.Count }
+    $actualText = @($actual.Keys | Sort-Object | ForEach-Object { "$_=$($actual[$_])" }) -join ','
+    $expectedText = @($Expected.Keys | Sort-Object | ForEach-Object { "$_=$($Expected[$_])" }) -join ','
+    if ($actualText -cne $expectedText) {
+        throw "Inventory $Property totals drift. Expected '$expectedText', found '$actualText'"
+    }
+}
+
+if ($expectedRows.Count -ne 705) { throw "Discovered $($expectedRows.Count) legacy artifacts, want exactly 705" }
+Assert-ExactCounts $expectedRows "category" @{
+    background_component = 22; config_key = 108; controller_endpoint = 119; environment_key = 10
+    external_dependency = 38; flyway_migration = 33; gap = 8; legacy_script = 10
+    persistence_entity = 33; provider_backend = 98; schema_index = 101; schema_table = 33
+    static_ui = 47; user_data = 25; worker_endpoint = 6; worker_file = 14
+}
+Assert-ExactCounts $expectedRows "disposition" @{
+    KEEP_SEMANTICS = 31; REDESIGN = 402; REBUILD = 80; DEFER = 23; DROP = 169
+}
+Assert-ExactCounts $expectedRows "salvage_decision" @{
+    CORE_REQUIREMENT_ONLY = 20; CORE_REBUILD_FROM_ZERO = 165; LATER_FROM_ZERO = 351; DROP = 169
+}
+Assert-ExactCounts $expectedRows "first_release_scope" @{ CORE = 185; LATER = 351; DROP = 169 }
 
 $legalConfidence = @("SOURCE_IDENTIFIED", "UNCONFIRMED_GAP")
 foreach ($row in $actualRows) {
@@ -981,27 +1055,6 @@ foreach ($duplicate in ($actualRows | Group-Object { "$($_.category)`n$($_.locat
     throw "Duplicate category/locator $($duplicate.Name)"
 }
 
-$acceptanceIds = @{}
-foreach ($line in Get-Content $ledgerPath) {
-    if ($line -notmatch '^\|\s*[A-Z]+-[0-9]{3}\s*\|') { continue }
-    $cells = @(Get-MarkdownCells $line)
-    if ($cells.Count -ne 6) { throw "Acceptance row must have exactly 6 columns: $line" }
-    $acceptanceId = $cells[0]
-    $phase = $cells[2]
-    $coreGate = $cells[3]
-    $status = $cells[4]
-    if ($acceptanceIds.ContainsKey($acceptanceId)) { throw "Duplicate acceptance ledger ID $acceptanceId" }
-    if ($phase -notin @("CORE", "LATER", "ARCHIVE")) { throw "Illegal acceptance phase $phase for $acceptanceId" }
-    if ($coreGate -notin @("YES", "NO")) { throw "Illegal Core gate value $coreGate for $acceptanceId" }
-    if (($phase -eq "CORE" -and $coreGate -ne "YES") -or ($phase -ne "CORE" -and $coreGate -ne "NO")) {
-        throw "Acceptance phase/core-gate mismatch for ${acceptanceId}: phase=$phase, core_gate=$coreGate"
-    }
-    if ($status -notin @("NOT_IMPLEMENTED", "IMPLEMENTED", "PASS", "BLOCKED")) {
-        throw "Illegal acceptance status $status for $acceptanceId"
-    }
-    $acceptanceIds[$acceptanceId] = [pscustomobject]@{ phase = $phase; core_gate = $coreGate }
-}
-if ($acceptanceIds.Count -eq 0) { throw "Acceptance ledger is empty" }
 foreach ($row in $actualRows) {
     if (-not $features.ContainsKey($row.disposition_id)) {
         throw "Unknown disposition_id $($row.disposition_id) in $($row.artifact_id)"
@@ -1017,6 +1070,9 @@ foreach ($row in $actualRows) {
         throw "First-release scope mismatch in $($row.artifact_id): CSV=$($row.first_release_scope), feature matrix=$($feature.first_release_scope)"
     }
     foreach ($acceptanceId in ($row.acceptance_ids -split ';')) {
+        if ($retiredAcceptanceIds -contains $acceptanceId) {
+            throw "Retired acceptance ID $acceptanceId in $($row.artifact_id)"
+        }
         if (-not $acceptanceIds.ContainsKey($acceptanceId)) {
             throw "Unknown acceptance ID $acceptanceId in $($row.artifact_id)"
         }
