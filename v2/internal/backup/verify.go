@@ -331,7 +331,7 @@ func cleanupVerifyScratchRoot(
 		if err := capability.verifyPath(); err != nil {
 			return result, errors.Join(ErrCleanupResidual, err)
 		}
-		if err := recoverResidueRoot(ctx, capability, item, residueGuard, false); err != nil {
+		if err := recoverResidueRoot(ctx, capability, item, residueGuard, nil); err != nil {
 			return result, errors.Join(ErrCleanupResidual, err)
 		}
 		if err := capability.verifyPath(); err != nil {

@@ -222,6 +222,43 @@ func TestConfirmPublishedBackupRequiresFullVerifyAndExactResidueCAS(t *testing.T
 	}
 }
 
+func TestConfirmPublishedBackupRetainsReceiptWhenContentChangesAfterFullVerify(t *testing.T) {
+	fixture := newBackupFixture(t)
+	destination := filepath.Join(fixture.root, "mutated-published-backup")
+	injected := errors.New("injected parent sync failure")
+	if _, err := fixture.coordinator.create(t.Context(), destination, publicationHooks{
+		syncParent: func(*retainedDirectory) error { return injected },
+	}); !errors.Is(err, ErrPublicationUncertain) {
+		t.Fatalf("Create error = %v, want publication uncertain", err)
+	}
+	page, err := ListResidues(t.Context(), fixture.root, 10)
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("publication residue = %+v, %v", page, err)
+	}
+	scratch := filepath.Join(fixture.root, "mutation-confirm-scratch")
+	if err := os.Mkdir(scratch, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := fixture.coordinator.confirmPublishedBackup(
+		t.Context(), fixture.root, page.Items[0], VerifyOptions{ScratchParent: scratch},
+		func() error {
+			manifest := filepath.Join(destination, manifestFileName)
+			file, err := os.OpenFile(manifest, os.O_APPEND|os.O_WRONLY, 0)
+			if err != nil {
+				return err
+			}
+			_, writeErr := file.WriteString("\n")
+			return errors.Join(writeErr, file.Close())
+		},
+	)
+	if err == nil || outcome.Succeeded || !errors.Is(err, ErrPublicationUncertain) {
+		t.Fatalf("mutated confirmation outcome = %+v, error = %v", outcome, err)
+	}
+	if after, listErr := ListResidues(t.Context(), fixture.root, 10); listErr != nil || len(after.Items) != 1 || after.Items[0] != page.Items[0] {
+		t.Fatalf("mutation removed or changed receipt = %+v, %v", after, listErr)
+	}
+}
+
 func (fixture *backupFixture) addDocument(t *testing.T, key, content string) workbench.UploadResult {
 	t.Helper()
 	return fixture.addDocumentContext(t.Context(), key, content, func(err error) { t.Fatal(err) })

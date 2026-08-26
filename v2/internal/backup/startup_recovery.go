@@ -159,7 +159,7 @@ func (recovery *StartupRestoreResidueRecovery) Recover(
 	if err := validateStartupSourceBoundary(capability); err != nil {
 		return outcomeFromResult(Summary{}, failOperation(FailureInvalid, err))
 	}
-	err = recoverResidueRoot(ctx, capability.parent, expected, capability.rejectSourceOverlap, false)
+	err = recoverResidueRoot(ctx, capability.parent, expected, capability.rejectSourceOverlap, nil)
 	return outcomeFromResult(Summary{}, classifyStartupResidueFailure(err))
 }
 
