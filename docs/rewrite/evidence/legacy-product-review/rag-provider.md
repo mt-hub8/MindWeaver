@@ -101,14 +101,17 @@ remote outcome.
 - `internal/rag` and its app/API runtime remain the accepted vertical Ask path,
   but their validator proves citation syntax and membership only. It does not
   prove that every substantive statement is supported.
-- The Web UI says “验证引用” at `internal/webui/static/app.js:724`, `:750`, and
-  `:943`, while `internal/rag/service.go:416-455` only parses in-range numeric
-  references. The copy must say structural/in-scope citation validation, or a
-  separately accepted support verifier must exist. This is a P1 product-trust
-  hardening item, not grounds to revive Java grounding heuristics.
+- At the frozen `0df22dd` review baseline the Web UI said “验证引用” while
+  `internal/rag/service.go` only parsed in-range numeric references. Commit
+  `f0bf2f5` closed that P1 wording gap: the UI now says only that citation
+  numbers point to material used for the current answer, and a negative test
+  rejects semantic-verification wording. This is not grounds to revive Java
+  grounding heuristics or claim that semantic support has been proved.
 - The embedded UI tests inspect shipped assets and client logic but do not run
   a real browser. Browser session, keyboard/focus, Chinese input, scale/high
-  contrast, offline/no-model, and recovery workflows remain qualification work.
+  contrast, offline/no-model, and recovery workflows remain qualification work;
+  [`go-browser-gate.md`](./go-browser-gate.md) records the honest
+  `NOT_IMPLEMENTED` / `BLOCKED` gate.
 - The OpenAPI contract stays incremental and must track only running CORE
   handlers. No Agent, vector, Evaluation, Batch, or migration route is admitted.
 
