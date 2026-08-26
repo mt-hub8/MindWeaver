@@ -1348,6 +1348,7 @@
     submit.disabled = true;
     updateAskAvailability();
     updateConversationDeleteAvailability();
+    let admittedAnswer = null;
     try {
       const payload = await api("/api/v1/ask", {
         method: "POST",
@@ -1355,21 +1356,32 @@
         body: attempt.body
       });
       if (generation !== askGeneration || !activeConversation || activeConversation.id !== attempt.conversationID) return;
+      const answer = payload && payload.answer;
+      if (!answer || typeof answer.id !== "string" || !Number.isInteger(answer.conversationRevision) ||
+          !["pending", "completed", "refused", "failed"].includes(answer.status)) {
+        throw new Error("本地服务返回了无效的 Ask 结果。");
+      }
+      admittedAnswer = answer;
       askInFlight = false;
       askOutcomeUncertain = false;
-      activeConversation.revision = payload.answer.conversationRevision;
-      activeConversation.pendingAnswer = payload.answer.status === "pending";
-      activeConversation.pendingAnswerId = payload.answer.status === "pending" ? payload.answer.id : null;
-      if (payload.answer.status !== "pending") askAttempt = null;
+      activeConversation.revision = answer.conversationRevision;
+      activeConversation.pendingAnswer = answer.status === "pending";
+      activeConversation.pendingAnswerId = answer.status === "pending" ? answer.id : null;
+      if (answer.status !== "pending") askAttempt = null;
       updateActiveConversationLabel();
-      byId("ask-status").textContent = answerStateText(payload.answer);
+      byId("ask-status").textContent = answerStateText(answer);
+      if (answer.status === "pending") startAnswerPoll(answer.id, attempt.conversationID);
       await Promise.all([loadMessages(true), loadConversations(true)]);
-      if (payload.answer.status === "pending") {
-        startAnswerPoll(payload.answer.id, attempt.conversationID);
-      }
     } catch (error) {
       if (generation !== askGeneration || !activeConversation || activeConversation.id !== attempt.conversationID) return;
       askInFlight = false;
+      if (admittedAnswer !== null) {
+        byId("ask-status").textContent = activeConversation.pendingAnswer
+          ? "Ask 已受理；目录刷新暂时失败，仍按同一 answer ID 等待终态。"
+          : answerStateText(admittedAnswer);
+        showToast(error.message);
+        return;
+      }
       byId("ask-status").textContent = `${error.message}；网络或服务不确定时再次提交会复用完全相同的请求与幂等键。`;
       if (Number.isInteger(error.status) && error.status < 500) {
         askAttempt = null;

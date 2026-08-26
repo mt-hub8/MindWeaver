@@ -182,6 +182,11 @@ func TestEmbeddedClientBindsImmutableMutationAttemptsAndFreezesAskReplay(t *test
 		`restoreAskAttemptInputs(attempt)`,
 		`"Idempotency-Key": attempt.key`,
 		`body: attempt.body`,
+		`const answer = payload && payload.answer`,
+		`throw new Error("本地服务返回了无效的 Ask 结果。")`,
+		`admittedAnswer = answer`,
+		`if (admittedAnswer !== null) {`,
+		`answerStateText(admittedAnswer)`,
 		`askOutcomeUncertain = true`,
 	})
 	if !strings.Contains(askControls, `askAttempt !== null && (askInFlight || askOutcomeUncertain ||`) {
@@ -189,6 +194,19 @@ func TestEmbeddedClientBindsImmutableMutationAttemptsAndFreezesAskReplay(t *test
 	}
 	assertFrozenSendReadsNoLiveInput(t, "Ask", ask, `const attempt = askAttempt`,
 		[]string{`byId("ask-question").value`, `byId("ask-collection").value.trim()`})
+	assertJSOrder(t, "Ask admission", ask, `const attempt = askAttempt`,
+		`const answer = payload && payload.answer`, `admittedAnswer = answer`,
+		`startAnswerPoll(answer.id, attempt.conversationID)`,
+		`await Promise.all([loadMessages(true), loadConversations(true)])`)
+	admittedFailure := javascriptSection(t, ask, `if (admittedAnswer !== null) {`,
+		"byId(\"ask-status\").textContent = `${error.message}")
+	if strings.Contains(admittedFailure, "askAttempt = null") ||
+		strings.Contains(admittedFailure, "askOutcomeUncertain = true") {
+		t.Fatal("Ask catalog-refresh failure reclassifies or releases an already admitted attempt")
+	}
+	assertJSContracts(t, "Ask admitted refresh failure", admittedFailure, []string{
+		`仍按同一 answer ID 等待终态。`, `showToast(error.message)`, `return;`,
+	})
 
 	for name, section := range map[string]string{
 		"upload": upload, "collection": collection, "conversation": conversation, "Ask": ask,
