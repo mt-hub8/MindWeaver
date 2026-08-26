@@ -16,6 +16,7 @@ import (
 
 const (
 	ioctlStorageGetHotplugInfo = 0x002d0c14
+	maxVolumePathCodeUnits     = 32 << 10
 
 	hresultInvalidFunction       = 0x80070001
 	hresultCloudNotUnderSyncRoot = 0x80070186
@@ -346,6 +347,9 @@ func validateWindowsVaultHandle(handle windows.Handle, path string) error {
 	if err := rejectMappedDrive(path); err != nil {
 		return err
 	}
+	if err := ValidateRegisteredWindowsVolumePath(path); err != nil {
+		return err
+	}
 
 	var volumeLabel [windows.MAX_PATH + 1]uint16
 	var fileSystemName [32]uint16
@@ -438,6 +442,86 @@ func rejectMappedDrive(path string) error {
 		return fmt.Errorf("%w: mapped drives are forbidden", ErrRemoteUnsupported)
 	}
 	return nil
+}
+
+// ValidateRegisteredWindowsVolumePath rejects session-local DOS drive aliases.
+// Such aliases can point directly at fixed local media and therefore pass both
+// QueryDosDevice and GetDriveType, but they are absent from Mount Manager's
+// registered volume paths and can be redefined by the creating user.
+func ValidateRegisteredWindowsVolumePath(path string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("%w: resolve Windows volume path: %v", ErrUnsafeMedia, err)
+	}
+	volume := filepath.VolumeName(filepath.Clean(abs))
+	if len(volume) != 2 || !asciiDriveLetter(volume[0]) || volume[1] != ':' {
+		return fmt.Errorf("%w: Windows path is not drive-letter rooted", ErrUnsafeMedia)
+	}
+	driveRoot := strings.ToUpper(volume[:1]) + `:\`
+	volumeName, err := volumeNameForMountPoint(driveRoot)
+	if err != nil {
+		return fmt.Errorf("%w: resolve registered Windows volume: %v", ErrUnsafeMedia, err)
+	}
+	registeredPaths, err := volumePathNames(volumeName)
+	if err != nil {
+		return fmt.Errorf("%w: enumerate registered Windows volume paths: %v", ErrUnsafeMedia, err)
+	}
+	for _, registeredPath := range registeredPaths {
+		if strings.EqualFold(registeredPath, driveRoot) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: drive letter is not registered by Windows Mount Manager", ErrUnsafeMedia)
+}
+
+func volumePathNames(volumeName string) ([]string, error) {
+	pointer, err := windows.UTF16PtrFromString(volumeName)
+	if err != nil {
+		return nil, err
+	}
+	for size := uint32(256); size <= maxVolumePathCodeUnits; {
+		buffer := make([]uint16, size)
+		var required uint32
+		err := windows.GetVolumePathNamesForVolumeName(pointer, &buffer[0], uint32(len(buffer)), &required)
+		if err == nil {
+			if required == 0 || required > uint32(len(buffer)) {
+				return nil, errors.New("registered volume path response is truncated")
+			}
+			return parseVolumePathNames(buffer[:required])
+		}
+		if !errors.Is(err, windows.ERROR_MORE_DATA) && !errors.Is(err, windows.ERROR_INSUFFICIENT_BUFFER) {
+			return nil, err
+		}
+		if required > maxVolumePathCodeUnits {
+			return nil, errors.New("registered volume paths exceed supported bound")
+		}
+		if required > size {
+			size = required
+		} else {
+			size *= 2
+		}
+	}
+	return nil, errors.New("registered volume paths exceed supported bound")
+}
+
+func parseVolumePathNames(buffer []uint16) ([]string, error) {
+	paths := make([]string, 0, 1)
+	start := 0
+	for index, codeUnit := range buffer {
+		if codeUnit != 0 {
+			continue
+		}
+		if index == start {
+			return paths, nil
+		}
+		paths = append(paths, windows.UTF16ToString(buffer[start:index]))
+		start = index + 1
+	}
+	return nil, errors.New("registered volume path response is not double-NUL terminated")
+}
+
+func asciiDriveLetter(value byte) bool {
+	return value >= 'A' && value <= 'Z' || value >= 'a' && value <= 'z'
 }
 
 func driveTypeForVolume(volumePath string) (uint32, error) {

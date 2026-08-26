@@ -12,8 +12,195 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/mt-hub8/MindWeaver/v2/internal/vault"
 	"golang.org/x/sys/windows"
 )
+
+type temporaryDOSDeviceAlias struct {
+	drive  string
+	target string
+	active bool
+}
+
+func createTemporaryDirectVolumeAlias() (*temporaryDOSDeviceAlias, error) {
+	base := filepath.Clean(os.TempDir())
+	sourceDrive := filepath.VolumeName(base)
+	if len(sourceDrive) != 2 {
+		return nil, fmt.Errorf("temporary directory has no drive-letter volume: %q", base)
+	}
+	sourcePointer, err := windows.UTF16PtrFromString(sourceDrive)
+	if err != nil {
+		return nil, err
+	}
+	sourceBuffer := make([]uint16, 1024)
+	if _, err := windows.QueryDosDevice(sourcePointer, &sourceBuffer[0], uint32(len(sourceBuffer))); err != nil {
+		return nil, fmt.Errorf("query source DOS device: %w", err)
+	}
+	target := windows.UTF16ToString(sourceBuffer)
+	if err := classifyWindowsDestinationMapping(target); err != nil {
+		return nil, fmt.Errorf("temporary directory drive is not a direct approved volume: %w", err)
+	}
+
+	logicalDrives, err := windows.GetLogicalDrives()
+	if err != nil {
+		return nil, fmt.Errorf("enumerate logical drives: %w", err)
+	}
+	var drive string
+	for letter := byte('Z'); letter >= 'E'; letter-- {
+		mask := uint32(1) << (letter - 'A')
+		if logicalDrives&mask != 0 {
+			continue
+		}
+		candidate := string(letter) + ":"
+		candidatePointer, pointerErr := windows.UTF16PtrFromString(candidate)
+		if pointerErr != nil {
+			return nil, pointerErr
+		}
+		candidateBuffer := make([]uint16, 16)
+		_, queryErr := windows.QueryDosDevice(candidatePointer, &candidateBuffer[0], uint32(len(candidateBuffer)))
+		if !errors.Is(queryErr, windows.ERROR_FILE_NOT_FOUND) {
+			continue
+		}
+		if _, statErr := os.Lstat(candidate + `\`); !errors.Is(statErr, os.ErrNotExist) {
+			continue
+		}
+		drive = candidate
+		break
+	}
+	if drive == "" {
+		return nil, errors.New("no provably unused DOS drive letter is available")
+	}
+	drivePointer, err := windows.UTF16PtrFromString(drive)
+	if err != nil {
+		return nil, err
+	}
+	targetPointer, err := windows.UTF16PtrFromString(target)
+	if err != nil {
+		return nil, err
+	}
+	if err := windows.DefineDosDevice(
+		windows.DDD_RAW_TARGET_PATH|windows.DDD_NO_BROADCAST_SYSTEM,
+		drivePointer,
+		targetPointer,
+	); err != nil {
+		return nil, fmt.Errorf("create temporary DOS device alias: %w", err)
+	}
+	alias := &temporaryDOSDeviceAlias{drive: drive, target: target, active: true}
+	verifyBuffer := make([]uint16, 1024)
+	if _, err := windows.QueryDosDevice(drivePointer, &verifyBuffer[0], uint32(len(verifyBuffer))); err != nil {
+		return alias, fmt.Errorf("verify temporary DOS device alias: %w", err)
+	}
+	if mapped := windows.UTF16ToString(verifyBuffer); !strings.EqualFold(mapped, target) {
+		return alias, fmt.Errorf("temporary DOS device target = %q, want %q", mapped, target)
+	}
+	return alias, nil
+}
+
+func (alias *temporaryDOSDeviceAlias) Close() error {
+	if alias == nil || !alias.active {
+		return nil
+	}
+	drivePointer, err := windows.UTF16PtrFromString(alias.drive)
+	if err != nil {
+		return err
+	}
+	targetPointer, err := windows.UTF16PtrFromString(alias.target)
+	if err != nil {
+		return err
+	}
+	if err := windows.DefineDosDevice(
+		windows.DDD_RAW_TARGET_PATH|windows.DDD_REMOVE_DEFINITION|
+			windows.DDD_EXACT_MATCH_ON_REMOVE|windows.DDD_NO_BROADCAST_SYSTEM,
+		drivePointer,
+		targetPointer,
+	); err != nil {
+		return fmt.Errorf("remove temporary DOS device alias: %w", err)
+	}
+	alias.active = false
+	verifyBuffer := make([]uint16, 16)
+	if _, err := windows.QueryDosDevice(drivePointer, &verifyBuffer[0], uint32(len(verifyBuffer))); !errors.Is(err, windows.ERROR_FILE_NOT_FOUND) {
+		return fmt.Errorf("temporary DOS device alias remains queryable: %v", err)
+	}
+	logicalDrives, err := windows.GetLogicalDrives()
+	if err != nil {
+		return fmt.Errorf("verify logical drives after alias removal: %w", err)
+	}
+	mask := uint32(1) << (alias.drive[0] - 'A')
+	if logicalDrives&mask != 0 {
+		return errors.New("temporary DOS device alias remains a logical drive")
+	}
+	if _, err := os.Lstat(alias.drive + `\`); !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("temporary DOS device alias remains filesystem-visible: %v", err)
+	}
+	return nil
+}
+
+func TestWindowsSessionLocalDirectVolumeAliasIsRejectedBeforeVaultOrBackupWrite(t *testing.T) {
+	base := t.TempDir()
+	if err := vault.ValidateRegisteredWindowsVolumePath(base); err != nil {
+		t.Fatalf("registered temporary-directory drive rejected: %v", err)
+	}
+	if err := validatePlatformDirectoryNamespace(base); err != nil {
+		t.Fatalf("registered backup directory rejected: %v", err)
+	}
+
+	alias, err := createTemporaryDirectVolumeAlias()
+	if alias != nil {
+		t.Cleanup(func() {
+			if err := alias.Close(); err != nil {
+				t.Errorf("clean temporary DOS device alias: %v", err)
+			}
+		})
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourceRoot := filepath.VolumeName(base) + `\`
+	relative, err := filepath.Rel(sourceRoot, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aliasPath := filepath.Join(alias.drive+`\`, relative)
+	sourceInfo, err := os.Stat(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aliasInfo, err := os.Stat(aliasPath)
+	if err != nil {
+		t.Fatalf("open temporary DOS device alias: %v", err)
+	}
+	if !os.SameFile(sourceInfo, aliasInfo) {
+		t.Fatal("temporary DOS device alias does not identify its source directory")
+	}
+
+	opened, err := vault.Open(aliasPath)
+	if opened != nil {
+		_ = opened.Close()
+		t.Fatal("Vault opened through a session-local direct-volume alias")
+	}
+	if !errors.Is(err, vault.ErrUnsafeMedia) {
+		t.Fatalf("Vault alias error = %v, want ErrUnsafeMedia", err)
+	}
+	if err := validatePlatformDirectoryNamespace(aliasPath); !errors.Is(err, vault.ErrUnsafeMedia) {
+		t.Fatalf("backup alias error = %v, want ErrUnsafeMedia", err)
+	}
+	destination := filepath.Join(aliasPath, "must-not-exist")
+	if target, err := newDestination(destination); err == nil {
+		_ = target.parent.Close()
+		t.Fatal("backup destination accepted a session-local direct-volume alias")
+	}
+	if _, err := os.Lstat(destination); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("backup alias admission wrote destination state: %v", err)
+	}
+	for _, name := range []string{".mindweaver.lock", "data", "blobs"} {
+		if _, err := os.Lstat(filepath.Join(base, name)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("Vault alias admission wrote %q: %v", name, err)
+		}
+	}
+	if err := alias.Close(); err != nil {
+		t.Fatalf("clean temporary DOS device alias: %v", err)
+	}
+}
 
 func TestWindowsLeafValidationRejectsAliasesDevicesAndADS(t *testing.T) {
 	invalid := []string{

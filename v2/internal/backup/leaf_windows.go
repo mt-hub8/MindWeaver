@@ -74,12 +74,12 @@ func validatePlatformDirectoryNamespace(raw string) error {
 	}
 	switch driveType := windows.GetDriveType(rootPointer); driveType {
 	case windows.DRIVE_FIXED:
-		return nil
 	case windows.DRIVE_REMOTE:
 		return vault.ErrRemoteUnsupported
 	default:
 		return fmt.Errorf("%w: destination drive type %d is not fixed local media", vault.ErrUnsafeMedia, driveType)
 	}
+	return vault.ValidateRegisteredWindowsVolumePath(abs)
 }
 
 // retainPlatformDirectoryNamespace walks a drive-rooted path one component at

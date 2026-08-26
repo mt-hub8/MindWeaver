@@ -106,6 +106,25 @@ func TestWindowsVaultLocationClassifiersFailClosed(t *testing.T) {
 	}
 }
 
+func TestWindowsRegisteredVolumePathResponseFailsClosed(t *testing.T) {
+	paths, err := parseVolumePathNames([]uint16{'D', ':', '\\', 0, 'D', ':', '\\', 'm', '\\', 0, 0})
+	if err != nil {
+		t.Fatalf("parse registered paths: %v", err)
+	}
+	if len(paths) != 2 || paths[0] != `D:\` || paths[1] != `D:\m\` {
+		t.Fatalf("registered paths = %#v", paths)
+	}
+	for _, malformed := range [][]uint16{
+		nil,
+		{'D', ':', '\\'},
+		{'D', ':', '\\', 0},
+	} {
+		if paths, err := parseVolumePathNames(malformed); err == nil {
+			t.Fatalf("malformed registered paths accepted: %#v", paths)
+		}
+	}
+}
+
 func TestWindowsRejectsDetectedCloudFilesSyncRoot(t *testing.T) {
 	oneDrive := os.Getenv("OneDrive")
 	if oneDrive == "" {
