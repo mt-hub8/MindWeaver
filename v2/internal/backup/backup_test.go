@@ -182,6 +182,33 @@ func TestCreateValidatesFixedLocalDestinationBeforeFirstWrite(t *testing.T) {
 	}
 }
 
+func TestCreateDiskFullBeforePublicationLeavesOnlyRecoverableOwnedResidue(t *testing.T) {
+	fixture := newBackupFixture(t)
+	fixture.addDocument(t, "disk-full", "disk full backup residue")
+	destination := filepath.Join(fixture.root, "disk-full-backup")
+
+	_, err := fixture.coordinator.create(t.Context(), destination, publicationHooks{
+		afterStagingCloseBeforeRename: func(string) error { return windows.ERROR_DISK_FULL },
+	})
+	if !errors.Is(err, windows.ERROR_DISK_FULL) || !errors.Is(err, ErrCleanupResidual) {
+		t.Fatalf("Create disk-full error = %v, want disk full plus cleanup residue", err)
+	}
+	if _, statErr := os.Lstat(destination); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("destination exists after disk-full failure: %v", statErr)
+	}
+	page, listErr := ListResidues(t.Context(), fixture.root, 10)
+	if listErr != nil || len(page.Items) != 1 || page.Items[0].Kind != "backup" ||
+		page.Items[0].State != ResidueStateStaging {
+		t.Fatalf("disk-full residue = %+v, %v", page, listErr)
+	}
+	if err := fixture.coordinator.RecoverResidue(t.Context(), fixture.root, page.Items[0]); err != nil {
+		t.Fatalf("recover disk-full residue: %v", err)
+	}
+	if after, err := ListResidues(t.Context(), fixture.root, 10); err != nil || len(after.Items) != 0 {
+		t.Fatalf("residue remains after disk-full recovery = %+v, %v", after, err)
+	}
+}
+
 func TestConfirmPublishedBackupRequiresFullVerifyAndExactResidueCAS(t *testing.T) {
 	fixture := newBackupFixture(t)
 	fixture.addDocument(t, "confirm-published", "published backup confirmation")
