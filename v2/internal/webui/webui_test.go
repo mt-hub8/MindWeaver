@@ -101,3 +101,24 @@ func TestEmbeddedClientResumesPendingAnswerPollingAfterConversationSelection(t *
 		t.Fatal("pending conversation selection/refresh does not resume answer-ID polling")
 	}
 }
+
+func TestEmbeddedClientDoesNotClaimSemanticCitationVerification(t *testing.T) {
+	javascript, err := assets.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(javascript)
+	for _, overclaim := range []string{"验证引用", "引用已验证", "语义验证", "事实核验"} {
+		if strings.Contains(source, overclaim) {
+			t.Fatalf("embedded client overclaims citation assurance with %q", overclaim)
+		}
+	}
+	for _, honestBoundary := range []string{
+		"只会发布指向本次所用资料的结构化引用",
+		"引用编号均指向本次所用资料",
+	} {
+		if !strings.Contains(source, honestBoundary) {
+			t.Fatalf("embedded client is missing structural citation boundary %q", honestBoundary)
+		}
+	}
+}

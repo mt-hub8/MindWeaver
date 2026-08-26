@@ -721,7 +721,7 @@
       byId("ollama-timeout").value = String(timeoutValid ? payload.config.timeoutMilliseconds : 60000);
       if (timeoutValid) {
         byId("ollama-status").textContent = `已配置 ${payload.config.model} · version ${payload.config.version}`;
-        byId("model-detail").textContent = `本机模型 ${payload.config.model} 已配置；Ask 将只使用已激活资料并验证引用。`;
+        byId("model-detail").textContent = `本机模型 ${payload.config.model} 已配置；Ask 只会发布指向本次所用资料的结构化引用。`;
       } else {
         byId("ollama-status").textContent = "已有模型配置超出 60 秒产品上限；请保存当前表单以修复，期间 Ask 不可用。";
         byId("model-detail").textContent = "模型配置需要修复；上传、集合和本地全文检索仍可正常使用。";
@@ -747,7 +747,7 @@
       modelConfigVersion = payload.config.version;
       modelConfigured = true;
       byId("ollama-status").textContent = `已保存 ${payload.config.model} · version ${payload.config.version}`;
-      byId("model-detail").textContent = `本机模型 ${payload.config.model} 已配置；Ask 将只使用已激活资料并验证引用。`;
+      byId("model-detail").textContent = `本机模型 ${payload.config.model} 已配置；Ask 只会发布指向本次所用资料的结构化引用。`;
       updateAskAvailability();
       await loadDiagnostics();
     } catch (error) {
@@ -940,7 +940,7 @@
       if (answer.limitationCode === "OUTCOME_UNCERTAIN") return "应用中断或调用超时，结果无法确认；为避免重复调用，本次不会自动重放模型。";
       return `回答失败：${answer.limitationCode || answer.errorCode || "MODEL_UNAVAILABLE"}`;
     }
-    return "回答已完成并验证引用。";
+    return "回答已完成；引用编号均指向本次所用资料。";
   }
 
   function appendCitationDetails(container, sources, citations) {
