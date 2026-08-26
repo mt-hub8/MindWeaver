@@ -74,18 +74,21 @@ scripts/ci.ps1 -Go <go1.27>
 scripts/verify-standalone.ps1 -Go <go1.27>
 ```
 
-## Open blocker
+## Windows namespace closure and remaining blocker
 
 The retained ancestor chain closes junction and ordinary ancestor-rename
-egress, but the public Vault/Store boundary still represents roots as `X:\...`
-strings. A same-session `DefineDosDevice` remap can therefore change the DOS
-drive mapping between a retained check and a later absolute-path-only Vault,
-SQLite, durability, or rename call. Rechecking the mapping would leave another
-check/use race and is not accepted as a fix.
+egress. The separate registered-volume slice now also rejects session-local
+direct-volume `DefineDosDevice` aliases before Vault or backup writes. It
+requires the accepted drive root to occur in the bounded Mount Manager path
+enumeration for the resolved volume GUID; errors, malformed responses, and an
+absent exact root fail closed. The real non-elevated unused-letter test and
+exact cleanup proof are recorded in
+`docs/rewrite/evidence/windows-registered-volume-boundary-57e293b.md`.
 
-Closing this boundary requires a separate capability slice: derive a canonical
-local kernel path from the retained volume handle, carry kernel and display
-paths separately through Vault/Store/blob ownership, use handle-relative rename
-where available, and qualify SQLite plus every Windows path consumer. Until
-that is implemented and the clean-machine restore/release rehearsal passes,
-`BKP-001` remains `BLOCKED` rather than `PASS`.
+This closes the unprivileged same-session remapping boundary by narrowing
+admission to system-registered drive roots. It does not claim protection from
+administrator or `LocalSystem` changes to global volume mount state.
+
+`BKP-001` remains `BLOCKED`, but only the separate clean-machine
+restore/release rehearsal remains open. It must not move to `PASS` on this
+candidate's focused Windows evidence alone.
