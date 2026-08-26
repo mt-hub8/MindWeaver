@@ -10,15 +10,15 @@ and dual-PE slices, the same offline gate was rerun against the current Go
 product tree. The refreshed exact values are:
 
 - `mindweaver.exe`: 77 source files,
-  `b7d8ca3e12648fd472c5f9eb1d774fe5aef7b91b694080b2a813380295ddc748`;
+  `0c363bae2689b3916beb6fe91fbdbda5fcc0b5d9a2bf680537d138eeab5bd217`;
   PE SHA-256
-  `e9415f981d538b7588610e4984d89d09dcc8867b7519d47abef80e4e22b8262c`
+  `29a6ea5203fc0317d9c2448b04398c53f120f0add1ccaa181ca04ab10b4a130e`
 - `mindweaver-pdf.exe`: 5 source files,
   `bf8badaa11f215a4acd100a839d6e360017bdbc5d9ae18cbbb67e9222ab8849a`;
   PE SHA-256
   `411ed538b53d533600ae5466427f3d3f30a7a81405885d92b79167e52ff32b87`
 - deduplicated dual-PE union: 81 source files,
-  `0c8c2e0f101b632a073bea6600c103304f7ad48d824573242308e8e5e94e1d07`
+  `3f5c6394b440f3eb43c034e5c36463805af0e9f2a18f89a0e2529d4bcfd946d6`
 
 `openapi/v1` now binds the refreshed `mindweaver.exe` source manifest. Its
 production discovery policy also classifies `tests/browser/runner` as an
@@ -137,11 +137,12 @@ qualification commit. Updating the OpenAPI/core-surface digest is outside this
 slice's authorized file boundary, so the repository-wide result remains
 fail-closed rather than being reported as PASS.
 
-## Open items
+## Historical baseline findings
 
-- **P0 outside this slice:** refresh the committed `mindweaver` production
-  source-manifest digest on the final integrated tree, then rerun full CI and
-  standalone verification.
+- **Resolved in the current integration:** the committed `mindweaver`
+  production source-manifest digest has been refreshed, and the full CI and
+  standalone verification are rerun before accepting each new production
+  source identity.
 - **P1:** linker symbol spellings are deliberately pinned to Go 1.27.0. A Go
   toolchain change requires an explicit gate review rather than silent drift.
 - This run proves offline resolution from the locally available module cache;
