@@ -1,0 +1,9 @@
+/oracle/
+*.pgm
+*.ppm
+*.raw
+*.out
+/dist/
+
+# Compiled test binaries (`go test -c`, `go test -o`).
+*.test
