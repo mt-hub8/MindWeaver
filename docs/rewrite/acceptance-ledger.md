@@ -24,7 +24,7 @@ traceability without expanding the first Go release.
 | PROG-001 | Document ingestion and Ask progress never reports success before durable completion | CORE | YES | NOT_IMPLEMENTED | reconnect/poll and forced-exit workflow tests |
 | BKP-001 | Backup manifest comes from its own DB snapshot and every blob verifies | CORE | YES | BLOCKED | `docs/rewrite/evidence/live-backup-create.md`; retained Windows kernel-path capability and clean-machine release rehearsal remain open |
 | PUR-001 | Explicit delete removes known in-scope DB/FTS rows and unshared blobs; failure never reports success | CORE | YES | NOT_IMPLEMENTED | SQLite/filesystem failure, shared-blob and retry tests |
-| DOC-001 | TXT/Markdown/PDF upload is idempotent, bounded and crash recoverable | CORE | YES | NOT_IMPLEMENTED | duplicate/cancel/timeout/crash E2E |
+| DOC-001 | TXT/Markdown/PDF upload is idempotent, bounded and crash recoverable | CORE | YES | NOT_IMPLEMENTED | Partial production qualification: `v2/qualification/knowledge/production_ingestion_lifecycle_test.go`; `docs/rewrite/evidence/production-ingestion-lifecycle-fda7c63.md`; forced-exit and bounded-input matrix remains |
 | DOC-002 | Trash excludes immediately; restore is reversible; purge is not overstated | CORE | YES | NOT_IMPLEMENTED | lifecycle and retention E2E |
 | GEN-001 | A future reindex slice keeps old generation live and activates only its document | LATER | NO | NOT_IMPLEMENTED | two-document same-generation regression test before promotion |
 | COL-001 | Membership is true many-to-many and empty scope stays empty | CORE | YES | NOT_IMPLEMENTED | SQLite/API multi-collection and empty-scope integration tests |
