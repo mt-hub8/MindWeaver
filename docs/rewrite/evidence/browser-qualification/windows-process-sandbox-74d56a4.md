@@ -58,6 +58,16 @@ real-run proof required for PASS.
 - The availability decision runs a real suspended root through assignment,
   membership verification and resume; that root creates a ready descendant,
   and the probe succeeds only after OS accounting reaches zero during cleanup.
+- The browser package has no environment-triggered probe initializer. The
+  runner exposes one explicit internal helper command whose root and child must
+  prove a fresh 256-bit capability through fixed-local, owner-only IPC. Legacy
+  `MW_BROWSER_JOB_PROBE_*` environment values are inert; with empty approval
+  they cannot write a canary or cross an artifact/process boundary.
+- Any failure after Job assignment retains the process handle. Cleanup uses a
+  fixed deadline, propagates termination/accounting/Job-close/process-wait and
+  process-handle-close errors, and waits with `WaitForSingleObject` rather than
+  an unbounded `Cmd.Wait`. Membership, image, resume, termination, accounting
+  and close-handle fault tests all return within the bound with no live process.
 
 No process output, executable path, user profile, Vault path, cookie, CSRF
 value, prompt, document content or environment value is added to the report.
@@ -95,6 +105,11 @@ findings: OS job-zero cleanup, child-ready proof, typed artifact-bound process
 identity plus Job membership, a full lifecycle availability probe, and
 no-recall/offline artifact rejection. This document does not claim that every
 P1 for a future real-browser adapter is zero.
+
+A second independent review required removal of the environment-triggered
+package initializer and bounded cleanup under injected Windows API failures.
+Those changes are part of the final rewrite commit; earlier commits remain
+historical dependencies and are not independently eligible for integration.
 
 The following are qualification prerequisites, not claims closed by this
 slice:

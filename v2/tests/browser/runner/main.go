@@ -21,6 +21,9 @@ const (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == browserqualification.SandboxProbeHelperCommand {
+		os.Exit(browserqualification.RunSandboxProbeHelper(os.Args[2:]))
+	}
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 

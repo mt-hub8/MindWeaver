@@ -4,12 +4,14 @@ package browserqualification
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -19,10 +21,9 @@ import (
 )
 
 const (
-	maxSandboxProcesses = 64
-	maxSandboxJobMemory = 2 << 30
-	sandboxProbeMode    = "MW_BROWSER_JOB_PROBE_MODE"
-	sandboxProbeReady   = "MW_BROWSER_JOB_PROBE_CHILD_READY"
+	maxSandboxProcesses       = 64
+	maxSandboxJobMemory       = 2 << 30
+	SandboxProbeHelperCommand = "__mindweaver_internal_job_probe"
 )
 
 var isProcessInJobProc = windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob")
@@ -44,6 +45,23 @@ type windowsProcessSandbox struct {
 	job    windows.Handle
 	roots  map[string]sandboxRoot
 	closed bool
+	api    windowsSandboxAPI
+}
+
+type windowsSandboxAPI struct {
+	processInJob func(windows.Handle, windows.Handle) (bool, error)
+	observe      func(string, windows.Handle, uint32, *retainedArtifact) (processIdentity, error)
+	resume       func(uint32) error
+	terminate    func(windows.Handle, uint32) error
+	query        func(windows.Handle) (jobAccounting, error)
+	closeHandle  func(windows.Handle) error
+	waitProcess  func(context.Context, windows.Handle) error
+}
+
+var productionWindowsSandboxAPI = windowsSandboxAPI{
+	processInJob: processInJob, observe: observeSandboxProcess, resume: resumeSandboxPrimaryThread,
+	terminate: windows.TerminateJobObject, query: queryJobAccounting, closeHandle: windows.CloseHandle,
+	waitProcess: waitSandboxProcess,
 }
 
 type jobAccounting struct {
@@ -57,34 +75,8 @@ type jobAccounting struct {
 	TotalTerminatedProcesses  uint32
 }
 
-func init() {
-	mode := os.Getenv(sandboxProbeMode)
-	if mode == "" {
-		return
-	}
-	ready := os.Getenv(sandboxProbeReady)
-	switch mode {
-	case "root":
-		executable, err := os.Executable()
-		if err != nil {
-			os.Exit(81)
-		}
-		child := exec.Command(executable)
-		child.Env = sandboxProbeEnvironment("child", ready)
-		if child.Start() != nil {
-			os.Exit(82)
-		}
-		_ = child.Process.Release()
-	case "child":
-		if ready == "" || os.WriteFile(ready, []byte("ready"), 0o600) != nil {
-			os.Exit(83)
-		}
-	default:
-		os.Exit(84)
-	}
-	for {
-		time.Sleep(time.Hour)
-	}
+var sandboxProbeCommandFactory = func(executable, mode, capability, root string) *exec.Cmd {
+	return exec.Command(executable, SandboxProbeHelperCommand, mode, capability, root)
 }
 
 func processSandboxAvailable() bool {
@@ -97,14 +89,21 @@ func processSandboxAvailable() bool {
 		return false
 	}
 	defer os.RemoveAll(probeRoot)
+	capabilityBytes := make([]byte, 32)
+	if _, err := rand.Read(capabilityBytes); err != nil {
+		return false
+	}
+	capability := hex.EncodeToString(capabilityBytes)
+	if !prepareSandboxProbeIPC(probeRoot, capability) {
+		return false
+	}
 	ready := filepath.Join(probeRoot, "child-ready")
 
 	sandbox, err := newWindowsProcessSandbox()
 	if err != nil {
 		return false
 	}
-	command := exec.Command(executable)
-	command.Env = sandboxProbeEnvironment("root", ready)
+	command := sandboxProbeCommandFactory(executable, "root", capability, probeRoot)
 	if _, err := sandbox.startProbeRoot(command); err != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 		_ = sandbox.close(ctx)
@@ -117,7 +116,7 @@ func processSandboxAvailable() bool {
 		_ = sandbox.close(ctx)
 		return false
 	}
-	accounting, err := queryJobAccounting(sandbox.job)
+	accounting, err := sandbox.api.query(sandbox.job)
 	if err != nil || accounting.ActiveProcesses < 2 {
 		_ = sandbox.close(ctx)
 		return false
@@ -126,15 +125,106 @@ func processSandboxAvailable() bool {
 	return receipt.AllExited && receipt.ProcessCount >= 2
 }
 
-func sandboxProbeEnvironment(mode, ready string) []string {
-	environment := make([]string, 0, len(os.Environ())+2)
-	for _, entry := range os.Environ() {
-		name := strings.SplitN(entry, "=", 2)[0]
-		if name != sandboxProbeMode && name != sandboxProbeReady {
-			environment = append(environment, entry)
+func RunSandboxProbeHelper(arguments []string) int {
+	if len(arguments) != 3 || (arguments[0] != "root" && arguments[0] != "child") ||
+		len(arguments[1]) != 64 || !verifySandboxProbeIPC(arguments[2], arguments[1]) {
+		return 81
+	}
+	if arguments[0] == "root" {
+		executable, err := os.Executable()
+		if err != nil {
+			return 82
+		}
+		child := sandboxProbeCommandFactory(executable, "child", arguments[1], arguments[2])
+		if child.Start() != nil {
+			return 83
+		}
+		_ = child.Process.Release()
+	} else {
+		ready := filepath.Join(arguments[2], "child-ready")
+		file, err := os.OpenFile(ready, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err != nil || setOwnerOnlyProbeACL(ready) != nil {
+			if file != nil {
+				_ = file.Close()
+			}
+			return 84
+		}
+		_, writeErr := file.WriteString("ready")
+		closeErr := file.Close()
+		if writeErr != nil || closeErr != nil {
+			return 85
 		}
 	}
-	return append(environment, sandboxProbeMode+"="+mode, sandboxProbeReady+"="+ready)
+	for {
+		time.Sleep(time.Hour)
+	}
+}
+
+func prepareSandboxProbeIPC(root, capability string) bool {
+	if setOwnerOnlyProbeACL(root) != nil {
+		return false
+	}
+	path := filepath.Join(root, "capability")
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return false
+	}
+	_, writeErr := file.WriteString(capability)
+	syncErr := file.Sync()
+	closeErr := file.Close()
+	return writeErr == nil && syncErr == nil && closeErr == nil && setOwnerOnlyProbeACL(path) == nil
+}
+
+func verifySandboxProbeIPC(root, capability string) bool {
+	if !filepath.IsAbs(root) || len(capability) != 64 {
+		return false
+	}
+	for _, character := range capability {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	directory, err := openApprovedArtifactRoot(filepath.Clean(root))
+	if err != nil || verifyApprovedArtifactHandle(directory, true) != nil {
+		if directory != nil {
+			_ = directory.Close()
+		}
+		return false
+	}
+	if directory.Close() != nil {
+		return false
+	}
+	file, err := openApprovedArtifactFile(filepath.Join(root, "capability"))
+	if err != nil || verifyApprovedArtifactHandle(file, false) != nil {
+		if file != nil {
+			_ = file.Close()
+		}
+		return false
+	}
+	data, readErr := io.ReadAll(io.LimitReader(file, 65))
+	closeErr := file.Close()
+	return readErr == nil && closeErr == nil && string(data) == capability
+}
+
+func setOwnerOnlyProbeACL(path string) error {
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil || user == nil || user.User.Sid == nil {
+		return errors.New("browser sandbox IPC unavailable")
+	}
+	descriptor, err := windows.SecurityDescriptorFromString("D:P(A;;GA;;;" + user.User.Sid.String() + ")")
+	if err != nil {
+		return errors.New("browser sandbox IPC unavailable")
+	}
+	dacl, _, err := descriptor.DACL()
+	if err != nil {
+		return errors.New("browser sandbox IPC unavailable")
+	}
+	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		nil, nil, dacl, nil); err != nil {
+		return errors.New("browser sandbox IPC unavailable")
+	}
+	return nil
 }
 
 func waitForProbeReady(ctx context.Context, path string) bool {
@@ -168,7 +258,7 @@ func newWindowsProcessSandbox() (*windowsProcessSandbox, error) {
 		_ = windows.CloseHandle(job)
 		return nil, errors.New("browser sandbox unavailable")
 	}
-	return &windowsProcessSandbox{job: job, roots: make(map[string]sandboxRoot, 2)}, nil
+	return &windowsProcessSandbox{job: job, roots: make(map[string]sandboxRoot, 2), api: productionWindowsSandboxAPI}, nil
 }
 
 func (set *approvedArtifactSet) rootLaunchPlan(role string, arguments, environment []string) (approvedLaunchPlan, error) {
@@ -222,43 +312,72 @@ func (sandbox *windowsProcessSandbox) startSuspendedRoot(role string, command *e
 		return processIdentity{}, errors.New("browser sandbox process start failed")
 	}
 	assigned := false
-	cleanup := func(cause error) (processIdentity, error) {
+	cleanup := func(cause error, process windows.Handle) (processIdentity, error) {
 		if assigned {
-			ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
-			_, _ = terminateAndWaitJobZero(ctx, sandbox.job)
-			cancel()
-			_ = windows.CloseHandle(sandbox.job)
+			cause = errors.Join(cause, sandbox.cleanupAssignedStart(command, process))
 			sandbox.job = 0
 			sandbox.closed = true
 		} else if command.Process != nil {
 			_ = command.Process.Kill()
+			_ = command.Wait()
 		}
-		_ = command.Wait()
 		return processIdentity{}, cause
 	}
 	process, err := windows.OpenProcess(windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE|
 		windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, uint32(command.Process.Pid))
 	if err != nil {
-		return cleanup(errors.New("browser sandbox process handle failed"))
+		return cleanup(errors.New("browser sandbox process handle failed"), 0)
 	}
-	defer windows.CloseHandle(process)
 	if windows.AssignProcessToJobObject(sandbox.job, process) != nil {
-		return cleanup(errors.New("browser sandbox assignment failed"))
+		closeErr := sandbox.api.closeHandle(process)
+		return cleanup(errors.Join(errors.New("browser sandbox assignment failed"), closeErr), 0)
 	}
 	assigned = true
-	inJob, err := processInJob(process, sandbox.job)
+	inJob, err := sandbox.api.processInJob(process, sandbox.job)
 	if err != nil || !inJob {
-		return cleanup(errors.New("browser sandbox membership failed"))
+		return cleanup(errors.Join(errors.New("browser sandbox membership failed"), err), process)
 	}
-	identity, err := observeSandboxProcess(role, process, uint32(command.Process.Pid), artifact)
+	identity, err := sandbox.api.observe(role, process, uint32(command.Process.Pid), artifact)
 	if err != nil || identity.ParentPID != os.Getpid() {
-		return cleanup(errors.New("browser sandbox process identity failed"))
+		return cleanup(errors.Join(errors.New("browser sandbox process identity failed"), err), process)
 	}
-	if err := resumeSandboxPrimaryThread(uint32(command.Process.Pid)); err != nil {
-		return cleanup(errors.New("browser sandbox resume failed"))
+	if err := sandbox.api.resume(uint32(command.Process.Pid)); err != nil {
+		return cleanup(errors.Join(errors.New("browser sandbox resume failed"), err), process)
+	}
+	if err := sandbox.api.closeHandle(process); err != nil {
+		return cleanup(errors.New("browser sandbox process handle close failed"), process)
 	}
 	sandbox.roots[role] = sandboxRoot{command: command, identity: identity}
 	return identity, nil
+}
+
+func (sandbox *windowsProcessSandbox) cleanupAssignedStart(command *exec.Cmd, process windows.Handle) error {
+	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+	defer cancel()
+	_, jobZeroErr := terminateAndWaitJobZero(ctx, sandbox.job, sandbox.api)
+	jobCloseErr := sandbox.api.closeHandle(sandbox.job)
+	if jobCloseErr != nil {
+		jobCloseErr = errors.Join(jobCloseErr, windows.CloseHandle(sandbox.job))
+	}
+	waitErr := sandbox.api.waitProcess(ctx, process)
+	if waitErr != nil {
+		waitErr = errors.Join(waitErr, waitSandboxProcess(ctx, process))
+	}
+	var reapErr error
+	if waitErr == nil {
+		reapErr = command.Wait()
+		var exitError *exec.ExitError
+		if errors.As(reapErr, &exitError) || errors.Is(reapErr, os.ErrProcessDone) {
+			reapErr = nil
+		}
+	} else if command.Process != nil {
+		reapErr = command.Process.Release()
+	}
+	processCloseErr := sandbox.api.closeHandle(process)
+	if processCloseErr != nil {
+		processCloseErr = errors.Join(processCloseErr, windows.CloseHandle(process))
+	}
+	return errors.Join(jobZeroErr, jobCloseErr, waitErr, reapErr, processCloseErr)
 }
 
 func (sandbox *windowsProcessSandbox) close(ctx context.Context) cleanupReceipt {
@@ -276,24 +395,27 @@ func (sandbox *windowsProcessSandbox) close(ctx context.Context) cleanupReceipt 
 	}
 	sandbox.mu.Unlock()
 
-	accounting, zeroErr := terminateAndWaitJobZero(ctx, job)
-	closeErr := windows.CloseHandle(job)
+	accounting, zeroErr := terminateAndWaitJobZero(ctx, job, sandbox.api)
+	closeErr := sandbox.api.closeHandle(job)
+	if closeErr != nil {
+		closeErr = errors.Join(closeErr, windows.CloseHandle(job))
+	}
 	waitErr := waitSandboxRoots(ctx, roots)
 	return cleanupReceipt{AllExited: zeroErr == nil && closeErr == nil && waitErr == nil,
 		ProcessCount: int(accounting.TotalProcesses)}
 }
 
-func terminateAndWaitJobZero(ctx context.Context, job windows.Handle) (jobAccounting, error) {
+func terminateAndWaitJobZero(ctx context.Context, job windows.Handle, api windowsSandboxAPI) (jobAccounting, error) {
 	if job == 0 {
 		return jobAccounting{}, errors.New("browser sandbox job unavailable")
 	}
-	if err := windows.TerminateJobObject(job, 97); err != nil {
-		return jobAccounting{}, errors.New("browser sandbox termination failed")
+	if err := api.terminate(job, 97); err != nil {
+		return jobAccounting{}, errors.Join(errors.New("browser sandbox termination failed"), err)
 	}
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		accounting, err := queryJobAccounting(job)
+		accounting, err := api.query(job)
 		if err != nil {
 			return jobAccounting{}, err
 		}
@@ -342,6 +464,26 @@ func waitSandboxRoot(command *exec.Cmd) error {
 		return nil
 	}
 	return errors.New("browser sandbox process wait failed")
+}
+
+func waitSandboxProcess(ctx context.Context, process windows.Handle) error {
+	for {
+		result, err := windows.WaitForSingleObject(process, 10)
+		if err != nil {
+			return errors.New("browser sandbox process wait failed")
+		}
+		if result == windows.WAIT_OBJECT_0 {
+			return nil
+		}
+		if result != uint32(windows.WAIT_TIMEOUT) {
+			return errors.New("browser sandbox process wait failed")
+		}
+		select {
+		case <-ctx.Done():
+			return errors.New("browser sandbox process wait timed out")
+		default:
+		}
+	}
 }
 
 func processInJob(process, job windows.Handle) (bool, error) {
