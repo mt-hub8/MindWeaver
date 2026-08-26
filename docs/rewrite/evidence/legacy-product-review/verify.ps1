@@ -43,15 +43,28 @@ foreach ($row in $rows) {
     if ($row.path -notmatch '^[a-zA-Z0-9._/-]+$' -or $row.path.Contains("..")) {
         throw "unsafe review path"
     }
-    $fullPath = [IO.Path]::GetFullPath((Join-Path $repositoryRoot $row.path))
-    if (-not $fullPath.StartsWith($repositoryRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
-        throw "review path escaped repository"
+    $processInfo = [Diagnostics.ProcessStartInfo]::new()
+    $processInfo.FileName = "git"
+    $processInfo.UseShellExecute = $false
+    $processInfo.RedirectStandardOutput = $true
+    $processInfo.RedirectStandardError = $true
+    foreach ($argument in @("-C", $repositoryRoot, "cat-file", "blob", "$($row.baseline):$($row.path)")) {
+        [void]$processInfo.ArgumentList.Add($argument)
     }
-    if (-not [IO.File]::Exists($fullPath)) {
-        throw "reviewed file is missing: $($row.path)"
+    $process = [Diagnostics.Process]::Start($processInfo)
+    $buffer = [IO.MemoryStream]::new()
+    try {
+        $process.StandardOutput.BaseStream.CopyTo($buffer)
+        $standardError = $process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) {
+            throw "reviewed blob is unavailable at baseline"
+        }
+        $bytes = $buffer.ToArray()
+    } finally {
+        $buffer.Dispose()
+        $process.Dispose()
     }
-
-    $bytes = [IO.File]::ReadAllBytes($fullPath)
     $digest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant()
     $lines = 0
     foreach ($value in $bytes) {
