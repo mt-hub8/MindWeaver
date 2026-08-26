@@ -2,7 +2,7 @@
 
 ## Frozen surface
 
-- Baseline: `9bae471a113e89de87332a07994933ad62f149cf`
+- Baseline: `fceb054df1e7f186346e9f795932b9fa0c6a226a`
 - Machine-readable evidence: [`go-core-boundary.csv`](./go-core-boundary.csv)
 - Verification: `pwsh -NoProfile -File docs/rewrite/evidence/legacy-product-review/verify.ps1 -Manifest docs/rewrite/evidence/legacy-product-review/go-core-boundary.csv`
 
@@ -57,8 +57,9 @@ executable/browser/fake-Ollama qualification is specified in
 OpenAPI must continue to match real handlers, problem/status mappings, and the
 checked CORE surface. The production-surface contract explicitly rejects
 Agent, Batch, Evaluation, KBHealth, Memory, Notification, embedding/reindex,
-rerank, and vector package/route segments. Commit `9bae471` closes the missing
-Batch/KBHealth absence checks; it does not create those features.
+rerank, and vector package/route segments. Commit `fceb054` closes the missing
+Batch/KBHealth checks and binds each shipped command's exact package, module,
+source, embed, and fresh-SQLite surface; it does not create those features.
 
 ## DROP / absent
 
