@@ -25,6 +25,9 @@ import (
 const qualificationPDFHelperEnvironment = "MWQ_KNOWLEDGE_PDF_HELPER"
 
 func TestMain(m *testing.M) {
+	if os.Getenv(doc001ChildModeEnvironment) == "1" {
+		os.Exit(m.Run())
+	}
 	helperRoot, err := os.MkdirTemp("", "mindweaver-knowledge-pdf-helper-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "knowledge qualification: create PDF helper directory:", err)
@@ -204,6 +207,7 @@ type knowledgeUploadCase struct {
 
 type knowledgeRuntime struct {
 	vault    *vault.Vault
+	blobs    *blob.Store
 	database *store.Store
 	service  *workbench.Service
 	paths    vault.Paths
@@ -244,7 +248,7 @@ func openKnowledgeRuntime(t *testing.T, ctx context.Context, root string) *knowl
 		_ = openedVault.Close()
 		t.Fatal(err)
 	}
-	opened := &knowledgeRuntime{vault: openedVault, database: database, service: service, paths: paths}
+	opened := &knowledgeRuntime{vault: openedVault, blobs: blobs, database: database, service: service, paths: paths}
 	t.Cleanup(func() {
 		if err := opened.Close(); err != nil {
 			t.Errorf("close knowledge runtime: %v", err)
