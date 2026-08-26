@@ -30,7 +30,7 @@ traceability without expanding the first Go release.
 | COL-001 | Membership is true many-to-many and empty scope stays empty | CORE | YES | NOT_IMPLEMENTED | SQLite/API multi-collection and empty-scope integration tests |
 | RET-001 | Simple SQLite FTS returns only active documents in the requested collection scope | CORE | YES | NOT_IMPLEMENTED | lifecycle, empty-scope and cross-collection leakage corpus |
 | RET-002 | Future fusion/rerank/expansion stages preserve score provenance and fingerprint | LATER | NO | NOT_IMPLEMENTED | deterministic conformance suite before promotion |
-| RET-003 | Core Chinese SQLite FTS tokenization and bounded result quality are measured | CORE | YES | NOT_IMPLEMENTED | representative lexical corpus and latency report |
+| RET-003 | Core Chinese SQLite FTS tokenization and bounded result quality are measured | CORE | YES | BLOCKED | `v2/qualification/knowledge/core_keyword_boundary_test.go`; `v2/testdata/qualification/knowledge/core-keyword-boundary.d61a.v1.json`; `docs/rewrite/evidence/core-keyword-boundary-d61a.md` |
 | EMB-001 | A future embedding/vector slice proves model, capacity, lifecycle and backend conformance | LATER | NO | NOT_IMPLEMENTED | representative corpus and backend suite before promotion |
 | PRV-001 | Each message records the chosen versioned, non-secret loopback Ollama configuration; no credential surface exists | CORE | YES | NOT_IMPLEMENTED | configure/probe/invoke/restart source-binding integration test |
 | PRV-002 | Ollama dials only a fixed literal loopback address and rejects DNS names, ambient proxy, and redirect authority changes | CORE | YES | NOT_IMPLEMENTED | DNS-name rejection, resolver canary, redirect and proxy suite |
