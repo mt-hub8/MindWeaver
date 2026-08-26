@@ -346,9 +346,11 @@ func validBLOB001Nonce(value string) bool {
 func blob001CleanEnvironment(environment []string) []string {
 	clean := make([]string, 0, len(environment))
 	for _, item := range environment {
-		if !strings.HasPrefix(item, "MWQ_BLOB001_") {
-			clean = append(clean, item)
+		key, _, _ := strings.Cut(item, "=")
+		if strings.HasPrefix(strings.ToUpper(key), "MWQ_BLOB001_") {
+			continue
 		}
+		clean = append(clean, item)
 	}
 	return clean
 }
@@ -557,9 +559,11 @@ func TestBLOB001PublishedOrphanChildRejectsUntrustedEnvironment(t *testing.T) {
 	}
 	run := func(t *testing.T, directory string, environment []string, forbidden ...string) {
 		t.Helper()
-		command := exec.Command(executable, "-test.run=^TestBLOB001PublishedOrphanForcedTerminationChild$")
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+		defer cancel()
+		command := exec.CommandContext(ctx, executable, "-test.run=^TestBLOB001PublishedOrphanForcedTerminationChild$")
 		command.Dir = directory
-		command.Env = append(blob001CleanEnvironment(os.Environ()), environment...)
+		command.Env = environment
 		command.Stdout = io.Discard
 		command.Stderr = io.Discard
 		if err := command.Run(); err != nil {
@@ -573,7 +577,7 @@ func TestBLOB001PublishedOrphanChildRejectsUntrustedEnvironment(t *testing.T) {
 	}
 	t.Run("normal entry", func(t *testing.T) {
 		guard := t.TempDir()
-		run(t, guard, nil)
+		run(t, guard, blob001CleanEnvironment(os.Environ()))
 		if entries, err := os.ReadDir(guard); err != nil || len(entries) != 0 {
 			t.Fatal("BLOB001_NORMAL_CHILD_WROTE_DIRECTORY")
 		}
@@ -582,11 +586,11 @@ func TestBLOB001PublishedOrphanChildRejectsUntrustedEnvironment(t *testing.T) {
 		guard := t.TempDir()
 		vaultPath := filepath.Join(guard, "legacy-vault")
 		markerPath := filepath.Join(guard, "legacy-marker")
-		run(t, guard, []string{
-			blob001LegacyModeEnvironment + "=1",
-			blob001LegacyVaultEnvironment + "=" + vaultPath,
-			blob001LegacyMarkerEnvironment + "=" + markerPath,
-		}, vaultPath, markerPath)
+		run(t, guard, append(blob001CleanEnvironment(os.Environ()),
+			blob001LegacyModeEnvironment+"=1",
+			blob001LegacyVaultEnvironment+"="+vaultPath,
+			blob001LegacyMarkerEnvironment+"="+markerPath,
+		), vaultPath, markerPath)
 	})
 	t.Run("forged current environment", func(t *testing.T) {
 		guard := t.TempDir()
@@ -594,12 +598,30 @@ func TestBLOB001PublishedOrphanChildRejectsUntrustedEnvironment(t *testing.T) {
 		if err := os.Mkdir(sandbox, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		run(t, guard, []string{
-			blob001ChildSandboxEnvironment + "=" + sandbox,
-			blob001ChildNonceEnvironment + "=" + newBLOB001Nonce(t),
-		}, filepath.Join(sandbox, "vault"), filepath.Join(sandbox, "claimed-forged"))
+		run(t, guard, append(blob001CleanEnvironment(os.Environ()),
+			blob001ChildSandboxEnvironment+"="+sandbox,
+			blob001ChildNonceEnvironment+"="+newBLOB001Nonce(t),
+		), filepath.Join(sandbox, "vault"), filepath.Join(sandbox, "claimed-forged"))
 		if entries, err := os.ReadDir(sandbox); err != nil || len(entries) != 0 {
 			t.Fatal("BLOB001_FORGED_CHILD_CHANGED_SANDBOX")
+		}
+	})
+	t.Run("mixed-case inherited environment", func(t *testing.T) {
+		guard := t.TempDir()
+		sandbox := filepath.Join(guard, "authorized-but-not-launched")
+		nonce := newBLOB001Nonce(t)
+		if err := prepareBLOB001Sandbox(sandbox, nonce); err != nil {
+			t.Fatal("BLOB001_SANDBOX_PREPARE_FAILED")
+		}
+		polluted := append(os.Environ(),
+			"mwq_blob001_sandbox="+sandbox,
+			"MwQ_BloB001_NoNcE="+nonce,
+		)
+		run(t, guard, blob001CleanEnvironment(polluted),
+			filepath.Join(sandbox, "vault"), filepath.Join(sandbox, "claimed-"+nonce))
+		entries, err := os.ReadDir(sandbox)
+		if err != nil || len(entries) != 1 || entries[0].Name() != blob001CapabilityName {
+			t.Fatal("BLOB001_MIXED_CASE_ENVIRONMENT_CLAIMED_CAPABILITY")
 		}
 	})
 }
