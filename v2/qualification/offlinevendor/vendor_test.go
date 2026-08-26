@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -128,16 +129,75 @@ func TestVendoredModuleAndLicenseContract(t *testing.T) {
 	assertVendorTreeIdentity(t, filepath.Join(root, "vendor"))
 }
 
+func TestVendorWhitespacePolicyDoesNotMaskFirstPartyErrors(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal("Git is required by the tracked-only extraction gate")
+	}
+	root := moduleRoot(t)
+	repository := t.TempDir()
+	attributes := readRegularFile(t, filepath.Join(root, ".gitattributes"), 1<<20)
+	writeTestFile(t, filepath.Join(repository, ".gitattributes"), attributes)
+	writeTestFile(t, filepath.Join(repository, "firstparty.txt"), []byte("clean\n"))
+	writeTestFile(t, filepath.Join(repository, "vendor", "upstream.txt"), []byte("clean\n"))
+	runGit(t, git, repository, true, "init", "--quiet")
+	runGit(t, git, repository, true, "add", ".gitattributes", "firstparty.txt", "vendor/upstream.txt")
+
+	writeTestFile(t, filepath.Join(repository, "vendor", "upstream.txt"), []byte("upstream trailing space \n"))
+	output := runGit(t, git, repository, true, "diff", "--check", "--", "vendor/upstream.txt")
+	if len(output) != 0 {
+		t.Fatalf("canonical vendor whitespace produced diagnostics: %q", output)
+	}
+
+	writeTestFile(t, filepath.Join(repository, "firstparty.txt"), []byte("first-party trailing space \n"))
+	output = runGit(t, git, repository, false, "diff", "--check", "--", "firstparty.txt")
+	if !strings.Contains(string(output), "firstparty.txt") ||
+		!strings.Contains(string(output), "trailing whitespace") ||
+		strings.Contains(string(output), "vendor/") {
+		t.Fatalf("first-party whitespace diagnostic = %q", output)
+	}
+}
+
+func runGit(t *testing.T, git, directory string, wantSuccess bool, arguments ...string) []byte {
+	t.Helper()
+	command := exec.Command(git, arguments...)
+	command.Dir = directory
+	command.Env = append(os.Environ(),
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL="+filepath.Join(directory, "missing-global-config"),
+		"GIT_CONFIG_COUNT=0",
+		"GIT_CONFIG_PARAMETERS=",
+	)
+	output, err := command.CombinedOutput()
+	if wantSuccess && err != nil {
+		t.Fatalf("git %v failed: %v: %s", arguments, err, output)
+	}
+	if !wantSuccess && err == nil {
+		t.Fatalf("git %v unexpectedly succeeded: %s", arguments, output)
+	}
+	return output
+}
+
+func writeTestFile(t *testing.T, filename string, contents []byte) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(filename), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filename, contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func assertRepositoryAttributes(t *testing.T, filename string) {
 	t.Helper()
 	contents := readRegularFile(t, filename, 1<<20)
 	required := map[string]int{
-		"*.sql text eol=lf":  0,
-		"*.json text eol=lf": 0,
-		"*.css text eol=lf":  0,
-		"*.js text eol=lf":   0,
-		"*.html text eol=lf": 0,
-		"vendor/** -text":    0,
+		"*.sql text eol=lf":           0,
+		"*.json text eol=lf":          0,
+		"*.css text eol=lf":           0,
+		"*.js text eol=lf":            0,
+		"*.html text eol=lf":          0,
+		"vendor/** -text -whitespace": 0,
 	}
 	for _, line := range strings.Split(strings.ReplaceAll(string(contents), "\r\n", "\n"), "\n") {
 		line = strings.TrimSpace(line)

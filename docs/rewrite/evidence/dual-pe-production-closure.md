@@ -1,13 +1,77 @@
 # Dual-PE production dependency closure
 
-Status: **QUALIFIED; integrated source contract synchronized**
+Status: **CUT-002 candidate qualified on its frozen branch; not integrated and
+not release-qualified**
 
-## Current integration refresh
+## CUT-002 vendored extraction candidate
 
-The original qualification below remains the immutable evidence for baseline
-`d61a158`. After integrating the reviewed backup, RAG, browser-test, knowledge,
-and dual-PE slices, the same offline gate was rerun against the current Go
-product tree. The refreshed exact values are:
+This candidate is based on
+`8aadf6085436dac4c7081dda18c8274c0d6b61e8`. Its implementation commits are
+`c2871b1` (canonical `go mod vendor` output) and `583536d` (empty-cache
+extraction gates); the selection chain also includes this follow-up whitespace
+policy and evidence commit. It does not refresh to, merge, or claim the identity
+of any later controller branch. The final follow-up hash is reported by the
+handoff rather than self-referenced inside its own contents.
+
+The frozen build uses Go 1.27.0 on Windows/amd64 with `CGO_ENABLED=0` while
+`go.mod` remains at `go 1.26`. Every module-resolving Go subprocess is forced to
+`-mod=vendor` under the offline controls, and every shipped build uses
+`-trimpath -buildvcs=false`. `GOPROXY`, `GOSUMDB`, toolchain resolution,
+workspaces, and VCS lookup are disabled. Each CI invocation creates new empty
+`GOMODCACHE`, `GOCACHE`, and `GOTMPDIR` directories and rejects any module-cache
+write.
+
+The resulting exact identities are:
+
+- `mindweaver.exe`: 77 first-party source files,
+  `a69b2533e24a16b96b70e3cfe22bb91968cc81b3e1694b0cf1f87e65ac0e571e`;
+  PE SHA-256
+  `019c1cdf4f2229f1f26f4dbfd29799f7e63810d9428b3d6c1397e5fad2bf9486`
+- `mindweaver-pdf.exe`: 5 first-party source files,
+  `0bec9ddde1ea8778ffc3c20740ed55080d7ef0b537cfd070a2d563ccc5a087c6`;
+  PE SHA-256
+  `a2a6a04b4ade9367aab6cce35e9a3c87351f9c8fabd33d9ea2fe108f7e732241`
+- deduplicated dual-PE union: 81 first-party source files,
+  `8cd73f05f76afcb3edeb9692fc6d0620b22913097afc01680d8824a24ec8e434`
+
+Vendored buildinfo deliberately carries exact module path and version with an
+empty `Sum`. The independent vendor contract restores the trust chain by
+binding all eight module `h1` values from `go.sum`, the exact 37-package
+`vendor/modules.txt` declaration, the canonical 698-file vendor tree
+(`f935ae79254d0fd1f5f32f4491f0b1f1e28e22fc088cef262bde2e860cf9c254`),
+and all eight dependency `LICENSE` files plus `golang.org/x/sys/PATENTS`.
+Module replacements and unreviewed legal files fail closed. Vendor directories
+are excluded from first-party package, main-package, source-file, and union
+statistics.
+
+Git whitespace diagnostics exempt only the byte-preserved canonical vendor
+tree. A temporary-repository regression test proves the same trailing-space
+mutation is ignored under `vendor/` but still makes `git diff --check` fail for
+a first-party file; no upstream vendor byte is rewritten to satisfy that gate.
+
+At exact implementation checkpoint `583536d`, both supported repository layouts
+were exercised with the same Windows toolchain and offline controls:
+
+- monorepo `HEAD:v2` tracked-only archive: full tests, vet, dual-PE builds, and
+  empty-module-cache assertion **PASS**;
+- locally cloned extracted repository-root `HEAD` tracked-only archive: the
+  same complete gate **PASS**.
+
+Both inner archives were generated only from clean committed trees and rejected
+`.git` metadata. The follow-up commit does not change production or vendor
+payload bytes; its new whitespace-policy regression passed focused test and vet
+in the monorepo worktree. Thus the two full layout runs remain evidence for the
+unchanged build/extraction inputs, while the new regression is not represented
+as having run in those earlier archives. These results qualify the candidate's
+build/extraction boundary; they do not close the project LICENSE, SBOM, MSI,
+signing, or clean-VM release blockers.
+
+## Earlier non-vendored integration refresh
+
+The original qualification below remains immutable historical evidence for
+baseline `d61a158`. A later non-vendored integration reran it after the reviewed
+backup, RAG, browser-test, knowledge, and dual-PE slices. Its then-current exact
+values were:
 
 - `mindweaver.exe`: 77 source files,
   `3b1f0355cf4498f0b79c7cb1fe9644eb7741a6bbabc8fe4056fd38f926353ad0`;
@@ -20,12 +84,13 @@ product tree. The refreshed exact values are:
 - deduplicated dual-PE union: 81 source files,
   `3efba79e422531a2afcce6d0b311b847254455b108a3a41a86e8240b7cf8e6e4`
 
-`openapi/v1` now binds the refreshed `mindweaver.exe` source manifest. Its
+At that integration point, `openapi/v1` bound the refreshed `mindweaver.exe`
+source manifest. Its
 production discovery policy also classifies `tests/browser/runner` as an
 evidence-only main package, so that qualification code cannot silently become
 a shipped command. Focused OpenAPI and dual-PE tests pass on the integrated
 tree. The historical CI failure and hashes retained below describe only the
-original `d61a158` run; they are not the current repository status.
+original `d61a158` run; they are not the current CUT-002 candidate status.
 
 ## Bound inputs
 
@@ -139,7 +204,7 @@ fail-closed rather than being reported as PASS.
 
 ## Historical baseline findings
 
-- **Resolved in the current integration:** the committed `mindweaver`
+- **Resolved at that historical integration point:** the committed `mindweaver`
   production source-manifest digest has been refreshed, and the full CI and
   standalone verification are rerun before accepting each new production
   source identity.

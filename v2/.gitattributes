@@ -11,4 +11,4 @@
 *.html text eol=lf
 *.md text eol=lf
 *.ps1 text eol=crlf
-vendor/** -text
+vendor/** -text -whitespace

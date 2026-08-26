@@ -65,8 +65,8 @@ only in the URL fragment and exchanged for an in-memory session. Press
 To exercise PDF ingestion from built artifacts, place both binaries together:
 
 ```powershell
-& $env:MW_GO build -o dist\mindweaver.exe ./cmd/mindweaver
-& $env:MW_GO build -o dist\mindweaver-pdf.exe ./cmd/mindweaver-pdf
+& $env:MW_GO build -mod=vendor -trimpath -buildvcs=false -o dist\mindweaver.exe ./cmd/mindweaver
+& $env:MW_GO build -mod=vendor -trimpath -buildvcs=false -o dist\mindweaver-pdf.exe ./cmd/mindweaver-pdf
 ```
 
 Relative Vault paths are resolved next to the configuration file so the same
@@ -85,11 +85,18 @@ MW_GO=/path/to/go ./scripts/ci.sh
 MW_GO=/path/to/go ./scripts/verify-standalone.sh
 ```
 
-The scripts format-check, test, vet, and build. A passing development gate is
-necessary evidence, not release qualification. Module downloads are disabled
-in these verification commands, so dependencies must already be present in the
-Go module cache. The nested `.github/workflows/ci.yml` becomes active after
-`v2/` is extracted into its own repository.
+The scripts format-check, test, vet, and build with the exact Go 1.27.0
+toolchain while `go.mod` retains its Go 1.26 language/module directive. They
+force `-mod=vendor`, disable module, checksum, VCS, workspace, and toolchain
+network resolution, and create new empty `GOMODCACHE`, `GOCACHE`, and
+`GOTMPDIR` directories for every run. No pre-populated module cache is an input.
+
+Standalone verification accepts either this `v2/` directory in the monorepo or
+the root of an extracted repository. In both layouts it requires a clean
+committed tree and builds a tracked-only `git archive` (`HEAD:v2` or `HEAD`),
+which contains no `.git` metadata. The nested `.github/workflows/ci.yml`
+becomes active after extraction and pins Go 1.27.0 explicitly. A passing
+development gate is necessary evidence, not release qualification.
 
 ## Closed local workflow
 
