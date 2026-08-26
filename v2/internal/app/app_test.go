@@ -698,6 +698,97 @@ func TestSecondProcessCannotOpenOwnedVault(t *testing.T) {
 	shutdownTestApp(t, third)
 }
 
+func TestLiveBackupCreateSessionCSRFReplayAndNoRecoveryRoutes(t *testing.T) {
+	root := t.TempDir()
+	application := startTestApp(t, Options{
+		ConfigPath:        filepath.Join(root, "configuration", "mindweaver.v1.json"),
+		FirstRunVaultRoot: "../vault", WorkerInterval: 10 * time.Millisecond,
+		PDFHelperPath: filepath.Join(root, "missing-pdf-helper"),
+	})
+	client := newHTTPClient(t)
+	session := exchangeApp(t, client, application)
+	backupParent := filepath.Join(root, "backups")
+	if err := os.Mkdir(backupParent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(backupParent, "live-backup")
+	body, err := json.Marshal(struct {
+		Destination string `json:"destination"`
+	}{destination})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encodedDestination, err := json.Marshal(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicateJSON := appRequest(t, application, session, http.MethodPost, "/api/v1/backups",
+		strings.NewReader(`{"destination":`+string(encodedDestination)+`,"destination":`+string(encodedDestination)+`}`))
+	duplicateJSON.Header.Set("Content-Type", "application/json")
+	duplicateJSON.Header.Set("Idempotency-Key", "duplicate-json")
+	if result := do(t, client, duplicateJSON); result.StatusCode != http.StatusBadRequest || bytes.Contains(result.body, []byte(destination)) {
+		t.Fatalf("duplicate JSON status/body = %d %q", result.StatusCode, result.body)
+	}
+
+	missingCSRF := appRequest(t, application, session, http.MethodPost, "/api/v1/backups", bytes.NewReader(body))
+	missingCSRF.Header.Del(localhttp.CSRFHeader)
+	missingCSRF.Header.Set("Content-Type", "application/json")
+	missingCSRF.Header.Set("Idempotency-Key", "live-backup-create")
+	if result := do(t, client, missingCSRF); result.StatusCode != http.StatusForbidden {
+		t.Fatalf("missing CSRF status/body = %d %q", result.StatusCode, result.body)
+	}
+
+	create := appRequest(t, application, session, http.MethodPost, "/api/v1/backups", bytes.NewReader(body))
+	create.Header.Set("Content-Type", "application/json")
+	create.Header.Set("Idempotency-Key", "live-backup-create")
+	created := do(t, client, create)
+	if created.StatusCode != http.StatusAccepted || bytes.Contains(created.body, []byte(destination)) {
+		t.Fatalf("create status/body = %d %q", created.StatusCode, created.body)
+	}
+	var accepted backupOperationStatus
+	if err := json.Unmarshal(created.body, &accepted); err != nil || accepted.OperationID == "" {
+		t.Fatalf("accepted backup = %+v, %v", accepted, err)
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	var terminal backupOperationStatus
+	for time.Now().Before(deadline) {
+		result := do(t, client, appRequest(t, application, session, http.MethodGet,
+			"/api/v1/backups/status?operationId="+url.QueryEscape(accepted.OperationID), nil))
+		if result.StatusCode != http.StatusOK || bytes.Contains(result.body, []byte(destination)) {
+			t.Fatalf("status response = %d %q", result.StatusCode, result.body)
+		}
+		if err := json.Unmarshal(result.body, &terminal); err != nil {
+			t.Fatal(err)
+		}
+		if backupTerminal(terminal.State) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if terminal.State != backupStateSucceeded {
+		t.Fatalf("backup terminal status = %+v", terminal)
+	}
+	if _, err := os.Stat(destination); err != nil {
+		t.Fatalf("published backup missing: %v", err)
+	}
+
+	replay := appRequest(t, application, session, http.MethodPost, "/api/v1/backups", bytes.NewReader(body))
+	replay.Header.Set("Content-Type", "application/json")
+	replay.Header.Set("Idempotency-Key", "live-backup-create")
+	replayed := do(t, client, replay)
+	if replayed.StatusCode != http.StatusAccepted || !bytes.Contains(replayed.body, []byte(accepted.OperationID)) {
+		t.Fatalf("replay status/body = %d %q", replayed.StatusCode, replayed.body)
+	}
+
+	for _, forbidden := range []string{"/api/v1/backups/restore", "/api/v1/backups/verify"} {
+		request := appJSONRequest(t, application, session, forbidden, `{}`)
+		if result := do(t, client, request); result.StatusCode != http.StatusNotFound {
+			t.Fatalf("forbidden live route %s status/body = %d %q", forbidden, result.StatusCode, result.body)
+		}
+	}
+}
+
 type httpResult struct {
 	StatusCode int
 	Header     http.Header

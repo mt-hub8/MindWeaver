@@ -36,6 +36,9 @@ func TestEmbeddedClientRefreshesCSRFAndConsumesBoundedSearchPages(t *testing.T) 
 		`answer.limitationCode === "OUTCOME_UNCERTAIN"`, `content.textContent = source.content`,
 		`conversation.pendingAnswer`, `activeConversation.pendingAnswerId`, `askInFlight`, `askOutcomeUncertain`, `generation !== askGeneration`,
 		`remove.dataset.conversationId`, `questionBytes > 1024`, "删除并解除引用",
+		`api("/api/v1/backups"`, `/api/v1/backups/status?operationId=`, `api("/api/v1/backups/cancel"`,
+		`"Idempotency-Key": attempt.key`, `JSON.stringify({ destination: attempt.destination })`,
+		`backupAttempt = null`, `status.state === "needs_attention"`,
 	} {
 		if !strings.Contains(source, contract) {
 			t.Fatalf("embedded product workflow is missing %q", contract)
@@ -71,7 +74,7 @@ func TestEmbeddedClientRefreshesCSRFAndConsumesBoundedSearchPages(t *testing.T) 
 	if !strings.Contains(index.String(), `id="ask-question" maxlength="1024"`) || !strings.Contains(index.String(), "最多 1024 UTF-8 字节") {
 		t.Fatal("embedded Ask form does not expose the search-compatible question byte limit")
 	}
-	for _, id := range []string{`id="active-documents"`, `id="trashed-documents"`, `id="documents-more"`, `id="collections"`, `id="collection-members"`, `id="purges"`, `id="ollama-form"`, `id="conversations"`, `id="ask-form"`, `id="messages"`} {
+	for _, id := range []string{`id="active-documents"`, `id="trashed-documents"`, `id="documents-more"`, `id="collections"`, `id="collection-members"`, `id="purges"`, `id="ollama-form"`, `id="conversations"`, `id="ask-form"`, `id="messages"`, `id="backup-form"`, `id="backup-destination"`, `id="backup-cancel"`} {
 		if !strings.Contains(index.String(), id) {
 			t.Fatalf("embedded shell is missing %s", id)
 		}

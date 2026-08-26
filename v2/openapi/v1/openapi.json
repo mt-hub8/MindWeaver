@@ -385,6 +385,107 @@
         ],
         "type": "object"
       },
+      "BackupCancelRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "$ref": "#/components/schemas/BackupOperationID"
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "type": "object"
+      },
+      "BackupCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "destination": {
+            "description": "Exact absolute path under an existing fixed-local parent. The implementation also enforces a 4096 UTF-8 byte limit and never returns this value.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "destination"
+        ],
+        "type": "object"
+      },
+      "BackupOperationID": {
+        "maxLength": 64,
+        "minLength": 64,
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "BackupOperationStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "artifactCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "blobCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cancelRequested": {
+            "type": "boolean"
+          },
+          "failureCode": {
+            "enum": [
+              "BACKUP_CANCELLED",
+              "BACKUP_CLEANUP_REQUIRED",
+              "BACKUP_CORRUPT",
+              "BACKUP_DESTINATION_INVALID",
+              "BACKUP_DESTINATION_UNSUPPORTED",
+              "BACKUP_DISK_FULL",
+              "BACKUP_FAILED",
+              "BACKUP_PUBLICATION_UNCERTAIN",
+              "BACKUP_RESIDUE_CONFLICT",
+              "BACKUP_TARGET_EXISTS"
+            ],
+            "type": "string"
+          },
+          "operationId": {
+            "$ref": "#/components/schemas/BackupOperationID"
+          },
+          "phase": {
+            "enum": [
+              "accepted",
+              "attention",
+              "complete",
+              "creating",
+              "reconciling"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "accepted",
+              "canceled",
+              "failed",
+              "needs_attention",
+              "running",
+              "succeeded"
+            ],
+            "type": "string"
+          },
+          "totalBytes": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "artifactCount",
+          "blobCount",
+          "cancelRequested",
+          "operationId",
+          "phase",
+          "state",
+          "totalBytes"
+        ],
+        "type": "object"
+      },
       "CSRFTokenResponse": {
         "additionalProperties": false,
         "properties": {
@@ -1748,6 +1849,164 @@
         "x-mindweaver-csrf": "required",
         "x-mindweaver-optimistic-control": "expectedRevision in strict JSON body; ETag and If-Match are unsupported",
         "x-mindweaver-retry-safety": "durable Idempotency-Key plus request hash",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/backups": {
+      "post": {
+        "description": "Accept one in-process backup Create. The destination is never overwritten and is never returned. Recovery restore and verify operations are intentionally absent from the live API.",
+        "operationId": "createBackup",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupCreateRequest"
+              }
+            }
+          },
+          "description": "Strict JSON; duplicate, unknown, mis-cased, trailing, relative, remote, cloud, hot-plug, reparse, and active-Vault-overlap destinations are rejected.",
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupOperationStatus"
+                }
+              }
+            },
+            "description": "Backup creation was accepted or the same in-process idempotent operation was replayed. Completion is read through the status operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Create one immutable local backup",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-retry-safety": "process-memory Idempotency-Key plus exact destination; existing valid immutable destination converges a lost response without overwrite",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/backups/cancel": {
+      "post": {
+        "operationId": "cancelBackup",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupCancelRequest"
+              }
+            }
+          },
+          "description": "Strict JSON containing only the process-local operation identifier.",
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupOperationStatus"
+                }
+              }
+            },
+            "description": "Cancellation is requested. A publication that already won may still converge to succeeded or needs_attention."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          }
+        },
+        "summary": "Request cancellation of the active backup",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-retry-safety": "idempotent cancellation request against one process-local operation identifier",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/backups/status": {
+      "get": {
+        "operationId": "getBackupStatus",
+        "parameters": [
+          {
+            "description": "Process-local backup operation identifier returned by Create.",
+            "in": "query",
+            "name": "operationId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/BackupOperationID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupOperationStatus"
+                }
+              }
+            },
+            "description": "Bounded path-free status for the current process-local backup operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          }
+        },
+        "summary": "Read current backup status",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
         "x-mindweaver-session": "required"
       }
     },

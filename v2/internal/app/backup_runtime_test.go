@@ -176,6 +176,39 @@ func TestBackupRuntimeTreatsVerifiedExistingBackupAsLostResponse(t *testing.T) {
 	}
 }
 
+func TestBackupRuntimeNeverOverwritesExistingInvalidTarget(t *testing.T) {
+	parent := t.TempDir()
+	destination := filepath.Join(parent, "existing-target")
+	if err := os.Mkdir(destination, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	canary := filepath.Join(destination, "do-not-overwrite")
+	if err := os.WriteFile(canary, []byte("existing"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var creates atomic.Int64
+	engine := &backupEngineStub{
+		verify: func(context.Context, string, backup.VerifyOptions) (backup.Outcome, error) {
+			return backup.Outcome{Failure: backup.FailureCorrupt}, errors.New("invalid existing target")
+		},
+		create: func(context.Context, string) (backup.Manifest, error) {
+			creates.Add(1)
+			return backup.Manifest{}, nil
+		},
+	}
+	runtime := newBackupRuntimeForTest(t, engine)
+	accepted, err := runtime.Start(t.Context(), "existing-target", destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := waitBackup(t, runtime, accepted.OperationID)
+	contents, readErr := os.ReadFile(canary)
+	if status.State != backupStateFailed || status.FailureCode != "BACKUP_TARGET_EXISTS" ||
+		creates.Load() != 0 || readErr != nil || string(contents) != "existing" {
+		t.Fatalf("existing target status = %+v, creates=%d canary=%q error=%v", status, creates.Load(), contents, readErr)
+	}
+}
+
 func TestBackupRuntimeConvergesOwnedResidueBeforeCreate(t *testing.T) {
 	destination := filepath.Join(t.TempDir(), "after-forced-exit")
 	residue := backup.Residue{

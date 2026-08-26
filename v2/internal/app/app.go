@@ -198,7 +198,7 @@ func Start(ctx context.Context, options Options) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("app: initialize backup coordinator: %w", err)
 	}
-	backupScratch, err := defaultBackupScratch()
+	backupScratch, err := defaultBackupScratch(paths.Root)
 	if err != nil {
 		_ = backupCoordinator.Close()
 		return nil, err
@@ -223,7 +223,7 @@ func Start(ctx context.Context, options Options) (*App, error) {
 	if err := webui.Register(router); err != nil {
 		return nil, err
 	}
-	api := newAPI(service, lifecycleService, worker, ragRuntime, evidence, pdfReady)
+	api := newAPI(service, lifecycleService, worker, ragRuntime, backupRuntime, evidence, pdfReady)
 	if err := api.Register(router); err != nil {
 		return nil, err
 	}

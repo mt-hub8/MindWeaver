@@ -94,23 +94,30 @@ type lifecycleAPI interface {
 	ListPurges(context.Context, int, *store.DocumentPurgeCursor) (store.DocumentPurgePage, error)
 }
 
+type backupAPI interface {
+	Start(context.Context, string, string) (backupOperationStatus, error)
+	Status(string) (backupOperationStatus, error)
+	Cancel(string) (backupOperationStatus, error)
+}
+
 type API struct {
 	service   workbenchAPI
 	lifecycle lifecycleAPI
 	worker    *ingestionWorker
 	rag       *ragRuntime
+	backups   backupAPI
 	startup   StartupEvidence
 	pdfReady  bool
 }
 
-func newAPI(service workbenchAPI, lifecycleService lifecycleAPI, worker *ingestionWorker, ragRuntime *ragRuntime, startup StartupEvidence, pdfReady bool) *API {
-	return &API{service: service, lifecycle: lifecycleService, worker: worker, rag: ragRuntime, startup: startup, pdfReady: pdfReady}
+func newAPI(service workbenchAPI, lifecycleService lifecycleAPI, worker *ingestionWorker, ragRuntime *ragRuntime, backups backupAPI, startup StartupEvidence, pdfReady bool) *API {
+	return &API{service: service, lifecycle: lifecycleService, worker: worker, rag: ragRuntime, backups: backups, startup: startup, pdfReady: pdfReady}
 }
 
 // Register installs only fixed endpoint paths. IDs are query/body values, not
 // path templates, so localhttp can seal and audit the complete route table.
 func (api *API) Register(router *localhttp.Router) error {
-	if api == nil || api.service == nil || api.lifecycle == nil || api.worker == nil || api.rag == nil || router == nil {
+	if api == nil || api.service == nil || api.lifecycle == nil || api.worker == nil || api.rag == nil || api.backups == nil || router == nil {
 		return errors.New("app: invalid API dependencies")
 	}
 	routes := []struct {
@@ -120,6 +127,9 @@ func (api *API) Register(router *localhttp.Router) error {
 	}{
 		{http.MethodGet, apiPrefix + "/runtime", api.runtime},
 		{http.MethodGet, apiPrefix + "/diagnostics", api.diagnostics},
+		{http.MethodPost, apiPrefix + "/backups", api.createBackup},
+		{http.MethodGet, apiPrefix + "/backups/status", api.backupStatus},
+		{http.MethodPost, apiPrefix + "/backups/cancel", api.cancelBackup},
 		{http.MethodPost, apiPrefix + "/documents/upload", api.upload},
 		{http.MethodGet, apiPrefix + "/documents", api.documents},
 		{http.MethodPost, apiPrefix + "/documents/retry-ingestion", api.retryDocumentIngestion},
@@ -152,6 +162,72 @@ func (api *API) Register(router *localhttp.Router) error {
 		}
 	}
 	return nil
+}
+
+func (api *API) createBackup(response http.ResponseWriter, request *http.Request) {
+	if !noUnexpectedQuery(request) {
+		api.problem(response, request, transport.CodeInvalidArgument, "创建备份不能包含查询参数。")
+		return
+	}
+	idempotency, ok := singleHeader(request.Header, "Idempotency-Key")
+	if !ok || !validOpaque(idempotency, maxBackupIdempotencyBytes) {
+		api.problem(response, request, transport.CodeInvalidArgument, "Idempotency-Key 必须是 1 到 256 字节的非空值。")
+		return
+	}
+	var input struct {
+		Destination string `json:"destination"`
+	}
+	if err := decodeStrictJSON(request, &input); err != nil || !validAbsoluteBackupPath(input.Destination) {
+		api.problem(response, request, transport.CodeInvalidArgument, "备份目标必须是已有固定本地盘目录下的新绝对路径。")
+		return
+	}
+	status, err := api.backups.Start(request.Context(), idempotency, input.Destination)
+	if err != nil {
+		code, detail := classifyBackupControlError(err)
+		api.problem(response, request, code, detail)
+		return
+	}
+	writeJSON(response, http.StatusAccepted, status)
+}
+
+func (api *API) backupStatus(response http.ResponseWriter, request *http.Request) {
+	if !noUnexpectedQuery(request, "operationId") {
+		api.problem(response, request, transport.CodeInvalidArgument, "备份状态查询包含未知参数。")
+		return
+	}
+	operationID, ok := oneQuery(request, "operationId")
+	if !ok || !validBackupOperationID(operationID) {
+		api.problem(response, request, transport.CodeInvalidArgument, "必须提供有效的备份 operationId。")
+		return
+	}
+	status, err := api.backups.Status(operationID)
+	if err != nil {
+		code, detail := classifyBackupControlError(err)
+		api.problem(response, request, code, detail)
+		return
+	}
+	writeJSON(response, http.StatusOK, status)
+}
+
+func (api *API) cancelBackup(response http.ResponseWriter, request *http.Request) {
+	if !noUnexpectedQuery(request) {
+		api.problem(response, request, transport.CodeInvalidArgument, "取消备份不能包含查询参数。")
+		return
+	}
+	var input struct {
+		OperationID string `json:"operationId"`
+	}
+	if err := decodeStrictJSON(request, &input); err != nil || !validBackupOperationID(input.OperationID) {
+		api.problem(response, request, transport.CodeInvalidArgument, "取消备份必须包含有效且唯一的 operationId。")
+		return
+	}
+	status, err := api.backups.Cancel(input.OperationID)
+	if err != nil {
+		code, detail := classifyBackupControlError(err)
+		api.problem(response, request, code, detail)
+		return
+	}
+	writeJSON(response, http.StatusAccepted, status)
 }
 
 func (api *API) runtime(response http.ResponseWriter, request *http.Request) {
@@ -955,6 +1031,23 @@ func classifyError(err error) (transport.ErrorCode, string) {
 		return transport.CodeServiceUnavailable, "操作已取消或超时，请确认状态后重试。"
 	default:
 		return transport.CodeInternal, "本地操作失败；可以在诊断面板检查运行状态。"
+	}
+}
+
+func classifyBackupControlError(err error) (transport.ErrorCode, string) {
+	switch {
+	case errors.Is(err, errBackupDestinationInvalid):
+		return transport.CodeInvalidArgument, "备份目标必须是已有固定本地盘目录下的新绝对路径。"
+	case errors.Is(err, errBackupIdempotencyConflict):
+		return transport.CodeConflict, "该幂等键已经用于不同的备份目标。"
+	case errors.Is(err, errBackupBusy):
+		return transport.CodeConflict, "当前已有一个备份正在运行。"
+	case errors.Is(err, errBackupNotFound):
+		return transport.CodeNotFound, "备份操作不存在或其进程内状态已过期。"
+	case errors.Is(err, errBackupQuiescing):
+		return transport.CodeServiceUnavailable, "应用正在安全关闭，不能接受新的备份。"
+	default:
+		return transport.CodeInternal, "本地备份控制失败；可以在诊断面板检查运行状态。"
 	}
 }
 

@@ -38,6 +38,8 @@
   let currentSearch = null;
   let nextSearchOffset = null;
   let searchGeneration = 0;
+  let backupAttempt = null;
+  let backupGeneration = 0;
   const maxUploadBytes = 4 * 1024 * 1024;
   const byId = (id) => document.getElementById(id);
 
@@ -333,6 +335,91 @@
       target.append(term, description);
     }
   }
+
+  function backupStateText(status) {
+    if (status.state === "succeeded") {
+      return `备份已完成：${status.artifactCount} 个文件，${status.blobCount} 个对象，共 ${status.totalBytes} 字节。`;
+    }
+    if (status.state === "canceled") return "备份已取消；下次使用同一目标时会先收敛受控暂存残留。";
+    if (status.state === "needs_attention") return `备份需要人工确认：${status.failureCode || "BACKUP_FAILED"}。目标不会被覆盖或自动删除。`;
+    if (status.state === "failed") return `备份失败：${status.failureCode || "BACKUP_FAILED"}。`;
+    return status.cancelRequested ? "正在取消备份并安全收敛文件状态。" : `备份状态：${status.phase || status.state}。`;
+  }
+
+  function showBackupStatus(status) {
+    byId("backup-status").textContent = backupStateText(status);
+    const terminal = ["succeeded", "failed", "canceled", "needs_attention"].includes(status.state);
+    byId("backup-cancel").hidden = terminal;
+    byId("backup-cancel").disabled = status.cancelRequested === true;
+    byId("backup-submit").disabled = !terminal;
+    return terminal;
+  }
+
+  async function pollBackup(operationID, generation) {
+    for (;;) {
+      if (generation !== backupGeneration || !backupAttempt || backupAttempt.operationID !== operationID) return;
+      let status;
+      try {
+        status = await api(`/api/v1/backups/status?operationId=${encodeURIComponent(operationID)}`);
+      } catch (error) {
+        if (generation !== backupGeneration) return;
+        byId("backup-status").textContent = `${error.message}；可按同一目标再次提交，客户端会复用原幂等键。`;
+        byId("backup-submit").disabled = false;
+        return;
+      }
+      if (showBackupStatus(status)) return;
+      await new Promise((resolve) => window.setTimeout(resolve, 700));
+    }
+  }
+
+  byId("backup-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const destination = byId("backup-destination").value;
+    if (!backupAttempt) backupAttempt = { key: crypto.randomUUID(), destination, operationID: "" };
+    const attempt = backupAttempt;
+    const generation = ++backupGeneration;
+    byId("backup-submit").disabled = true;
+    byId("backup-status").textContent = "正在受理备份请求。";
+    try {
+      const status = await api("/api/v1/backups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": attempt.key },
+        body: JSON.stringify({ destination: attempt.destination })
+      });
+      if (generation !== backupGeneration || backupAttempt !== attempt) return;
+      attempt.operationID = status.operationId;
+      if (!showBackupStatus(status)) await pollBackup(status.operationId, generation);
+    } catch (error) {
+      if (generation !== backupGeneration || backupAttempt !== attempt) return;
+      byId("backup-status").textContent = `${error.message}；响应不确定时再次提交会复用相同目标与幂等键。`;
+      if (Number.isInteger(error.status) && error.status < 500) backupAttempt = null;
+      byId("backup-submit").disabled = false;
+    }
+  });
+
+  byId("backup-destination").addEventListener("input", () => {
+    if (backupAttempt && byId("backup-destination").value === backupAttempt.destination) return;
+    backupAttempt = null;
+    ++backupGeneration;
+    byId("backup-cancel").hidden = true;
+    byId("backup-submit").disabled = false;
+    byId("backup-status").textContent = "尚未创建备份。";
+  });
+
+  byId("backup-cancel").addEventListener("click", async () => {
+    if (!backupAttempt || !backupAttempt.operationID) return;
+    const attempt = backupAttempt;
+    try {
+      const status = await api("/api/v1/backups/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operationId: attempt.operationID })
+      });
+      showBackupStatus(status);
+    } catch (error) {
+      showToast(error.message);
+    }
+  });
 
   async function pollJob(jobId) {
     const status = byId("upload-progress");

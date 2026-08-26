@@ -204,6 +204,67 @@
       ]
     },
     {
+      "csrf": "required",
+      "idempotencyKey": "required",
+      "method": "POST",
+      "operationId": "createBackup",
+      "path": "/api/v1/backups",
+      "problemStatuses": [
+        400,
+        409,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        202
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "none",
+      "method": "POST",
+      "operationId": "cancelBackup",
+      "path": "/api/v1/backups/cancel",
+      "problemStatuses": [
+        400,
+        404,
+        500
+      ],
+      "session": "required",
+      "successStatuses": [
+        202
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "getBackupStatus",
+      "path": "/api/v1/backups/status",
+      "problemStatuses": [
+        400,
+        404,
+        500
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
       "csrf": "none",
       "idempotencyKey": "none",
       "method": "GET",

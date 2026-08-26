@@ -369,6 +369,7 @@ func assertRouteSurface(t *testing.T, root string, routes []contract.SurfaceRout
 	}
 
 	idempotent := map[string]bool{
+		"createBackup":       true,
 		"uploadDocument":     true,
 		"createCollection":   true,
 		"createConversation": true,
@@ -402,6 +403,7 @@ func extractAPIRoutes(t *testing.T, filename string) []routeIdentity {
 	}
 	handlerOperations := map[string]string{
 		"runtime": "getRuntime", "diagnostics": "getDiagnostics", "upload": "uploadDocument",
+		"createBackup": "createBackup", "backupStatus": "getBackupStatus", "cancelBackup": "cancelBackup",
 		"documents": "listDocuments", "retryDocumentIngestion": "retryDocumentIngestion",
 		"trashDocument": "trashDocument", "restoreDocument": "restoreDocument", "purgeDocument": "purgeDocument",
 		"purgeStatus": "getPurgeStatus", "purges": "listPurges", "job": "getJob", "cancelJob": "cancelJob",
@@ -449,8 +451,8 @@ func extractAPIRoutes(t *testing.T, filename string) []routeIdentity {
 			return false
 		})
 	}
-	if len(result) != 27 {
-		t.Fatalf("extracted %d API routes, want 27", len(result))
+	if len(result) != 30 {
+		t.Fatalf("extracted %d API routes, want 30", len(result))
 	}
 	return result
 }
@@ -1154,5 +1156,5 @@ func ExampleValidateEmbedded() {
 		panic(err)
 	}
 	fmt.Println(len(snapshot.Routes))
-	// Output: 31
+	// Output: 34
 }

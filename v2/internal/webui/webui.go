@@ -137,6 +137,16 @@ var indexTemplate = template.Must(template.New("index").Parse(`<!doctype html>
         <div id="purge-status-result" class="status" role="status" aria-live="polite">可从清理项检查最新状态。</div>
       </section>
 
+      <section class="panel" aria-labelledby="backup-title">
+        <div class="section-head"><div><p class="kicker">本地备份</p><h2 id="backup-title">创建不可覆盖的 Vault 备份</h2></div><button id="backup-cancel" class="secondary" type="button" hidden>取消</button></div>
+        <p class="meta">请输入固定本地盘上、已有父目录下尚不存在的绝对目标路径。这里仅创建备份；恢复与验证只在启动前 recovery 模式提供。</p>
+        <form id="backup-form">
+          <label for="backup-destination">绝对目标路径</label><input id="backup-destination" maxlength="4096" required autocomplete="off" spellcheck="false">
+          <button id="backup-submit" type="submit">创建备份</button>
+        </form>
+        <div id="backup-status" class="status" role="status" aria-live="polite">尚未创建备份。</div>
+      </section>
+
       <section class="panel diagnostics" aria-labelledby="diagnostics-title">
         <div class="section-head"><div><p class="kicker">可恢复性</p><h2 id="diagnostics-title">运行诊断</h2></div><button id="refresh-diagnostics" class="secondary" type="button">重新检查</button></div>
         <dl id="diagnostics"></dl>

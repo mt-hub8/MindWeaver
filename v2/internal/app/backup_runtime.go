@@ -98,12 +98,18 @@ func newBackupRuntime(engine backupEngine, scratch string) (*backupRuntime, erro
 	return &backupRuntime{engine: engine, scratch: scratch, accepting: true}, nil
 }
 
-func defaultBackupScratch() (string, error) {
+func defaultBackupScratch(vaultRoot string) (string, error) {
 	cache, err := os.UserCacheDir()
-	if err != nil || !filepath.IsAbs(cache) {
+	if err != nil || !filepath.IsAbs(cache) || vaultRoot == "" || !filepath.IsAbs(vaultRoot) ||
+		filepath.Clean(vaultRoot) != vaultRoot || !utf8.ValidString(vaultRoot) {
 		return "", errors.New("app: backup scratch location is unavailable")
 	}
-	return filepath.Join(cache, "MindWeaver", "backup-live", "verify"), nil
+	identity := sha256.Sum256([]byte("mindweaver:backup-scratch:v1\x00" + vaultRoot))
+	scratch := filepath.Join(cache, "MindWeaver", "backup-live", hex.EncodeToString(identity[:]))
+	if lexicalPathsOverlap(vaultRoot, scratch) {
+		return "", errors.New("app: backup scratch overlaps the active Vault")
+	}
+	return scratch, nil
 }
 
 func (runtime *backupRuntime) Start(ctx context.Context, idempotency, destination string) (backupOperationStatus, error) {
@@ -138,7 +144,7 @@ func (runtime *backupRuntime) Start(ctx context.Context, idempotency, destinatio
 	operationContext, cancel := context.WithCancel(context.Background())
 	operation := &backupOperation{
 		status: backupOperationStatus{
-			OperationID: backupOperationID(idempotency),
+			OperationID: backupOperationID(idempotency, destination),
 			State:       backupStateAccepted,
 			Phase:       "accepted",
 		},
@@ -324,6 +330,9 @@ func (runtime *backupRuntime) reconcile(ctx context.Context, destination string)
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return backupCanceledStatus(), true
+	}
 	info, err := os.Lstat(destination)
 	switch {
 	case err == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0:
@@ -337,6 +346,10 @@ func (runtime *backupRuntime) reconcile(ctx context.Context, destination string)
 		if verifyErr == nil && outcome.Succeeded {
 			return outcomeStatus(outcome), true
 		}
+		if class := backup.FailureClassOf(verifyErr); class == backup.FailureCleanupRequired ||
+			class == backup.FailureUnsupported {
+			return backupErrorStatus(verifyErr), true
+		}
 		return backupFailedStatus("BACKUP_TARGET_EXISTS"), true
 	case err == nil:
 		return backupFailedStatus("BACKUP_TARGET_EXISTS"), true
@@ -348,7 +361,13 @@ func (runtime *backupRuntime) reconcile(ctx context.Context, destination string)
 }
 
 func (runtime *backupRuntime) prepareScratch(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(runtime.scratch, 0o700); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	result, err := runtime.engine.CleanupVerifyScratch(ctx, runtime.scratch, backupResidueLimit)
@@ -448,8 +467,8 @@ func backupTerminal(state backupOperationState) bool {
 	}
 }
 
-func backupOperationID(idempotency string) string {
-	digest := sha256.Sum256([]byte("mindweaver:backup-create:v1\x00" + idempotency))
+func backupOperationID(idempotency, destination string) string {
+	digest := sha256.Sum256([]byte("mindweaver:backup-create:v1\x00" + idempotency + "\x00" + destination))
 	return hex.EncodeToString(digest[:])
 }
 
@@ -485,4 +504,12 @@ func validAbsoluteBackupPath(value string) bool {
 	}
 	leaf := filepath.Base(value)
 	return leaf != "." && leaf != string(filepath.Separator) && leaf != ""
+}
+
+func lexicalPathsOverlap(left, right string) bool {
+	inside := func(parent, child string) bool {
+		relative, err := filepath.Rel(parent, child)
+		return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+	}
+	return inside(left, right) || inside(right, left)
 }
