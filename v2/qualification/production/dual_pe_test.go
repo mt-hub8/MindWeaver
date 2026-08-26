@@ -19,7 +19,7 @@ import (
 )
 
 const modulePath = "github.com/mt-hub8/MindWeaver/v2"
-const expectedSourceUnionSHA256 = "0d0999819779d9c7acde94fc734b70eb0b4d5defd315777cfc5e0547765eca48"
+const expectedSourceUnionSHA256 = "967be95103379b1d20e4310b82cbbd9ced377bd989427f20e196a137820e7bce"
 
 type artifactContract struct {
 	name              string
@@ -85,7 +85,7 @@ var shippedArtifacts = []artifactContract{
 			"github.com/ncruces/julianday@v1.0.0#h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M=",
 			"golang.org/x/sys@v0.47.0#h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=",
 		},
-		sourceSHA256: "7de68fba33368f4cfa74a44cb27a0c5add95c688f70c0c77b939bbb21d825dca",
+		sourceSHA256: "006c3d00b663d6ab6417935c50c501c508b8e26783a9367ef46397f6969573e2",
 	},
 	{
 		name:   "mindweaver-pdf.exe",

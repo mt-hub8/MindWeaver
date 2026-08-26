@@ -529,10 +529,10 @@ func pathExpression(t *testing.T, expression ast.Expr) string {
 
 func assertProductionPackages(t *testing.T, root string, surface contract.Surface) map[string]commandProductionInventory {
 	t.Helper()
-	if !reflect.DeepEqual(surface.ProductionDiscovery.EvidenceOnlyMainPackages, []string{"qualification/pdf/adversarialprobe", "spikes/sqlite/cmd/sqlite-spike"}) ||
+	if !reflect.DeepEqual(surface.ProductionDiscovery.EvidenceOnlyMainPackages, []string{"qualification/pdf/adversarialprobe", "spikes/sqlite/cmd/sqlite-spike", "tests/browser/runner"}) ||
 		!reflect.DeepEqual(surface.ProductionDiscovery.LibraryRoots, []string{"internal", "platform"}) ||
 		!reflect.DeepEqual(surface.ProductionDiscovery.ExcludedFileSuffixes, []string{"_test.go"}) ||
-		!reflect.DeepEqual(surface.ProductionDiscovery.ExcludedRootPrefixes, []string{"docs", "openapi", "qualification", "release", "spikes", "testdata"}) {
+		!reflect.DeepEqual(surface.ProductionDiscovery.ExcludedRootPrefixes, []string{"docs", "openapi", "qualification", "release", "spikes", "testdata", "tests"}) {
 		t.Fatal("production discovery policy drift")
 	}
 	commandNames := make([]string, 0, len(surface.Commands))

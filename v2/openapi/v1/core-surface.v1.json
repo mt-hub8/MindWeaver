@@ -45,7 +45,7 @@
         "platform/version"
       ],
       "public": true,
-      "sourceManifestSHA256": "faa33857bbb2158d074e5ebc2df518382a7d8d1de8ac73f196e0dbb9ec3dcc85",
+      "sourceManifestSHA256": "006c3d00b663d6ab6417935c50c501c508b8e26783a9367ef46397f6969573e2",
       "verbs": [
         "config",
         "help",
@@ -128,7 +128,8 @@
   "productionDiscovery": {
     "evidenceOnlyMainPackages": [
       "qualification/pdf/adversarialprobe",
-      "spikes/sqlite/cmd/sqlite-spike"
+      "spikes/sqlite/cmd/sqlite-spike",
+      "tests/browser/runner"
     ],
     "excludedFileSuffixes": [
       "_test.go"
@@ -139,7 +140,8 @@
       "qualification",
       "release",
       "spikes",
-      "testdata"
+      "testdata",
+      "tests"
     ],
     "externalModules": [
       "github.com/mgilbir/formalis@v0.3.1#h1:NyYe/EcRYJ2jUjgaZG98lNXgJ7H+jgy6mq7HXOnQxl8=",

@@ -1,6 +1,31 @@
 # Dual-PE production dependency closure
 
-Status: **QUALIFIED; repository-wide CI BLOCKED by a pre-existing contract digest mismatch**
+Status: **QUALIFIED; integrated source contract synchronized**
+
+## Current integration refresh
+
+The original qualification below remains the immutable evidence for baseline
+`d61a158`. After integrating the reviewed backup, RAG, browser-test, knowledge,
+and dual-PE slices, the same offline gate was rerun against the current Go
+product tree. The refreshed exact values are:
+
+- `mindweaver.exe`: 77 source files,
+  `006c3d00b663d6ab6417935c50c501c508b8e26783a9367ef46397f6969573e2`;
+  PE SHA-256
+  `c40feb3f39dcb69f145d0a996e2140d0d58583eec3b29d92c5ff342590b80c`
+- `mindweaver-pdf.exe`: 5 source files,
+  `bf8badaa11f215a4acd100a839d6e360017bdbc5d9ae18cbbb67e9222ab8849a`;
+  PE SHA-256
+  `411ed538b53d533600ae5466427f3d3f30a7a81405885d92b79167e52ff32b87`
+- deduplicated dual-PE union: 81 source files,
+  `967be95103379b1d20e4310b82cbbd9ced377bd989427f20e196a137820e7bce`
+
+`openapi/v1` now binds the refreshed `mindweaver.exe` source manifest. Its
+production discovery policy also classifies `tests/browser/runner` as an
+evidence-only main package, so that qualification code cannot silently become
+a shipped command. Focused OpenAPI and dual-PE tests pass on the integrated
+tree. The historical CI failure and hashes retained below describe only the
+original `d61a158` run; they are not the current repository status.
 
 ## Bound inputs
 
