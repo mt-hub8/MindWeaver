@@ -77,7 +77,10 @@ powershell -ExecutionPolicy Bypass -File scripts/verify-standalone.ps1 -Go <go1.
 
 ## Remaining product evidence
 
-This slice deliberately does not add normal backup creation UI/API, scheduled
-backup policy, release/MSI logic, or clean-machine installer rehearsal. Those
-separate artifacts remain required before `BKP-001` or release acceptance can
-be promoted. Plaintext backup placement and retention remain operator-owned.
+This historical slice did not add normal backup creation UI/API; that gap is
+superseded by `docs/rewrite/evidence/live-backup-create.md`. Scheduled backup
+policy remains outside the accepted first-release surface. Packaged
+clean-machine restore/reopen, installer upgrade/rollback and uninstall, and
+release-attestation evidence remain required before `BKP-001` or release
+acceptance can be promoted. Plaintext backup placement and retention remain
+operator-owned.

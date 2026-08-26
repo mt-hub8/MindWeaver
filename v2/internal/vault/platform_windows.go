@@ -512,6 +512,9 @@ func parseVolumePathNames(buffer []uint16) ([]string, error) {
 			continue
 		}
 		if index == start {
+			if index != len(buffer)-1 || len(paths) == 0 {
+				return nil, errors.New("registered volume path response has an invalid terminator")
+			}
 			return paths, nil
 		}
 		paths = append(paths, windows.UTF16ToString(buffer[start:index]))

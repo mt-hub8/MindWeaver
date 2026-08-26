@@ -89,6 +89,8 @@ This closes the unprivileged same-session remapping boundary by narrowing
 admission to system-registered drive roots. It does not claim protection from
 administrator or `LocalSystem` changes to global volume mount state.
 
-`BKP-001` remains `BLOCKED`, but only the separate clean-machine
-restore/release rehearsal remains open. It must not move to `PASS` on this
-candidate's focused Windows evidence alone.
+`BKP-001` remains `BLOCKED`. The registered-volume admission closes this
+specific non-privileged drive-alias boundary, but acceptance still requires a
+packaged clean-machine restore/reopen rehearsal and its installer,
+upgrade/rollback, uninstall, and release-attestation evidence. It must not move
+to `PASS` on this candidate's focused Windows evidence alone.

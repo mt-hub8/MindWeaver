@@ -100,6 +100,8 @@ post-stress QueryDosDevice E:-Z: residue scan                       EMPTY
 post-stress logical drives                                         C:\ D:\
 ```
 
-Final whole-tree and standalone gates must run from the clean documentation
-commit. `BKP-001` remains `BLOCKED` until the separate clean-machine
-restore/release rehearsal passes.
+Final whole-tree and standalone gates must run from the integrated clean
+commit. `BKP-001` remains `BLOCKED`: this slice closes only the stated
+non-privileged drive-alias boundary; packaged clean-machine restore/reopen and
+installer, upgrade/rollback, uninstall, and release-attestation evidence remain
+open.

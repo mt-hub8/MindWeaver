@@ -30,10 +30,10 @@ This is still a development build, not a qualified release. The implemented
 paths above have automated evidence, but they have not passed the complete
 release, durability, security, and platform qualification matrix. Ask/citation
 architecture and structural citation checks are implemented, but natural-question
-retrieval quality remains explicitly blocked by `RET-003`. The final retained
-kernel-path boundary for backup destinations, long-running SQLite stress, real
-browser qualification, packaging, and release qualification also remain
-incomplete. Live no-replace backup creation and startup-only verify/restore are
+retrieval quality remains explicitly blocked by `RET-003`. Clean-machine
+backup restore/reopen rehearsal, long-running SQLite stress, real browser
+qualification, packaging, and release qualification also remain incomplete.
+Live no-replace backup creation and startup-only verify/restore are
 implemented candidates, but their presence must not be read as a supported
 release promise.
 The product intentionally creates a fresh Vault and exposes no Java/MySQL data

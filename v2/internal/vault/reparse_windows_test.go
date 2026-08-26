@@ -116,8 +116,10 @@ func TestWindowsRegisteredVolumePathResponseFailsClosed(t *testing.T) {
 	}
 	for _, malformed := range [][]uint16{
 		nil,
+		{0, 0},
 		{'D', ':', '\\'},
 		{'D', ':', '\\', 0},
+		{'D', ':', '\\', 0, 0, 'X', 0, 0},
 	} {
 		if paths, err := parseVolumePathNames(malformed); err == nil {
 			t.Fatalf("malformed registered paths accepted: %#v", paths)
