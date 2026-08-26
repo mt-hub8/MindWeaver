@@ -382,6 +382,34 @@ func TestAskPersistsProviderFailureAndPostResponseCommitUncertainty(t *testing.T
 		}
 	})
 
+	t.Run("post-write transport failure is outcome uncertain and never regenerated", func(t *testing.T) {
+		fixture := newRAGFixture(t)
+		fixture.upload(t, "post-write.txt", "Post write", "传输中断知识库答案来自这里。")
+		conversation, err := fixture.rag.CreateConversation(t.Context(), "Post write")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var calls atomic.Int32
+		fixture.rag.generate = func(context.Context, store.OllamaConfig, string) (string, error) {
+			calls.Add(1)
+			return "", ollama.ErrOutcomeUncertain
+		}
+		request := AskRequest{
+			ConversationID: conversation.ID, ExpectedRevision: 0,
+			IdempotencyKey: "post-write", Question: "传输中断知识库答案",
+		}
+		answer, err := fixture.rag.Ask(t.Context(), request)
+		if !errors.Is(err, ollama.ErrOutcomeUncertain) || answer.Status != store.MessageFailed ||
+			answer.LimitationCode != "OUTCOME_UNCERTAIN" || answer.ErrorCode != "OUTCOME_UNCERTAIN" || calls.Load() != 1 {
+			t.Fatalf("post-write failure = %#v, %v; calls=%d", answer, err, calls.Load())
+		}
+		fixture.reopen(t)
+		replayed, err := fixture.rag.Ask(t.Context(), request)
+		if err != nil || replayed.ID != answer.ID || replayed.ErrorCode != "OUTCOME_UNCERTAIN" || calls.Load() != 1 {
+			t.Fatalf("post-write replay = %#v, %v; calls=%d", replayed, err, calls.Load())
+		}
+	})
+
 	t.Run("response received but completion context cancelled", func(t *testing.T) {
 		fixture := newRAGFixture(t)
 		fixture.upload(t, "uncertain.txt", "Uncertain", "不确定知识库答案来自这里。")

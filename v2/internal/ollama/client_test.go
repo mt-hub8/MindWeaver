@@ -318,6 +318,26 @@ func TestDialPolicyRejectsDNSAndUnexpectedTargets(t *testing.T) {
 	}
 }
 
+func TestDefiniteDialFailureRemainsDistinctFromPostWriteUncertainty(t *testing.T) {
+	t.Parallel()
+	client, err := New(Options{BaseURL: "http://127.0.0.1:11434", Model: "model", Timeout: time.Second})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer client.CloseIdleConnections()
+	client.transport.DialContext = func(context.Context, string, string) (net.Conn, error) {
+		return nil, errors.New("DIAL-CANARY-5c157fdd")
+	}
+
+	_, err = client.Generate(context.Background(), "safe prompt")
+	if !errors.Is(err, ErrUnavailable) || errors.Is(err, ErrOutcomeUncertain) {
+		t.Fatalf("pre-write failure = %v; want only ErrUnavailable", err)
+	}
+	if strings.Contains(err.Error(), "DIAL-CANARY") {
+		t.Fatalf("pre-write failure leaked transport diagnostics: %v", err)
+	}
+}
+
 func TestLiteralTransportIgnoresAmbientProxyAndDNS(t *testing.T) {
 	var proxyCalls atomic.Int32
 	proxy := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
@@ -567,7 +587,7 @@ func TestResponseMetadataAndFramingFailClosed(t *testing.T) {
 				writer.WriteHeader(http.StatusOK)
 				fmt.Fprint(writer, `{"models":[]}`)
 			},
-			want: ErrProtocol,
+			want: ErrOutcomeUncertain,
 		},
 		{
 			name: "oversized response headers",
@@ -576,7 +596,7 @@ func TestResponseMetadataAndFramingFailClosed(t *testing.T) {
 				writer.Header().Set("X-Response-Canary", responseCanary+strings.Repeat("x", maxResponseHeaderBytes+1))
 				fmt.Fprint(writer, `{"models":[]}`)
 			},
-			want: ErrUnavailable,
+			want: ErrOutcomeUncertain,
 		},
 	}
 	for _, test := range tests {
@@ -738,7 +758,7 @@ func TestMalformedHTTPAndFramingErrorsAreSanitized(t *testing.T) {
 			name:     "malformed status line",
 			response: "HTTP/1.1 " + responseCanary + "\r\nConnection: close\r\n\r\n",
 			chat:     true,
-			want:     ErrUnavailable,
+			want:     ErrOutcomeUncertain,
 		},
 		{
 			name: "conflicting content lengths",
@@ -748,7 +768,7 @@ func TestMalformedHTTPAndFramingErrorsAreSanitized(t *testing.T) {
 				"Content-Length: 14\r\n" +
 				"X-Response-Canary: " + responseCanary + "\r\n" +
 				"Connection: close\r\n\r\n{\"models\":[]}",
-			want: ErrUnavailable,
+			want: ErrOutcomeUncertain,
 		},
 		{
 			name: "truncated chunked trailer",
@@ -757,7 +777,7 @@ func TestMalformedHTTPAndFramingErrorsAreSanitized(t *testing.T) {
 				"Transfer-Encoding: chunked\r\n" +
 				"Connection: close\r\n\r\n" +
 				"d\r\n{\"models\":[]}\r\n0\r\n",
-			want: ErrProtocol,
+			want: ErrOutcomeUncertain,
 		},
 	}
 	for _, test := range tests {

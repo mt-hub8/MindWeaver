@@ -1009,7 +1009,7 @@ func classifyError(err error) (transport.ErrorCode, string) {
 		return transport.CodeInvalidArgument, "模型或 Ask 请求参数无效。"
 	case errors.Is(err, errAskQuiescing):
 		return transport.CodeServiceUnavailable, "应用正在安全关闭，不能接受新的 Ask。"
-	case errors.Is(err, ollama.ErrUnavailable), errors.Is(err, ollama.ErrProtocol), errors.Is(err, ollama.ErrResponseTooLarge), errors.Is(err, ollama.ErrRequestTooLarge):
+	case errors.Is(err, ollama.ErrUnavailable), errors.Is(err, ollama.ErrOutcomeUncertain), errors.Is(err, ollama.ErrProtocol), errors.Is(err, ollama.ErrResponseTooLarge), errors.Is(err, ollama.ErrRequestTooLarge):
 		return transport.CodeServiceUnavailable, "本地模型不可用或返回了无效响应。"
 	case errors.Is(err, store.ErrCollectionNameConflict):
 		return transport.CodeConflict, "同名集合已经存在。"

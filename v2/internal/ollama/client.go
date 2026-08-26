@@ -11,10 +11,12 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 )
@@ -39,6 +41,7 @@ var (
 	ErrResponseTooLarge = errors.New("ollama: response exceeds size limit")
 	ErrProtocol         = errors.New("ollama: invalid response protocol")
 	ErrUnavailable      = errors.New("ollama: service unavailable")
+	ErrOutcomeUncertain = errors.New("ollama: provider outcome uncertain")
 	errRedirect         = errors.New("ollama: redirects are not allowed")
 )
 
@@ -240,6 +243,13 @@ func (c *Client) doJSON(ctx context.Context, method, path string, input, output 
 	if err != nil {
 		return fmt.Errorf("ollama: create request: %w", err)
 	}
+	var requestWriteStarted atomic.Bool
+	request = request.WithContext(httptrace.WithClientTrace(request.Context(), &httptrace.ClientTrace{
+		// WroteRequest runs after the transport attempted the request write. An
+		// error can still mean a prefix reached Ollama, so either result makes a
+		// later transport failure unsafe to describe as definitely not executed.
+		WroteRequest: func(httptrace.WroteRequestInfo) { requestWriteStarted.Store(true) },
+	}))
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Accept-Encoding", "identity")
 	if input != nil {
@@ -255,6 +265,9 @@ func (c *Client) doJSON(ctx context.Context, method, path string, input, output 
 		}
 		if networkError, ok := err.(net.Error); ok && networkError.Timeout() {
 			return context.DeadlineExceeded
+		}
+		if requestWriteStarted.Load() {
+			return fmt.Errorf("%w: response was not received", ErrOutcomeUncertain)
 		}
 		return fmt.Errorf("%w: request failed", ErrUnavailable)
 	}
@@ -321,16 +334,12 @@ func classifyResponseReadError(ctx context.Context, err error) error {
 		return context.DeadlineExceeded
 	}
 	var networkError net.Error
-	if errors.As(err, &networkError) {
-		if networkError.Timeout() {
-			return context.DeadlineExceeded
-		}
-		return fmt.Errorf("%w: response read failed", ErrUnavailable)
+	if errors.As(err, &networkError) && networkError.Timeout() {
+		return context.DeadlineExceeded
 	}
-	if errors.Is(err, io.ErrUnexpectedEOF) {
-		return ErrProtocol
-	}
-	return fmt.Errorf("%w: malformed response framing", ErrProtocol)
+	// Headers for a successful response were already received. A truncated or
+	// otherwise unreadable body cannot prove whether Ollama completed the call.
+	return fmt.Errorf("%w: response body was incomplete", ErrOutcomeUncertain)
 }
 
 func rejectDuplicateJSONKeys(data []byte) error {

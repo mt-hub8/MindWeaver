@@ -179,7 +179,7 @@ type AskRequest struct {
 
 // Ask first reserves a durable pending message and provider configuration,
 // then uses the shared scoped FTS path, freezes final sources, calls concrete
-// Ollama outside a transaction, and atomically publishes a verified result.
+// Ollama outside a transaction, and atomically publishes a structurally cited result.
 func (s *Service) Ask(ctx context.Context, request AskRequest) (store.Answer, error) {
 	if ctx == nil {
 		return store.Answer{}, errors.New("rag: nil context")
@@ -344,7 +344,8 @@ func validateProductOllamaTimeout(value time.Duration) error {
 
 func classifyProviderFailure(err error) (limitation, code, text string) {
 	switch {
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded),
+		errors.Is(err, ollama.ErrOutcomeUncertain):
 		return "OUTCOME_UNCERTAIN", "OUTCOME_UNCERTAIN", store.OutcomeUncertainText
 	case errors.Is(err, ollama.ErrProtocol), errors.Is(err, ollama.ErrResponseTooLarge),
 		errors.Is(err, ollama.ErrInvalidRequest), errors.Is(err, ollama.ErrRequestTooLarge):

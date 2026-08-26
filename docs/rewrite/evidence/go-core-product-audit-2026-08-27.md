@@ -2,13 +2,14 @@
 
 ## Identity and exact scope
 
-This read-only audit is frozen at
+This audit started at
 `codex/rag-boundary-d61@8a62f8f018904337ba0de4fd0697c3b36bf43e5d`.
-Its committed product baseline is
+Its original committed product baseline is
 `codex/go-rewrite@d61a158afdc7c86914c70a847ce4e9d6fe686517`;
-the commits above that baseline change tests and evidence only. The production
-files, reviewed line spans, byte hashes, and decisions are recorded in
-`go-core-product-exact-set-2026-08-27.csv`.
+the audit's only subsequent product change distinguishes a provider failure
+before request write from an uncertain failure after write. The production
+files in the containing commit, reviewed line spans, byte hashes, and decisions
+are recorded in `go-core-product-exact-set-2026-08-27.csv`.
 
 The audited surface is the Windows `mindweaver` entry point and the reachable
 local HTTP, RAG, Ollama, conversation, WebUI, and OpenAPI paths needed for the
@@ -64,6 +65,11 @@ not evidence for UI-001 or UI-002.
   proxying, refuses redirects, bounds headers and bodies, parses hostile JSON
   fail-closed, and propagates deadline/cancellation without returning provider
   text in errors.
+- A failure before the HTTP request write remains definite `ErrUnavailable`.
+  Once the transport has attempted the write, a missing response or incomplete
+  successful response body is `ErrOutcomeUncertain`; RAG persists
+  `OUTCOME_UNCERTAIN`. Close/reopen exact replay returns that answer without
+  another provider call.
 - Once a durable Ask crosses the provider boundary, cancellation, timeout, or
   a post-response commit failure converges to `OUTCOME_UNCERTAIN`. Startup
   reconciliation happens before listener publication. Close/reopen plus exact
@@ -76,8 +82,8 @@ No production P0 was found. The remaining production/integration P1 set is:
 
 1. **OpenAPI production identity is stale.** The committed source manifest is
    `325dfec05db7f7744c6aaf4de792d80efaa6b458a0b850a635d3c41e3596e099`,
-   while the current `mindweaver` production closure calculates
-   `7de68fba33368f4cfa74a44cb27a0c5add95c688f70c0c77b939bbb21d825dca`.
+   while the containing commit's `mindweaver` production closure calculates
+   `9b627d44a3178a5bc68643ed36a7275072c4ce779758a9cecaf13f65be17250d`.
    `openapi/v1.TestEmbeddedContractMatchesProduction` therefore blocks the
    full gate. This branch does not rewrite the concurrently owned contract.
 2. **OpenAPI response evolution and state invariants are under-specified.**
@@ -114,6 +120,8 @@ no user Vault, and no external network.
 | App product/restart/shutdown/strict-JSON focused tests, `count=10` | PASS |
 | local HTTP bootstrap/session/CSRF/redaction focused tests, `count=10` | PASS |
 | Ollama origin/proxy/redirect/bounds/hostile-JSON/redaction focused tests, `count=10` | PASS |
+| Ollama pre-write versus post-write/incomplete-response classification, `count=10` | PASS |
+| RAG post-write uncertainty plus close/reopen exact replay, `count=10` | PASS |
 | `go test` and `go vet` for localhttp/transport/ollama/rag/app/webui | PASS |
 | `go vet ./...` | PASS |
 | `go test ./...` | BASELINE BLOCKED only by the exact OpenAPI manifest mismatch above; every other package PASS |

@@ -5,12 +5,12 @@ v2/cmd/mindweaver/browser_windows.go,1-41,41,22430c1e42129536ad608e50848d83dbd6a
 v2/internal/localhttp/server.go,1-573,573,867b5aead40a23c059ce0a256da8e30c97d22eb4d3e6518fe246a5f0801ebacb,session-csrf-loopback,KEEP
 v2/internal/localhttp/router.go,1-347,347,a68b91881db619da12e0c323ca93ef2dea645c3b6744eb0e40ab41fcc7731a2e,http-routing,KEEP
 v2/internal/transport/problem.go,1-79,79,3a74aa2436cb30fe86b2735bd7a2641bb19fd6524e6f22f5644f847a09676911,error-redaction,HARDEN
-v2/internal/ollama/client.go,1-489,489,eccd64f477233be24af844dde84d7f2c6727ba07ba325d54824abc42d428c08a,ollama-provider,KEEP
-v2/internal/rag/service.go,1-527,527,79e3c2aa3c166525c15c8b2a625263a8de619981f32bfaf270fa61c7a87fb32e,rag-orchestration,KEEP
+v2/internal/ollama/client.go,1-498,498,9d40011a00f5ec42407d5e643081500d58d04fadc2624304fcc43eb8a6b06f65,ollama-provider,KEEP
+v2/internal/rag/service.go,1-528,528,94f56c91c9ecba84c5a00c79613959b65d8813939463d5ea16d48a3d37f64a45,rag-orchestration,KEEP
 v2/internal/store/sqlite/rag_answers.go,1-1458,1458,a7eff00277fc23e543fcb33671655621ad5bf0ab490d29318542d4f1d9b8f144,rag-durability,KEEP
 v2/internal/store/sqlite/search.go,1-126,126,8062d241683608c8958a90b3a2ade42738deee922d8f568cb9b08c725c8c19dd,rag-keyword-search,KEEP
 v2/internal/store/sqlite/canonical_integrity.go,1-264,264,737b09d3243a566b745a61918957bee5c89aa957adabd86bf4fed642c729e002,rag-source-integrity,KEEP
-v2/internal/app/api.go,"1-166;233-1036;1054-1211",1211,4793cc6f65767ae0386f4a5994157cb421f3e74d9b952501359ca4c04f19aed2,core-http-api,KEEP
+v2/internal/app/api.go,"1-166;233-1036;1054-1211",1211,5b04564fd0b046d359084230ea283cead7e370bb7f5f67ae8a6712dac6788b07,core-http-api,KEEP
 v2/internal/app/api_rag.go,1-564,564,3d636d7abaa70db2eb9645b4e6e2446a5df4eb0d6b758fd4aa6671253adc2416,rag-http-api,KEEP
 v2/internal/app/app.go,"31-84;85-280;327-410",428,87545c6324fd00d4da1be1a335dbd2b704dae4fc19eabcf78cf3ebbde6dcda0b,app-start-stop,KEEP
 v2/internal/app/json.go,1-192,192,b171a395e2837068c70b7d472c728d16f7cfe7c89d9c9c0a7c7a1eac679c6ae0,strict-json,KEEP
