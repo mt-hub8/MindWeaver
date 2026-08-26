@@ -40,6 +40,8 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		return outputError(err)
 	case "config":
 		return runConfig(ctx, args[1:], stdout)
+	case "recovery":
+		return runRecovery(ctx, args[1:], stdout)
 	case "serve":
 		return runServe(ctx, args[1:], stdout)
 	default:
@@ -184,6 +186,11 @@ Usage:
   mindweaver serve [-config mindweaver.v1.json] [-vault ./vault] [-no-browser]
   mindweaver version
   mindweaver config init  [-file mindweaver.v1.json] [-vault ./vault]
-  mindweaver config check [-file mindweaver.v1.json]`)
+  mindweaver config check [-file mindweaver.v1.json]
+  mindweaver recovery verify  -backup <backup-directory>
+  mindweaver recovery restore -backup <backup-directory> -vault <new-vault-directory>
+
+Recovery is a mutually exclusive startup mode. Backups are plaintext, and
+restore never overwrites or merges an existing Vault.`)
 	return outputError(err)
 }

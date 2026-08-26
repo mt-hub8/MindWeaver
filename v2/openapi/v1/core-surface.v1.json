@@ -17,6 +17,10 @@
         "config": [
           "check",
           "init"
+        ],
+        "recovery": [
+          "restore",
+          "verify"
         ]
       },
       "packages": [
@@ -44,6 +48,7 @@
       "verbs": [
         "config",
         "help",
+        "recovery",
         "serve",
         "version"
       ]

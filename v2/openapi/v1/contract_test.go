@@ -976,7 +976,10 @@ func assertCommandSurface(t *testing.T, root string, surface contract.Surface, i
 	}
 	mainSource := filepath.Join(root, "cmd", "mindweaver", "main.go")
 	verbs := switchStringCases(t, mainSource, "run")
-	nested := switchStringCases(t, mainSource, "runConfig")
+	nested := map[string][]string{
+		"config":   switchStringCases(t, mainSource, "runConfig"),
+		"recovery": switchStringCases(t, filepath.Join(root, "cmd", "mindweaver", "recovery.go"), "runRecovery"),
+	}
 	for _, command := range surface.Commands {
 		if _, exists := inventories[command.Name]; !exists {
 			t.Fatalf("command %s lacks a production inventory", command.Name)
@@ -1001,8 +1004,8 @@ func assertCommandSurface(t *testing.T, root string, surface contract.Surface, i
 		}
 		sort.Strings(aliases)
 		sort.Strings(publicVerbs)
-		if !reflect.DeepEqual(aliases, command.Aliases) || !reflect.DeepEqual(publicVerbs, command.Verbs) || !reflect.DeepEqual(nested, command.NestedVerbs["config"]) {
-			t.Fatalf("mindweaver verbs = %#v/%#v/%#v, contract = %#v/%#v/%#v", publicVerbs, aliases, nested, command.Verbs, command.Aliases, command.NestedVerbs["config"])
+		if !reflect.DeepEqual(aliases, command.Aliases) || !reflect.DeepEqual(publicVerbs, command.Verbs) || !reflect.DeepEqual(nested, command.NestedVerbs) {
+			t.Fatalf("mindweaver verbs = %#v/%#v/%#v, contract = %#v/%#v/%#v", publicVerbs, aliases, nested, command.Verbs, command.Aliases, command.NestedVerbs)
 		}
 	}
 }
