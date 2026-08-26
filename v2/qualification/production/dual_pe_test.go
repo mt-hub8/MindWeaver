@@ -87,7 +87,7 @@ var shippedArtifacts = []artifactContract{
 			"golang.org/x/sys@v0.47.0",
 		},
 		sourceSHA256:   "e06c6a3486c7b4b2683ec583df04620d725ce87e8d469c48f7f6110a55bfd723",
-		artifactSHA256: "4f1caaa014cbe4180a1434e30dd491328f956e80e47c0640cdad7a411d1515e4",
+		artifactSHA256: "fa181a6850b3dc2f6a98ad87e70c2a7330a47591a3ee0bcf7d27be4bbdd40ec2",
 	},
 	{
 		name:   "mindweaver-pdf.exe",

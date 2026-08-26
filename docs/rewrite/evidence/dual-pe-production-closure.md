@@ -6,13 +6,21 @@ not release-qualified**
 ## CUT-002 vendored extraction candidate
 
 This final adaptation is based on exact committed main
-`3c2e4637b67ab3563389668472b9442454c3492e`. It selectively replays
-`c2871b1`, `583536da3beddfdb7fbb0d39fc5f7734ea4cc25e`, and
-`7dddb2a2c09bff5e2f60ce54320b8524c236ca27` as `4bed0dc`, `4b8fb30`, and
-`686e5d3`, then refreshes the identities and extraction evidence in one
-adaptation commit. The final adaptation hash is reported by the handoff rather
-than self-referenced inside its own contents. It is not merged and does not
-claim the identity of a later controller branch.
+`0dff1d45eee689cb119cd6be20bf19ac40e9d5f6`. It selectively replays the
+accepted mechanics as `16f4ef4` (canonical vendor), `2877016` (empty-cache
+gates), `d40d9db` (whitespace and extraction evidence), `ca6b06a` (current
+CORE adaptation), and `8151f7c` (nested qualification offline closure), then
+refreshes identities and evidence in one final commit. The final adaptation
+hash is reported by the handoff rather than self-referenced inside its own
+contents. It is not merged and does not claim the identity of a later
+controller branch.
+
+This baseline includes migration
+`007_drop_unused_settings.sql`, whose migration tests remove the production-dead
+`settings` table. The OpenAPI production closure contains exactly 19 final
+tables and includes migration 007. The later REL owner-local fuzz addition is
+test-only; it expands the full gate without changing production or vendor
+closure.
 
 The replay preserves the current RET boundary corpus
 `core-keyword-boundary.8aadf60.v2.json` and the current evidence-only runtime
@@ -35,16 +43,16 @@ directories and rejects any module-cache write.
 
 The resulting exact identities are:
 
-- `mindweaver.exe`: 77 first-party source files,
-  `ba61947c93896ac083c0517f9e10df8f6e540eb7fda5074389363169af17ff06`;
+- `mindweaver.exe`: 78 first-party source files,
+  `e06c6a3486c7b4b2683ec583df04620d725ce87e8d469c48f7f6110a55bfd723`;
   PE SHA-256
-  `ca7c56bb8ec1144f989108d3f06d09e75a79a4a5aa0f4bdb928ba9e1f6cf7316`
+  `fa181a6850b3dc2f6a98ad87e70c2a7330a47591a3ee0bcf7d27be4bbdd40ec2`
 - `mindweaver-pdf.exe`: 5 first-party source files,
   `0bec9ddde1ea8778ffc3c20740ed55080d7ef0b537cfd070a2d563ccc5a087c6`;
   PE SHA-256
   `a2a6a04b4ade9367aab6cce35e9a3c87351f9c8fabd33d9ea2fe108f7e732241`
-- deduplicated dual-PE union: 81 first-party source files,
-  `73aca40cc25a29477f51559a9a3bd23180ee124a78e0f4a133ca663987f50cfc`
+- deduplicated dual-PE union: 82 first-party source files,
+  `b5a0975871bd61aae91c511788a5d3b0150fa884c2d7a97b89852b1186eaaa7e`
 
 Vendored buildinfo deliberately carries exact module path and version with an
 empty `Sum`. The independent vendor contract restores the trust chain by
