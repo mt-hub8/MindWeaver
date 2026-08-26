@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"unsafe"
@@ -20,9 +21,21 @@ type temporaryDOSDeviceAlias struct {
 	drive  string
 	target string
 	active bool
+	mutex  windows.Handle
 }
 
-func createTemporaryDirectVolumeAlias() (*temporaryDOSDeviceAlias, error) {
+func createTemporaryDirectVolumeAlias() (result *temporaryDOSDeviceAlias, resultErr error) {
+	mutex, err := acquireTemporaryDOSDeviceMutex()
+	if err != nil {
+		return nil, err
+	}
+	releaseMutex := true
+	defer func() {
+		if releaseMutex {
+			resultErr = errors.Join(resultErr, releaseTemporaryDOSDeviceMutex(mutex))
+		}
+	}()
+
 	base := filepath.Clean(os.TempDir())
 	sourceDrive := filepath.VolumeName(base)
 	if len(sourceDrive) != 2 {
@@ -85,7 +98,8 @@ func createTemporaryDirectVolumeAlias() (*temporaryDOSDeviceAlias, error) {
 	); err != nil {
 		return nil, fmt.Errorf("create temporary DOS device alias: %w", err)
 	}
-	alias := &temporaryDOSDeviceAlias{drive: drive, target: target, active: true}
+	alias := &temporaryDOSDeviceAlias{drive: drive, target: target, active: true, mutex: mutex}
+	releaseMutex = false
 	verifyBuffer := make([]uint16, 1024)
 	if _, err := windows.QueryDosDevice(drivePointer, &verifyBuffer[0], uint32(len(verifyBuffer))); err != nil {
 		return alias, fmt.Errorf("verify temporary DOS device alias: %w", err)
@@ -96,7 +110,66 @@ func createTemporaryDirectVolumeAlias() (*temporaryDOSDeviceAlias, error) {
 	return alias, nil
 }
 
-func (alias *temporaryDOSDeviceAlias) Close() error {
+func acquireTemporaryDOSDeviceMutex() (windows.Handle, error) {
+	// Windows mutex ownership is thread-affine. Keep this test goroutine on the
+	// acquiring thread until the alias has been removed and the mutex released.
+	runtime.LockOSThread()
+	name, err := windows.UTF16PtrFromString(`Local\MindWeaver-DefineDosDevice-Qualification-v1`)
+	if err != nil {
+		runtime.UnlockOSThread()
+		return 0, err
+	}
+	handle, err := windows.CreateMutex(nil, false, name)
+	if err != nil && !errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+		if handle != 0 {
+			_ = windows.CloseHandle(handle)
+		}
+		runtime.UnlockOSThread()
+		return 0, fmt.Errorf("create DOS device qualification mutex: %w", err)
+	}
+	event, err := windows.WaitForSingleObject(handle, 30_000)
+	if err != nil {
+		_ = windows.CloseHandle(handle)
+		runtime.UnlockOSThread()
+		return 0, fmt.Errorf("wait for DOS device qualification mutex: %w", err)
+	}
+	switch event {
+	case windows.WAIT_OBJECT_0:
+		return handle, nil
+	case windows.WAIT_ABANDONED:
+		err := errors.Join(
+			errors.New("DOS device qualification mutex was abandoned; prior alias cleanup is unresolved"),
+			windows.ReleaseMutex(handle), windows.CloseHandle(handle),
+		)
+		runtime.UnlockOSThread()
+		return 0, err
+	case uint32(windows.WAIT_TIMEOUT):
+		err := errors.Join(
+			errors.New("timed out waiting for DOS device qualification mutex"),
+			windows.CloseHandle(handle),
+		)
+		runtime.UnlockOSThread()
+		return 0, err
+	default:
+		err := errors.Join(
+			fmt.Errorf("unexpected DOS device qualification mutex result: %d", event),
+			windows.CloseHandle(handle),
+		)
+		runtime.UnlockOSThread()
+		return 0, err
+	}
+}
+
+func releaseTemporaryDOSDeviceMutex(handle windows.Handle) error {
+	if handle == 0 {
+		return nil
+	}
+	err := errors.Join(windows.ReleaseMutex(handle), windows.CloseHandle(handle))
+	runtime.UnlockOSThread()
+	return err
+}
+
+func (alias *temporaryDOSDeviceAlias) Close() (resultErr error) {
 	if alias == nil || !alias.active {
 		return nil
 	}
@@ -117,6 +190,10 @@ func (alias *temporaryDOSDeviceAlias) Close() error {
 		return fmt.Errorf("remove temporary DOS device alias: %w", err)
 	}
 	alias.active = false
+	defer func() {
+		resultErr = errors.Join(resultErr, releaseTemporaryDOSDeviceMutex(alias.mutex))
+		alias.mutex = 0
+	}()
 	verifyBuffer := make([]uint16, 16)
 	if _, err := windows.QueryDosDevice(drivePointer, &verifyBuffer[0], uint32(len(verifyBuffer))); !errors.Is(err, windows.ERROR_FILE_NOT_FOUND) {
 		return fmt.Errorf("temporary DOS device alias remains queryable: %v", err)
