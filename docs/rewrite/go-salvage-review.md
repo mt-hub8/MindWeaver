@@ -147,7 +147,7 @@ Initial production packages are limited to:
 - `internal/app`
 
 The initial schema is limited to `documents`, `document_revisions`, `chunks`,
-`chunks_fts`, `jobs`, `settings`, `collections`, and
+`chunks_fts`, `jobs`, `collections`, and
 `collection_documents`. `chats`, `messages`, and `message_sources` are added
 only with the chat slice.
 

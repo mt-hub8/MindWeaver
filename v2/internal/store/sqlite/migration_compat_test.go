@@ -43,7 +43,56 @@ func TestEveryDeclaredSchemaVersionUpgradesToCurrent(t *testing.T) {
 					t.Fatalf("table %s count=%d, err=%v", table, count, err)
 				}
 			}
+			var settingsTables int
+			if err := upgraded.db.QueryRowContext(t.Context(), `
+				SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'settings'
+			`).Scan(&settingsTables); err != nil || settingsTables != 0 {
+				t.Fatalf("unused settings table count=%d, err=%v, want 0", settingsTables, err)
+			}
 		})
+	}
+}
+
+func TestDropUnusedSettingsMigrationPreservesCoreData(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v6-with-settings.db")
+	createSchemaFixture(t, path, 6)
+	fixture, err := openConfiguredFixture(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := testTime.UnixMicro()
+	if _, err := fixture.ExecContext(t.Context(), `
+		INSERT INTO documents(id, title, media_type, status, created_at, updated_at)
+		VALUES ('preserved-document', 'Preserved', 'text/plain', 'active', ?, ?)
+	`, now, now); err != nil {
+		_ = fixture.Close()
+		t.Fatal(err)
+	}
+	if _, err := fixture.ExecContext(t.Context(), `
+		INSERT INTO settings(key, value_json, updated_at)
+		VALUES ('never-owned-by-product', '{}', ?)
+	`, now); err != nil {
+		_ = fixture.Close()
+		t.Fatal(err)
+	}
+	if err := fixture.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	upgraded, err := Open(t.Context(), path, Options{BusyTimeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer upgraded.Close()
+	assertRowCount(t, upgraded, "documents", 1)
+	var settingsTables int
+	if err := upgraded.db.QueryRowContext(t.Context(), `
+		SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'settings'
+	`).Scan(&settingsTables); err != nil || settingsTables != 0 {
+		t.Fatalf("unused settings table count=%d, err=%v, want 0", settingsTables, err)
+	}
+	if err := upgraded.IntegrityCheck(t.Context()); err != nil {
+		t.Fatal(err)
 	}
 }
 

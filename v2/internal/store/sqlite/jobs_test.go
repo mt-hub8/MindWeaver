@@ -103,6 +103,7 @@ func TestStaleWorkerCallbackNeverRunsAfterRecoveryAndTakeover(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "takeover.db")
 	storeA := openTestStore(t, path, clock)
 	storeB := openTestStore(t, path, clock)
+	createJobCallbackProbeTable(t, storeA)
 	enqueueJob(t, ctx, storeA, "job-takeover", 2, time.Time{})
 
 	workerA, err := storeA.Claim(ctx, ClaimParams{Owner: "worker-a", LeaseDuration: 10 * time.Second})
@@ -126,7 +127,7 @@ func TestStaleWorkerCallbackNeverRunsAfterRecoveryAndTakeover(t *testing.T) {
 	err = storeA.commitLeased(ctx, workerA.ID, workerA.LeaseToken, func(tx *sql.Tx) error {
 		callbackRan = true
 		_, err := tx.ExecContext(ctx, `
-			INSERT INTO settings(key, value_json, updated_at) VALUES ('stale-write', '{}', ?)
+			INSERT INTO job_callback_probe(key, updated_at) VALUES ('stale-write', ?)
 		`, clock.Now().UnixMicro())
 		return err
 	})
@@ -136,11 +137,11 @@ func TestStaleWorkerCallbackNeverRunsAfterRecoveryAndTakeover(t *testing.T) {
 	if callbackRan {
 		t.Fatal("stale worker callback ran after takeover")
 	}
-	assertRowCount(t, storeA, "settings", 0)
+	assertRowCount(t, storeA, "job_callback_probe", 0)
 
 	if err := storeB.commitLeased(ctx, workerB.ID, workerB.LeaseToken, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `
-			INSERT INTO settings(key, value_json, updated_at) VALUES ('winner', '{}', ?)
+			INSERT INTO job_callback_probe(key, updated_at) VALUES ('winner', ?)
 		`, clock.Now().UnixMicro())
 		return err
 	}); err != nil {
@@ -158,6 +159,7 @@ func TestLeasedCallbackAndTerminalFailureRollbackBusinessAndState(t *testing.T) 
 	t.Run("callback failure", func(t *testing.T) {
 		clock := newFakeClock(testTime)
 		store := newTestStore(t, clock)
+		createJobCallbackProbeTable(t, store)
 		enqueueJob(t, ctx, store, "job-callback-fails", 1, time.Time{})
 		claimed, err := store.Claim(ctx, ClaimParams{Owner: "worker", LeaseDuration: time.Minute})
 		if err != nil {
@@ -166,7 +168,7 @@ func TestLeasedCallbackAndTerminalFailureRollbackBusinessAndState(t *testing.T) 
 		callbackFailure := errors.New("business write failed")
 		err = store.commitLeased(ctx, claimed.ID, claimed.LeaseToken, func(tx *sql.Tx) error {
 			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO settings(key, value_json, updated_at) VALUES ('partial', '{}', ?)
+				INSERT INTO job_callback_probe(key, updated_at) VALUES ('partial', ?)
 			`, clock.Now().UnixMicro()); err != nil {
 				return err
 			}
@@ -175,7 +177,7 @@ func TestLeasedCallbackAndTerminalFailureRollbackBusinessAndState(t *testing.T) 
 		if !errors.Is(err, callbackFailure) {
 			t.Fatalf("commit error = %v, want callback failure", err)
 		}
-		assertRowCount(t, store, "settings", 0)
+		assertRowCount(t, store, "job_callback_probe", 0)
 		job, err := store.GetJob(ctx, claimed.ID)
 		if err != nil || job.Status != JobRunning || job.LeaseToken != claimed.LeaseToken {
 			t.Fatalf("job after callback rollback = %#v, err = %v", job, err)
@@ -185,6 +187,7 @@ func TestLeasedCallbackAndTerminalFailureRollbackBusinessAndState(t *testing.T) 
 	t.Run("terminal lease check failure", func(t *testing.T) {
 		clock := newFakeClock(testTime)
 		store := newTestStore(t, clock)
+		createJobCallbackProbeTable(t, store)
 		enqueueJob(t, ctx, store, "job-expires-in-callback", 1, time.Time{})
 		claimed, err := store.Claim(ctx, ClaimParams{Owner: "worker", LeaseDuration: time.Minute})
 		if err != nil {
@@ -192,7 +195,7 @@ func TestLeasedCallbackAndTerminalFailureRollbackBusinessAndState(t *testing.T) 
 		}
 		err = store.commitLeased(ctx, claimed.ID, claimed.LeaseToken, func(tx *sql.Tx) error {
 			if _, err := tx.ExecContext(ctx, `
-				INSERT INTO settings(key, value_json, updated_at) VALUES ('expired', '{}', ?)
+				INSERT INTO job_callback_probe(key, updated_at) VALUES ('expired', ?)
 			`, clock.Now().UnixMicro()); err != nil {
 				return err
 			}
@@ -202,12 +205,24 @@ func TestLeasedCallbackAndTerminalFailureRollbackBusinessAndState(t *testing.T) 
 		if !errors.Is(err, ErrLeaseLost) {
 			t.Fatalf("terminal check error = %v, want ErrLeaseLost", err)
 		}
-		assertRowCount(t, store, "settings", 0)
+		assertRowCount(t, store, "job_callback_probe", 0)
 		job, err := store.GetJob(ctx, claimed.ID)
 		if err != nil || job.Status != JobRunning || job.LeaseToken != claimed.LeaseToken {
 			t.Fatalf("job after terminal rollback = %#v, err = %v", job, err)
 		}
 	})
+}
+
+func createJobCallbackProbeTable(t *testing.T, store *Store) {
+	t.Helper()
+	if _, err := store.db.ExecContext(t.Context(), `
+		CREATE TABLE job_callback_probe (
+			key TEXT PRIMARY KEY,
+			updated_at INTEGER NOT NULL
+		) STRICT
+	`); err != nil {
+		t.Fatalf("create test-owned job callback probe: %v", err)
+	}
 }
 
 func TestRestartRecovery(t *testing.T) {

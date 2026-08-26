@@ -214,7 +214,6 @@ func TestAllProductTimeColumnsUseIntegerMicroseconds(t *testing.T) {
 		"collection_documents": {"added_at"},
 		"document_ingestions":  {"created_at"},
 		"jobs":                 {"run_after", "lease_expires_at", "created_at", "updated_at"},
-		"settings":             {"updated_at"},
 	}
 	for table, columns := range want {
 		rows, err := store.db.Query("PRAGMA table_info(" + table + ")")

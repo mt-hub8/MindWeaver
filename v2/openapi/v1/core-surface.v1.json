@@ -45,7 +45,7 @@
         "platform/version"
       ],
       "public": true,
-      "sourceManifestSHA256": "ba61947c93896ac083c0517f9e10df8f6e540eb7fda5074389363169af17ff06",
+      "sourceManifestSHA256": "e06c6a3486c7b4b2683ec583df04620d725ce87e8d469c48f7f6110a55bfd723",
       "verbs": [
         "config",
         "help",
@@ -100,7 +100,8 @@
     "003_document_ingestion.sql",
     "004_rag_answers.sql",
     "005_document_lifecycle.sql",
-    "006_pdf_ingestion.sql"
+    "006_pdf_ingestion.sql",
+    "007_drop_unused_settings.sql"
   ],
   "module": "github.com/mt-hub8/MindWeaver/v2",
   "packages": [
@@ -880,7 +881,6 @@
     "documents",
     "jobs",
     "ollama_config_versions",
-    "schema_migrations",
-    "settings"
+    "schema_migrations"
   ]
 }

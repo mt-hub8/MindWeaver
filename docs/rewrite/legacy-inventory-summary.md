@@ -118,7 +118,7 @@ and reports pass.
 - Java source and schemas remain only historical review evidence in this parent
   repository. They are absent from the extracted repository and the exact two-
   executable Windows release.
-- Normal SQLite `001` through `006` migrations remain Go-to-Go schema evolution;
+- Normal SQLite `001` through `007` migrations remain Go-to-Go schema evolution;
   they do not authorize a legacy-data adapter or compatibility path.
 
 ## Unconfirmed findings that must not be promoted to facts
