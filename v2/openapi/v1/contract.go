@@ -112,6 +112,11 @@ type ProblemRecovery struct {
 	UserAction string `json:"userAction"`
 }
 
+type problemRecoveryWire struct {
+	Retryable  *bool  `json:"retryable"`
+	UserAction string `json:"userAction"`
+}
+
 var requiredProblemRecovery = map[string]ProblemRecovery{
 	"CONFLICT":            {UserAction: "refresh_state"},
 	"FORBIDDEN":           {UserAction: "restart_session"},
@@ -256,25 +261,25 @@ type componentsWire struct {
 // document. Unknown schema vocabulary fails closed instead of being silently
 // accepted by a permissive map decoder.
 type schemaWire struct {
-	Ref                  string                     `json:"$ref,omitempty"`
-	Type                 string                     `json:"type,omitempty"`
-	Format               string                     `json:"format,omitempty"`
-	Description          string                     `json:"description,omitempty"`
-	Properties           map[string]schemaWire      `json:"properties,omitempty"`
-	Required             []string                   `json:"required,omitempty"`
-	AdditionalProperties *bool                      `json:"additionalProperties,omitempty"`
-	Items                *schemaWire                `json:"items,omitempty"`
-	Enum                 []string                   `json:"enum,omitempty"`
-	OneOf                []schemaWire               `json:"oneOf,omitempty"`
-	Minimum              *int64                     `json:"minimum,omitempty"`
-	Maximum              *int64                     `json:"maximum,omitempty"`
-	MinLength            *int                       `json:"minLength,omitempty"`
-	MaxLength            *int                       `json:"maxLength,omitempty"`
-	Pattern              string                     `json:"pattern,omitempty"`
-	MinItems             *int                       `json:"minItems,omitempty"`
-	MaxItems             *int                       `json:"maxItems,omitempty"`
-	StatusByCode         map[string]int             `json:"x-mindweaver-status-by-code,omitempty"`
-	RecoveryByCode       map[string]ProblemRecovery `json:"x-mindweaver-recovery-by-code,omitempty"`
+	Ref                  string                         `json:"$ref,omitempty"`
+	Type                 string                         `json:"type,omitempty"`
+	Format               string                         `json:"format,omitempty"`
+	Description          string                         `json:"description,omitempty"`
+	Properties           map[string]schemaWire          `json:"properties,omitempty"`
+	Required             []string                       `json:"required,omitempty"`
+	AdditionalProperties *bool                          `json:"additionalProperties,omitempty"`
+	Items                *schemaWire                    `json:"items,omitempty"`
+	Enum                 []string                       `json:"enum,omitempty"`
+	OneOf                []schemaWire                   `json:"oneOf,omitempty"`
+	Minimum              *int64                         `json:"minimum,omitempty"`
+	Maximum              *int64                         `json:"maximum,omitempty"`
+	MinLength            *int                           `json:"minLength,omitempty"`
+	MaxLength            *int                           `json:"maxLength,omitempty"`
+	Pattern              string                         `json:"pattern,omitempty"`
+	MinItems             *int                           `json:"minItems,omitempty"`
+	MaxItems             *int                           `json:"maxItems,omitempty"`
+	StatusByCode         map[string]int                 `json:"x-mindweaver-status-by-code,omitempty"`
+	RecoveryByCode       map[string]problemRecoveryWire `json:"x-mindweaver-recovery-by-code,omitempty"`
 }
 
 // Surface is the versioned allowlist for shipped CORE packages, routes,
@@ -609,7 +614,7 @@ func validateProblemSchemas(components componentsWire) (schemaWire, error) {
 	}
 	codeNames := sortedMapKeys(problem.StatusByCode)
 	if !equalStrings(codeNames, sortedMapKeys(problem.RecoveryByCode)) ||
-		!reflect.DeepEqual(problem.RecoveryByCode, requiredProblemRecovery) ||
+		!matchesProblemRecovery(problem.RecoveryByCode) ||
 		!equalStrings(problem.Properties["code"].Enum, codeNames) || problem.Properties["code"].Type != "string" ||
 		problem.Properties["detail"].Type != "string" || problem.Properties["instance"].Type != "string" ||
 		problem.Properties["requestId"].Type != "string" || problem.Properties["requestId"].MinLength == nil || *problem.Properties["requestId"].MinLength != 1 ||
@@ -727,6 +732,23 @@ func validateRAGResponseSchemas(components componentsWire) error {
 	object := func(properties map[string]schemaWire) schemaWire {
 		return schemaWire{Type: "object", Properties: properties}
 	}
+	zero, one := int64(0), int64(1)
+	identifier := schemaWire{Ref: "#/components/schemas/Identifier"}
+	nullableIdentifier := schemaWire{OneOf: []schemaWire{identifier, nullValue}}
+	nullableDateTime := schemaWire{OneOf: []schemaWire{dateTime, nullValue}}
+	citationRef := schemaWire{Ref: "#/components/schemas/Citation"}
+	sourceRef := schemaWire{Ref: "#/components/schemas/AnswerSource"}
+	citations := schemaWire{Type: "array", Items: &citationRef, MaxItems: intPointer(100)}
+	sources := schemaWire{Type: "array", Items: &sourceRef, MaxItems: intPointer(8)}
+	wantAnswerProperties := map[string]schemaWire{
+		"citations": citations, "completedAt": nullableDateTime, "content": {Type: "string"},
+		"conversationId": identifier, "conversationRevision": {Type: "integer", Minimum: &one},
+		"createdAt": dateTime, "errorCode": {Type: "string"}, "id": identifier,
+		"limitationCode": {Type: "string"}, "providerConfigVersion": {Type: "integer", Minimum: &one},
+		"question":       {Type: "string", Description: "Trimmed display text bounded to 1024 UTF-8 bytes by the implementation.", MinLength: intPointer(1)},
+		"reconcileAfter": dateTime, "scopeCollectionId": nullableIdentifier,
+		"sources": sources, "status": {Type: "string", Enum: []string{"completed", "failed", "pending", "refused"}},
+	}
 
 	wantAnswerStates := []schemaWire{
 		object(map[string]schemaWire{"citations": emptyList, "completedAt": nullValue, "content": empty, "errorCode": empty, "limitationCode": empty, "status": status("pending")}),
@@ -734,14 +756,21 @@ func validateRAGResponseSchemas(components componentsWire) error {
 		object(map[string]schemaWire{"citations": emptyList, "completedAt": dateTime, "content": nonEmpty, "errorCode": empty, "limitationCode": code, "status": status("refused")}),
 		object(map[string]schemaWire{"citations": emptyList, "completedAt": dateTime, "content": nonEmpty, "errorCode": code, "limitationCode": code, "status": status("failed")}),
 	}
-	if answer.Type != "object" || !reflect.DeepEqual(answer.OneOf, wantAnswerStates) ||
+	if answer.Type != "object" || !reflect.DeepEqual(answer.Properties, wantAnswerProperties) ||
+		!reflect.DeepEqual(answer.OneOf, wantAnswerStates) ||
 		!equalStrings(answer.Required, []string{"citations", "completedAt", "content", "conversationId", "conversationRevision", "createdAt", "errorCode", "id", "limitationCode", "providerConfigVersion", "question", "reconcileAfter", "scopeCollectionId", "sources", "status"}) ||
-		!reflect.DeepEqual(answer.Properties["reconcileAfter"], dateTime) ||
-		!reflect.DeepEqual(answer.Properties["status"].Enum, []string{"completed", "failed", "pending", "refused"}) {
+		answer.AdditionalProperties == nil || !*answer.AdditionalProperties {
 		return errors.New("Answer state or recovery schema drift")
 	}
 
-	zero, one := int64(0), int64(1)
+	wantMessageProperties := map[string]schemaWire{
+		"citations": citations, "completedAt": nullableDateTime, "content": {Type: "string"},
+		"conversationId": identifier, "createdAt": dateTime, "errorCode": {Type: "string"},
+		"id": identifier, "limitationCode": {Type: "string"}, "ordinal": {Type: "integer", Minimum: &one},
+		"providerConfigVersion": {Type: "integer", Minimum: &zero}, "reconcileAfter": nullableDateTime,
+		"role": {Type: "string", Enum: []string{"assistant", "user"}}, "scopeCollectionId": nullableIdentifier,
+		"sources": sources, "status": {Type: "string", Enum: []string{"completed", "failed", "pending", "refused"}},
+	}
 	wantMessageStates := []schemaWire{
 		object(map[string]schemaWire{"citations": emptyList, "completedAt": dateTime, "content": nonEmpty, "errorCode": empty, "limitationCode": empty, "providerConfigVersion": version(&zero, &zero), "reconcileAfter": nullValue, "role": role("user"), "sources": emptyList, "status": status("completed")}),
 		object(map[string]schemaWire{"citations": emptyList, "completedAt": nullValue, "content": empty, "errorCode": empty, "limitationCode": empty, "providerConfigVersion": version(&one, nil), "reconcileAfter": dateTime, "role": role("assistant"), "status": status("pending")}),
@@ -749,11 +778,10 @@ func validateRAGResponseSchemas(components componentsWire) error {
 		object(map[string]schemaWire{"citations": emptyList, "completedAt": dateTime, "content": nonEmpty, "errorCode": empty, "limitationCode": code, "providerConfigVersion": version(&one, nil), "reconcileAfter": dateTime, "role": role("assistant"), "status": status("refused")}),
 		object(map[string]schemaWire{"citations": emptyList, "completedAt": dateTime, "content": nonEmpty, "errorCode": code, "limitationCode": code, "providerConfigVersion": version(&one, nil), "reconcileAfter": dateTime, "role": role("assistant"), "status": status("failed")}),
 	}
-	if message.Type != "object" || !reflect.DeepEqual(message.OneOf, wantMessageStates) ||
+	if message.Type != "object" || !reflect.DeepEqual(message.Properties, wantMessageProperties) ||
+		!reflect.DeepEqual(message.OneOf, wantMessageStates) ||
 		!equalStrings(message.Required, []string{"citations", "completedAt", "content", "conversationId", "createdAt", "errorCode", "id", "limitationCode", "ordinal", "providerConfigVersion", "reconcileAfter", "role", "scopeCollectionId", "sources", "status"}) ||
-		!reflect.DeepEqual(message.Properties["role"].Enum, []string{"assistant", "user"}) ||
-		!reflect.DeepEqual(message.Properties["status"].Enum, []string{"completed", "failed", "pending", "refused"}) ||
-		!reflect.DeepEqual(message.Properties["reconcileAfter"].OneOf, []schemaWire{dateTime, nullValue}) {
+		message.AdditionalProperties == nil || !*message.AdditionalProperties {
 		return errors.New("Message state or recovery schema drift")
 	}
 	return nil
@@ -761,12 +789,25 @@ func validateRAGResponseSchemas(components componentsWire) error {
 
 func intPointer(value int) *int { return &value }
 
-func cloneRecoveryMap(source map[string]ProblemRecovery) map[string]ProblemRecovery {
+func cloneRecoveryMap(source map[string]problemRecoveryWire) map[string]ProblemRecovery {
 	result := make(map[string]ProblemRecovery, len(source))
 	for code, recovery := range source {
-		result[code] = recovery
+		result[code] = ProblemRecovery{Retryable: *recovery.Retryable, UserAction: recovery.UserAction}
 	}
 	return result
+}
+
+func matchesProblemRecovery(actual map[string]problemRecoveryWire) bool {
+	if len(actual) != len(requiredProblemRecovery) {
+		return false
+	}
+	for code, expected := range requiredProblemRecovery {
+		got, ok := actual[code]
+		if !ok || got.Retryable == nil || *got.Retryable != expected.Retryable || got.UserAction != expected.UserAction {
+			return false
+		}
+	}
+	return true
 }
 
 func containsString(values []string, candidate string) bool {

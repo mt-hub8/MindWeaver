@@ -208,6 +208,16 @@ func TestContractFailsClosed(t *testing.T) {
 			},
 		},
 		{
+			name: "Problem false retryability missing",
+			mutate: func(raw []byte) []byte {
+				return mutateObject(t, raw, func(document map[string]any) {
+					problem := document["components"].(map[string]any)["schemas"].(map[string]any)["Problem"].(map[string]any)
+					recovery := problem["x-mindweaver-recovery-by-code"].(map[string]any)
+					delete(recovery["CONFLICT"].(map[string]any), "retryable")
+				})
+			},
+		},
+		{
 			name: "open strict request",
 			mutate: func(raw []byte) []byte {
 				return mutateObject(t, raw, func(document map[string]any) {
@@ -233,6 +243,25 @@ func TestContractFailsClosed(t *testing.T) {
 					answer := document["components"].(map[string]any)["schemas"].(map[string]any)["Answer"].(map[string]any)
 					pending := answer["oneOf"].([]any)[0].(map[string]any)["properties"].(map[string]any)
 					pending["completedAt"] = map[string]any{"format": "date-time", "type": "string"}
+				})
+			},
+		},
+		{
+			name: "Answer parent completedAt drift",
+			mutate: func(raw []byte) []byte {
+				return mutateObject(t, raw, func(document map[string]any) {
+					answer := document["components"].(map[string]any)["schemas"].(map[string]any)["Answer"].(map[string]any)
+					answer["properties"].(map[string]any)["completedAt"] = map[string]any{"format": "date-time", "type": "string"}
+				})
+			},
+		},
+		{
+			name: "Message citation reference drift",
+			mutate: func(raw []byte) []byte {
+				return mutateObject(t, raw, func(document map[string]any) {
+					message := document["components"].(map[string]any)["schemas"].(map[string]any)["Message"].(map[string]any)
+					citations := message["properties"].(map[string]any)["citations"].(map[string]any)
+					citations["items"].(map[string]any)["$ref"] = "#/components/schemas/Identifier"
 				})
 			},
 		},
