@@ -24,6 +24,27 @@ The browser qualification chain remains test/evidence-only and fail-closed.
 Its empty approval cannot start a browser, driver, or product process and is
 not evidence for UI-001 or UI-002.
 
+## Current integration supersession
+
+The three P1 findings retained later in this document describe the immutable
+`d61a158` audit baseline, not the current tree:
+
+- OpenAPI production identity is now bound to the final command source closure
+  and the dual-PE gate asserts two clean-build artifact hashes.
+- Requests remain closed, while response evolution, stable Problem recovery
+  decisions, and state-discriminated Answer/Message shapes are executable
+  contract requirements.
+- Upload, collection, conversation, and Ask mutations now retain one immutable
+  key-plus-payload attempt across uncertain responses, and validate successful
+  responses against that frozen attempt. The exact boundary is recorded in
+  `webui-immutable-attempts-bb176c8.md`.
+
+Those changes are closed by the integrated OpenAPI/WebUI commits and the
+source/artifact refresh at `7fbb716`. Full module tests, CI, standalone copy,
+and a clean `core.autocrlf=true` checkout all pass at the subsequent ledger
+reconciliation commit `74d56a4`. This update does not turn the still-blocked
+real-browser gate into a PASS.
+
 ## Closed boundaries
 
 ### No context and citation structure
@@ -76,9 +97,10 @@ not evidence for UI-001 or UI-002.
   replay returns the same answer identifier and does not call the provider
   again.
 
-## Remaining findings
+## Historical findings at the audited baseline
 
-No production P0 was found. The remaining production/integration P1 set is:
+No production P0 was found. At the original baseline, the production/integration
+P1 set was:
 
 1. **OpenAPI production identity is stale.** The committed source manifest is
    `325dfec05db7f7744c6aaf4de792d80efaa6b458a0b850a635d3c41e3596e099`,

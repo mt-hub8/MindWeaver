@@ -29,8 +29,10 @@ incompatible file is reported as unavailable without disabling TXT/Markdown.
 This is still a development build, not a qualified release. The implemented
 paths above have automated evidence, but they have not passed the complete
 release, durability, security, and platform qualification matrix. Ask/citation
-qualification, the final retained-kernel-path boundary for backup destinations,
-Go schema-upgrade qualification, packaging, and release qualification remain
+architecture and structural citation checks are implemented, but natural-question
+retrieval quality remains explicitly blocked by `RET-003`. The final retained
+kernel-path boundary for backup destinations, long-running SQLite stress, real
+browser qualification, packaging, and release qualification also remain
 incomplete. Live no-replace backup creation and startup-only verify/restore are
 implemented candidates, but their presence must not be read as a supported
 release promise.
