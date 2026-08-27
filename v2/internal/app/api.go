@@ -353,7 +353,8 @@ func (api *API) documents(response http.ResponseWriter, request *http.Request) {
 	}
 	page, err := api.service.ListDocumentsPage(request.Context(), limit, after)
 	if err != nil {
-		api.problem(response, request, transport.CodeInternal, "无法读取文档列表。")
+		code, detail := classifyError(err)
+		api.problem(response, request, code, detail)
 		return
 	}
 	items := make([]documentView, 0, len(page.Documents))
@@ -608,7 +609,8 @@ func (api *API) collections(response http.ResponseWriter, request *http.Request)
 	}
 	page, err := api.service.ListCollectionsPage(request.Context(), limit, after)
 	if err != nil {
-		api.problem(response, request, transport.CodeInternal, "无法读取集合列表。")
+		code, detail := classifyError(err)
+		api.problem(response, request, code, detail)
 		return
 	}
 	items := make([]collectionView, 0, len(page.Collections))
@@ -804,7 +806,8 @@ func (api *API) purgeStatus(response http.ResponseWriter, request *http.Request)
 		return
 	}
 	if err != nil {
-		api.problem(response, request, transport.CodeInternal, "无法读取当前清理状态。")
+		code, detail := classifyError(err)
+		api.problem(response, request, code, detail)
 		return
 	}
 	writeJSON(response, http.StatusOK, viewPurgeStatus(status))
@@ -831,7 +834,8 @@ func (api *API) purges(response http.ResponseWriter, request *http.Request) {
 	}
 	page, err := api.lifecycle.ListPurges(request.Context(), limit, after)
 	if err != nil {
-		api.problem(response, request, transport.CodeInternal, "无法读取进行中的清理列表。")
+		code, detail := classifyError(err)
+		api.problem(response, request, code, detail)
 		return
 	}
 	items := make([]purgeStatusView, 0, len(page.Purges))
@@ -1021,6 +1025,8 @@ func classifyError(err error) (transport.ErrorCode, string) {
 		return transport.CodeConflict, "已保存回答仍引用该文档；请先处理相关会话。"
 	case errors.Is(err, store.ErrQueryTooShort), errors.Is(err, ingest.ErrUnsupportedFormat):
 		return transport.CodeInvalidArgument, "请求参数无效。"
+	case store.IsRetryableContention(err):
+		return transport.CodeServiceUnavailable, "本地数据库暂时繁忙；请稍后按原请求重试。"
 	case errors.Is(err, workbench.ErrPDFUnavailable):
 		return transport.CodeServiceUnavailable, "PDF 隔离解析器当前不可用；TXT 和 Markdown 仍可正常使用。"
 	case errors.Is(err, ingest.ErrChunkLimit):

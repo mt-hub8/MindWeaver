@@ -428,9 +428,14 @@ func (s *Service) newID(ctx context.Context) (string, error) {
 func (s *Service) failClaim(ctx context.Context, claimed store.Job, code string, cause error) (store.Job, error) {
 	cleanupContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
+	retry := errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded)
+	if store.IsRetryableContention(cause) {
+		code = "DATABASE_BUSY"
+		retry = true
+	}
 	failErr := s.database.FailOrRetry(cleanupContext, store.FailureParams{
 		JobID: claimed.ID, LeaseToken: claimed.LeaseToken, ErrorCode: code,
-		Retry: errors.Is(cause, context.Canceled) || errors.Is(cause, context.DeadlineExceeded),
+		Retry: retry,
 	})
 	job, getErr := s.database.GetJob(cleanupContext, claimed.ID)
 	return job, errors.Join(fmt.Errorf("workbench: process ingestion: %w", cause), failErr, getErr)

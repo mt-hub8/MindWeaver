@@ -45,7 +45,7 @@
         "platform/version"
       ],
       "public": true,
-      "sourceManifestSHA256": "6f6a36c470e50e902fa1e836f429bda6d7a06fcf729a2964181f496d76874f5e",
+      "sourceManifestSHA256": "7abd64345e2e9821b823b01dc717de25c10d24a20c9f0f2ad48daf51f1fbd0e2",
       "verbs": [
         "config",
         "help",
@@ -292,7 +292,8 @@
       "path": "/api/v1/collections",
       "problemStatuses": [
         400,
-        500
+        500,
+        503
       ],
       "session": "required",
       "successStatuses": [
@@ -503,7 +504,8 @@
       "path": "/api/v1/documents",
       "problemStatuses": [
         400,
-        500
+        500,
+        503
       ],
       "session": "required",
       "successStatuses": [
@@ -546,7 +548,8 @@
       "problemStatuses": [
         400,
         404,
-        500
+        500,
+        503
       ],
       "session": "required",
       "successStatuses": [
@@ -565,7 +568,8 @@
       "path": "/api/v1/documents/purges",
       "problemStatuses": [
         400,
-        500
+        500,
+        503
       ],
       "session": "required",
       "successStatuses": [

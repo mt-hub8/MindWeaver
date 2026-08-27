@@ -79,6 +79,30 @@ func TestBackupCreateContractDoesNotClaimExistingTargetAsFresh(t *testing.T) {
 	}
 }
 
+func TestSQLiteBackedReadOperationsDeclareRetryableContention(t *testing.T) {
+	t.Parallel()
+	openAPI, _ := contract.Documents()
+	var document map[string]any
+	if err := json.Unmarshal(openAPI, &document); err != nil {
+		t.Fatal(err)
+	}
+	paths := document["paths"].(map[string]any)
+	for operationID, path := range map[string]string{
+		"listCollections": "/api/v1/collections",
+		"listDocuments":   "/api/v1/documents",
+		"getPurgeStatus":  "/api/v1/documents/purge-status",
+		"listPurges":      "/api/v1/documents/purges",
+	} {
+		operation := paths[path].(map[string]any)["get"].(map[string]any)
+		responses := operation["responses"].(map[string]any)
+		serviceUnavailable, ok := responses["503"].(map[string]any)
+		if operation["operationId"] != operationID || operation["x-mindweaver-retry-safety"] != "read-only" ||
+			!ok || serviceUnavailable["$ref"] != "#/components/responses/Problem503" {
+			t.Fatalf("%s contention contract = %#v", operationID, operation)
+		}
+	}
+}
+
 func TestOpenAPIDisclosesLiteralPhraseRetrievalBoundary(t *testing.T) {
 	t.Parallel()
 	openAPI, _ := contract.Documents()

@@ -3,6 +3,7 @@ package workbench
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/mt-hub8/MindWeaver/v2/internal/ingest"
 	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract/protocol"
 	store "github.com/mt-hub8/MindWeaver/v2/internal/store/sqlite"
+	"github.com/ncruces/go-sqlite3"
 )
 
 type fixedPDFExtractor struct {
@@ -265,11 +267,26 @@ func TestInterruptedClaimRetriesUnlessUserCancellationWins(t *testing.T) {
 	for _, test := range []struct {
 		name       string
 		userCancel bool
+		code       string
+		cause      error
+		wantCause  error
 		want       store.JobStatus
 		wantCode   string
 	}{
-		{name: "runtime shutdown retries", want: store.JobQueued, wantCode: "WORK_CANCELLED"},
-		{name: "user cancellation wins", userCancel: true, want: store.JobCancelled},
+		{
+			name: "runtime shutdown retries", code: "WORK_CANCELLED",
+			cause: context.Canceled, wantCause: context.Canceled,
+			want: store.JobQueued, wantCode: "WORK_CANCELLED",
+		},
+		{
+			name: "database contention retries with a stable code", code: "INGESTION_COMMIT_FAILED",
+			cause: fmt.Errorf("database detail canary: %w", sqlite3.BUSY_TIMEOUT), wantCause: sqlite3.BUSY_TIMEOUT,
+			want: store.JobQueued, wantCode: "DATABASE_BUSY",
+		},
+		{
+			name: "user cancellation wins", userCancel: true, code: "WORK_CANCELLED",
+			cause: context.Canceled, wantCause: context.Canceled, want: store.JobCancelled,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctx := t.Context()
@@ -303,8 +320,8 @@ func TestInterruptedClaimRetriesUnlessUserCancellationWins(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			job, failErr := service.failClaim(context.Background(), claimed, "WORK_CANCELLED", context.Canceled)
-			if !errors.Is(failErr, context.Canceled) {
+			job, failErr := service.failClaim(context.Background(), claimed, test.code, test.cause)
+			if !errors.Is(failErr, test.wantCause) {
 				t.Fatalf("failClaim error = %v", failErr)
 			}
 			if job.Status != test.want || job.ErrorCode != test.wantCode || job.LeaseToken != "" {

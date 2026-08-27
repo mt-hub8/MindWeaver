@@ -2502,6 +2502,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
           }
         },
         "summary": "List collections",
@@ -3033,6 +3036,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
           }
         },
         "summary": "List documents",
@@ -3148,6 +3154,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
           }
         },
         "summary": "Read current purge cleanup status",
@@ -3189,6 +3198,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
           }
         },
         "summary": "List current purge cleanup tombstones",
