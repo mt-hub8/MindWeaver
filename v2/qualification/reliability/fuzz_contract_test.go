@@ -42,6 +42,7 @@ type reliabilityToolchain struct {
 
 var frozenCoreFuzzTargets = []fuzzTarget{
 	{Package: "./internal/blob", Name: "FuzzParseIDCanonical"},
+	{Package: "./internal/blob", Name: "FuzzStoreOperationSequence"},
 	{Package: "./internal/ingest", Name: "FuzzChunkTextDeterministicAndBounded"},
 	{Package: "./internal/ingest", Name: "FuzzReadTextCanonicalAndBounded"},
 	{Package: "./internal/pdfextract/protocol", Name: "FuzzDecodeResultRequiresCanonicalFrame"},
