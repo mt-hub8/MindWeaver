@@ -38,7 +38,7 @@ output.
 | BLOB-K03 | GC candidate commit returned, after durable `Prepare`, before publication rename | exact staging and one durable candidate; startup removes staging and resolves the missing-object candidate | CLOSED by `TestBLOB001DurableCandidateBeforeRenameRecoversAfterForcedTermination` |
 | BLOB-K04 | publication rename returned and exact final object verifies, before document reference transaction | exact object plus one candidate; startup deletes the unreferenced object and resolves the candidate | CLOSED by `TestBLOB001PublishedOrphanRecoversAfterForcedTermination` |
 | BLOB-K05 | document reference transaction is in flight and its commit outcome is not observed | either K04 state, or one referenced graph with no candidate; startup/replay converges without duplicate graph or object | OPEN |
-| BLOB-K06 | reference commit returned but upload response is not observed | one referenced graph and no candidate; exact replay before and after reopen returns the committed identities | OPEN for a real kill at this boundary |
+| BLOB-K06 | reference commit returned but upload response is not observed | one referenced graph and no candidate; exact replay before and after reopen returns the committed identities | CLOSED by `TestBLOB001ReferenceCommitResponseReplayAfterForcedTermination` |
 | BLOB-K07 | GC has committed/claimed a deletion candidate and is about to unlink the object | candidate and object remain, or the object is already absent; startup retries the same reference-aware decision | OPEN |
 | BLOB-K08 | object unlink returned, before its parent directory sync completes | object may be absent but the candidate remains; startup must not report resolution until deletion is durable | OPEN |
 | BLOB-K09 | parent directory sync returned, before candidate-resolution commit/response | object is absent and candidate remains or is atomically resolved; startup/replay drains it exactly once | OPEN |
@@ -62,6 +62,19 @@ candidates. Each test must pass ten consecutive runs before its row is closed.
 These tests are deliberately separate from the same-process lifecycle unit
 tests, which cannot prove forced termination or first-owner ordering. K01A does
 not close K01B or qualify ENOSPC/short-write behavior.
+
+K06 runs the real workbench upload through Blob publication and the atomic
+document-reference transaction. After `Upload` returns, the child re-reads one
+document/source/job graph, one referenced Blob and zero candidates, then emits
+a `complete=true` frame bound to the phase, nonce, Blob content, and three
+distinct canonical document/revision/job IDs. The parent kills before it can
+observe an upload response, verifies the final object only through a raw
+read-only handle, and lets `app.Start` become the first new Vault owner. Before
+route registration startup observes the exact queued graph and must clean or
+sweep nothing. Replaying the same key/body before and after another reopen
+returns `Created=false` with all four original IDs and leaves one graph/object.
+This closes committed-response loss only; it does not close the in-flight
+transaction outcome in K05.
 
 ## Final-tree ENOSPC and short-write seam assessment
 
@@ -87,5 +100,6 @@ Run from `v2/` with the frozen Go 1.27.0 toolchain:
 
 ```text
 go test ./qualification/knowledge -run '^TestBLOB001(IncompleteStaging|DurableStagingBeforeCandidate|DurableCandidateBeforeRename)RecoversAfterForcedTermination$' -count=10
+go test ./qualification/knowledge -run '^TestBLOB001ReferenceCommitResponseReplayAfterForcedTermination$' -count=10
 go vet ./qualification/knowledge
 ```

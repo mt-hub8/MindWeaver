@@ -24,6 +24,7 @@ import (
 	store "github.com/mt-hub8/MindWeaver/v2/internal/store/sqlite"
 	"github.com/mt-hub8/MindWeaver/v2/internal/vault"
 	"github.com/mt-hub8/MindWeaver/v2/internal/workbench"
+	"github.com/mt-hub8/MindWeaver/v2/platform"
 )
 
 const (
@@ -33,21 +34,25 @@ const (
 	blob001LegacyVaultEnvironment   = "MWQ_BLOB001_VAULT"
 	blob001LegacyMarkerEnvironment  = "MWQ_BLOB001_MARKER"
 	blob001CapabilityName           = "capability"
-	blob001CheckpointVersion        = 3
+	blob001CheckpointVersion        = 4
 	blob001CheckpointMaxBytes       = 1024
 	blob001PhaseIncompleteStaging   = "staging_copy_incomplete"
 	blob001PhaseStagingPreCandidate = "staging_durable_pre_candidate"
 	blob001PhaseCandidatePreRename  = "candidate_committed_pre_rename"
 	blob001PhasePublishedPreApply   = "published_pre_reference_apply"
+	blob001PhaseReferenceCommitted  = "reference_committed_response_unobserved"
 )
 
 type blob001PublicationCheckpoint struct {
-	Version  int    `json:"version"`
-	Nonce    string `json:"nonce"`
-	Phase    string `json:"phase"`
-	BlobID   string `json:"blob_id"`
-	Size     int64  `json:"size"`
-	Complete bool   `json:"complete"`
+	Version    int    `json:"version"`
+	Nonce      string `json:"nonce"`
+	Phase      string `json:"phase"`
+	BlobID     string `json:"blob_id"`
+	Size       int64  `json:"size"`
+	Complete   bool   `json:"complete"`
+	DocumentID string `json:"document_id,omitempty"`
+	RevisionID string `json:"revision_id,omitempty"`
+	JobID      string `json:"job_id,omitempty"`
 }
 
 type blob001CheckpointExpectation struct {
@@ -55,6 +60,7 @@ type blob001CheckpointExpectation struct {
 	BlobID   string
 	Size     int64
 	Complete bool
+	Accepted bool
 }
 
 func TestBLOB001PublishedOrphanRecoversAfterForcedTermination(t *testing.T) {
@@ -102,7 +108,7 @@ func TestBLOB001PublishedOrphanRecoversAfterForcedTermination(t *testing.T) {
 		t.Fatal("BLOB001_CHECKPOINT_ID_INVALID")
 	}
 	orphanPath := blob001ObjectPath(vaultRoot, orphanID)
-	if err := verifyRawBLOB001Orphan(orphanPath, checkpoint); err != nil {
+	if err := verifyRawBLOB001Object(orphanPath, checkpoint); err != nil {
 		t.Fatal(err)
 	}
 
@@ -541,10 +547,30 @@ func decodeBLOB001Checkpoint(raw []byte, nonce string, expected blob001Checkpoin
 	id, err := blob.ParseID(checkpoint.BlobID)
 	if err != nil || id.String() != checkpoint.BlobID || checkpoint.Version != blob001CheckpointVersion ||
 		checkpoint.Nonce != nonce || checkpoint.Phase != expected.Phase || checkpoint.BlobID != expected.BlobID ||
-		checkpoint.Size != expected.Size || checkpoint.Complete != expected.Complete {
+		checkpoint.Size != expected.Size || checkpoint.Complete != expected.Complete ||
+		!validBLOB001AcceptedCheckpoint(checkpoint, expected.Accepted) {
 		return blob001PublicationCheckpoint{}, errors.New("checkpoint identity differs")
 	}
 	return checkpoint, nil
+}
+
+func validBLOB001AcceptedCheckpoint(checkpoint blob001PublicationCheckpoint, expected bool) bool {
+	values := []string{checkpoint.DocumentID, checkpoint.RevisionID, checkpoint.JobID}
+	if !expected {
+		return values[0] == "" && values[1] == "" && values[2] == ""
+	}
+	seen := make(map[platform.ID]struct{}, len(values))
+	for _, raw := range values {
+		id, err := platform.ParseID(raw)
+		if err != nil || id.String() != raw {
+			return false
+		}
+		if _, exists := seen[id]; exists {
+			return false
+		}
+		seen[id] = struct{}{}
+	}
+	return true
 }
 
 func newBLOB001CheckpointExpectation(phase string, content []byte, complete bool) blob001CheckpointExpectation {
@@ -558,17 +584,17 @@ func blob001ContentID(content []byte) string {
 	return "sha256:" + hex.EncodeToString(digest[:])
 }
 
-func verifyRawBLOB001Orphan(path string, checkpoint blob001PublicationCheckpoint) error {
+func verifyRawBLOB001Object(path string, checkpoint blob001PublicationCheckpoint) error {
 	file, err := os.Open(path)
 	if err != nil {
-		return errors.New("BLOB001_ORPHAN_OPEN_FAILED")
+		return errors.New("BLOB001_OBJECT_OPEN_FAILED")
 	}
 	before, statErr := file.Stat()
 	pathInfo, pathErr := os.Lstat(path)
 	if statErr != nil || pathErr != nil || !before.Mode().IsRegular() || !pathInfo.Mode().IsRegular() ||
 		!os.SameFile(before, pathInfo) || before.Size() != checkpoint.Size {
 		_ = file.Close()
-		return errors.New("BLOB001_ORPHAN_IDENTITY_INVALID")
+		return errors.New("BLOB001_OBJECT_IDENTITY_INVALID")
 	}
 	hasher := sha256.New()
 	size, readErr := io.CopyBuffer(hasher, io.LimitReader(file, checkpoint.Size+1), make([]byte, 64*1024))
@@ -576,7 +602,7 @@ func verifyRawBLOB001Orphan(path string, checkpoint blob001PublicationCheckpoint
 	closeErr := file.Close()
 	if readErr != nil || afterErr != nil || closeErr != nil || size != checkpoint.Size ||
 		!os.SameFile(before, after) || "sha256:"+hex.EncodeToString(hasher.Sum(nil)) != checkpoint.BlobID {
-		return errors.New("BLOB001_ORPHAN_BYTES_INVALID")
+		return errors.New("BLOB001_OBJECT_BYTES_INVALID")
 	}
 	return nil
 }
