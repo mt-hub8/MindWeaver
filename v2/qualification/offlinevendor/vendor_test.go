@@ -15,10 +15,12 @@ import (
 )
 
 type moduleContract struct {
-	path         string
-	version      string
-	h1           string
-	licenseFiles []licenseContract
+	path              string
+	version           string
+	h1                string
+	licenseFiles      []licenseContract
+	provenanceFiles   []provenanceContract
+	provenanceBlocker string
 }
 
 type licenseContract struct {
@@ -27,6 +29,15 @@ type licenseContract struct {
 	sha256 string
 	spdx   string
 }
+
+type provenanceContract struct {
+	name      string
+	size      int64
+	sha256    string
+	statement string
+}
+
+const sqliteTranslationProvenanceBlocker = "SQLITE_TRANSLATION_UPSTREAM_PROVENANCE_MISSING"
 
 const (
 	expectedVendorFiles             = 698
@@ -98,8 +109,14 @@ var vendoredModules = []moduleContract{
 	},
 	{
 		path: "github.com/ncruces/go-sqlite3-wasm/v3", version: "v3.2.35304",
-		h1:           "h1:5NoQAewtgKNK3G4bjNPxVoGXu6F6NzLXWCTdD5FFAEY=",
-		licenseFiles: []licenseContract{{"LICENSE", 918, "13219037ddf63dbbcf174bf59525d602df7a2e30083f63be566715c858fcb19e", "MIT-0"}},
+		h1: "h1:5NoQAewtgKNK3G4bjNPxVoGXu6F6NzLXWCTdD5FFAEY=",
+		licenseFiles: []licenseContract{
+			{"LICENSE", 918, "13219037ddf63dbbcf174bf59525d602df7a2e30083f63be566715c858fcb19e", "MIT-0"},
+		},
+		provenanceFiles: []provenanceContract{
+			{"README.md", 435, "fb8084fccb5733ccc4af421ff026812da7852e91516bdf7c70d007eb46744383", "MACHINE_TRANSLATION_RETAINS_UPSTREAM_LICENSES"},
+		},
+		provenanceBlocker: sqliteTranslationProvenanceBlocker,
 	},
 	{
 		path: "github.com/ncruces/go-sqlite3", version: "v0.35.3",
@@ -130,6 +147,7 @@ func TestVendoredModuleAndLicenseContract(t *testing.T) {
 	assertVendoredModuleSet(t, filepath.Join(root, "vendor", "modules.txt"))
 	assertModuleSums(t, filepath.Join(root, "go.sum"))
 	assertVendoredLicenseSet(t, root)
+	assertVendoredProvenanceBoundary(t, root)
 	assertVendorTreeIdentity(t, filepath.Join(root, "vendor"))
 }
 
@@ -606,6 +624,34 @@ func assertVendoredLicenseSet(t *testing.T, root string) {
 		sort.Strings(missing)
 		t.Fatalf("missing vendored legal files: %v", missing)
 	}
+}
+
+func assertVendoredProvenanceBoundary(t *testing.T, root string) {
+	t.Helper()
+	blockers := make(map[string]string)
+	for _, module := range vendoredModules {
+		for _, evidence := range module.provenanceFiles {
+			if evidence.statement == "" {
+				t.Fatalf("vendored provenance file %s/%s has no bounded statement classification", module.path, evidence.name)
+			}
+			path := filepath.Join(root, "vendor", filepath.FromSlash(module.path), evidence.name)
+			contents := readRegularFile(t, path, 1<<20)
+			digest := sha256.Sum256(contents)
+			if int64(len(contents)) != evidence.size || hex.EncodeToString(digest[:]) != evidence.sha256 {
+				t.Fatalf("vendored provenance file %s/%s does not match size/SHA-256 contract", module.path, evidence.name)
+			}
+		}
+		if module.provenanceBlocker != "" {
+			if len(module.provenanceFiles) == 0 {
+				t.Fatalf("module %s declares a provenance blocker without the statement that establishes it", module.path)
+			}
+			blockers[module.path] = module.provenanceBlocker
+		}
+	}
+	want := map[string]string{
+		"github.com/ncruces/go-sqlite3-wasm/v3": sqliteTranslationProvenanceBlocker,
+	}
+	assertExactMap(t, "vendored upstream provenance blockers", blockers, want)
 }
 
 func isLegalFilename(name string) bool {
