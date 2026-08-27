@@ -2,12 +2,12 @@ package supplychain
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"debug/buildinfo"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +27,14 @@ const (
 
 type artifactContract struct {
 	name    string
+	modules []string
+}
+
+type builtArtifact struct {
+	name    string
+	path    string
+	size    int64
+	sha256  string
 	modules []string
 }
 
@@ -168,12 +176,19 @@ func TestPrepackageSupplyChainInputClosure(t *testing.T) {
 	}
 
 	actual := make(map[string][]string, len(artifactContracts))
+	artifactRoot := filepath.Join(t.TempDir(), "artifacts")
+	if err := os.Mkdir(artifactRoot, 0o700); err != nil {
+		t.Fatal("create bounded artifact output directory")
+	}
 	for _, artifact := range artifactContracts {
-		modules, err := buildArtifactModules(t, goTool, root, environment, artifact)
+		built, err := buildArtifact(t, goTool, root, artifactRoot, environment, artifact)
 		if err != nil {
 			t.Fatal(err)
 		}
-		actual[artifact.name] = modules
+		actual[artifact.name] = built.modules
+	}
+	if err := validateArtifactDirectory(artifactRoot, artifactContracts); err != nil {
+		t.Fatal(err)
 	}
 	if err := validateArtifactMapping(actual, artifactContracts, moduleContracts); err != nil {
 		t.Fatal(err)
@@ -229,37 +244,41 @@ func TestPrepackageInventoryStructuralMutationsFailClosed(t *testing.T) {
 	})
 }
 
-func buildArtifactModules(t *testing.T, goTool, root string, environment []string, artifact artifactContract) ([]string, error) {
+func buildArtifact(t *testing.T, goTool, root, outputRoot string, environment []string, artifact artifactContract) (builtArtifact, error) {
 	t.Helper()
 	target, _, err := artifactTarget(artifact)
 	if err != nil {
-		return nil, err
+		return builtArtifact{}, err
 	}
-	output := filepath.Join(t.TempDir(), artifact.name)
-	command := exec.CommandContext(t.Context(), goTool, "build", "-trimpath", "-buildvcs=false", "-o", output, target)
-	command.Dir = root
-	command.Env = environment
-	if combined, err := command.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("build %s: %w: %s", artifact.name, err, combined)
+	output := filepath.Join(outputRoot, artifact.name)
+	result := runBoundedProcess(
+		t.Context(), prepackageBuildTimeout, maxBuildOutputBytes,
+		goTool, []string{"build", "-trimpath", "-buildvcs=false", "-o", output, target}, root, environment,
+	)
+	if err := validateBuildProcessResult(artifact.name, result); err != nil {
+		return builtArtifact{}, err
 	}
-	file, err := os.Open(output)
+	contents, err := readBoundedArtifact(output)
 	if err != nil {
-		return nil, err
+		return builtArtifact{}, fmt.Errorf("%s: ARTIFACT_INSPECTION_FAILED", artifact.name)
 	}
-	var magic [2]byte
-	_, readErr := io.ReadFull(file, magic[:])
-	closeErr := file.Close()
-	if readErr != nil || closeErr != nil || string(magic[:]) != "MZ" {
-		return nil, fmt.Errorf("%s is not a readable Windows PE", artifact.name)
+	if len(contents) < 2 || string(contents[:2]) != "MZ" {
+		return builtArtifact{}, fmt.Errorf("%s: ARTIFACT_NOT_WINDOWS_PE", artifact.name)
 	}
-	information, err := buildinfo.ReadFile(output)
+	digestBytes := sha256.Sum256(contents)
+	digest := hex.EncodeToString(digestBytes[:])
+	information, err := buildinfo.Read(bytes.NewReader(contents))
 	if err != nil {
-		return nil, err
+		return builtArtifact{}, fmt.Errorf("%s: BUILDINFO_UNREADABLE", artifact.name)
 	}
 	if information.GoVersion != goRuntimeContract.goVersion {
-		return nil, fmt.Errorf("%s Go version = %q, want %q", artifact.name, information.GoVersion, goRuntimeContract.goVersion)
+		return builtArtifact{}, fmt.Errorf("%s: BUILDINFO_GO_VERSION_MISMATCH", artifact.name)
 	}
-	return modulesFromBuildInfo(information, artifact)
+	modules, err := modulesFromBuildInfo(information, artifact)
+	if err != nil {
+		return builtArtifact{}, fmt.Errorf("%s: BUILDINFO_CONTRACT_MISMATCH", artifact.name)
+	}
+	return builtArtifact{name: artifact.name, path: output, size: int64(len(contents)), sha256: digest, modules: modules}, nil
 }
 
 func modulesFromBuildInfo(information *buildinfo.BuildInfo, artifact artifactContract) ([]string, error) {
