@@ -1,9 +1,63 @@
 # Dual-PE production dependency closure
 
-Status: **CUT-002 offline mechanics candidate qualified; production identities
-are obsolete and CUT-002 is not integrated, PASS, or release-qualified**
+Status: **CUT-002 PASS on the integrated tracked-only Go tree; this is not an
+installer or signed-release qualification**
 
-## CUT-002 vendored extraction mechanics candidate
+## Current integrated CUT-002 result
+
+The accepted integration baseline is exact commit
+`71bd8049e70e5a0c1cc16df89f48870f72cdb426`. Later documentation-only
+commits do not change the identities below. On a clean Windows/amd64 checkout,
+with the repository-selected Go 1.27.0 toolchain, both of these committed gates
+completed with exit code zero:
+
+```powershell
+$mwGo = $env:MW_GO # repository-selected Go 1.27.0 executable
+./v2/scripts/ci.ps1 -Go $mwGo
+./v2/scripts/verify-standalone.ps1 -Go $mwGo
+```
+
+The standalone gate inventories the clean `HEAD:v2` Git tree, creates a
+tracked-only archive, verifies the exact archived path and executable-mode
+sets, rejects `.git` metadata, clears the monorepo-root hint, and runs the full
+offline CI from that extracted repository root. The child gate uses fresh
+empty `GOMODCACHE`, `GOCACHE`, and `GOTMPDIR` directories, keeps module and VCS
+network resolution disabled, consumes the canonical vendor tree, runs all Go
+tests and vet, and builds the exact two Windows PE files. This directly closes
+the parent-independence outcome required by CUT-002.
+
+The independently rerun focused vendor and production gates passed on the same
+baseline. Their current identities are:
+
+- `mindweaver.exe`: 78 first-party source files,
+  `6f6a36c470e50e902fa1e836f429bda6d7a06fcf729a2964181f496d76874f5e`;
+  PE SHA-256
+  `b57bdd506e98ca59e9eb2512d3f79187b70b2679dab78233f680204d6d12f23a`;
+- `mindweaver-pdf.exe`: 5 first-party source files,
+  `0bec9ddde1ea8778ffc3c20740ed55080d7ef0b537cfd070a2d563ccc5a087c6`;
+  PE SHA-256
+  `a2a6a04b4ade9367aab6cce35e9a3c87351f9c8fabd33d9ea2fe108f7e732241`;
+- deduplicated dual-PE union: 82 first-party source files,
+  `6ec0fb3c1c7f4c8eefc33edaeef781c1af7a321cf8eb548ef1d0acbedf004739`.
+
+Each PE was built twice with independent empty build caches and matched its
+frozen bytes. The shipped command and artifact exact-set remains only
+`mindweaver.exe` and `mindweaver-pdf.exe`; no Java, Python, migration exporter,
+or third command enters the build. The canonical vendor contract independently
+binds 698 files, 37 package declarations, eight exact module versions and
+`go.sum` hashes, eight dependency `LICENSE` files, and
+`golang.org/x/sys/PATENTS` while keeping the module cache empty.
+
+CUT-002 therefore passes. This result does **not** select the project's own
+license, generate final SBOM/NOTICE artifacts, build or sign an MSI, qualify
+Authenticode/ICE, or prove clean-machine upgrade/uninstall. Those remain
+separate REL-002 and SEC-002 blockers.
+
+The remaining sections are retained as explicitly historical qualification
+provenance. Any earlier `BLOCKED`, obsolete hash, or candidate-only statement
+below describes its named old baseline and does not override the current result.
+
+## Historical CUT-002 vendored extraction mechanics candidate
 
 This final adaptation is based on exact committed main
 `0dff1d45eee689cb119cd6be20bf19ac40e9d5f6`. It selectively replays the

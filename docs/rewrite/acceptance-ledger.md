@@ -6,8 +6,8 @@ the exact command/report location. Manual inspection alone cannot close a row.
 Only `Phase=CORE` rows are release blockers. `LATER` rows preserve
 traceability without expanding the first Go release.
 
-Current CORE reconciliation: `21 PASS`, `8 IMPLEMENTED`, `4 BLOCKED`, and
-`4 NOT_IMPLEMENTED`. All nine `LATER` rows remain `NOT_IMPLEMENTED` and are
+Current CORE reconciliation: `22 PASS`, `8 IMPLEMENTED`, `4 BLOCKED`, and
+`3 NOT_IMPLEMENTED`. All nine `LATER` rows remain `NOT_IMPLEMENTED` and are
 not part of the first Go release.
 
 | ID | Required outcome | Phase | Core gate | Current status | Required evidence |
@@ -57,8 +57,9 @@ not part of the first Go release.
 | REL-001 | Race, fuzz, fault, performance and soak gates pass for CORE scope | CORE | YES | NOT_IMPLEMENTED | current developer signals and release-scale gaps are bounded in `docs/rewrite/evidence/rel001-current-main-37ca406.md`; approved race, 24-48h soak, 1,000 random-kill, 100k/SLO and operation-sequence-fuzz gates remain |
 | REL-002 | Windows package is signed, offline installable, upgradable and uninstallable | CORE | YES | NOT_IMPLEMENTED | clean-machine matrix, SBOM and signatures |
 | CUT-001 | Go is the sole product writer; installation creates a fresh Vault and exposes no Java/MySQL data-import path | CORE | YES | PASS | fresh-first-run, negative migration surface, exact two-PE and 890-file legacy DROP audit |
-| CUT-002 | Extracted repository builds/packages with no parent dependency | CORE | YES | NOT_IMPLEMENTED | clean-clone release CI |
+| CUT-002 | Extracted repository builds/packages with no parent dependency | CORE | YES | PASS | `v2/scripts/{ci,verify-standalone}.*`; `v2/qualification/{offlinevendor,production}`; current tracked-only extraction and exact dual-PE evidence in `docs/rewrite/evidence/dual-pe-production-closure.md` |
 
-`ARC-001` records the current walking-skeleton evidence only. It must be rerun
-after every integration and again from the extracted repository before `CUT-002`
-can pass.
+`ARC-001` records the current walking-skeleton evidence only. The final
+integration reran it both in the source checkout and from the tracked-only
+extracted repository to close `CUT-002`; future production changes must repeat
+both gates before retaining that status.
