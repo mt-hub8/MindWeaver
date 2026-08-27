@@ -48,6 +48,151 @@ function Get-TargetProcessIdentities {
     return ,$identities
 }
 
+$QualificationName = "UI-001/UI-002"
+$RequiredBrowserScenarios = @(
+    [PSCustomObject]@{ AcceptanceID = "SEC-001"; ID = "SEC001_CSP_ENFORCEMENT" },
+    [PSCustomObject]@{ AcceptanceID = "UI-001"; ID = "UI001_ASK_MALFORMED_CITATION" },
+    [PSCustomObject]@{ AcceptanceID = "UI-001"; ID = "UI001_ASK_NO_HIT" },
+    [PSCustomObject]@{ AcceptanceID = "UI-001"; ID = "UI001_ASK_STRUCTURAL_CITATIONS" },
+    [PSCustomObject]@{ AcceptanceID = "UI-001"; ID = "UI001_BOOTSTRAP_ONE_USE" },
+    [PSCustomObject]@{ AcceptanceID = "UI-001"; ID = "UI001_CSRF_ROTATION" },
+    [PSCustomObject]@{ AcceptanceID = "UI-001"; ID = "UI001_NO_EXTERNAL_NETWORK" },
+    [PSCustomObject]@{ AcceptanceID = "UI-001"; ID = "UI001_NO_MODEL_UPLOAD_SEARCH" },
+    [PSCustomObject]@{ AcceptanceID = "UI-001"; ID = "UI001_OLLAMA_LOOPBACK_CONFIG" },
+    [PSCustomObject]@{ AcceptanceID = "UI-001"; ID = "UI001_OUTCOME_UNCERTAIN_RESTART" },
+    [PSCustomObject]@{ AcceptanceID = "UI-001"; ID = "UI001_TWO_TAB_CONCURRENCY" },
+    [PSCustomObject]@{ AcceptanceID = "UI-001"; ID = "UI001_BACKUP_CREATE_STATUS_CANCEL" },
+    [PSCustomObject]@{ AcceptanceID = "UI-001"; ID = "UI001_BACKUP_LOST_RESPONSE_REPLAY" },
+    [PSCustomObject]@{ AcceptanceID = "UI-001"; ID = "UI001_DIAGNOSTICS" },
+    [PSCustomObject]@{ AcceptanceID = "UI-001"; ID = "UI001_INGESTION_PROGRESS_RESTART" },
+    [PSCustomObject]@{ AcceptanceID = "UI-002"; ID = "UI002_KEYBOARD_FOCUS" },
+    [PSCustomObject]@{ AcceptanceID = "UI-002"; ID = "UI002_REFLOW_CONTRAST_MOTION" },
+    [PSCustomObject]@{ AcceptanceID = "UI-002"; ID = "UI002_ZH_IME" }
+)
+
+function Get-JsonProperty($Object, [string]$Name) {
+    if ($null -eq $Object) {
+        return $null
+    }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $null
+    }
+    return $property.Value
+}
+
+function Test-LowerSHA256($Value) {
+    return ($Value -is [string] -and $Value -cmatch '^[0-9a-f]{64}$')
+}
+
+function Test-StableToken($Value) {
+    return ($Value -is [string] -and $Value.Length -le 64 -and $Value -cmatch '^[a-z0-9][a-z0-9._-]*$')
+}
+
+function Test-StableVersion($Value) {
+    return ($Value -is [string] -and $Value.Length -le 64 -and $Value -cmatch '^[A-Za-z0-9._+-]+$')
+}
+
+function Test-BrowserScenarioSet($Scenarios, [string]$Status, [string]$Code, [bool]$RequireEvidence) {
+    $values = @($Scenarios)
+    if ($values.Count -ne $RequiredBrowserScenarios.Count) {
+        return $false
+    }
+    for ($index = 0; $index -lt $RequiredBrowserScenarios.Count; $index++) {
+        $scenario = $values[$index]
+        $required = $RequiredBrowserScenarios[$index]
+        if ((Get-JsonProperty $scenario "acceptanceId") -cne $required.AcceptanceID -or
+            (Get-JsonProperty $scenario "id") -cne $required.ID -or
+            (Get-JsonProperty $scenario "status") -cne $Status -or
+            (Get-JsonProperty $scenario "code") -cne $Code) {
+            return $false
+        }
+        $screenshotHash = Get-JsonProperty $scenario "screenshotSha256"
+        $screenshotBytes = Get-JsonProperty $scenario "screenshotBytes"
+        $traceHash = Get-JsonProperty $scenario "traceSha256"
+        $traceBytes = Get-JsonProperty $scenario "traceBytes"
+        if ($RequireEvidence) {
+            if (-not (Test-LowerSHA256 $screenshotHash) -or [int64]$screenshotBytes -le 0 -or [int64]$screenshotBytes -gt 1048576 -or
+                -not (Test-LowerSHA256 $traceHash) -or [int64]$traceBytes -le 0 -or [int64]$traceBytes -gt 4096) {
+                return $false
+            }
+        } elseif ($null -ne $screenshotHash -or $null -ne $screenshotBytes -or $null -ne $traceHash -or $null -ne $traceBytes) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Test-BrowserRunnerResult($Document, [int]$RunnerExit, [string[]]$RunnerOutput, [string]$Revision) {
+    if ($RunnerOutput.Count -ne 1 -or
+        (Get-JsonProperty $Document "schemaVersion") -ne 2 -or
+        (Get-JsonProperty $Document "qualification") -cne $QualificationName -or
+        (Get-JsonProperty $Document "sourceRevision") -cne $Revision -or
+        (Get-JsonProperty $Document "platform") -cne "windows/amd64") {
+        return $false
+    }
+    $status = Get-JsonProperty $Document "status"
+    $code = Get-JsonProperty $Document "code"
+    if ($RunnerOutput[0] -cne ("{0} {1} {2}" -f $QualificationName, $status, $code)) {
+        return $false
+    }
+    $cleanupStatus = Get-JsonProperty $Document "cleanupStatus"
+    $cleanupTotal = Get-JsonProperty $Document "cleanupOsTotalProcessCount"
+    $cleanupActive = Get-JsonProperty $Document "cleanupOsActiveProcessCount"
+    if ($status -ceq "PASS") {
+        $artifacts = Get-JsonProperty $Document "artifacts"
+        if ($RunnerExit -ne 0 -or $code -cne "QUALIFIED" -or $cleanupStatus -cne "PASS" -or
+            -not (Test-LowerSHA256 (Get-JsonProperty $Document "executableSha256")) -or
+            -not (Test-LowerSHA256 (Get-JsonProperty $Document "policySha256")) -or
+            -not (Test-LowerSHA256 (Get-JsonProperty $Document "rootProcessLineageSha256")) -or
+            -not (Test-LowerSHA256 (Get-JsonProperty $Document "descendantProcessLineageSha256")) -or
+            -not (Test-LowerSHA256 (Get-JsonProperty $Document "cleanupReceiptSha256")) -or
+            $null -eq $cleanupTotal -or $null -eq $cleanupActive -or
+            [int]$cleanupTotal -lt 3 -or [int]$cleanupTotal -gt 64 -or [int]$cleanupActive -ne 0 -or
+            (Get-JsonProperty $Document "webdriverSessionClosed") -ne $true -or
+            (Get-JsonProperty $Document "artifactsReverified") -ne $true -or
+            $null -eq $artifacts -or -not (Test-LowerSHA256 (Get-JsonProperty $artifacts "browserSha256")) -or
+            -not (Test-LowerSHA256 (Get-JsonProperty $artifacts "driverSha256")) -or
+            -not (Test-StableToken (Get-JsonProperty $artifacts "approvalId")) -or
+            -not (Test-StableVersion (Get-JsonProperty $artifacts "browserVersion")) -or
+            -not (Test-StableVersion (Get-JsonProperty $artifacts "driverVersion")) -or
+            -not (Test-BrowserScenarioSet (Get-JsonProperty $Document "scenarios") "PASS" "QUALIFIED" $true)) {
+            return $false
+        }
+        return $true
+    }
+    $allowedBlockers = @(
+        "BROWSER_ARTIFACT_NOT_APPROVED", "BROWSER_ARTIFACT_BUNDLE_INVALID",
+        "BROWSER_PROCESS_SANDBOX_NOT_IMPLEMENTED", "BROWSER_LAUNCH_PROFILE_NOT_APPROVED",
+        "CONTROLLED_HARNESS_NOT_QUALIFIED"
+    )
+    if ($status -cne "BLOCKED" -or $RunnerExit -ne 3 -or $allowedBlockers -cnotcontains $code) {
+        return $false
+    }
+    if ($code -ceq "CONTROLLED_HARNESS_NOT_QUALIFIED") {
+        return ($cleanupStatus -ceq "HARNESS_PASS" -and
+            (Test-LowerSHA256 (Get-JsonProperty $Document "rootProcessLineageSha256")) -and
+            (Test-LowerSHA256 (Get-JsonProperty $Document "cleanupReceiptSha256")) -and
+            $null -ne $cleanupTotal -and $null -ne $cleanupActive -and
+            [int]$cleanupTotal -ge 3 -and [int]$cleanupTotal -le 64 -and [int]$cleanupActive -eq 0 -and
+            (Get-JsonProperty $Document "webdriverSessionClosed") -eq $true -and
+            (Get-JsonProperty $Document "artifactsReverified") -eq $true -and
+            (Test-BrowserScenarioSet (Get-JsonProperty $Document "scenarios") "HARNESS_PASS" "NOT_QUALIFIED" $true))
+    }
+    return ($cleanupStatus -ceq "NOT_STARTED" -and
+        $null -eq (Get-JsonProperty $Document "artifacts") -and
+        $null -eq (Get-JsonProperty $Document "executableSha256") -and
+        $null -eq (Get-JsonProperty $Document "policySha256") -and
+        $null -eq (Get-JsonProperty $Document "rootProcessLineageSha256") -and
+        $null -eq (Get-JsonProperty $Document "descendantProcessLineageSha256") -and
+        $null -eq (Get-JsonProperty $Document "cleanupReceiptSha256") -and
+        $null -ne $cleanupTotal -and $null -ne $cleanupActive -and
+        [int]$cleanupTotal -eq 0 -and [int]$cleanupActive -eq 0 -and
+        (Get-JsonProperty $Document "webdriverSessionClosed") -eq $false -and
+        (Get-JsonProperty $Document "artifactsReverified") -eq $false -and
+        (Test-BrowserScenarioSet (Get-JsonProperty $Document "scenarios") "NOT_RUN" "PREREQUISITE_BLOCKED" $false))
+}
+
 if ($SelfTest -and -not [string]::IsNullOrWhiteSpace($Report)) {
     Fail-Stable "browser qualification: self-test does not accept a report path"
 }
@@ -195,27 +340,80 @@ try {
     }
     $runnerOutput = @(& $runnerPath @runnerArguments 2>$null)
     $runnerExit = $LASTEXITCODE
-    if ($runnerExit -ne 3 -or $runnerOutput.Count -ne 1 -or
-        $runnerOutput[0] -cne "UI-001/UI-002 BLOCKED BROWSER_ARTIFACT_NOT_APPROVED") {
+    if (($runnerExit -ne 0 -and $runnerExit -ne 3) -or $runnerOutput.Count -ne 1 -or
+        -not (Test-Path -LiteralPath $reportPath -PathType Leaf)) {
         Fail-Stable "browser qualification: fail-closed runner contract failed"
     }
 
-    if ($SelfTest) {
-        $reportBytes = [IO.File]::ReadAllBytes($reportPath)
-        if ($reportBytes.Length -gt 32768) {
-            Fail-Stable "browser qualification: self-test evidence bound failed"
-        }
+    $reportBytes = [IO.File]::ReadAllBytes($reportPath)
+    if ($reportBytes.Length -eq 0 -or $reportBytes.Length -gt 32768) {
+        Fail-Stable "browser qualification: evidence bound failed"
+    }
+    try {
         $reportDocument = [Text.Encoding]::UTF8.GetString($reportBytes) | ConvertFrom-Json
-        $notRun = @($reportDocument.scenarios | Where-Object {
-            $_.status -ceq "NOT_RUN" -and $_.code -ceq "PREREQUISITE_BLOCKED"
-        })
-        if ($reportDocument.status -cne "BLOCKED" -or
+    } catch {
+        Fail-Stable "browser qualification: evidence contract failed"
+    }
+    if (-not (Test-BrowserRunnerResult $reportDocument $runnerExit $runnerOutput $revision)) {
+        Fail-Stable "browser qualification: evidence contract failed"
+    }
+
+    if ($SelfTest) {
+        if ($runnerExit -ne 3 -or
+            $reportDocument.status -cne "BLOCKED" -or
             $reportDocument.code -cne "BROWSER_ARTIFACT_NOT_APPROVED" -or
             $reportDocument.cleanupStatus -cne "NOT_STARTED" -or
-            @($reportDocument.scenarios).Count -ne 13 -or $notRun.Count -ne 13 -or
+            @($reportDocument.scenarios).Count -ne $RequiredBrowserScenarios.Count -or
             [Text.Encoding]::UTF8.GetString($reportBytes).Contains($temporaryRoot) -or
             (Test-Path -LiteralPath $artifactOpenCanary)) {
             Fail-Stable "browser qualification: self-test evidence contract failed"
+        }
+        $syntheticHash = "a" * 64
+        $syntheticScenarios = @($RequiredBrowserScenarios | ForEach-Object {
+            [PSCustomObject]@{
+                acceptanceId = $_.AcceptanceID
+                id = $_.ID
+                status = "PASS"
+                code = "QUALIFIED"
+                screenshotSha256 = $syntheticHash
+                screenshotBytes = 1
+                traceSha256 = $syntheticHash
+                traceBytes = 1
+            }
+        })
+        $syntheticPass = [PSCustomObject]@{
+            schemaVersion = 2
+            qualification = $QualificationName
+            status = "PASS"
+            code = "QUALIFIED"
+            sourceRevision = $revision
+            platform = "windows/amd64"
+            artifacts = [PSCustomObject]@{
+                approvalId = "self-test-approved-bundle"
+                browserSha256 = $syntheticHash
+                driverSha256 = $syntheticHash
+                browserVersion = "1.0.0"
+                driverVersion = "1.0.0"
+            }
+            executableSha256 = $syntheticHash
+            policySha256 = $syntheticHash
+            rootProcessLineageSha256 = $syntheticHash
+            descendantProcessLineageSha256 = $syntheticHash
+            scenarios = $syntheticScenarios
+            webdriverSessionClosed = $true
+            artifactsReverified = $true
+            cleanupStatus = "PASS"
+            cleanupReceiptSha256 = $syntheticHash
+            cleanupOsTotalProcessCount = 4
+            cleanupOsActiveProcessCount = 0
+        }
+        $syntheticOutput = @("UI-001/UI-002 PASS QUALIFIED")
+        if (-not (Test-BrowserRunnerResult $syntheticPass 0 $syntheticOutput $revision)) {
+            Fail-Stable "browser qualification: normal PASS contract self-test failed"
+        }
+        $syntheticPass.policySha256 = ""
+        if (Test-BrowserRunnerResult $syntheticPass 0 $syntheticOutput $revision) {
+            Fail-Stable "browser qualification: incomplete PASS contract self-test failed"
         }
         $afterProcesses = Get-TargetProcessIdentities
         foreach ($identity in $afterProcesses) {
@@ -227,7 +425,7 @@ try {
         $scriptExit = 0
     } else {
         Write-Output $runnerOutput[0]
-        $scriptExit = 3
+        $scriptExit = $runnerExit
     }
 } finally {
     foreach ($name in $savedEnvironment.Keys) {

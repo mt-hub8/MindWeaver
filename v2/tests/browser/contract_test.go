@@ -171,7 +171,7 @@ func TestRetainedArtifactCapabilitiesRejectACLExpansionWriteAndReplacement(t *te
 	assertBlocked(t, report, BlockerArtifactBundleInvalid)
 }
 
-func TestControlledWebDriverHarnessAggregatesThirteenScenariosButNeverQualifies(t *testing.T) {
+func TestControlledWebDriverHarnessAggregatesRequiredScenariosButNeverQualifies(t *testing.T) {
 	approval := testArtifactApproval()
 	bundle := writeArtifactBundle(t, approval)
 	harness := &fakeProcessHarness{}
@@ -283,8 +283,110 @@ func TestRequiredScenarioListCannotBeMutatedByCaller(t *testing.T) {
 	first := RequiredScenarios()
 	first[0] = "FORGED"
 	second := RequiredScenarios()
-	if second[0] == "FORGED" || len(second) != 13 {
+	if second[0] == "FORGED" || len(second) != len(requiredScenarios) {
 		t.Fatal("required scenario contract was mutable")
+	}
+}
+
+func TestRequiredScenarioGroupsCoverSecurityAndEnabledUIWithoutCLIRecovery(t *testing.T) {
+	want := []scenarioRequirement{
+		{AcceptanceID: "SEC-001", ID: "SEC001_CSP_ENFORCEMENT"},
+		{AcceptanceID: "UI-001", ID: "UI001_ASK_MALFORMED_CITATION"},
+		{AcceptanceID: "UI-001", ID: "UI001_ASK_NO_HIT"},
+		{AcceptanceID: "UI-001", ID: "UI001_ASK_STRUCTURAL_CITATIONS"},
+		{AcceptanceID: "UI-001", ID: "UI001_BOOTSTRAP_ONE_USE"},
+		{AcceptanceID: "UI-001", ID: "UI001_CSRF_ROTATION"},
+		{AcceptanceID: "UI-001", ID: "UI001_NO_EXTERNAL_NETWORK"},
+		{AcceptanceID: "UI-001", ID: "UI001_NO_MODEL_UPLOAD_SEARCH"},
+		{AcceptanceID: "UI-001", ID: "UI001_OLLAMA_LOOPBACK_CONFIG"},
+		{AcceptanceID: "UI-001", ID: "UI001_OUTCOME_UNCERTAIN_RESTART"},
+		{AcceptanceID: "UI-001", ID: "UI001_TWO_TAB_CONCURRENCY"},
+		{AcceptanceID: "UI-001", ID: "UI001_BACKUP_CREATE_STATUS_CANCEL"},
+		{AcceptanceID: "UI-001", ID: "UI001_BACKUP_LOST_RESPONSE_REPLAY"},
+		{AcceptanceID: "UI-001", ID: "UI001_DIAGNOSTICS"},
+		{AcceptanceID: "UI-001", ID: "UI001_INGESTION_PROGRESS_RESTART"},
+		{AcceptanceID: "UI-002", ID: "UI002_KEYBOARD_FOCUS"},
+		{AcceptanceID: "UI-002", ID: "UI002_REFLOW_CONTRAST_MOTION"},
+		{AcceptanceID: "UI-002", ID: "UI002_ZH_IME"},
+	}
+	if len(requiredScenarios) != len(want) {
+		t.Fatalf("required scenario count = %d, want %d", len(requiredScenarios), len(want))
+	}
+	for index := range want {
+		if requiredScenarios[index] != want[index] {
+			t.Fatalf("required scenario %d = %#v, want %#v", index, requiredScenarios[index], want[index])
+		}
+		if strings.Contains(requiredScenarios[index].ID, "RECOVERY_VERIFY") || strings.Contains(requiredScenarios[index].ID, "RECOVERY_RESTORE") {
+			t.Fatalf("startup-only recovery was presented as a browser scenario: %q", requiredScenarios[index].ID)
+		}
+	}
+}
+
+func TestPassEvidenceRequiresPolicyLineageAndObservedCleanupReceipt(t *testing.T) {
+	validReport := qualifiedReport(t, minObservedProcesses)
+	if validReport.Status() != "PASS" || validReport.Code() != "QUALIFIED" {
+		t.Fatalf("valid qualification = %#v", validReport)
+	}
+	if _, err := MarshalReport(validReport); err != nil {
+		t.Fatal(err)
+	}
+	if !lowerSHA256(validReport.wire.PolicySHA256) || !lowerSHA256(validReport.wire.RootLineageSHA256) ||
+		!lowerSHA256(validReport.wire.DescendantLineageSHA256) || validReport.wire.CleanupActiveProcesses != 0 ||
+		validReport.wire.CleanupProcesses != minObservedProcesses || validReport.wire.CleanupSHA256 != reportReceiptDigest(validReport.wire) {
+		t.Fatalf("pass evidence was not bound: %#v", validReport.wire)
+	}
+
+	moreProcesses := qualifiedReport(t, minObservedProcesses+1)
+	if moreProcesses.Status() != "PASS" || validReport.wire.CleanupSHA256 == moreProcesses.wire.CleanupSHA256 {
+		t.Fatal("cleanup receipt did not bind the observed OS process count")
+	}
+
+	mutations := map[string]func(*processEvidence){
+		"policy":               func(value *processEvidence) { value.PolicySHA256 = "" },
+		"root lineage":         func(value *processEvidence) { value.RootLineageSHA256 = "" },
+		"descendant lineage":   func(value *processEvidence) { value.DescendantLineageSHA256 = "" },
+		"active process":       func(value *processEvidence) { value.CleanupActiveProcesses = 1 },
+		"too few processes":    func(value *processEvidence) { value.CleanupProcesses = minObservedProcesses - 1 },
+		"too many processes":   func(value *processEvidence) { value.CleanupProcesses = maxObservedProcesses + 1 },
+		"session not closed":   func(value *processEvidence) { value.SessionClosed = false },
+		"artifact not checked": func(value *processEvidence) { value.ArtifactsReverified = false },
+		"no real proof":        func(value *processEvidence) { value.realProof = nil },
+		"wrong group":          func(value *processEvidence) { value.Scenarios[0].AcceptanceID = "UI-001" },
+	}
+	for name, mutate := range mutations {
+		t.Run(name, func(t *testing.T) {
+			evidence := qualifiedProcessEvidence(minObservedProcesses)
+			mutate(&evidence)
+			approval := testArtifactApproval()
+			report := runQualification(context.Background(), Approval{artifact: &approval}, RunOptions{
+				SourceRevision: testRevision, Now: fixedClock(),
+			}, &recordingBoundary{evidence: evidence})
+			if report.Status() != "FAIL" || report.Code() != "PROCESS_OR_EVIDENCE_FAILED" {
+				t.Fatalf("invalid %s evidence produced %#v", name, report)
+			}
+		})
+	}
+}
+
+func TestPassReceiptRejectsPostQualificationMutation(t *testing.T) {
+	for name, mutate := range map[string]func(*reportWire){
+		"source":         func(wire *reportWire) { wire.SourceRevision = strings.Repeat("1", 40) },
+		"artifact":       func(wire *reportWire) { wire.Artifacts.BrowserSHA256 = strings.Repeat("b", 64) },
+		"policy":         func(wire *reportWire) { wire.PolicySHA256 = strings.Repeat("b", 64) },
+		"root":           func(wire *reportWire) { wire.RootLineageSHA256 = strings.Repeat("b", 64) },
+		"descendant":     func(wire *reportWire) { wire.DescendantLineageSHA256 = strings.Repeat("b", 64) },
+		"processes":      func(wire *reportWire) { wire.CleanupProcesses++ },
+		"session":        func(wire *reportWire) { wire.SessionClosed = false },
+		"reverification": func(wire *reportWire) { wire.ArtifactsReverified = false },
+		"scenario":       func(wire *reportWire) { wire.Scenarios[0].TraceSHA256 = strings.Repeat("b", 64) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			report := qualifiedReport(t, minObservedProcesses)
+			mutate(&report.wire)
+			if _, err := MarshalReport(report); err == nil {
+				t.Fatalf("post-qualification %s mutation retained a valid receipt", name)
+			}
+		})
 	}
 }
 
@@ -313,6 +415,36 @@ type recordingBoundary struct {
 func (boundary *recordingBoundary) Run(context.Context) (processEvidence, BlockerCode, error) {
 	boundary.calls++
 	return boundary.evidence, boundary.blocker, boundary.err
+}
+
+func qualifiedReport(t *testing.T, processCount int) Report {
+	t.Helper()
+	approval := testArtifactApproval()
+	return runQualification(context.Background(), Approval{artifact: &approval}, RunOptions{
+		SourceRevision: testRevision, Now: fixedClock(),
+	}, &recordingBoundary{evidence: qualifiedProcessEvidence(processCount)})
+}
+
+func qualifiedProcessEvidence(processCount int) processEvidence {
+	approval := testArtifactApproval()
+	scenarios := make([]ScenarioResult, len(requiredScenarios))
+	for index, requirement := range requiredScenarios {
+		scenarios[index] = ScenarioResult{
+			AcceptanceID: requirement.AcceptanceID, ID: requirement.ID, Status: "PASS", Code: "QUALIFIED",
+			ScreenshotSHA256: digest([]byte(requirement.ID + "-screenshot")), ScreenshotBytes: 128,
+			TraceSHA256: digest([]byte(requirement.ID + "-trace")), TraceBytes: 96,
+		}
+	}
+	return processEvidence{
+		ApprovalID: approval.ID, BrowserSHA256: approval.Browser.SHA256, DriverSHA256: approval.Driver.SHA256,
+		BrowserVersion: approval.Browser.Version, DriverVersion: approval.Driver.Version,
+		ExecutableSHA256:        approval.MindWeaver.SHA256,
+		PolicySHA256:            digest([]byte("approved-browser-launch-profile-and-network-policy-v2")),
+		RootLineageSHA256:       digest([]byte("observed-root-process-lineage-v2")),
+		DescendantLineageSHA256: digest([]byte("observed-descendant-process-lineage-v2")),
+		Scenarios:               scenarios, CleanupStatus: "PASS", CleanupProcesses: processCount, CleanupActiveProcesses: 0,
+		SessionClosed: true, ArtifactsReverified: true, realProof: &realQualificationProof{},
+	}
 }
 
 func testArtifactApproval() artifactApproval {
@@ -439,9 +571,9 @@ func (harness *fakeProcessHarness) Cleanup(ctx context.Context) cleanupReceipt {
 		_ = harness.listener.Close()
 	}
 	if harness.failCleanup {
-		return cleanupReceipt{AllExited: false, ProcessCount: managedProcessCount}
+		return cleanupReceipt{AllExited: false, ProcessCount: managedRootProcessCount, ActiveProcesses: 1}
 	}
-	return cleanupReceipt{AllExited: true, ProcessCount: managedProcessCount}
+	return cleanupReceipt{AllExited: true, ProcessCount: managedRootProcessCount, ActiveProcesses: 0}
 }
 
 func (harness *fakeProcessHarness) serveWebDriver(writer http.ResponseWriter, request *http.Request) {

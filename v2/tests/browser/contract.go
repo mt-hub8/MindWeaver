@@ -1,10 +1,11 @@
-// Package browserqualification owns the fail-closed contract for optional
-// UI-001/UI-002 real-browser qualification. It never downloads a browser.
+// Package browserqualification owns the fail-closed browser facets of
+// SEC-001/UI-001/UI-002 qualification. It never downloads a browser.
 package browserqualification
 
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
@@ -17,9 +18,12 @@ import (
 
 const (
 	approvalSchemaVersion = 1
-	reportSchemaVersion   = 1
+	reportSchemaVersion   = 2
+	qualificationName     = "UI-001/UI-002"
 	maxApprovalBytes      = 16 << 10
 	maxReportBytes        = 32 << 10
+	minObservedProcesses  = 3
+	maxObservedProcesses  = 64
 )
 
 //go:embed approval.v1.json
@@ -92,6 +96,7 @@ func ParseApproval(data []byte) (Approval, error) {
 }
 
 type ScenarioResult struct {
+	AcceptanceID     string `json:"acceptanceId"`
 	ID               string `json:"id"`
 	Status           string `json:"status"`
 	Code             string `json:"code"`
@@ -101,24 +106,38 @@ type ScenarioResult struct {
 	TraceBytes       int64  `json:"traceBytes,omitempty"`
 }
 
-var requiredScenarioIDs = []string{
-	"UI001_ASK_MALFORMED_CITATION",
-	"UI001_ASK_NO_HIT",
-	"UI001_ASK_STRUCTURAL_CITATIONS",
-	"UI001_BOOTSTRAP_ONE_USE",
-	"UI001_CSRF_ROTATION",
-	"UI001_NO_EXTERNAL_NETWORK",
-	"UI001_NO_MODEL_UPLOAD_SEARCH",
-	"UI001_OLLAMA_LOOPBACK_CONFIG",
-	"UI001_OUTCOME_UNCERTAIN_RESTART",
-	"UI001_TWO_TAB_CONCURRENCY",
-	"UI002_KEYBOARD_FOCUS",
-	"UI002_REFLOW_CONTRAST_MOTION",
-	"UI002_ZH_IME",
+type scenarioRequirement struct {
+	AcceptanceID string
+	ID           string
+}
+
+var requiredScenarios = []scenarioRequirement{
+	{AcceptanceID: "SEC-001", ID: "SEC001_CSP_ENFORCEMENT"},
+	{AcceptanceID: "UI-001", ID: "UI001_ASK_MALFORMED_CITATION"},
+	{AcceptanceID: "UI-001", ID: "UI001_ASK_NO_HIT"},
+	{AcceptanceID: "UI-001", ID: "UI001_ASK_STRUCTURAL_CITATIONS"},
+	{AcceptanceID: "UI-001", ID: "UI001_BOOTSTRAP_ONE_USE"},
+	{AcceptanceID: "UI-001", ID: "UI001_CSRF_ROTATION"},
+	{AcceptanceID: "UI-001", ID: "UI001_NO_EXTERNAL_NETWORK"},
+	{AcceptanceID: "UI-001", ID: "UI001_NO_MODEL_UPLOAD_SEARCH"},
+	{AcceptanceID: "UI-001", ID: "UI001_OLLAMA_LOOPBACK_CONFIG"},
+	{AcceptanceID: "UI-001", ID: "UI001_OUTCOME_UNCERTAIN_RESTART"},
+	{AcceptanceID: "UI-001", ID: "UI001_TWO_TAB_CONCURRENCY"},
+	{AcceptanceID: "UI-001", ID: "UI001_BACKUP_CREATE_STATUS_CANCEL"},
+	{AcceptanceID: "UI-001", ID: "UI001_BACKUP_LOST_RESPONSE_REPLAY"},
+	{AcceptanceID: "UI-001", ID: "UI001_DIAGNOSTICS"},
+	{AcceptanceID: "UI-001", ID: "UI001_INGESTION_PROGRESS_RESTART"},
+	{AcceptanceID: "UI-002", ID: "UI002_KEYBOARD_FOCUS"},
+	{AcceptanceID: "UI-002", ID: "UI002_REFLOW_CONTRAST_MOTION"},
+	{AcceptanceID: "UI-002", ID: "UI002_ZH_IME"},
 }
 
 func RequiredScenarios() []string {
-	return append([]string(nil), requiredScenarioIDs...)
+	result := make([]string, len(requiredScenarios))
+	for index, requirement := range requiredScenarios {
+		result[index] = requirement.ID
+	}
+	return result
 }
 
 // processBoundary is the sole package-owned point that may eventually build
@@ -129,17 +148,22 @@ type processBoundary interface {
 }
 
 type processEvidence struct {
-	ApprovalID       string
-	BrowserSHA256    string
-	DriverSHA256     string
-	BrowserVersion   string
-	DriverVersion    string
-	ExecutableSHA256 string
-	Scenarios        []ScenarioResult
-	CleanupStatus    string
-	CleanupSHA256    string
-	CleanupProcesses int
-	realProof        *realQualificationProof
+	ApprovalID              string
+	BrowserSHA256           string
+	DriverSHA256            string
+	BrowserVersion          string
+	DriverVersion           string
+	ExecutableSHA256        string
+	PolicySHA256            string
+	RootLineageSHA256       string
+	DescendantLineageSHA256 string
+	Scenarios               []ScenarioResult
+	CleanupStatus           string
+	CleanupProcesses        int
+	CleanupActiveProcesses  int
+	SessionClosed           bool
+	ArtifactsReverified     bool
+	realProof               *realQualificationProof
 }
 
 // Only a future Windows Job/ACL-backed implementation in this package may
@@ -162,20 +186,26 @@ type Report struct {
 }
 
 type reportWire struct {
-	SchemaVersion    int               `json:"schemaVersion"`
-	Qualification    string            `json:"qualification"`
-	Status           string            `json:"status"`
-	Code             string            `json:"code"`
-	SourceRevision   string            `json:"sourceRevision"`
-	Platform         string            `json:"platform"`
-	StartedAt        string            `json:"startedAt"`
-	CompletedAt      string            `json:"completedAt"`
-	Artifacts        *artifactEvidence `json:"artifacts,omitempty"`
-	ExecutableSHA256 string            `json:"executableSha256,omitempty"`
-	Scenarios        []ScenarioResult  `json:"scenarios"`
-	CleanupStatus    string            `json:"cleanupStatus"`
-	CleanupSHA256    string            `json:"cleanupReceiptSha256,omitempty"`
-	CleanupProcesses int               `json:"cleanupProcessCount,omitempty"`
+	SchemaVersion           int               `json:"schemaVersion"`
+	Qualification           string            `json:"qualification"`
+	Status                  string            `json:"status"`
+	Code                    string            `json:"code"`
+	SourceRevision          string            `json:"sourceRevision"`
+	Platform                string            `json:"platform"`
+	StartedAt               string            `json:"startedAt"`
+	CompletedAt             string            `json:"completedAt"`
+	Artifacts               *artifactEvidence `json:"artifacts,omitempty"`
+	ExecutableSHA256        string            `json:"executableSha256,omitempty"`
+	PolicySHA256            string            `json:"policySha256,omitempty"`
+	RootLineageSHA256       string            `json:"rootProcessLineageSha256,omitempty"`
+	DescendantLineageSHA256 string            `json:"descendantProcessLineageSha256,omitempty"`
+	Scenarios               []ScenarioResult  `json:"scenarios"`
+	SessionClosed           bool              `json:"webdriverSessionClosed"`
+	ArtifactsReverified     bool              `json:"artifactsReverified"`
+	CleanupStatus           string            `json:"cleanupStatus"`
+	CleanupSHA256           string            `json:"cleanupReceiptSha256,omitempty"`
+	CleanupProcesses        int               `json:"cleanupOsTotalProcessCount"`
+	CleanupActiveProcesses  int               `json:"cleanupOsActiveProcessCount"`
 }
 
 type RunOptions struct {
@@ -216,26 +246,31 @@ func runQualification(ctx context.Context, approval Approval, options RunOptions
 	if !validProcessEvidence(evidence) {
 		return failedReport(options.SourceRevision, started, completed)
 	}
-	return Report{wire: reportWire{
-		SchemaVersion: reportSchemaVersion, Qualification: "UI-001/UI-002", Status: "PASS", Code: "QUALIFIED",
+	wire := reportWire{
+		SchemaVersion: reportSchemaVersion, Qualification: qualificationName, Status: "PASS", Code: "QUALIFIED",
 		SourceRevision: options.SourceRevision, Platform: runtime.GOOS + "/" + runtime.GOARCH,
 		StartedAt: started.Format(time.RFC3339Nano), CompletedAt: completed.Format(time.RFC3339Nano),
 		Artifacts: &artifactEvidence{
 			ApprovalID: evidence.ApprovalID, BrowserSHA256: evidence.BrowserSHA256, DriverSHA256: evidence.DriverSHA256,
 			BrowserVersion: evidence.BrowserVersion, DriverVersion: evidence.DriverVersion,
 		},
-		ExecutableSHA256: evidence.ExecutableSHA256, Scenarios: append([]ScenarioResult(nil), evidence.Scenarios...),
-		CleanupStatus: evidence.CleanupStatus, CleanupSHA256: evidence.CleanupSHA256, CleanupProcesses: evidence.CleanupProcesses,
-	}}
+		ExecutableSHA256: evidence.ExecutableSHA256, PolicySHA256: evidence.PolicySHA256,
+		RootLineageSHA256: evidence.RootLineageSHA256, DescendantLineageSHA256: evidence.DescendantLineageSHA256,
+		Scenarios: append([]ScenarioResult(nil), evidence.Scenarios...), CleanupStatus: evidence.CleanupStatus,
+		CleanupProcesses: evidence.CleanupProcesses, CleanupActiveProcesses: evidence.CleanupActiveProcesses,
+		SessionClosed: evidence.SessionClosed, ArtifactsReverified: evidence.ArtifactsReverified,
+	}
+	wire.CleanupSHA256 = reportReceiptDigest(wire)
+	return Report{wire: wire}
 }
 
 func blockedReport(revision string, started, completed time.Time, code BlockerCode) Report {
-	scenarios := make([]ScenarioResult, len(requiredScenarioIDs))
-	for index, id := range requiredScenarioIDs {
-		scenarios[index] = ScenarioResult{ID: id, Status: "NOT_RUN", Code: "PREREQUISITE_BLOCKED"}
+	scenarios := make([]ScenarioResult, len(requiredScenarios))
+	for index, requirement := range requiredScenarios {
+		scenarios[index] = ScenarioResult{AcceptanceID: requirement.AcceptanceID, ID: requirement.ID, Status: "NOT_RUN", Code: "PREREQUISITE_BLOCKED"}
 	}
 	return Report{wire: reportWire{
-		SchemaVersion: reportSchemaVersion, Qualification: "UI-001/UI-002", Status: "BLOCKED", Code: string(code),
+		SchemaVersion: reportSchemaVersion, Qualification: qualificationName, Status: "BLOCKED", Code: string(code),
 		SourceRevision: revision, Platform: runtime.GOOS + "/" + runtime.GOARCH,
 		StartedAt: started.Format(time.RFC3339Nano), CompletedAt: completed.Format(time.RFC3339Nano),
 		Scenarios: scenarios, CleanupStatus: "NOT_STARTED",
@@ -243,12 +278,12 @@ func blockedReport(revision string, started, completed time.Time, code BlockerCo
 }
 
 func failedReport(revision string, started, completed time.Time) Report {
-	scenarios := make([]ScenarioResult, len(requiredScenarioIDs))
-	for index, id := range requiredScenarioIDs {
-		scenarios[index] = ScenarioResult{ID: id, Status: "FAIL", Code: "QUALIFICATION_ABORTED"}
+	scenarios := make([]ScenarioResult, len(requiredScenarios))
+	for index, requirement := range requiredScenarios {
+		scenarios[index] = ScenarioResult{AcceptanceID: requirement.AcceptanceID, ID: requirement.ID, Status: "FAIL", Code: "QUALIFICATION_ABORTED"}
 	}
 	return Report{wire: reportWire{
-		SchemaVersion: reportSchemaVersion, Qualification: "UI-001/UI-002", Status: "FAIL", Code: "PROCESS_OR_EVIDENCE_FAILED",
+		SchemaVersion: reportSchemaVersion, Qualification: qualificationName, Status: "FAIL", Code: "PROCESS_OR_EVIDENCE_FAILED",
 		SourceRevision: revision, Platform: runtime.GOOS + "/" + runtime.GOARCH,
 		StartedAt: started.Format(time.RFC3339Nano), CompletedAt: completed.Format(time.RFC3339Nano),
 		Scenarios: scenarios, CleanupStatus: "FAILED_OR_UNKNOWN",
@@ -256,28 +291,34 @@ func failedReport(revision string, started, completed time.Time) Report {
 }
 
 func harnessReport(revision string, started, completed time.Time, evidence processEvidence) Report {
-	return Report{wire: reportWire{
-		SchemaVersion: reportSchemaVersion, Qualification: "UI-001/UI-002", Status: "BLOCKED", Code: string(BlockerControlledHarness),
+	wire := reportWire{
+		SchemaVersion: reportSchemaVersion, Qualification: qualificationName, Status: "BLOCKED", Code: string(BlockerControlledHarness),
 		SourceRevision: revision, Platform: runtime.GOOS + "/" + runtime.GOARCH,
 		StartedAt: started.Format(time.RFC3339Nano), CompletedAt: completed.Format(time.RFC3339Nano),
 		Artifacts: &artifactEvidence{
 			ApprovalID: evidence.ApprovalID, BrowserSHA256: evidence.BrowserSHA256, DriverSHA256: evidence.DriverSHA256,
 			BrowserVersion: evidence.BrowserVersion, DriverVersion: evidence.DriverVersion,
 		},
-		ExecutableSHA256: evidence.ExecutableSHA256, Scenarios: append([]ScenarioResult(nil), evidence.Scenarios...),
-		CleanupStatus: evidence.CleanupStatus, CleanupSHA256: evidence.CleanupSHA256, CleanupProcesses: evidence.CleanupProcesses,
-	}}
+		ExecutableSHA256: evidence.ExecutableSHA256, RootLineageSHA256: evidence.RootLineageSHA256,
+		Scenarios: append([]ScenarioResult(nil), evidence.Scenarios...), CleanupStatus: evidence.CleanupStatus,
+		CleanupProcesses: evidence.CleanupProcesses, CleanupActiveProcesses: evidence.CleanupActiveProcesses,
+		SessionClosed: evidence.SessionClosed, ArtifactsReverified: evidence.ArtifactsReverified,
+	}
+	wire.CleanupSHA256 = reportReceiptDigest(wire)
+	return Report{wire: wire}
 }
 
 func validProcessEvidence(evidence processEvidence) bool {
 	if !stableToken(evidence.ApprovalID, 64) || !lowerSHA256(evidence.BrowserSHA256) || !lowerSHA256(evidence.DriverSHA256) ||
 		!lowerSHA256(evidence.ExecutableSHA256) || !stableVersion(evidence.BrowserVersion) || !stableVersion(evidence.DriverVersion) ||
-		evidence.CleanupStatus != "PASS" || !lowerSHA256(evidence.CleanupSHA256) || evidence.CleanupProcesses != 3 ||
-		len(evidence.Scenarios) != len(requiredScenarioIDs) || evidence.realProof == nil {
+		!lowerSHA256(evidence.PolicySHA256) || !lowerSHA256(evidence.RootLineageSHA256) ||
+		!lowerSHA256(evidence.DescendantLineageSHA256) || evidence.CleanupStatus != "PASS" ||
+		!validObservedProcessCount(evidence.CleanupProcesses) || evidence.CleanupActiveProcesses != 0 ||
+		!evidence.SessionClosed || !evidence.ArtifactsReverified || len(evidence.Scenarios) != len(requiredScenarios) || evidence.realProof == nil {
 		return false
 	}
 	for index, result := range evidence.Scenarios {
-		if result.ID != requiredScenarioIDs[index] || result.Status != "PASS" || result.Code != "QUALIFIED" ||
+		if !validScenarioResult(result, requiredScenarios[index], "PASS", "QUALIFIED", true) ||
 			!lowerSHA256(result.ScreenshotSHA256) || result.ScreenshotBytes <= 0 || result.ScreenshotBytes > maxWebDriverBytes ||
 			!lowerSHA256(result.TraceSHA256) || result.TraceBytes <= 0 || result.TraceBytes > maxTraceBytes {
 			return false
@@ -290,12 +331,13 @@ func validHarnessEvidence(evidence processEvidence) bool {
 	if evidence.realProof != nil || !stableToken(evidence.ApprovalID, 64) || !lowerSHA256(evidence.BrowserSHA256) ||
 		!lowerSHA256(evidence.DriverSHA256) || !lowerSHA256(evidence.ExecutableSHA256) ||
 		!stableVersion(evidence.BrowserVersion) || !stableVersion(evidence.DriverVersion) ||
-		evidence.CleanupStatus != "HARNESS_PASS" || !lowerSHA256(evidence.CleanupSHA256) || evidence.CleanupProcesses != 3 ||
-		len(evidence.Scenarios) != len(requiredScenarioIDs) {
+		evidence.CleanupStatus != "HARNESS_PASS" || !lowerSHA256(evidence.RootLineageSHA256) ||
+		!validObservedProcessCount(evidence.CleanupProcesses) || evidence.CleanupActiveProcesses != 0 ||
+		!evidence.SessionClosed || !evidence.ArtifactsReverified || len(evidence.Scenarios) != len(requiredScenarios) {
 		return false
 	}
 	for index, result := range evidence.Scenarios {
-		if result.ID != requiredScenarioIDs[index] || result.Status != "HARNESS_PASS" || result.Code != "NOT_QUALIFIED" ||
+		if !validScenarioResult(result, requiredScenarios[index], "HARNESS_PASS", "NOT_QUALIFIED", true) ||
 			!lowerSHA256(result.ScreenshotSHA256) || result.ScreenshotBytes <= 0 || result.ScreenshotBytes > maxWebDriverBytes ||
 			!lowerSHA256(result.TraceSHA256) || result.TraceBytes <= 0 || result.TraceBytes > maxTraceBytes {
 			return false
@@ -317,8 +359,8 @@ func MarshalReport(report Report) ([]byte, error) {
 
 func (report Report) validate() error {
 	wire := report.wire
-	if wire.SchemaVersion != reportSchemaVersion || wire.Qualification != "UI-001/UI-002" || !lowerSHA1(wire.SourceRevision) ||
-		wire.Platform != runtime.GOOS+"/"+runtime.GOARCH || len(wire.Scenarios) != len(requiredScenarioIDs) {
+	if wire.SchemaVersion != reportSchemaVersion || wire.Qualification != qualificationName || !lowerSHA1(wire.SourceRevision) ||
+		wire.Platform != runtime.GOOS+"/"+runtime.GOARCH || len(wire.Scenarios) != len(requiredScenarios) {
 		return errors.New("browser qualification: invalid report")
 	}
 	started, startErr := time.Parse(time.RFC3339Nano, wire.StartedAt)
@@ -327,7 +369,7 @@ func (report Report) validate() error {
 		return errors.New("browser qualification: invalid report")
 	}
 	for index, scenario := range wire.Scenarios {
-		if scenario.ID != requiredScenarioIDs[index] {
+		if scenario.AcceptanceID != requiredScenarios[index].AcceptanceID || scenario.ID != requiredScenarios[index].ID {
 			return errors.New("browser qualification: invalid report")
 		}
 	}
@@ -338,49 +380,53 @@ func (report Report) validate() error {
 		}
 		if wire.Code == string(BlockerControlledHarness) {
 			if wire.Artifacts == nil || !validArtifactEvidence(*wire.Artifacts) || !lowerSHA256(wire.ExecutableSHA256) ||
-				wire.CleanupStatus != "HARNESS_PASS" || !lowerSHA256(wire.CleanupSHA256) || wire.CleanupProcesses != 3 {
+				wire.PolicySHA256 != "" || !lowerSHA256(wire.RootLineageSHA256) || wire.DescendantLineageSHA256 != "" ||
+				wire.CleanupStatus != "HARNESS_PASS" || !lowerSHA256(wire.CleanupSHA256) ||
+				wire.CleanupSHA256 != reportReceiptDigest(wire) || !validObservedProcessCount(wire.CleanupProcesses) ||
+				wire.CleanupActiveProcesses != 0 || !wire.SessionClosed || !wire.ArtifactsReverified {
 				return errors.New("browser qualification: invalid blocked report")
 			}
-			for _, scenario := range wire.Scenarios {
-				if scenario.Status != "HARNESS_PASS" || scenario.Code != "NOT_QUALIFIED" ||
-					!lowerSHA256(scenario.ScreenshotSHA256) || scenario.ScreenshotBytes <= 0 || scenario.ScreenshotBytes > maxWebDriverBytes ||
-					!lowerSHA256(scenario.TraceSHA256) || scenario.TraceBytes <= 0 || scenario.TraceBytes > maxTraceBytes {
+			for index, scenario := range wire.Scenarios {
+				if !validScenarioResult(scenario, requiredScenarios[index], "HARNESS_PASS", "NOT_QUALIFIED", true) {
 					return errors.New("browser qualification: invalid blocked report")
 				}
 			}
 		} else {
-			if wire.Artifacts != nil || wire.ExecutableSHA256 != "" || wire.CleanupStatus != "NOT_STARTED" ||
-				wire.CleanupSHA256 != "" || wire.CleanupProcesses != 0 {
+			if wire.Artifacts != nil || wire.ExecutableSHA256 != "" || wire.PolicySHA256 != "" ||
+				wire.RootLineageSHA256 != "" || wire.DescendantLineageSHA256 != "" || wire.CleanupStatus != "NOT_STARTED" ||
+				wire.CleanupSHA256 != "" || wire.CleanupProcesses != 0 || wire.CleanupActiveProcesses != 0 ||
+				wire.SessionClosed || wire.ArtifactsReverified {
 				return errors.New("browser qualification: invalid blocked report")
 			}
-			for _, scenario := range wire.Scenarios {
-				if scenario.Status != "NOT_RUN" || scenario.Code != "PREREQUISITE_BLOCKED" ||
-					scenario.ScreenshotSHA256 != "" || scenario.ScreenshotBytes != 0 || scenario.TraceSHA256 != "" || scenario.TraceBytes != 0 {
+			for index, scenario := range wire.Scenarios {
+				if !validScenarioResult(scenario, requiredScenarios[index], "NOT_RUN", "PREREQUISITE_BLOCKED", false) {
 					return errors.New("browser qualification: invalid blocked report")
 				}
 			}
 		}
 	case "PASS":
 		if wire.Code != "QUALIFIED" || wire.Artifacts == nil || !validArtifactEvidence(*wire.Artifacts) ||
-			!lowerSHA256(wire.ExecutableSHA256) || wire.CleanupStatus != "PASS" || !lowerSHA256(wire.CleanupSHA256) ||
-			wire.CleanupProcesses != 3 {
+			!lowerSHA256(wire.ExecutableSHA256) || !lowerSHA256(wire.PolicySHA256) ||
+			!lowerSHA256(wire.RootLineageSHA256) || !lowerSHA256(wire.DescendantLineageSHA256) ||
+			wire.CleanupStatus != "PASS" || !lowerSHA256(wire.CleanupSHA256) || wire.CleanupSHA256 != reportReceiptDigest(wire) ||
+			!validObservedProcessCount(wire.CleanupProcesses) || wire.CleanupActiveProcesses != 0 ||
+			!wire.SessionClosed || !wire.ArtifactsReverified {
 			return errors.New("browser qualification: invalid pass report")
 		}
-		for _, scenario := range wire.Scenarios {
-			if scenario.Status != "PASS" || scenario.Code != "QUALIFIED" ||
-				!lowerSHA256(scenario.ScreenshotSHA256) || scenario.ScreenshotBytes <= 0 || scenario.ScreenshotBytes > maxWebDriverBytes ||
-				!lowerSHA256(scenario.TraceSHA256) || scenario.TraceBytes <= 0 || scenario.TraceBytes > maxTraceBytes {
+		for index, scenario := range wire.Scenarios {
+			if !validScenarioResult(scenario, requiredScenarios[index], "PASS", "QUALIFIED", true) {
 				return errors.New("browser qualification: invalid pass report")
 			}
 		}
 	case "FAIL":
 		if wire.Code != "PROCESS_OR_EVIDENCE_FAILED" || wire.Artifacts != nil || wire.ExecutableSHA256 != "" ||
-			wire.CleanupStatus != "FAILED_OR_UNKNOWN" || wire.CleanupSHA256 != "" || wire.CleanupProcesses != 0 {
+			wire.PolicySHA256 != "" || wire.RootLineageSHA256 != "" || wire.DescendantLineageSHA256 != "" ||
+			wire.CleanupStatus != "FAILED_OR_UNKNOWN" || wire.CleanupSHA256 != "" || wire.CleanupProcesses != 0 ||
+			wire.CleanupActiveProcesses != 0 || wire.SessionClosed || wire.ArtifactsReverified {
 			return errors.New("browser qualification: invalid failure report")
 		}
-		for _, scenario := range wire.Scenarios {
-			if scenario.Status != "FAIL" || scenario.Code != "QUALIFICATION_ABORTED" ||
-				scenario.ScreenshotSHA256 != "" || scenario.ScreenshotBytes != 0 || scenario.TraceSHA256 != "" || scenario.TraceBytes != 0 {
+		for index, scenario := range wire.Scenarios {
+			if !validScenarioResult(scenario, requiredScenarios[index], "FAIL", "QUALIFICATION_ABORTED", false) {
 				return errors.New("browser qualification: invalid failure report")
 			}
 		}
@@ -388,6 +434,31 @@ func (report Report) validate() error {
 		return errors.New("browser qualification: invalid report status")
 	}
 	return nil
+}
+
+func validScenarioResult(result ScenarioResult, requirement scenarioRequirement, status, code string, requireEvidence bool) bool {
+	if result.AcceptanceID != requirement.AcceptanceID || result.ID != requirement.ID || result.Status != status || result.Code != code {
+		return false
+	}
+	if !requireEvidence {
+		return result.ScreenshotSHA256 == "" && result.ScreenshotBytes == 0 && result.TraceSHA256 == "" && result.TraceBytes == 0
+	}
+	return lowerSHA256(result.ScreenshotSHA256) && result.ScreenshotBytes > 0 && result.ScreenshotBytes <= maxWebDriverBytes &&
+		lowerSHA256(result.TraceSHA256) && result.TraceBytes > 0 && result.TraceBytes <= maxTraceBytes
+}
+
+func validObservedProcessCount(value int) bool {
+	return value >= minObservedProcesses && value <= maxObservedProcesses
+}
+
+func reportReceiptDigest(wire reportWire) string {
+	wire.CleanupSHA256 = ""
+	data, err := json.Marshal(wire)
+	if err != nil {
+		return ""
+	}
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:])
 }
 
 func (report Report) Status() string        { return report.wire.Status }

@@ -13,17 +13,18 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	qualificationTimeout = 2 * time.Minute
-	cleanupTimeout       = 5 * time.Second
-	maxWebDriverBytes    = 1 << 20
-	maxTraceBytes        = 4 << 10
-	managedProcessCount  = 3
+	qualificationTimeout    = 2 * time.Minute
+	cleanupTimeout          = 5 * time.Second
+	maxWebDriverBytes       = 1 << 20
+	maxTraceBytes           = 4 << 10
+	managedRootProcessCount = 3
 )
 
 type protocolBoundary struct {
@@ -54,8 +55,9 @@ type processIdentity struct {
 }
 
 type cleanupReceipt struct {
-	AllExited    bool
-	ProcessCount int
+	AllExited       bool
+	ProcessCount    int
+	ActiveProcesses int
 }
 
 func defaultProcessBoundary(approval Approval, options RunOptions) processBoundary {
@@ -147,9 +149,9 @@ func (boundary *protocolBoundary) Run(parent context.Context) (processEvidence, 
 		}
 	}()
 
-	scenarios := make([]ScenarioResult, 0, len(requiredScenarioIDs))
-	for _, id := range requiredScenarioIDs {
-		result, err := client.runControlledScenario(ctx, sessionID, mindweaverEndpoint, id)
+	scenarios := make([]ScenarioResult, 0, len(requiredScenarios))
+	for _, requirement := range requiredScenarios {
+		result, err := client.runControlledScenario(ctx, sessionID, mindweaverEndpoint, requirement.ID)
 		if err != nil {
 			closeCtx, closeCancel := context.WithTimeout(context.Background(), cleanupTimeout)
 			_ = client.deleteSession(closeCtx, sessionID)
@@ -158,6 +160,7 @@ func (boundary *protocolBoundary) Run(parent context.Context) (processEvidence, 
 			_ = cleanup()
 			return processEvidence{}, "", errors.New("controlled webdriver scenario failed")
 		}
+		result.AcceptanceID = requirement.AcceptanceID
 		scenarios = append(scenarios, result)
 	}
 	if err := client.deleteSession(ctx, sessionID); err != nil {
@@ -171,7 +174,7 @@ func (boundary *protocolBoundary) Run(parent context.Context) (processEvidence, 
 		return processEvidence{}, "", errors.New("artifact identity changed")
 	}
 	receipt := cleanup()
-	if !receipt.AllExited || receipt.ProcessCount != managedProcessCount {
+	if !receipt.AllExited || receipt.ActiveProcesses != 0 || !validObservedProcessCount(receipt.ProcessCount) {
 		return processEvidence{}, "", errors.New("controlled process cleanup failed")
 	}
 	if artifacts.Reverify() != nil {
@@ -181,28 +184,42 @@ func (boundary *protocolBoundary) Run(parent context.Context) (processEvidence, 
 		return processEvidence{}, "", errors.New("artifact close failed")
 	}
 	closed = true
-	cleanupDigest := cleanupReceiptDigest(boundary.approval)
 	return processEvidence{
 		ApprovalID: boundary.approval.ID, BrowserSHA256: boundary.approval.Browser.SHA256,
 		DriverSHA256: boundary.approval.Driver.SHA256, ExecutableSHA256: boundary.approval.MindWeaver.SHA256,
 		BrowserVersion: boundary.approval.Browser.Version, DriverVersion: boundary.approval.Driver.Version,
-		Scenarios: scenarios, CleanupStatus: "HARNESS_PASS", CleanupSHA256: fmt.Sprintf("%x", cleanupDigest[:]),
-		CleanupProcesses: receipt.ProcessCount,
+		RootLineageSHA256: processLineageDigest(identities), Scenarios: scenarios, CleanupStatus: "HARNESS_PASS",
+		CleanupProcesses: receipt.ProcessCount, CleanupActiveProcesses: receipt.ActiveProcesses,
+		SessionClosed: sessionClosed, ArtifactsReverified: true,
 	}, BlockerControlledHarness, nil
 }
 
-func cleanupReceiptDigest(approval artifactApproval) [sha256.Size]byte {
-	canonical := "mindweaver-browser-cleanup-v1\n" +
-		"approval=" + approval.ID + "\n" +
-		"browser=" + approval.Browser.SHA256 + "\n" +
-		"driver=" + approval.Driver.SHA256 + "\n" +
-		"mindweaver=" + approval.MindWeaver.SHA256 + "\n" +
-		"all_exited=true\nprocess_count=3\nsession_closed=true\nartifacts_reverified=true\n"
-	return sha256.Sum256([]byte(canonical))
+func processLineageDigest(identities []processIdentity) string {
+	ordered := append([]processIdentity(nil), identities...)
+	sort.Slice(ordered, func(left, right int) bool {
+		if ordered[left].Role != ordered[right].Role {
+			return ordered[left].Role < ordered[right].Role
+		}
+		return ordered[left].PID < ordered[right].PID
+	})
+	var canonical strings.Builder
+	canonical.WriteString("mindweaver-browser-process-lineage-v2\n")
+	for _, identity := range ordered {
+		canonical.WriteString(identity.Role)
+		canonical.WriteByte('\t')
+		canonical.WriteString(strconv.Itoa(identity.PID))
+		canonical.WriteByte('\t')
+		canonical.WriteString(strconv.Itoa(identity.ParentPID))
+		canonical.WriteByte('\t')
+		canonical.WriteString(identity.SHA256)
+		canonical.WriteByte('\n')
+	}
+	digest := sha256.Sum256([]byte(canonical.String()))
+	return fmt.Sprintf("%x", digest[:])
 }
 
 func validManagedProcessTree(identities []processIdentity, approval artifactApproval) bool {
-	if len(identities) != managedProcessCount {
+	if len(identities) != managedRootProcessCount {
 		return false
 	}
 	byRole := make(map[string]processIdentity, len(identities))

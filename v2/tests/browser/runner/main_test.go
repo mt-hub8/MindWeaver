@@ -34,8 +34,30 @@ func TestRunWritesNewBlockedContentFreeReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	if document["status"] != "BLOCKED" || document["code"] != "BROWSER_ARTIFACT_NOT_APPROVED" ||
-		document["cleanupStatus"] != "NOT_STARTED" {
+		document["cleanupStatus"] != "NOT_STARTED" || document["schemaVersion"] != float64(2) ||
+		document["qualification"] != "UI-001/UI-002" || document["sourceRevision"] != runnerTestRevision ||
+		document["cleanupOsTotalProcessCount"] != float64(0) || document["cleanupOsActiveProcessCount"] != float64(0) ||
+		document["webdriverSessionClosed"] != false || document["artifactsReverified"] != false {
 		t.Fatalf("report tuple = %#v", document)
+	}
+	scenarios, ok := document["scenarios"].([]any)
+	if !ok || len(scenarios) != 18 {
+		t.Fatalf("scenario set = %#v", document["scenarios"])
+	}
+	groups := map[string]int{}
+	for _, raw := range scenarios {
+		scenario, ok := raw.(map[string]any)
+		if !ok || scenario["status"] != "NOT_RUN" || scenario["code"] != "PREREQUISITE_BLOCKED" {
+			t.Fatalf("blocked scenario = %#v", raw)
+		}
+		group, ok := scenario["acceptanceId"].(string)
+		if !ok {
+			t.Fatalf("scenario group = %#v", raw)
+		}
+		groups[group]++
+	}
+	if groups["SEC-001"] != 1 || groups["UI-001"] != 14 || groups["UI-002"] != 3 || len(groups) != 3 {
+		t.Fatalf("scenario groups = %#v", groups)
 	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
