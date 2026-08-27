@@ -8,7 +8,7 @@ or restore any Java, Python, MySQL, legacy exporter, or legacy migration code.
 It does not change the acceptance ledger.
 
 `surface.csv` is the exact reviewed set of security-sensitive operational
-egress and its classifiers: 26 files, 10,334 lines, and 362,745 bytes. Each row
+egress and its classifiers: 28 files, 11,983 lines, and 439,324 bytes. Each row
 binds the full file to its SHA-256, byte count, line count, and `1-N` range.
 The set was derived from the two production command closures, then reduced to
 the files that directly do at least one of the following:
@@ -43,6 +43,11 @@ No P0 was found. This was the only open P1 in the reviewed operational egress.
   errors, bounded buffered success responses, and validated Problems. Its
   panic, timeout, oversized body, arbitrary `http.Error`, hostile Host, and
   bootstrap-redaction tests exercise the actual listener.
+- The embedded Web UI renders authenticated product data and validated Problem
+  details with DOM `textContent`, never HTML interpolation. Its fixed local
+  validation errors, stable failure codes, and recovery guidance are the only
+  other operational browser output; raw Go/provider/parser errors do not cross
+  this boundary.
 - App error classification returns fixed details. Resource identifiers are
   body/query values rather than path segments, so `Problem.instance` is one of
   the registered constant route paths. Backup status contains stable IDs,
@@ -86,16 +91,19 @@ $go = $env:MINDWEAVER_GO
 if ([string]::IsNullOrWhiteSpace($go)) { throw 'MINDWEAVER_GO is required' }
 & $go test ./cmd/mindweaver -run '^(TestConfigInitAndCheckOutputIsPathFree|TestValidateBrowserLaunchURLAllowsOnlyExactLoopbackBootstrap|TestRecoveryCLIFailureIsPathAndContentFree)$' -count=10
 & $go test ./internal/localhttp -run '^(TestStartBindsOnlyRandomIPv4LoopbackAndRedactsBootstrap|TestRawTCPRejectsDNSRebindingHostWithoutLeakingIt|TestOnlyValidatedProblemCanCrossSanitizingBoundary|TestBusinessErrorsAreSanitizedAndBodiesAreBounded|TestRequestTimeoutIsBoundedAndSafe|TestBusinessHandlerPanicIsContainedInsideTimeoutGoroutine)$' -count=10
-& $go test ./platform/apperror ./internal/ollama ./internal/pdfextract/client ./internal/rag ./internal/app -count=1
-& $go vet ./cmd/mindweaver ./internal/localhttp ./platform/apperror ./internal/ollama ./internal/pdfextract/client ./internal/rag ./internal/app
+& $go test ./cmd/mindweaver ./internal/localhttp ./platform/apperror ./internal/ollama ./internal/pdfextract/client ./internal/rag ./internal/app ./internal/webui -count=1
+& $go vet ./cmd/mindweaver ./internal/localhttp ./platform/apperror ./internal/ollama ./internal/pdfextract/client ./internal/rag ./internal/app ./internal/webui
 ```
 
 Those checks were run against the clean candidate `e2d27e9` before this
 evidence commit. Its two changed code blobs are byte-identical to the
 integrated `89be0fb` blobs. All four focused canary groups passed at
-`-count=10`; the seven complete packages and their focused `go vet` set also
+`-count=10`; the eight complete packages and their focused `go vet` set also
 passed. The CSV was independently recomputed against the integrated baseline:
-26 unique paths, with every SHA-256, byte count, line count, and range matching.
+28 unique paths, with every SHA-256, byte count, line count, and range matching.
+The omitted browser boundary was found by an independent deletion review;
+`internal/webui` tests and vet then passed against the same unchanged product
+blobs before its two rows were added here.
 
 ## Still required at final release scope
 
