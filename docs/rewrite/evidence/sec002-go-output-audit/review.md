@@ -1,8 +1,9 @@
 # SEC-002 Go CORE output audit
 
-This is a deletion-oriented review of the reachable Go product at
-`e2d27e93274947c6cdef9d4a74a1706066a6b275`, whose parent product baseline is
-`7b75f8f4735f7ddd54b619dd0dbe73f253fa3a80`. It does not review, run, retain,
+This is a deletion-oriented review of the reachable Go product at the
+integrated output baseline `89be0fbbbbb583d621860531419b3dbc34bf53b3`,
+whose parent product baseline is
+`4a338dc1ffd22e139703b5f5e4a907bb733e2fbe`. It does not review, run, retain,
 or restore any Java, Python, MySQL, legacy exporter, or legacy migration code.
 It does not change the acceptance ledger.
 
@@ -27,7 +28,7 @@ validated Problem, and backup CLI errors use the path-free classified wrapper.
 
 ## Finding closed by this slice
 
-Before `e2d27e9`, `mindweaver config init` echoed the caller-supplied config
+Before `89be0fb`, `mindweaver config init` echoed the caller-supplied config
 path and `mindweaver config check` echoed the configured Vault root. These
 values are unnecessary in a success status and commonly become terminal or
 automation logs. Both commands now emit only the fixed operation result and
@@ -89,11 +90,12 @@ if ([string]::IsNullOrWhiteSpace($go)) { throw 'MINDWEAVER_GO is required' }
 & $go vet ./cmd/mindweaver ./internal/localhttp ./platform/apperror ./internal/ollama ./internal/pdfextract/client ./internal/rag ./internal/app
 ```
 
-Those checks were run against the clean `e2d27e9` source before this evidence
-commit. All four focused canary groups passed at `-count=10`; the seven complete
-packages and their focused `go vet` set also passed. The CSV was independently
-recomputed from on-disk bytes after the code commit: 26 unique paths, with every
-SHA-256, byte count, line count, and range matching.
+Those checks were run against the clean candidate `e2d27e9` before this
+evidence commit. Its two changed code blobs are byte-identical to the
+integrated `89be0fb` blobs. All four focused canary groups passed at
+`-count=10`; the seven complete packages and their focused `go vet` set also
+passed. The CSV was independently recomputed against the integrated baseline:
+26 unique paths, with every SHA-256, byte count, line count, and range matching.
 
 ## Still required at final release scope
 
