@@ -24,8 +24,17 @@ import (
 
 const qualificationPDFHelperEnvironment = "MWQ_KNOWLEDGE_PDF_HELPER"
 
+var knowledgeInternalChildSelectors = map[string]struct{}{
+	"-test.run=^TestBLOB001DurableCandidateBeforeRenameForcedTerminationChild$":        {},
+	"-test.run=^TestBLOB001DurableDeleteBeforeCandidateResolveForcedTerminationChild$": {},
+	"-test.run=^TestBLOB001DurableStagingBeforeCandidateForcedTerminationChild$":       {},
+	"-test.run=^TestBLOB001IncompleteStagingForcedTerminationChild$":                   {},
+	"-test.run=^TestBLOB001PublishedOrphanForcedTerminationChild$":                     {},
+	"-test.run=^TestBLOB001ReferenceCommitResponseReplayForcedTerminationChild$":       {},
+}
+
 func TestMain(m *testing.M) {
-	if os.Getenv(doc001ChildModeEnvironment) == "1" {
+	if os.Getenv(doc001ChildModeEnvironment) == "1" || knowledgeInternalChildSelected(os.Args[1:]) {
 		os.Exit(m.Run())
 	}
 	helperRoot, err := os.MkdirTemp("", "mindweaver-knowledge-pdf-helper-")
@@ -73,6 +82,35 @@ func TestMain(m *testing.M) {
 		code = 1
 	}
 	os.Exit(code)
+}
+
+func knowledgeInternalChildSelected(arguments []string) bool {
+	for _, argument := range arguments {
+		if _, allowed := knowledgeInternalChildSelectors[argument]; allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func TestKnowledgeInternalChildSelectionIsExact(t *testing.T) {
+	t.Parallel()
+	for selector := range knowledgeInternalChildSelectors {
+		if !knowledgeInternalChildSelected([]string{selector}) {
+			t.Fatalf("exact internal child selector %q was rejected", selector)
+		}
+	}
+	for _, arguments := range [][]string{
+		nil,
+		{"-test.run=TestBLOB001PublishedOrphanForcedTerminationChild"},
+		{"-test.run=^TestBLOB001.*$"},
+		{"-test.run=^TestBLOB001PublishedOrphanForcedTerminationChild$/extra"},
+		{"MWQ_BLOB001_CHILD=1"},
+	} {
+		if knowledgeInternalChildSelected(arguments) {
+			t.Fatalf("non-exact internal child selection %#v was accepted", arguments)
+		}
+	}
 }
 
 func knowledgeModuleRoot() (string, error) {
