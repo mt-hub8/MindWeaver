@@ -212,13 +212,16 @@ type launchInfo struct {
 }
 
 type runningApp struct {
-	command  *exec.Cmd
-	stderr   *boundedBuffer
-	launch   launchInfo
-	waitDone <-chan error
-	waitErr  error
-	finished bool
-	mu       sync.Mutex
+	command              *exec.Cmd
+	stderr               *boundedBuffer
+	launch               launchInfo
+	waitDone             <-chan error
+	waitErr              error
+	nativeHandle         uintptr
+	nativeCloseAttempted bool
+	nativeCloseErr       error
+	finished             bool
+	mu                   sync.Mutex
 }
 
 func startMindWeaver(t *testing.T, artifacts builtArtifacts, root, coordinator string) *runningApp {
@@ -246,10 +249,24 @@ func startMindWeaverWithEnvironment(t *testing.T, artifacts builtArtifacts, root
 	if err := command.Start(); err != nil {
 		t.Fatal("start real MindWeaver binary")
 	}
+	nativeHandle, retainErr := retainREL001ProcessHandle(command.Process.Pid)
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- command.Wait() }()
-	app := &runningApp{command: command, stderr: diagnostics, waitDone: waitDone}
-	t.Cleanup(func() { app.stop() })
+	if retainErr != nil {
+		_ = command.Process.Kill()
+		select {
+		case <-waitDone:
+		case <-time.After(processReapTimeout):
+			t.Fatal("retain process handle cleanup timed out")
+		}
+		t.Fatal("retain process handle failed")
+	}
+	app := &runningApp{command: command, stderr: diagnostics, waitDone: waitDone, nativeHandle: nativeHandle}
+	t.Cleanup(func() {
+		if err := app.stop(); err != nil {
+			t.Error("MindWeaver process cleanup failed")
+		}
+	})
 	launched := make(chan launchInfo, 1)
 	go func() {
 		scanner := bufio.NewScanner(stdout)
@@ -267,7 +284,9 @@ func startMindWeaverWithEnvironment(t *testing.T, artifacts builtArtifacts, root
 	case app.launch = <-launched:
 		return app
 	case <-time.After(20 * time.Second):
-		app.stop()
+		if err := app.stop(); err != nil {
+			t.Fatal("MindWeaver readiness cleanup failed")
+		}
 		t.Fatalf("MindWeaver did not expose its ready checkpoint (%d diagnostic bytes)", diagnostics.Len())
 		return nil
 	}
@@ -286,37 +305,13 @@ func parseLaunchLine(line string) (launchInfo, bool) {
 	return launchInfo{origin: "http://" + parsed.Host, bootstrap: token}, true
 }
 
-func (app *runningApp) stop() {
-	if app == nil || app.command == nil {
-		return
-	}
-	app.mu.Lock()
-	defer app.mu.Unlock()
-	if app.finished {
-		return
-	}
-	if app.command.Process != nil {
-		_ = app.command.Process.Kill()
-	}
-	_, _ = app.awaitWaitLocked(processReapTimeout)
+func (app *runningApp) stop() error {
+	return stopREL001Process(app, false)
 }
 
 func (app *runningApp) terminate(t *testing.T) {
 	t.Helper()
-	if app == nil || app.command == nil || app.command.Process == nil {
-		t.Fatal("controlled termination has no running process")
-	}
-	app.mu.Lock()
-	defer app.mu.Unlock()
-	if app.finished {
-		t.Fatal("controlled termination observed an already finished process")
-	}
-	if err := app.command.Process.Kill(); err != nil {
-		t.Fatal("controlled termination failed")
-	}
-	waitErr, reaped := app.awaitWaitLocked(processReapTimeout)
-	var exitErr *exec.ExitError
-	if !reaped || waitErr == nil || !errors.As(waitErr, &exitErr) || exitErr.ExitCode() == 0 {
+	if err := stopREL001Process(app, true); err != nil {
 		t.Fatal("controlled termination did not reap a killed process")
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -143,22 +144,6 @@ func TestREL001DeterministicHTTPKillReplay(t *testing.T) {
 
 func TestREL001KillPlanAndChildEnvironmentAreFailClosed(t *testing.T) {
 	frames := rel001KillFrames(t)
-	if len(frames) != rel001KillCampaignRuns {
-		t.Fatal("REL001_KILL_PLAN_LENGTH_DRIFT")
-	}
-	counts := [4]int{}
-	for sequence, frame := range frames {
-		if frame.sequence != sequence || frame.mutation != rel001KillMutation(sequence%4) ||
-			frame.delay < 0 || frame.delay > rel001KillMaximumDelay {
-			t.Fatal("REL001_KILL_PLAN_FRAME_INVALID")
-		}
-		counts[frame.mutation]++
-	}
-	for _, count := range counts {
-		if count != rel001KillCampaignRuns/4 {
-			t.Fatal("REL001_KILL_PLAN_DISTRIBUTION_DRIFT")
-		}
-	}
 	if got := rel001KillPlanDigest(frames); got != rel001KillPlanSHA256 {
 		t.Fatalf("REL001_KILL_PLAN_DIGEST_DRIFT got=%s", got)
 	}
@@ -183,30 +168,18 @@ func TestREL001KillPlanAndChildEnvironmentAreFailClosed(t *testing.T) {
 	if claimREL001DecisionLinearization(&invalid, rel001DecisionLinearizationUnset) || invalid.Load() != 0 {
 		t.Fatal("REL001_KILL_DECISION_LINEARIZATION_INVALID_CLAIM_ACCEPTED")
 	}
-
-	for _, test := range []struct {
-		name        string
-		environment []string
-		want        bool
-		wantError   bool
-	}{
-		{name: "absent"},
-		{name: "exact", environment: []string{rel001KillCampaignEnvironment + "=" + rel001KillCampaignOptIn}, want: true},
-		{name: "wrong value", environment: []string{rel001KillCampaignEnvironment + "=RUN"}, wantError: true},
-		{name: "unknown", environment: []string{"MW_REL001_HTTP_KILL_EXTRA=1"}, wantError: true},
-		{name: "duplicate", environment: []string{
-			rel001KillCampaignEnvironment + "=" + rel001KillCampaignOptIn,
-			strings.ToLower(rel001KillCampaignEnvironment) + "=" + rel001KillCampaignOptIn,
-		}, wantError: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			got, err := selectREL001KillCampaign(test.environment)
-			if got != test.want || (err != nil) != test.wantError {
-				t.Fatalf("selection=%t error=%v", got, err)
-			}
-		})
+	assertSelection := func(environment []string, want, wantError bool) {
+		got, err := selectREL001KillCampaign(environment)
+		if got != want || (err != nil) != wantError {
+			t.Fatalf("selection=%t error=%v", got, err)
+		}
 	}
-
+	assertSelection(nil, false, false)
+	assertSelection([]string{rel001KillCampaignEnvironment + "=" + rel001KillCampaignOptIn}, true, false)
+	assertSelection([]string{rel001KillCampaignEnvironment + "=RUN"}, false, true)
+	assertSelection([]string{"MW_REL001_HTTP_KILL_EXTRA=1"}, false, true)
+	assertSelection([]string{rel001KillCampaignEnvironment + "=" + rel001KillCampaignOptIn,
+		strings.ToLower(rel001KillCampaignEnvironment) + "=" + rel001KillCampaignOptIn}, false, true)
 	temporaryDirectory := filepath.Join(t.TempDir(), "child")
 	environment, err := rel001KillChildEnvironment([]string{
 		"SystemRoot=C:\\Windows",
@@ -221,21 +194,9 @@ func TestREL001KillPlanAndChildEnvironmentAreFailClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	values := make(map[string][]string)
-	for _, entry := range environment {
-		name, value, ok := strings.Cut(entry, "=")
-		if !ok {
-			t.Fatal("REL001_KILL_CHILD_ENVIRONMENT_MALFORMED")
-		}
-		values[strings.ToUpper(name)] = append(values[strings.ToUpper(name)], value)
-	}
-	if len(values["MWQ_RUN002_CHILD_MODE"]) != 0 || len(values[rel001KillCampaignEnvironment]) != 0 ||
-		len(values["MINDWEAVER_SERVE_HELPER"]) != 0 || len(values["HTTPS_PROXY"]) != 0 ||
-		len(values["ALL_PROXY"]) != 0 || len(values["PATH"]) != 0 ||
-		len(values["SYSTEMROOT"]) != 1 || len(values["WINDIR"]) != 1 ||
-		len(values["TEMP"]) != 1 || values["TEMP"][0] != temporaryDirectory ||
-		len(values["TMP"]) != 1 || values["TMP"][0] != temporaryDirectory ||
-		len(values) != 4 {
+	wantEnvironment := []string{"SystemRoot=C:\\Windows", "WINDIR=C:\\Windows",
+		"TEMP=" + temporaryDirectory, "TMP=" + temporaryDirectory}
+	if !slices.Equal(environment, wantEnvironment) {
 		t.Fatal("REL001_KILL_CHILD_ENVIRONMENT_NOT_SANITIZED")
 	}
 	if _, err := rel001KillChildEnvironment([]string{"SystemRoot=C:\\Windows", "systemroot=C:\\Other"}, `C:\temp`); err == nil {
@@ -382,7 +343,6 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 		t.Fatal("REL001_KILL_RUN_ROOT_CREATE_FAILED")
 	}
 	t.Cleanup(func() { removeREL001KillRunRoot(t, runRoot) })
-
 	processTemp := filepath.Join(runRoot, "temp")
 	if err := os.Mkdir(processTemp, 0o700); err != nil {
 		t.Fatal("REL001_KILL_PROCESS_TEMP_CREATE_FAILED")
@@ -827,14 +787,14 @@ func waitREL001KillJob(t *testing.T, session *apiSession, jobID string) {
 
 func strictREL001ProcessCleanup(t *testing.T, process *runningApp) {
 	t.Helper()
-	if err := stopREL001Process(process); err != nil {
+	if err := stopREL001Process(process, true); err != nil {
 		t.Error("REL001_KILL_CLEANUP_FAILED")
 	}
 }
 
 func mustTerminateREL001Process(t *testing.T, process *runningApp) {
 	t.Helper()
-	if err := stopREL001Process(process); err != nil {
+	if err := stopREL001Process(process, true); err != nil {
 		t.Fatal("REL001_KILL_REQUIRED_TERMINATION_FAILED")
 	}
 }
