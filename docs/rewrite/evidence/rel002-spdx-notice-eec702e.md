@@ -3,7 +3,9 @@
 Status: **qualification evidence only; REL-002 remains `NOT_IMPLEMENTED`**
 
 - Production baseline: `e8cf45db8482504423c23e17a013f2ba1e2f1dfa`
-- Qualification code commit: `eec702e6f4f25fbc6d6feae935d4afb3c5d17b90`
+- Semantic qualification commit: `eec702e6f4f25fbc6d6feae935d4afb3c5d17b90`
+- Renderer-bound namespace fix:
+  `1240e12f083e243a811371f5e5a873764e5c17ae`
 - Branch: `codex/rel002-supplychain-e8cf45d`
 - Toolchain exercised: `go1.27.0 windows/amd64`
 - Scope: supply-chain qualification tests, pinned official schema input,
@@ -55,6 +57,14 @@ source-union are reviewed inputs and are not independently derived from Git
 inside standalone validation. Therefore this is not a source-to-PE
 attestation.
 
+The SPDX document namespace is the SHA-256 of a labelled seed containing the
+canonical inventory SHA-256, SPDX version, qualification generator name, and
+qualification generator version. It is therefore not reused when the same
+inventory is rendered by a different generator version. A mutation test
+derives a namespace with a changed generator version, proves it differs, and
+proves the current semantic validator rejects that foreign-renderer
+namespace.
+
 Machine fields are deliberately named `qualificationBlockers`,
 `Supply-Chain-Qualification-Blockers`, and “Pre-package supply-chain
 qualification blocked”. They are not represented as an exhaustive REL-002
@@ -101,9 +111,10 @@ legal conclusions.
 Mutation coverage includes duplicate JSON names, h1/raw-SHA confusion,
 revision and `(devel)` changes, artifact main-package/identity/dependency
 changes, duplicate dependencies, component field/license changes, evidence
-path/hash changes, duplicate evidence, an unversioned Tool creator, changed
-artifact SPDX fields, unknown SPDX fields, duplicate/missing relationships,
-external `status=PASS`, and manifest hash changes.
+path/hash changes, duplicate evidence, an unversioned Tool creator, generator
+version namespace separation, changed artifact SPDX fields, unknown SPDX
+fields, duplicate/missing relationships, external `status=PASS`, and manifest
+hash changes.
 
 ## Official SPDX schema input
 
@@ -127,8 +138,9 @@ separate and required.
 | File | Bytes | Raw SHA-256 |
 | --- | ---: | --- |
 | `inventory.json` | 29,816 | `99deb92e0df115906fe1ce0f06479573b0dfa4333b1e6de2249c57ee20ce0992` |
-| `sbom.spdx.json` | 19,471 | `03b89bda348959cc3a9e0a1f1c3f39483487857add5f8913828cb7b6da0d0b27` |
+| `sbom.spdx.json` | 19,471 | `9a8767782c31e4044637929f209800ada4a1ce55c15433f8d3c70d3bbde09407` |
 | `NOTICE.txt` | 24,054 | `d0040d409cb19c4cc1e13f045362071bbeb6b8ef8bae71dc8cf9dc315b608550` |
+| `manifest.json` | 820 | `918430d08af9b783a02f09678d9feda5e6fc00cbee068cf78b03d46542349ac7` |
 
 The real frozen artifact contracts, rechecked against fresh builds, are:
 
@@ -146,7 +158,7 @@ identities.
 go test ./qualification/supplychain \
   -run '^(TestPrepackageSupplyChainInputClosure|TestDerivedSupplyChainDocumentMutationsFailClosed)$' \
   -count=1
-PASS (19.612s)
+PASS (18.595s after the namespace fix)
 
 go vet ./qualification/supplychain
 PASS
