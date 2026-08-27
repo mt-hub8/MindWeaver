@@ -12,3 +12,5 @@
 *.md text eol=lf
 *.ps1 text eol=crlf
 vendor/** -text -whitespace
+third_party/sqlite/3.53.4/LICENSE.md -text -whitespace
+third_party/sqlite/3.53.4/manifest.uuid text eol=lf

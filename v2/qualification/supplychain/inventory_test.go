@@ -19,10 +19,9 @@ import (
 )
 
 const (
-	modulePath                         = "github.com/mt-hub8/MindWeaver/v2"
-	projectLicenseMissing              = "PROJECT_LICENSE_MISSING"
-	projectLicenseUnreviewed           = "PROJECT_LICENSE_UNREVIEWED"
-	sqliteTranslationProvenanceMissing = "SQLITE_TRANSLATION_UPSTREAM_PROVENANCE_MISSING"
+	modulePath               = "github.com/mt-hub8/MindWeaver/v2"
+	projectLicenseMissing    = "PROJECT_LICENSE_MISSING"
+	projectLicenseUnreviewed = "PROJECT_LICENSE_UNREVIEWED"
 )
 
 type artifactContract struct {
@@ -47,11 +46,10 @@ type fileContract struct {
 }
 
 type moduleContract struct {
-	path              string
-	version           string
-	h1                string
-	files             []fileContract
-	provenanceBlocker string
+	path    string
+	version string
+	h1      string
+	files   []fileContract
 }
 
 type runtimeContract struct {
@@ -121,7 +119,6 @@ var moduleContracts = []moduleContract{
 			{"LICENSE", 918, "13219037ddf63dbbcf174bf59525d602df7a2e30083f63be566715c858fcb19e", "MODULE_AUTHORED_LICENSE", "MIT-0"},
 			{"README.md", 435, "fb8084fccb5733ccc4af421ff026812da7852e91516bdf7c70d007eb46744383", "UPSTREAM_LICENSE_RETENTION_STATEMENT", ""},
 		},
-		provenanceBlocker: sqliteTranslationProvenanceMissing,
 	},
 	{
 		path: "github.com/ncruces/go-sqlite3", version: "v0.35.3",
@@ -160,6 +157,7 @@ func TestPrepackageSupplyChainInputClosure(t *testing.T) {
 	root := moduleRoot(t)
 	goTool := selectedGoTool(t)
 	environment, moduleCache := offlineBuildEnvironment(t, goTool)
+	validateSQLiteTranslationUpstreamProvenance(t, root)
 
 	if err := validateContractShape(moduleContracts, goRuntimeContract); err != nil {
 		t.Fatal(err)
@@ -197,11 +195,11 @@ func TestPrepackageSupplyChainInputClosure(t *testing.T) {
 		t.Fatalf("offline vendored build populated GOMODCACHE: %v", err)
 	}
 
-	blockers, err := assessPrepackageBlockers(root, moduleContracts)
+	blockers, err := assessPrepackageBlockers(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantBlockers := []string{projectLicenseMissing, sqliteTranslationProvenanceMissing}
+	wantBlockers := []string{projectLicenseMissing}
 	if !slices.Equal(blockers, wantBlockers) {
 		t.Fatalf("pre-package blockers = %q, want %q", blockers, wantBlockers)
 	}
@@ -540,7 +538,7 @@ func validateFileContractShape(evidence fileContract) error {
 	return nil
 }
 
-func assessPrepackageBlockers(root string, modules []moduleContract) ([]string, error) {
+func assessPrepackageBlockers(root string) ([]string, error) {
 	blockerSet := make(map[string]bool)
 	license := filepath.Join(root, "LICENSE")
 	info, err := os.Lstat(license)
@@ -553,11 +551,6 @@ func assessPrepackageBlockers(root string, modules []moduleContract) ([]string, 
 		return nil, errors.New("project LICENSE is not a regular non-link file")
 	default:
 		blockerSet[projectLicenseUnreviewed] = true
-	}
-	for _, module := range modules {
-		if module.provenanceBlocker != "" {
-			blockerSet[module.provenanceBlocker] = true
-		}
 	}
 	blockers := make([]string, 0, len(blockerSet))
 	for blocker := range blockerSet {

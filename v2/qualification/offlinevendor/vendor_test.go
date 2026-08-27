@@ -15,12 +15,11 @@ import (
 )
 
 type moduleContract struct {
-	path              string
-	version           string
-	h1                string
-	licenseFiles      []licenseContract
-	provenanceFiles   []provenanceContract
-	provenanceBlocker string
+	path            string
+	version         string
+	h1              string
+	licenseFiles    []licenseContract
+	provenanceFiles []provenanceContract
 }
 
 type licenseContract struct {
@@ -36,8 +35,6 @@ type provenanceContract struct {
 	sha256    string
 	statement string
 }
-
-const sqliteTranslationProvenanceBlocker = "SQLITE_TRANSLATION_UPSTREAM_PROVENANCE_MISSING"
 
 const (
 	expectedVendorFiles             = 698
@@ -116,7 +113,6 @@ var vendoredModules = []moduleContract{
 		provenanceFiles: []provenanceContract{
 			{"README.md", 435, "fb8084fccb5733ccc4af421ff026812da7852e91516bdf7c70d007eb46744383", "MACHINE_TRANSLATION_RETAINS_UPSTREAM_LICENSES"},
 		},
-		provenanceBlocker: sqliteTranslationProvenanceBlocker,
 	},
 	{
 		path: "github.com/ncruces/go-sqlite3", version: "v0.35.3",
@@ -311,6 +307,8 @@ func assertRepositoryAttributes(t *testing.T, filename string) {
 		"*.js text eol=lf":            0,
 		"*.html text eol=lf":          0,
 		"vendor/** -text -whitespace": 0,
+		"third_party/sqlite/3.53.4/LICENSE.md -text -whitespace": 0,
+		"third_party/sqlite/3.53.4/manifest.uuid text eol=lf":    0,
 	}
 	for _, line := range strings.Split(strings.ReplaceAll(string(contents), "\r\n", "\n"), "\n") {
 		line = strings.TrimSpace(line)
@@ -628,7 +626,6 @@ func assertVendoredLicenseSet(t *testing.T, root string) {
 
 func assertVendoredProvenanceBoundary(t *testing.T, root string) {
 	t.Helper()
-	blockers := make(map[string]string)
 	for _, module := range vendoredModules {
 		for _, evidence := range module.provenanceFiles {
 			if evidence.statement == "" {
@@ -641,17 +638,7 @@ func assertVendoredProvenanceBoundary(t *testing.T, root string) {
 				t.Fatalf("vendored provenance file %s/%s does not match size/SHA-256 contract", module.path, evidence.name)
 			}
 		}
-		if module.provenanceBlocker != "" {
-			if len(module.provenanceFiles) == 0 {
-				t.Fatalf("module %s declares a provenance blocker without the statement that establishes it", module.path)
-			}
-			blockers[module.path] = module.provenanceBlocker
-		}
 	}
-	want := map[string]string{
-		"github.com/ncruces/go-sqlite3-wasm/v3": sqliteTranslationProvenanceBlocker,
-	}
-	assertExactMap(t, "vendored upstream provenance blockers", blockers, want)
 }
 
 func isLegalFilename(name string) bool {
