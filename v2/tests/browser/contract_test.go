@@ -49,13 +49,17 @@ func TestApprovalParserAcceptsOneExactBundleAndRejectsHostileInput(t *testing.T)
 		t.Fatalf("valid approval parse = %#v, %v", parsed, err)
 	}
 	for name, document := range map[string][]byte{
-		"empty":          nil,
-		"duplicate key":  []byte(`{"schemaVersion":1,"schemaVersion":1,"artifacts":[]}`),
-		"unknown field":  []byte(`{"schemaVersion":1,"artifacts":[],"extra":true}`),
-		"trailing value": append(append([]byte(nil), valid...), []byte(`{}`)...),
-		"wrong schema":   []byte(`{"schemaVersion":2,"artifacts":[]}`),
-		"missing list":   []byte(`{"schemaVersion":1}`),
-		"two artifacts":  marshalApprovalList(t, approval, approval),
+		"empty":                  nil,
+		"duplicate key":          []byte(`{"schemaVersion":1,"schemaVersion":1,"artifacts":[]}`),
+		"semantic duplicate key": []byte(`{"schemaVersion":1,"SchemaVersion":1,"artifacts":[]}`),
+		"case variant root":      bytes.Replace(valid, []byte(`"schemaVersion"`), []byte(`"SchemaVersion"`), 1),
+		"case variant artifact":  bytes.Replace(valid, []byte(`"id"`), []byte(`"ID"`), 1),
+		"case variant binary":    bytes.Replace(valid, []byte(`"fileName"`), []byte(`"FileName"`), 1),
+		"unknown field":          []byte(`{"schemaVersion":1,"artifacts":[],"extra":true}`),
+		"trailing value":         append(append([]byte(nil), valid...), []byte(`{}`)...),
+		"wrong schema":           []byte(`{"schemaVersion":2,"artifacts":[]}`),
+		"missing list":           []byte(`{"schemaVersion":1}`),
+		"two artifacts":          marshalApprovalList(t, approval, approval),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := ParseApproval(document); err == nil {
@@ -423,10 +427,15 @@ func TestReportParserRejectsAmbiguousOrForgedV2JSON(t *testing.T) {
 		t.Fatalf("strict parse = %#v, %v", parsed, err)
 	}
 	replacements := map[string][]byte{
-		"duplicate root key": bytes.Replace(valid, []byte(`  "status": "PASS",`), []byte("  \"status\": \"BLOCKED\",\n  \"status\": \"PASS\","), 1),
-		"unknown root key":   bytes.Replace(valid, []byte(`  "code": "QUALIFIED",`), []byte("  \"code\": \"QUALIFIED\",\n  \"extra\": true,"), 1),
-		"unknown artifact":   bytes.Replace(valid, []byte(`    "approvalId": "controlled-offline-bundle-1",`), []byte("    \"approvalId\": \"controlled-offline-bundle-1\",\n    \"extra\": true,"), 1),
-		"unknown scenario":   bytes.Replace(valid, []byte(`      "code": "QUALIFIED",`), []byte("      \"code\": \"QUALIFIED\",\n      \"extra\": true,"), 1),
+		"duplicate root key":          bytes.Replace(valid, []byte(`  "status": "PASS",`), []byte("  \"status\": \"BLOCKED\",\n  \"status\": \"PASS\","), 1),
+		"semantic duplicate root key": bytes.Replace(valid, []byte(`  "status": "PASS",`), []byte("  \"Status\": \"PASS\",\n  \"status\": \"PASS\","), 1),
+		"case variant root":           bytes.Replace(valid, []byte(`"status"`), []byte(`"Status"`), 1),
+		"case variant artifact":       bytes.Replace(valid, []byte(`"approvalId"`), []byte(`"ApprovalId"`), 1),
+		"case variant binary":         bytes.Replace(valid, []byte(`"role"`), []byte(`"Role"`), 1),
+		"case variant scenario":       bytes.Replace(valid, []byte(`"acceptanceId"`), []byte(`"AcceptanceID"`), 1),
+		"unknown root key":            bytes.Replace(valid, []byte(`  "code": "QUALIFIED",`), []byte("  \"code\": \"QUALIFIED\",\n  \"extra\": true,"), 1),
+		"unknown artifact":            bytes.Replace(valid, []byte(`    "approvalId": "controlled-offline-bundle-1",`), []byte("    \"approvalId\": \"controlled-offline-bundle-1\",\n    \"extra\": true,"), 1),
+		"unknown scenario":            bytes.Replace(valid, []byte(`      "code": "QUALIFIED",`), []byte("      \"code\": \"QUALIFIED\",\n      \"extra\": true,"), 1),
 		"string process count": bytes.Replace(valid, []byte(`  "cleanupOsTotalProcessCount": 3,`),
 			[]byte(`  "cleanupOsTotalProcessCount": "3",`), 1),
 		"forged receipt": bytes.Replace(valid, []byte(`"cleanupReceiptSha256": "`+qualifiedReport(t, minObservedProcesses).wire.CleanupSHA256+`"`),

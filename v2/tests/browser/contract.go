@@ -74,7 +74,7 @@ func ParseEmbeddedApproval() (Approval, error) {
 // ParseApproval rejects duplicate keys, trailing values, unknown fields,
 // oversized input, ambiguous platform entries, and unsafe artifact identity.
 func ParseApproval(data []byte) (Approval, error) {
-	if len(data) == 0 || len(data) > maxApprovalBytes || !utf8.Valid(data) || rejectDuplicateJSONKeys(data) != nil {
+	if len(data) == 0 || len(data) > maxApprovalBytes || !utf8.Valid(data) || rejectJSONShape(data, approvalJSONShape()) != nil {
 		return Approval{}, errors.New("browser qualification: invalid approval document")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -355,7 +355,7 @@ func MarshalReport(report Report) ([]byte, error) {
 // canonical receipt. It rejects duplicate keys, unknown fields and trailing
 // values so verifier fixtures cannot exploit a more permissive JSON dialect.
 func parseReport(data []byte) (Report, error) {
-	if len(data) == 0 || len(data) > maxReportBytes || !utf8.Valid(data) || rejectDuplicateJSONKeys(data) != nil {
+	if len(data) == 0 || len(data) > maxReportBytes || !utf8.Valid(data) || rejectJSONShape(data, reportJSONShape()) != nil {
 		return Report{}, errors.New("browser qualification: invalid report document")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -484,26 +484,75 @@ func (report Report) Scenarios() []ScenarioResult {
 	return append([]ScenarioResult(nil), report.wire.Scenarios...)
 }
 
-func rejectDuplicateJSONKeys(data []byte) error {
+type jsonShape struct {
+	fields  map[string]*jsonShape
+	element *jsonShape
+}
+
+func approvalJSONShape() *jsonShape {
+	scalar := &jsonShape{}
+	binary := &jsonShape{fields: map[string]*jsonShape{
+		"fileName": scalar, "sha256": scalar, "size": scalar, "version": scalar,
+	}}
+	artifact := &jsonShape{fields: map[string]*jsonShape{
+		"id": scalar, "os": scalar, "arch": scalar,
+		"browser": binary, "driver": binary, "mindweaver": binary,
+	}}
+	return &jsonShape{fields: map[string]*jsonShape{
+		"schemaVersion": scalar,
+		"artifacts":     {element: artifact},
+	}}
+}
+
+func reportJSONShape() *jsonShape {
+	scalar := &jsonShape{}
+	binary := &jsonShape{fields: map[string]*jsonShape{
+		"role": scalar, "fileName": scalar, "sha256": scalar, "size": scalar, "version": scalar,
+	}}
+	artifacts := &jsonShape{fields: map[string]*jsonShape{
+		"approvalId": scalar, "browser": binary, "driver": binary, "mindweaver": binary,
+	}}
+	scenario := &jsonShape{fields: map[string]*jsonShape{
+		"acceptanceId": scalar, "id": scalar, "status": scalar, "code": scalar,
+		"screenshotSha256": scalar, "screenshotBytes": scalar, "traceSha256": scalar, "traceBytes": scalar,
+	}}
+	return &jsonShape{fields: map[string]*jsonShape{
+		"schemaVersion": scalar, "qualification": scalar, "status": scalar, "code": scalar,
+		"sourceRevision": scalar, "platform": scalar, "startedAt": scalar, "completedAt": scalar,
+		"artifacts": artifacts, "executableSha256": scalar, "policySha256": scalar,
+		"rootProcessLineageSha256": scalar, "descendantProcessLineageSha256": scalar,
+		"scenarios": {element: scenario}, "webdriverSessionClosed": scalar, "artifactsReverified": scalar,
+		"cleanupStatus": scalar, "cleanupReceiptSha256": scalar, "cleanupOsTotalProcessCount": scalar,
+		"cleanupOsActiveProcessCount": scalar,
+	}}
+}
+
+func rejectJSONShape(data []byte, shape *jsonShape) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
-	if err := scanJSONValue(decoder); err != nil {
+	if err := scanJSONValue(decoder, shape); err != nil {
 		return err
 	}
 	return requireJSONEOF(decoder)
 }
 
-func scanJSONValue(decoder *json.Decoder) error {
+func scanJSONValue(decoder *json.Decoder, shape *jsonShape) error {
 	token, err := decoder.Token()
 	if err != nil {
 		return err
 	}
 	delimiter, ok := token.(json.Delim)
 	if !ok {
+		if shape == nil || shape.fields != nil || shape.element != nil {
+			return errors.New("unexpected JSON scalar")
+		}
 		return nil
 	}
 	switch delimiter {
 	case '{':
+		if shape == nil || shape.fields == nil {
+			return errors.New("unexpected JSON object")
+		}
 		seen := make(map[string]struct{})
 		for decoder.More() {
 			keyToken, err := decoder.Token()
@@ -517,16 +566,23 @@ func scanJSONValue(decoder *json.Decoder) error {
 			if _, exists := seen[key]; exists {
 				return errors.New("duplicate JSON object key")
 			}
+			child, allowed := shape.fields[key]
+			if !allowed {
+				return errors.New("unknown JSON object key")
+			}
 			seen[key] = struct{}{}
-			if err := scanJSONValue(decoder); err != nil {
+			if err := scanJSONValue(decoder, child); err != nil {
 				return err
 			}
 		}
 		_, err = decoder.Token()
 		return err
 	case '[':
+		if shape == nil || shape.element == nil {
+			return errors.New("unexpected JSON array")
+		}
 		for decoder.More() {
-			if err := scanJSONValue(decoder); err != nil {
+			if err := scanJSONValue(decoder, shape.element); err != nil {
 				return err
 			}
 		}
