@@ -356,7 +356,11 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 	if firstPID <= 0 {
 		t.Fatal("REL001_KILL_FIRST_PROCESS_ID_INVALID")
 	}
-	t.Cleanup(func() { strictREL001ProcessCleanup(t, first) })
+	t.Cleanup(func() {
+		if err := stopREL001Process(first, true); err != nil {
+			t.Error("REL001_KILL_CLEANUP_FAILED")
+		}
+	})
 	firstSession := exchangeSession(t, first)
 	conversationID := ""
 	var providerAttempts atomic.Int64
@@ -385,7 +389,7 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 			t.Fatal("REL001_KILL_PROVIDER_FIXTURE_INVALID")
 		}
 		setup := rel001KillTemplate{
-			method: http.MethodPost, path: "/api/v1/conversations", key: rel001KillKey("setup", frame.sequence),
+			method: http.MethodPost, path: "/api/v1/conversations", key: fmt.Sprintf("rel001-setup-%04d", frame.sequence),
 			contentType: "application/json", body: `{"title":"REL001 Ask setup ` + fmt.Sprintf("%04d", frame.sequence) + `"}`,
 		}
 		identity, created, err := executeREL001KillMutation(firstSession, setup, rel001KillConversation)
@@ -395,7 +399,6 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 		conversationID = identity.primary
 	}
 	template := rel001KillRequest(frame, conversationID)
-
 	var decisionOrder atomic.Int32
 	wroteHeaders := make(chan struct{})
 	var wroteOnce sync.Once
@@ -423,7 +426,9 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 	}
 	time.Sleep(frame.delay)
 	claimREL001DecisionLinearization(&decisionOrder, rel001DecisionBeforeResponse)
-	mustTerminateREL001Process(t, first)
+	if err := stopREL001Process(first, true); err != nil {
+		t.Fatal("REL001_KILL_REQUIRED_TERMINATION_FAILED")
+	}
 	cancelRequest()
 	var firstResponse rel001KillResponse
 	select {
@@ -438,12 +443,15 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 	if decisionLinearization == rel001ResponseBeforeDecision && firstResponse.err != nil {
 		t.Fatal("REL001_KILL_RESPONSE_BEFORE_DECISION_INVALID")
 	}
-
 	restarted := startMindWeaverWithEnvironment(t, artifacts, runRoot, childEnvironment)
 	if restarted.command.Process.Pid <= 0 || restarted.command.Process.Pid == firstPID {
 		t.Fatal("REL001_KILL_RESTART_PROCESS_ID_INVALID")
 	}
-	t.Cleanup(func() { strictREL001ProcessCleanup(t, restarted) })
+	t.Cleanup(func() {
+		if err := stopREL001Process(restarted, true); err != nil {
+			t.Error("REL001_KILL_CLEANUP_FAILED")
+		}
+	})
 	restartSession := exchangeSession(t, restarted)
 	firstReplay, _, err := executeREL001KillMutation(restartSession, template, frame.mutation)
 	if err != nil {
@@ -463,14 +471,16 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 	verifyREL001KillOracle(t, restartSession, frame, template, firstReplay, conversationID, providerAttempts.Load())
 	firstSession.client.CloseIdleConnections()
 	restartSession.client.CloseIdleConnections()
-	mustTerminateREL001Process(t, restarted)
+	if err := stopREL001Process(restarted, true); err != nil {
+		t.Fatal("REL001_KILL_REQUIRED_TERMINATION_FAILED")
+	}
 	removeREL001KillRunRoot(t, runRoot)
 	return decisionLinearization
 }
 
 func rel001KillRequest(frame rel001KillFrame, conversationID string) rel001KillTemplate {
 	sequence := fmt.Sprintf("%04d", frame.sequence)
-	template := rel001KillTemplate{key: rel001KillKey("mutation", frame.sequence)}
+	template := rel001KillTemplate{key: fmt.Sprintf("rel001-mutation-%04d", frame.sequence)}
 	switch frame.mutation {
 	case rel001KillCollection:
 		template.method, template.path, template.contentType = http.MethodPost, "/api/v1/collections", "application/json"
@@ -494,10 +504,6 @@ func rel001KillRequest(frame rel001KillFrame, conversationID string) rel001KillT
 		template.body = string(body)
 	}
 	return template
-}
-
-func rel001KillKey(purpose string, sequence int) string {
-	return fmt.Sprintf("rel001-%s-%04d", purpose, sequence)
 }
 
 func newREL001KillRequest(session *apiSession, template rel001KillTemplate) (*http.Request, error) {
@@ -587,7 +593,10 @@ func executeREL001KillRequest(session *apiSession, request *http.Request, mutati
 	if closeErr != nil {
 		return rel001KillIdentity{}, false, errors.New("REL001_KILL_MUTATION_RESPONSE_CLOSE_FAILED")
 	}
-	if !validREL001KillStatus(response.StatusCode, mutation) {
+	validStatus := response.StatusCode == http.StatusOK ||
+		response.StatusCode == http.StatusCreated && (mutation == rel001KillCollection || mutation == rel001KillConversation) ||
+		response.StatusCode == http.StatusAccepted && mutation == rel001KillUpload
+	if !validStatus {
 		return rel001KillIdentity{}, false, fmt.Errorf("REL001_KILL_MUTATION_STATUS_INVALID_%d", response.StatusCode)
 	}
 	if !validREL001KillIdentity(identity, mutation) {
@@ -597,37 +606,22 @@ func executeREL001KillRequest(session *apiSession, request *http.Request, mutati
 	return identity, created, nil
 }
 
-func validREL001KillStatus(status int, mutation rel001KillMutation) bool {
-	switch mutation {
-	case rel001KillCollection, rel001KillConversation:
-		return status == http.StatusOK || status == http.StatusCreated
-	case rel001KillUpload:
-		return status == http.StatusOK || status == http.StatusAccepted
-	case rel001KillAskNoContext:
-		return status == http.StatusOK
-	}
-	return false
-}
-
 func validREL001KillIdentity(identity rel001KillIdentity, mutation rel001KillMutation) bool {
-	if !validREL001KillIdentifier(identity.primary) {
+	valid := func(value string) bool { return value != "" && len(value) <= 128 && strings.TrimSpace(value) == value }
+	if !valid(identity.primary) {
 		return false
 	}
 	switch mutation {
 	case rel001KillCollection, rel001KillConversation:
 		return identity.secondary == "" && identity.tertiary == ""
 	case rel001KillUpload:
-		return validREL001KillIdentifier(identity.secondary) && validREL001KillIdentifier(identity.tertiary)
+		return valid(identity.secondary) && valid(identity.tertiary)
 	case rel001KillAskNoContext:
-		return validREL001KillIdentifier(identity.secondary) && identity.tertiary == "1" &&
+		return valid(identity.secondary) && identity.tertiary == "1" &&
 			(identity.status == "refused" && identity.limitation == "NO_CONTEXT" && identity.code == "" ||
 				identity.status == "failed" && identity.limitation == "OUTCOME_UNCERTAIN" && identity.code == "OUTCOME_UNCERTAIN")
 	}
 	return false
-}
-
-func validREL001KillIdentifier(value string) bool {
-	return value != "" && len(value) <= 128 && strings.TrimSpace(value) == value
 }
 
 func decodeREL001KillJSON(reader io.Reader, output any) error {
@@ -738,7 +732,7 @@ func verifyREL001KillOracle(t *testing.T, session *apiSession, frame rel001KillF
 			Question string `json:"question"`
 		}
 		_ = json.Unmarshal([]byte(template.body), &askBody)
-		if len(messages.Messages) != 2 || !validREL001KillIdentifier(messages.Messages[0].ID) ||
+		if len(messages.Messages) != 2 || messages.Messages[0].ID == "" || len(messages.Messages[0].ID) > 128 || strings.TrimSpace(messages.Messages[0].ID) != messages.Messages[0].ID ||
 			messages.Messages[0].ID == identity.primary || messages.Messages[0].ConversationID != conversationID ||
 			messages.Messages[0].Ordinal != 1 || messages.Messages[0].Role != "user" || messages.Messages[0].Status != "completed" ||
 			messages.Messages[0].Content != askBody.Question || messages.Messages[0].LimitationCode != "" || messages.Messages[0].ErrorCode != "" ||
@@ -782,20 +776,6 @@ func waitREL001KillJob(t *testing.T, session *apiSession, jobID string) {
 			t.Fatal("REL001_KILL_JOB_TERMINAL_INVALID")
 		}
 		time.Sleep(20 * time.Millisecond)
-	}
-}
-
-func strictREL001ProcessCleanup(t *testing.T, process *runningApp) {
-	t.Helper()
-	if err := stopREL001Process(process, true); err != nil {
-		t.Error("REL001_KILL_CLEANUP_FAILED")
-	}
-}
-
-func mustTerminateREL001Process(t *testing.T, process *runningApp) {
-	t.Helper()
-	if err := stopREL001Process(process, true); err != nil {
-		t.Fatal("REL001_KILL_REQUIRED_TERMINATION_FAILED")
 	}
 }
 

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -20,6 +19,7 @@ var (
 	rel001TerminateProcess    = windows.TerminateProcess
 	rel001WaitForSingleObject = windows.WaitForSingleObject
 	rel001CloseHandle         = windows.CloseHandle
+	rel001AwaitTimeout        = rel001FallbackReapTimeout
 )
 
 func retainREL001ProcessHandle(pid int) (uintptr, error) {
@@ -52,13 +52,12 @@ func stopREL001Process(process *runningApp, requireKill bool) error {
 		result, waitErr := rel001WaitForSingleObject(handle, uint32(rel001FallbackReapTimeout/time.Millisecond))
 		signaled = waitErr == nil && result == windows.WAIT_OBJECT_0
 	}
-	waitErr, reaped := process.awaitWaitLocked(rel001FallbackReapTimeout)
-	closeErr := closeREL001ProcessHandleLocked(process)
-	if closeErr != nil {
-		return closeErr
-	}
+	waitErr, reaped := process.awaitWaitLocked(rel001AwaitTimeout)
 	if !signaled || !reaped {
 		return errors.New("REL001_KILL_PROCESS_REAP_FAILED")
+	}
+	if closeErr := closeREL001ProcessHandleLocked(process); closeErr != nil {
+		return closeErr
 	}
 	if requireKill && initiallyExited {
 		return errors.New("REL001_KILL_PROCESS_EXITED_BEFORE_TERMINATION")
@@ -83,9 +82,10 @@ func closeREL001ProcessHandleLocked(process *runningApp) error {
 	return process.nativeCloseErr
 }
 
-func TestREL001RetainedHandleSurvivesEarlyExitAndClosesOnce(t *testing.T) {
-	originalOpen, originalClose := rel001OpenProcess, rel001CloseHandle
-	openCalls, closeCalls := 0, 0
+func TestREL001RetainedHandleRetryAndCloseExactlyOnce(t *testing.T) {
+	originalOpen, originalClose, originalWait := rel001OpenProcess, rel001CloseHandle, rel001WaitForSingleObject
+	originalAwait := rel001AwaitTimeout
+	openCalls, closeCalls, waitCalls := 0, 0, 0
 	rel001OpenProcess = func(access uint32, inherit bool, pid uint32) (windows.Handle, error) {
 		openCalls++
 		return originalOpen(access, inherit, pid)
@@ -95,8 +95,11 @@ func TestREL001RetainedHandleSurvivesEarlyExitAndClosesOnce(t *testing.T) {
 		_ = originalClose(handle)
 		return errors.New("injected close failure")
 	}
-	defer func() { rel001OpenProcess, rel001CloseHandle = originalOpen, originalClose }()
-	command := exec.Command(filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe"), "/d", "/c", "exit", "0")
+	defer func() {
+		rel001OpenProcess, rel001CloseHandle = originalOpen, originalClose
+		rel001WaitForSingleObject, rel001AwaitTimeout = originalWait, originalAwait
+	}()
+	command := exec.Command(os.Getenv("SystemRoot")+`\System32\cmd.exe`, "/d", "/c", "exit", "0")
 	command.Env = []string{"SystemRoot=" + os.Getenv("SystemRoot"), "WINDIR=" + os.Getenv("WINDIR")}
 	if err := command.Start(); err != nil {
 		t.Fatal("REL001_RETAINED_HANDLE_CHILD_START_FAILED")
@@ -107,16 +110,29 @@ func TestREL001RetainedHandleSurvivesEarlyExitAndClosesOnce(t *testing.T) {
 		_ = command.Wait()
 		t.Fatal("REL001_RETAINED_HANDLE_OPEN_FAILED")
 	}
-	waitDone := make(chan error, 1)
-	go func() { waitDone <- command.Wait() }()
-	process := &runningApp{command: command, waitDone: waitDone, nativeHandle: handle}
-	result, err := rel001WaitForSingleObject(windows.Handle(handle), uint32(rel001FallbackReapTimeout/time.Millisecond))
+	result, err := originalWait(windows.Handle(handle), uint32(rel001FallbackReapTimeout/time.Millisecond))
 	if err != nil || result != windows.WAIT_OBJECT_0 {
 		t.Fatal("REL001_RETAINED_HANDLE_EARLY_EXIT_NOT_SIGNALED")
 	}
+	rel001WaitForSingleObject = func(handle windows.Handle, milliseconds uint32) (uint32, error) {
+		waitCalls++
+		if waitCalls <= 3 {
+			return uint32(windows.WAIT_TIMEOUT), nil
+		}
+		return originalWait(handle, milliseconds)
+	}
+	rel001AwaitTimeout = time.Millisecond
+	waitDone := make(chan error, 1)
+	process := &runningApp{command: command, waitDone: waitDone, nativeHandle: handle}
 	firstErr := stopREL001Process(process, false)
+	if firstErr == nil || process.finished || process.nativeCloseAttempted || openCalls != 1 || closeCalls != 0 {
+		t.Fatal("REL001_RETAINED_HANDLE_RETRY_STATE_INVALID")
+	}
+	rel001AwaitTimeout = originalAwait
+	go func() { waitDone <- command.Wait() }()
 	secondErr := stopREL001Process(process, false)
-	if firstErr == nil || secondErr == nil || firstErr.Error() != secondErr.Error() || openCalls != 1 || closeCalls != 1 || !process.finished {
+	thirdErr := stopREL001Process(process, false)
+	if secondErr == nil || thirdErr == nil || secondErr.Error() != thirdErr.Error() || openCalls != 1 || closeCalls != 1 || !process.finished {
 		t.Fatal("REL001_RETAINED_HANDLE_EXACT_ONCE_CONTRACT_FAILED")
 	}
 }

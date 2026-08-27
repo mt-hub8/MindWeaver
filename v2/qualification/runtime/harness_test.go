@@ -253,12 +253,16 @@ func startMindWeaverWithEnvironment(t *testing.T, artifacts builtArtifacts, root
 	waitDone := make(chan error, 1)
 	go func() { waitDone <- command.Wait() }()
 	if retainErr != nil {
-		_ = command.Process.Kill()
-		select {
-		case <-waitDone:
-		case <-time.After(processReapTimeout):
-			t.Fatal("retain process handle cleanup timed out")
-		}
+		t.Cleanup(func() {
+			if command.Process.Kill() != nil {
+				t.Error("retain process handle cleanup kill failed")
+			}
+			select {
+			case <-waitDone:
+			case <-time.After(processReapTimeout):
+				t.Error("retain process handle cleanup timed out")
+			}
+		})
 		t.Fatal("retain process handle failed")
 	}
 	app := &runningApp{command: command, stderr: diagnostics, waitDone: waitDone, nativeHandle: nativeHandle}
