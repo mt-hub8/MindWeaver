@@ -33,7 +33,8 @@ output.
 | ID | Forced termination boundary | Required post-kill state and recovery | Status at baseline |
 |---|---|---|---|
 | BLOB-K01A | staging copy has written an exact prefix but has not observed source EOF, so file `Sync` has not started | incomplete private staging and no final object; startup removes staging before routes | CLOSED by `TestBLOB001IncompleteStagingRecoversAfterForcedTermination` |
-| BLOB-K01B | staging `Write` or file/directory `Sync` fails or its outcome is not observed | no partial final object; private staging is removed or explicitly recoverable | OPEN; deterministic write/file-sync fault seam remains absent |
+| BLOB-K01B1 | staging `Write` returns a partial/zero write or ENOSPC, or staging file `Sync` returns ENOSPC | no partial final object; failed private staging is removed and its directory synced; exact retry succeeds | CLOSED by `TestPrepareStagingWriteAndSyncFailuresFailClosed` |
+| BLOB-K01B2 | staging file/directory `Sync` outcome is not observed because the process terminates inside the syscall | no partial final object; private staging is removed or explicitly recoverable | OPEN; deterministic real-process stop inside the syscall is unavailable |
 | BLOB-K02 | `Prepare` returned after staging file and directory sync, before GC candidate commit | exact staging exists; startup removes it; no candidate or final object exists | CLOSED by `TestBLOB001DurableStagingBeforeCandidateRecoversAfterForcedTermination` |
 | BLOB-K03 | GC candidate commit returned, after durable `Prepare`, before publication rename | exact staging and one durable candidate; startup removes staging and resolves the missing-object candidate | CLOSED by `TestBLOB001DurableCandidateBeforeRenameRecoversAfterForcedTermination` |
 | BLOB-K04 | publication rename returned and exact final object verifies, before document reference transaction | exact object plus one candidate; startup deletes the unreferenced object and resolves the candidate | CLOSED by `TestBLOB001PublishedOrphanRecoversAfterForcedTermination` |
@@ -93,23 +94,32 @@ replay after another reopen converge to one new graph/object and zero
 candidates. K08 remains open because no existing production boundary can
 deterministically block between unlink and directory sync without a fault seam.
 
+## K05 feasibility decision
+
+There is no production-owned pause between SQLite's commit decision and the
+return from `CreateDocumentUpload`. A timing loop, sleep, database-size trick,
+or random process kill could observe either K04 or K06 state but could not prove
+that termination occurred while commit outcome was unknown. Adding a generic
+transaction hook, commit journal, or second state machine would exceed the CORE
+design. K05 therefore remains OPEN until SQLite or the selected driver exposes
+a small commit-specific seam that can be deleted after qualification.
+
 ## Final-tree ENOSPC and short-write seam assessment
 
-The current final tree has deterministic seams for directory sync and rename,
-and `writeFull` correctly loops over positive partial writes and rejects a
-zero-byte write with `io.ErrShortWrite`. It does **not** have a deterministic
-seam at the concrete staging file's `Write` or `Sync` calls. Source-reader
-errors and SQLite disk-full tests do not qualify these two Blob boundaries.
+The selected seam is package-private and Blob-specific: `Store` retains two
+unexported callbacks which in production call `Write` and `Sync` directly on
+the already-open staging `*os.File`. No public option, generic fault registry,
+journal, schema change or replacement file handle is introduced. Identity,
+rename and directory-sync code is unchanged.
 
-The smallest acceptable future seam is package-private and Blob-specific: an
-unexported staging-write callback receiving the already-open `*os.File`, plus
-an unexported staging-file-sync callback, both installed only through the
-package's existing test constructor. It must test partial-write-plus-ENOSPC,
-zero-write short write, and file-sync ENOSPC while preserving the real file
-identity, Abort cleanup and staging-directory sync. A generic fault framework,
-public option, journal, schema change, or weakened file-identity check is out of
-scope. Until that seam and a real filesystem qualification are present,
-ENOSPC/short-write remains OPEN and cannot support PASS.
+The deterministic test performs a real positive partial file write followed by
+ENOSPC, a zero-byte write producing `io.ErrShortWrite`, and a staging-file sync
+returning ENOSPC. Every case returns no `PreparedImport`, removes staging,
+syncs the staging directory, exposes no final object, and then imports the same
+bytes successfully after restoring production callbacks. This closes the
+software failure handling in K01B1. It does not reproduce a physical full disk,
+power loss, or a process terminated inside a file/directory sync syscall;
+K01B2 and clean-machine physical ENOSPC qualification remain OPEN.
 
 ## Reproduction
 
@@ -119,5 +129,6 @@ Run from `v2/` with the frozen Go 1.27.0 toolchain:
 go test ./qualification/knowledge -run '^TestBLOB001(IncompleteStaging|DurableStagingBeforeCandidate|DurableCandidateBeforeRename)RecoversAfterForcedTermination$' -count=10
 go test ./qualification/knowledge -run '^TestBLOB001ReferenceCommitResponseReplayAfterForcedTermination$' -count=10
 go test ./qualification/knowledge -run '^TestBLOB001DurableDeleteBeforeCandidateResolveRecoversAfterForcedTermination$' -count=10
+go test ./internal/blob -run '^TestPrepareStagingWriteAndSyncFailuresFailClosed$' -count=10
 go vet ./qualification/knowledge
 ```

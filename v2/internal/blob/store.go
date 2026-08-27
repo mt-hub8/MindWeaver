@@ -155,9 +155,14 @@ func (prepared *preparedImport) Size() int64 {
 type Store struct {
 	objectsDir string
 	stagingDir string
-	syncDir    func(string) error
-	rename     func(string, string) error
-	runtime    *storeRuntime
+	// These remain the direct os.File methods in production. Package tests use
+	// the narrow callbacks to qualify staging failures without replacing the
+	// real file handle or weakening identity checks.
+	writeStaging func(*os.File, []byte) (int, error)
+	syncStaging  func(*os.File) error
+	syncDir      func(string) error
+	rename       func(string, string) error
+	runtime      *storeRuntime
 }
 
 // storeRuntime is shared by every Store opened on the same physical root in
@@ -228,11 +233,13 @@ func openStore(root string, syncDir func(string) error, rename func(string, stri
 	}
 
 	return &Store{
-		objectsDir: algorithmDir,
-		stagingDir: stagingDir,
-		syncDir:    syncDir,
-		rename:     rename,
-		runtime:    shared,
+		objectsDir:   algorithmDir,
+		stagingDir:   stagingDir,
+		writeStaging: writeStagingFile,
+		syncStaging:  syncStagingFile,
+		syncDir:      syncDir,
+		rename:       rename,
+		runtime:      shared,
 	}, nil
 }
 
@@ -331,14 +338,14 @@ func (s *Store) Prepare(ctx context.Context, src io.Reader, maxBytes int64) (Pre
 	}
 
 	hasher := sha256.New()
-	size, err := copyBounded(ctx, temp, hasher, src, maxBytes)
+	size, err := copyBounded(ctx, temp, hasher, src, maxBytes, s.writeStaging)
 	if err != nil {
 		return abort(err)
 	}
 	if err := ctx.Err(); err != nil {
 		return abort(err)
 	}
-	if err := temp.Sync(); err != nil {
+	if err := s.syncStaging(temp); err != nil {
 		return abort(fmt.Errorf("sync blob staging file: %w", err))
 	}
 	if err := ctx.Err(); err != nil {
@@ -911,7 +918,14 @@ func (s *Store) isActive(name string) bool {
 	return ok
 }
 
-func copyBounded(ctx context.Context, dst *os.File, digest hash.Hash, src io.Reader, limit int64) (int64, error) {
+func copyBounded(
+	ctx context.Context,
+	dst *os.File,
+	digest hash.Hash,
+	src io.Reader,
+	limit int64,
+	write func(*os.File, []byte) (int, error),
+) (int64, error) {
 	buffer := make([]byte, copyBufferSize)
 	var total int64
 	emptyReads := 0
@@ -938,7 +952,7 @@ func copyBounded(ctx context.Context, dst *os.File, digest hash.Hash, src io.Rea
 		}
 		if n > 0 {
 			emptyReads = 0
-			if err := writeFull(dst, buffer[:n]); err != nil {
+			if err := writeFull(dst, buffer[:n], write); err != nil {
 				return total, fmt.Errorf("write blob staging file: %w", err)
 			}
 			_, _ = digest.Write(buffer[:n])
@@ -959,9 +973,12 @@ func copyBounded(ctx context.Context, dst *os.File, digest hash.Hash, src io.Rea
 	}
 }
 
-func writeFull(dst *os.File, data []byte) error {
+func writeFull(dst *os.File, data []byte, write func(*os.File, []byte) (int, error)) error {
 	for len(data) > 0 {
-		n, err := dst.Write(data)
+		n, err := write(dst, data)
+		if n < 0 || n > len(data) {
+			return fmt.Errorf("invalid staging Write count %d", n)
+		}
 		if err != nil {
 			return err
 		}
@@ -971,6 +988,14 @@ func writeFull(dst *os.File, data []byte) error {
 		data = data[n:]
 	}
 	return nil
+}
+
+func writeStagingFile(file *os.File, data []byte) (int, error) {
+	return file.Write(data)
+}
+
+func syncStagingFile(file *os.File) error {
+	return file.Sync()
 }
 
 func verifyObject(ctx context.Context, path, digest string, expectedSize int64) (os.FileInfo, error) {
