@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -29,6 +30,13 @@ const (
 	knowledgeSequenceMaxSteps = 12
 	knowledgeSequenceLimit    = 16
 	knowledgeSequenceStaleRev = int64(0)
+	knowledgeSequenceSymbols  = 32
+
+	knowledgeSequenceCampaignPairPlans       = 86
+	knowledgeSequenceCampaignPlans           = 92
+	knowledgeSequenceCampaignSteps           = 1097
+	knowledgeSequenceCampaignCorpusFrameSize = 1406
+	knowledgeSequenceCampaignCorpusSHA256    = "b969781b5b81ac1a4bb8093dcbbe6b0c3239bbcbcb9645d0d5947666cf84e204"
 )
 
 const (
@@ -56,6 +64,49 @@ const (
 	sequenceObjectAbsent knowledgeSequenceObjectShape = iota
 	sequenceObjectFile
 )
+
+type knowledgeSequenceOutcome string
+
+const (
+	sequenceOutcomeUploadCreated             knowledgeSequenceOutcome = "upload_created"
+	sequenceOutcomeUploadReplayed            knowledgeSequenceOutcome = "upload_replayed"
+	sequenceOutcomeUploadConflict            knowledgeSequenceOutcome = "upload_conflict"
+	sequenceOutcomeRunSucceeded              knowledgeSequenceOutcome = "run_succeeded"
+	sequenceOutcomeRunEmpty                  knowledgeSequenceOutcome = "run_empty"
+	sequenceOutcomeCancelQueued              knowledgeSequenceOutcome = "cancel_queued"
+	sequenceOutcomeCancelUnchanged           knowledgeSequenceOutcome = "cancel_unchanged"
+	sequenceOutcomeRetryQueuedUnchanged      knowledgeSequenceOutcome = "retry_queued_unchanged"
+	sequenceOutcomeRetryCancelledStale       knowledgeSequenceOutcome = "retry_cancelled_stale_conflict"
+	sequenceOutcomeRetryCancelledRequeued    knowledgeSequenceOutcome = "retry_cancelled_requeued"
+	sequenceOutcomeRetryTerminalConflict     knowledgeSequenceOutcome = "retry_terminal_conflict"
+	sequenceOutcomeTrashChanged              knowledgeSequenceOutcome = "trash_changed"
+	sequenceOutcomeTrashStaleConflict        knowledgeSequenceOutcome = "trash_stale_conflict"
+	sequenceOutcomeTrashUnchanged            knowledgeSequenceOutcome = "trash_unchanged"
+	sequenceOutcomeRestoreChanged            knowledgeSequenceOutcome = "restore_changed"
+	sequenceOutcomeRestoreStaleConflict      knowledgeSequenceOutcome = "restore_stale_conflict"
+	sequenceOutcomeRestoreUnchanged          knowledgeSequenceOutcome = "restore_unchanged"
+	sequenceOutcomePurgeActiveConflict       knowledgeSequenceOutcome = "purge_active_conflict"
+	sequenceOutcomePurgeStaleConflict        knowledgeSequenceOutcome = "purge_stale_conflict"
+	sequenceOutcomePurgeSharedRetained       knowledgeSequenceOutcome = "purge_shared_retained"
+	sequenceOutcomePurgeLastDeleted          knowledgeSequenceOutcome = "purge_last_deleted"
+	sequenceOutcomeMembershipAdded           knowledgeSequenceOutcome = "membership_added"
+	sequenceOutcomeMembershipAddUnchanged    knowledgeSequenceOutcome = "membership_add_unchanged"
+	sequenceOutcomeMembershipTrashConflict   knowledgeSequenceOutcome = "membership_add_trash_conflict"
+	sequenceOutcomeMembershipRemoved         knowledgeSequenceOutcome = "membership_removed"
+	sequenceOutcomeMembershipRemoveUnchanged knowledgeSequenceOutcome = "membership_remove_unchanged"
+	sequenceOutcomeReopened                  knowledgeSequenceOutcome = "reopened"
+	sequenceOutcomeSweepRetained             knowledgeSequenceOutcome = "sweep_retained"
+	sequenceOutcomeSweepEmpty                knowledgeSequenceOutcome = "sweep_empty"
+)
+
+type knowledgeSequenceCampaignPlan struct {
+	words []uint8
+}
+
+type knowledgeSequenceCampaignTrack struct {
+	name  string
+	plans []knowledgeSequenceCampaignPlan
+}
 
 type knowledgeSequenceDocument struct {
 	key      string
@@ -91,6 +142,7 @@ type knowledgeSequenceHarness struct {
 	blobReferences     int
 	blobCandidate      bool
 	objectShape        knowledgeSequenceObjectShape
+	outcomes           map[knowledgeSequenceOutcome]struct{}
 }
 
 // FuzzKnowledgeLifecycleOperationSequence uses a 60-bit, at-most-12-step plan
@@ -99,47 +151,46 @@ type knowledgeSequenceHarness struct {
 // Arbitrary source bytes stay in their owner-local fuzz targets; both modeled
 // documents intentionally share one valid object to exercise reference counts.
 func FuzzKnowledgeLifecycleOperationSequence(f *testing.F) {
-	addKnowledgeSequenceSeed(f,
-		sequenceWord(sequenceUpload, 0), sequenceWord(sequenceUpload, 1),
-		sequenceWord(sequenceRunOne, 0), sequenceWord(sequenceRunOne, 1),
-		sequenceWord(sequenceAddMember, 0), sequenceWord(sequenceConflictUpload, 1),
-		sequenceWord(sequenceSweep, 1), sequenceWord(sequenceTrashCurrent, 0),
-		sequenceWord(sequencePurgeCurrent, 0), sequenceWord(sequenceReopen, 0),
-		sequenceWord(sequenceTrashCurrent, 1), sequenceWord(sequencePurgeCurrent, 1),
-	)
-	addKnowledgeSequenceSeed(f,
-		sequenceWord(sequenceUpload, 0), sequenceWord(sequenceCancel, 0),
-		sequenceWord(sequenceRetryStale, 0), sequenceWord(sequenceRetryCurrent, 0),
-		sequenceWord(sequenceRunOne, 0), sequenceWord(sequenceTrashStale, 0),
-		sequenceWord(sequenceTrashCurrent, 0), sequenceWord(sequenceRestoreStale, 0),
-		sequenceWord(sequenceRestoreCurrent, 0), sequenceWord(sequenceTrashCurrent, 0),
-		sequenceWord(sequencePurgeStale, 0), sequenceWord(sequencePurgeCurrent, 0),
-	)
-	addKnowledgeSequenceSeed(f,
-		sequenceWord(sequenceUpload, 0), sequenceWord(sequenceCancel, 0),
-		sequenceWord(sequenceUpload, 1), sequenceWord(sequenceRetryCurrent, 0),
-		sequenceWord(sequenceRunOne, 1), sequenceWord(sequenceRunOne, 0),
-		sequenceWord(sequenceConflictUpload, 1), sequenceWord(sequenceAddMember, 1),
-		sequenceWord(sequenceRemoveMember, 1), sequenceWord(sequenceReopen, 1),
-		sequenceWord(sequenceTrashStale, 1), sequenceWord(sequenceRestoreStale, 1),
-	)
+	for _, track := range knowledgeSequenceSemanticTracksV1()[:3] {
+		addKnowledgeSequenceSeed(f, track.plans[0].words...)
+	}
 
 	f.Fuzz(func(t *testing.T, plan uint64, rawSteps uint8) {
 		steps := int(rawSteps % (knowledgeSequenceMaxSteps + 1))
+		words := make([]uint8, steps)
+		for step := range words {
+			words[step] = uint8(plan >> (step * 5) & 0x1f)
+		}
 		harness := newKnowledgeSequenceHarness(t)
 		harness.assertLight(t, -1)
-		for step := 0; step < steps; step++ {
-			word := uint8(plan >> (step * 5) & 0x1f)
-			harness.apply(t, step, word)
-			harness.assertLight(t, step)
-			action := word >> 1
-			if action == sequencePurgeCurrent || action == sequencePurgeStale ||
-				action == sequenceReopen || action == sequenceSweep {
-				harness.assertFull(t, step)
-			}
-		}
+		runKnowledgeSequenceWords(t, harness, words, 0)
 		harness.assertFull(t, steps)
 	})
+}
+
+// TestKnowledgeLifecycleOperationSequenceCampaignV1 turns the owner-local
+// fuzz model into a deterministic qualification corpus without changing the
+// production state machine. One retained Vault executes every ordered pair of
+// the 32 encoded action-slot words in one continuous B(32,2) trace; six fresh
+// Vaults freeze 29 reviewed minimum branch outcomes.
+func TestKnowledgeLifecycleOperationSequenceCampaignV1(t *testing.T) {
+	pairTrack := knowledgeSequencePairTrackV1()
+	semanticTracks := knowledgeSequenceSemanticTracksV1()
+	tracks := append([]knowledgeSequenceCampaignTrack{pairTrack}, semanticTracks...)
+	assertKnowledgeSequenceCampaignContractV1(t, tracks)
+
+	t.Run(pairTrack.name, func(t *testing.T) {
+		runKnowledgeSequenceTrack(t, pairTrack, nil)
+	})
+
+	outcomes := make(map[knowledgeSequenceOutcome]struct{})
+	for _, track := range semanticTracks {
+		track := track
+		t.Run(track.name, func(t *testing.T) {
+			runKnowledgeSequenceTrack(t, track, outcomes)
+		})
+	}
+	assertKnowledgeSequenceOutcomesV1(t, outcomes)
 }
 
 func addKnowledgeSequenceSeed(f *testing.F, words ...uint8) {
@@ -153,6 +204,220 @@ func addKnowledgeSequenceSeed(f *testing.F, words ...uint8) {
 
 func sequenceWord(action uint8, slot int) uint8 {
 	return action<<1 | uint8(slot&1)
+}
+
+func runKnowledgeSequenceTrack(t *testing.T, track knowledgeSequenceCampaignTrack, outcomes map[knowledgeSequenceOutcome]struct{}) {
+	t.Helper()
+	harness := newKnowledgeSequenceHarness(t)
+	harness.outcomes = outcomes
+	harness.assertLight(t, -1)
+	step := 0
+	for _, plan := range track.plans {
+		if len(plan.words) == 0 || len(plan.words) > knowledgeSequenceMaxSteps {
+			t.Fatalf("track %q has invalid plan length %d", track.name, len(plan.words))
+		}
+		step = runKnowledgeSequenceWords(t, harness, plan.words, step)
+	}
+	harness.assertFull(t, step)
+}
+
+func runKnowledgeSequenceWords(t *testing.T, harness *knowledgeSequenceHarness, words []uint8, step int) int {
+	t.Helper()
+	if len(words) > knowledgeSequenceMaxSteps {
+		t.Fatalf("sequence plan has %d steps, limit %d", len(words), knowledgeSequenceMaxSteps)
+	}
+	for _, word := range words {
+		if word >= knowledgeSequenceSymbols {
+			sequenceFatal(t, step, "sequence word %d is outside alphabet", word)
+		}
+		harness.apply(t, step, word)
+		harness.assertLight(t, step)
+		action := word >> 1
+		if action == sequencePurgeCurrent || action == sequencePurgeStale ||
+			action == sequenceReopen || action == sequenceSweep {
+			harness.assertFull(t, step)
+		}
+		step++
+	}
+	return step
+}
+
+func knowledgeSequencePairTrackV1() knowledgeSequenceCampaignTrack {
+	cycle := knowledgeSequenceDeBruijnV1(knowledgeSequenceSymbols, 2)
+	if len(cycle) == 0 {
+		panic("empty knowledge sequence pair cycle")
+	}
+	words := append(append([]uint8(nil), cycle...), cycle[0])
+	plans := make([]knowledgeSequenceCampaignPlan, 0, knowledgeSequenceCampaignPairPlans)
+	for start := 0; start < len(words); start += knowledgeSequenceMaxSteps {
+		end := start + knowledgeSequenceMaxSteps
+		if end > len(words) {
+			end = len(words)
+		}
+		plans = append(plans, knowledgeSequenceCampaignPlan{words: append([]uint8(nil), words[start:end]...)})
+	}
+	return knowledgeSequenceCampaignTrack{name: "pair-cycle", plans: plans}
+}
+
+func knowledgeSequenceDeBruijnV1(alphabet, order int) []uint8 {
+	work := make([]int, alphabet*order+1)
+	sequence := make([]uint8, 0, alphabet*alphabet)
+	var generate func(int, int)
+	generate = func(position, period int) {
+		if position > order {
+			if order%period == 0 {
+				for index := 1; index <= period; index++ {
+					sequence = append(sequence, uint8(work[index]))
+				}
+			}
+			return
+		}
+		work[position] = work[position-period]
+		generate(position+1, period)
+		for symbol := work[position-period] + 1; symbol < alphabet; symbol++ {
+			work[position] = symbol
+			generate(position+1, position)
+		}
+	}
+	generate(1, 1)
+	return sequence
+}
+
+func knowledgeSequenceSemanticTracksV1() []knowledgeSequenceCampaignTrack {
+	return []knowledgeSequenceCampaignTrack{
+		knowledgeSequenceSinglePlan("semantic-shared-purge", 0, 1, 4, 5, 24, 3, 31, 12, 20, 28, 13, 21),
+		knowledgeSequenceSinglePlan("semantic-stale-retry", 0, 6, 10, 8, 4, 14, 12, 18, 16, 12, 22, 20),
+		knowledgeSequenceSinglePlan("semantic-queue-order", 0, 6, 1, 8, 5, 4, 3, 25, 27, 29, 15, 19),
+		knowledgeSequenceSinglePlan("semantic-replay-terminal", 0, 0, 8, 6, 6, 8, 4, 4, 8, 24, 24, 26),
+		knowledgeSequenceSinglePlan("semantic-idempotent-lifecycle", 0, 4, 26, 24, 26, 26, 12, 12, 16, 16, 30, 6),
+		knowledgeSequenceSinglePlan("semantic-active-purge", 0, 4, 20, 12, 22, 16, 12, 24, 20, 30, 4, 28),
+	}
+}
+
+func knowledgeSequenceSinglePlan(name string, words ...uint8) knowledgeSequenceCampaignTrack {
+	return knowledgeSequenceCampaignTrack{
+		name: name,
+		plans: []knowledgeSequenceCampaignPlan{{
+			words: append([]uint8(nil), words...),
+		}},
+	}
+}
+
+func assertKnowledgeSequenceCampaignContractV1(t *testing.T, tracks []knowledgeSequenceCampaignTrack) {
+	t.Helper()
+	if len(tracks) != 7 || tracks[0].name != "pair-cycle" {
+		t.Fatalf("campaign tracks = %d/%q, want 7/pair-cycle", len(tracks), tracks[0].name)
+	}
+	if len(tracks[0].plans) != knowledgeSequenceCampaignPairPlans {
+		t.Fatalf("pair plans = %d, want %d", len(tracks[0].plans), knowledgeSequenceCampaignPairPlans)
+	}
+
+	var pairWords []uint8
+	planCount := 0
+	stepCount := 0
+	for _, track := range tracks {
+		if track.name == "" || len(track.name) > 255 || len(track.plans) == 0 || len(track.plans) > 65535 {
+			t.Fatalf("invalid campaign track %#v", track)
+		}
+		planCount += len(track.plans)
+		for _, plan := range track.plans {
+			if len(plan.words) == 0 || len(plan.words) > knowledgeSequenceMaxSteps {
+				t.Fatalf("track %q plan length = %d", track.name, len(plan.words))
+			}
+			for _, word := range plan.words {
+				if word >= knowledgeSequenceSymbols {
+					t.Fatalf("track %q word = %d, alphabet=%d", track.name, word, knowledgeSequenceSymbols)
+				}
+			}
+			stepCount += len(plan.words)
+			if track.name == "pair-cycle" {
+				pairWords = append(pairWords, plan.words...)
+			}
+		}
+	}
+	if planCount != knowledgeSequenceCampaignPlans || stepCount != knowledgeSequenceCampaignSteps {
+		t.Fatalf("campaign plans/steps = %d/%d, want %d/%d", planCount, stepCount, knowledgeSequenceCampaignPlans, knowledgeSequenceCampaignSteps)
+	}
+	if len(pairWords) != knowledgeSequenceSymbols*knowledgeSequenceSymbols+1 || pairWords[0] != pairWords[len(pairWords)-1] {
+		t.Fatalf("pair track shape = %d words, endpoints %d/%d", len(pairWords), pairWords[0], pairWords[len(pairWords)-1])
+	}
+	var pairs [knowledgeSequenceSymbols][knowledgeSequenceSymbols]int
+	for index := 0; index+1 < len(pairWords); index++ {
+		pairs[pairWords[index]][pairWords[index+1]]++
+	}
+	for left := range pairs {
+		for right, count := range pairs[left] {
+			if count != 1 {
+				t.Fatalf("ordered pair %d->%d count = %d, want 1", left, right, count)
+			}
+		}
+	}
+
+	frame := knowledgeSequenceCampaignFrameV1(tracks)
+	digest := sha256.Sum256(frame)
+	if len(frame) != knowledgeSequenceCampaignCorpusFrameSize || hex.EncodeToString(digest[:]) != knowledgeSequenceCampaignCorpusSHA256 {
+		t.Fatalf("campaign corpus frame size/SHA-256 = %d/%x, want %d/%s", len(frame), digest, knowledgeSequenceCampaignCorpusFrameSize, knowledgeSequenceCampaignCorpusSHA256)
+	}
+}
+
+func knowledgeSequenceCampaignFrameV1(tracks []knowledgeSequenceCampaignTrack) []byte {
+	frame := bytes.NewBufferString("mindweaver.rel001.knowledge-sequence-campaign/v1\x00")
+	var encoded [2]byte
+	binary.BigEndian.PutUint16(encoded[:], uint16(len(tracks)))
+	frame.Write(encoded[:])
+	for _, track := range tracks {
+		frame.WriteByte(byte(len(track.name)))
+		frame.WriteString(track.name)
+		binary.BigEndian.PutUint16(encoded[:], uint16(len(track.plans)))
+		frame.Write(encoded[:])
+		for _, plan := range track.plans {
+			frame.WriteByte(byte(len(plan.words)))
+			frame.Write(plan.words)
+		}
+	}
+	return frame.Bytes()
+}
+
+func assertKnowledgeSequenceOutcomesV1(t *testing.T, actual map[knowledgeSequenceOutcome]struct{}) {
+	t.Helper()
+	// These are minimum response/model branch classes, not every contextual
+	// state transition. Equivalent current/stale or ignored-slot endpoints stay
+	// grouped while the pair trace still submits every encoded-word pair.
+	required := []knowledgeSequenceOutcome{
+		sequenceOutcomeUploadCreated, sequenceOutcomeUploadReplayed, sequenceOutcomeUploadConflict,
+		sequenceOutcomeRunSucceeded, sequenceOutcomeRunEmpty,
+		sequenceOutcomeCancelQueued, sequenceOutcomeCancelUnchanged,
+		sequenceOutcomeRetryQueuedUnchanged, sequenceOutcomeRetryCancelledStale,
+		sequenceOutcomeRetryCancelledRequeued, sequenceOutcomeRetryTerminalConflict,
+		sequenceOutcomeTrashChanged, sequenceOutcomeTrashStaleConflict, sequenceOutcomeTrashUnchanged,
+		sequenceOutcomeRestoreChanged, sequenceOutcomeRestoreStaleConflict, sequenceOutcomeRestoreUnchanged,
+		sequenceOutcomePurgeActiveConflict, sequenceOutcomePurgeStaleConflict,
+		sequenceOutcomePurgeSharedRetained, sequenceOutcomePurgeLastDeleted,
+		sequenceOutcomeMembershipAdded, sequenceOutcomeMembershipAddUnchanged,
+		sequenceOutcomeMembershipTrashConflict,
+		sequenceOutcomeMembershipRemoved, sequenceOutcomeMembershipRemoveUnchanged,
+		sequenceOutcomeReopened, sequenceOutcomeSweepRetained, sequenceOutcomeSweepEmpty,
+	}
+	requiredSet := make(map[knowledgeSequenceOutcome]struct{}, len(required))
+	for _, outcome := range required {
+		if _, duplicate := requiredSet[outcome]; duplicate {
+			t.Fatalf("required semantic outcome %q is duplicated", outcome)
+		}
+		requiredSet[outcome] = struct{}{}
+	}
+	if len(actual) != len(requiredSet) {
+		t.Fatalf("semantic outcomes = %d, want exact %d: %#v", len(actual), len(requiredSet), actual)
+	}
+	for outcome := range requiredSet {
+		if _, ok := actual[outcome]; !ok {
+			t.Errorf("semantic outcome %q is missing", outcome)
+		}
+	}
+	for outcome := range actual {
+		if _, ok := requiredSet[outcome]; !ok {
+			t.Errorf("semantic outcome %q is not in the v1 contract", outcome)
+		}
+	}
 }
 
 func newKnowledgeSequenceHarness(t *testing.T) *knowledgeSequenceHarness {
@@ -188,6 +453,12 @@ func newKnowledgeSequenceHarness(t *testing.T) *knowledgeSequenceHarness {
 	harness.collectionID = collection.ID
 	harness.collectionRevision = collection.Revision
 	return harness
+}
+
+func (harness *knowledgeSequenceHarness) cover(outcome knowledgeSequenceOutcome) {
+	if harness.outcomes != nil {
+		harness.outcomes[outcome] = struct{}{}
+	}
 }
 
 func (harness *knowledgeSequenceHarness) open(t *testing.T) {
@@ -274,6 +545,7 @@ func (harness *knowledgeSequenceHarness) upload(t *testing.T, step int, document
 			sequenceFatal(t, step, "conflicting upload error = %v, want idempotency conflict", err)
 		}
 		harness.blobCandidate = true
+		harness.cover(sequenceOutcomeUploadConflict)
 		return
 	}
 	if err != nil {
@@ -285,6 +557,7 @@ func (harness *knowledgeSequenceHarness) upload(t *testing.T, step int, document
 			result.BlobID != document.upload.BlobID {
 			sequenceFatal(t, step, "exact upload replay = %#v, want %#v", result, document.upload)
 		}
+		harness.cover(sequenceOutcomeUploadReplayed)
 	} else {
 		if !result.Created || result.BlobID != harness.sharedBlobID {
 			sequenceFatal(t, step, "new upload = %#v, want created shared blob %q", result, harness.sharedBlobID)
@@ -308,6 +581,7 @@ func (harness *knowledgeSequenceHarness) upload(t *testing.T, step int, document
 		harness.blobReferences++
 		harness.objectShape = sequenceObjectFile
 		harness.assertJob(t, step, document, job)
+		harness.cover(sequenceOutcomeUploadCreated)
 	}
 	harness.blobCandidate = false
 }
@@ -329,6 +603,7 @@ func (harness *knowledgeSequenceHarness) runOne(t *testing.T, step int) {
 		if !errors.Is(err, store.ErrNoRunnableJob) {
 			sequenceFatal(t, step, "run with no queued job = %#v, err=%v", job, err)
 		}
+		harness.cover(sequenceOutcomeRunEmpty)
 		return
 	}
 	expected := &harness.documents[expectedIndex]
@@ -345,6 +620,7 @@ func (harness *knowledgeSequenceHarness) runOne(t *testing.T, step int) {
 	expected.jobStatus = store.JobSucceeded
 	expected.jobAttempt = wantAttempt
 	expected.revision = view.Revision
+	harness.cover(sequenceOutcomeRunSucceeded)
 }
 
 func sequenceJobBefore(left, right *knowledgeSequenceDocument) bool {
@@ -362,6 +638,7 @@ func (harness *knowledgeSequenceHarness) cancel(t *testing.T, step int, document
 	if !document.exists {
 		return
 	}
+	wasQueued := document.jobStatus == store.JobQueued
 	want := document.jobStatus
 	if want == store.JobQueued {
 		want = store.JobCancelled
@@ -370,6 +647,11 @@ func (harness *knowledgeSequenceHarness) cancel(t *testing.T, step int, document
 		sequenceFatal(t, step, "cancel: %v", err)
 	}
 	document.jobStatus = want
+	if wasQueued {
+		harness.cover(sequenceOutcomeCancelQueued)
+	} else {
+		harness.cover(sequenceOutcomeCancelUnchanged)
+	}
 }
 
 func (harness *knowledgeSequenceHarness) retry(t *testing.T, step int, document *knowledgeSequenceDocument, stale bool) {
@@ -404,6 +686,11 @@ func (harness *knowledgeSequenceHarness) retry(t *testing.T, step int, document 
 		if !errors.Is(err, wantError) || changed {
 			sequenceFatal(t, step, "retry stale=%t = %#v, changed=%t, err=%v, want %v", stale, result, changed, err, wantError)
 		}
+		if errors.Is(wantError, store.ErrRevisionConflict) {
+			harness.cover(sequenceOutcomeRetryCancelledStale)
+		} else {
+			harness.cover(sequenceOutcomeRetryTerminalConflict)
+		}
 		return
 	}
 	wantAttempt := document.jobAttempt
@@ -428,8 +715,11 @@ func (harness *knowledgeSequenceHarness) retry(t *testing.T, step int, document 
 		}
 		document.jobRunAfter = job.RunAfter
 		harness.assertJob(t, step, document, job)
+		harness.cover(sequenceOutcomeRetryCancelledRequeued)
 	} else if result.Revision != beforeRevision {
 		sequenceFatal(t, step, "idempotent retry revision = %d, want %d", result.Revision, beforeRevision)
+	} else {
+		harness.cover(sequenceOutcomeRetryQueuedUnchanged)
 	}
 }
 
@@ -453,6 +743,7 @@ func (harness *knowledgeSequenceHarness) trash(t *testing.T, step int, document 
 		if !errors.Is(err, wantError) {
 			sequenceFatal(t, step, "trash stale=%t error=%v, want %v", stale, err, wantError)
 		}
+		harness.cover(sequenceOutcomeTrashStaleConflict)
 		return
 	}
 	if err != nil || result.Status != "trashed" {
@@ -464,8 +755,11 @@ func (harness *knowledgeSequenceHarness) trash(t *testing.T, step int, document 
 		}
 		document.lifecycle = "trashed"
 		document.revision = result.Revision
+		harness.cover(sequenceOutcomeTrashChanged)
 	} else if result.Revision != beforeRevision {
 		sequenceFatal(t, step, "idempotent trash revision = %d, want %d", result.Revision, beforeRevision)
+	} else {
+		harness.cover(sequenceOutcomeTrashUnchanged)
 	}
 }
 
@@ -489,6 +783,7 @@ func (harness *knowledgeSequenceHarness) restore(t *testing.T, step int, documen
 		if !errors.Is(err, wantError) {
 			sequenceFatal(t, step, "restore stale=%t error=%v, want %v", stale, err, wantError)
 		}
+		harness.cover(sequenceOutcomeRestoreStaleConflict)
 		return
 	}
 	if err != nil || result.Status != "active" {
@@ -500,8 +795,11 @@ func (harness *knowledgeSequenceHarness) restore(t *testing.T, step int, documen
 		}
 		document.lifecycle = "active"
 		document.revision = result.Revision
+		harness.cover(sequenceOutcomeRestoreChanged)
 	} else if result.Revision != beforeRevision {
 		sequenceFatal(t, step, "idempotent restore revision = %d, want %d", result.Revision, beforeRevision)
+	} else {
+		harness.cover(sequenceOutcomeRestoreUnchanged)
 	}
 }
 
@@ -519,12 +817,14 @@ func (harness *knowledgeSequenceHarness) purge(t *testing.T, step int, document 
 		if !errors.Is(err, store.ErrLifecycleConflict) || result.DatabaseDeleted {
 			sequenceFatal(t, step, "active purge stale=%t = %#v, err=%v", stale, result, err)
 		}
+		harness.cover(sequenceOutcomePurgeActiveConflict)
 		return
 	}
 	if stale {
 		if !errors.Is(err, store.ErrRevisionConflict) || result.DatabaseDeleted {
 			sequenceFatal(t, step, "stale purge = %#v, err=%v", result, err)
 		}
+		harness.cover(sequenceOutcomePurgeStaleConflict)
 		return
 	}
 	remainingReferences := harness.blobReferences - 1
@@ -537,9 +837,12 @@ func (harness *knowledgeSequenceHarness) purge(t *testing.T, step int, document 
 			result.RetainedSharedIDs[0] != harness.sharedBlobID || len(result.DeletedBlobIDs) != 0 {
 			sequenceFatal(t, step, "shared purge = %#v", result)
 		}
+		harness.cover(sequenceOutcomePurgeSharedRetained)
 	} else if !result.AllCandidateObjectsRemoved || len(result.DeletedBlobIDs) != 1 ||
 		result.DeletedBlobIDs[0] != harness.sharedBlobID || len(result.RetainedSharedIDs) != 0 {
 		sequenceFatal(t, step, "last-reference purge = %#v", result)
+	} else {
+		harness.cover(sequenceOutcomePurgeLastDeleted)
 	}
 	harness.finishDocumentPurge(t, step, document)
 }
@@ -605,6 +908,7 @@ func (harness *knowledgeSequenceHarness) mutateMembership(t *testing.T, step int
 		if !errors.Is(err, wantError) || changed {
 			sequenceFatal(t, step, "membership add=%t = %#v, changed=%t, err=%v", add, result, changed, err)
 		}
+		harness.cover(sequenceOutcomeMembershipTrashConflict)
 		return
 	}
 	if err != nil || changed != wantChanged || result.ID != harness.collectionID {
@@ -616,8 +920,17 @@ func (harness *knowledgeSequenceHarness) mutateMembership(t *testing.T, step int
 		}
 		harness.collectionRevision = result.Revision
 		document.member = add
+		if add {
+			harness.cover(sequenceOutcomeMembershipAdded)
+		} else {
+			harness.cover(sequenceOutcomeMembershipRemoved)
+		}
 	} else if result.Revision != beforeRevision {
 		sequenceFatal(t, step, "idempotent membership revision = %d, want %d", result.Revision, beforeRevision)
+	} else if add {
+		harness.cover(sequenceOutcomeMembershipAddUnchanged)
+	} else {
+		harness.cover(sequenceOutcomeMembershipRemoveUnchanged)
 	}
 }
 
@@ -630,6 +943,7 @@ func (harness *knowledgeSequenceHarness) reopenServices(t *testing.T, step int) 
 	harness.workbench = nil
 	harness.lifecycle = nil
 	harness.open(t)
+	harness.cover(sequenceOutcomeReopened)
 }
 
 func (harness *knowledgeSequenceHarness) sweep(t *testing.T, step int) {
@@ -648,8 +962,11 @@ func (harness *knowledgeSequenceHarness) sweep(t *testing.T, step int) {
 			sequenceFatal(t, step, "reference-aware sweep result = %#v, references=%d", result, harness.blobReferences)
 		}
 		harness.blobCandidate = false
+		harness.cover(sequenceOutcomeSweepRetained)
 	} else if len(result.DeletedBlobIDs) != 0 || len(result.RetainedSharedIDs) != 0 {
 		sequenceFatal(t, step, "empty sweep result = %#v", result)
+	} else {
+		harness.cover(sequenceOutcomeSweepEmpty)
 	}
 }
 
