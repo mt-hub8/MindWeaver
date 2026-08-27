@@ -221,15 +221,20 @@ type runningApp struct {
 
 func startMindWeaver(t *testing.T, artifacts builtArtifacts, root, coordinator string) *runningApp {
 	t.Helper()
-	configPath := filepath.Join(root, "mindweaver.v1.json")
-	vaultPath := filepath.Join(root, "vault")
-	command := exec.Command(artifacts.mindweaver, "serve", "-config", configPath, "-vault", vaultPath, "-no-browser")
-	command.Dir = root
 	extra := map[string]string{}
 	if coordinator != "" {
 		extra[pdfCoordinatorEnv] = coordinator
 	}
-	command.Env = hermeticEnvironment(extra)
+	return startMindWeaverWithEnvironment(t, artifacts, root, hermeticEnvironment(extra))
+}
+
+func startMindWeaverWithEnvironment(t *testing.T, artifacts builtArtifacts, root string, environment []string) *runningApp {
+	t.Helper()
+	configPath := filepath.Join(root, "mindweaver.v1.json")
+	vaultPath := filepath.Join(root, "vault")
+	command := exec.Command(artifacts.mindweaver, "serve", "-config", configPath, "-vault", vaultPath, "-no-browser")
+	command.Dir = root
+	command.Env = environment
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		t.Fatal("open MindWeaver stdout")
