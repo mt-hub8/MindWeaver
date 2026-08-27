@@ -24,10 +24,11 @@ import (
 )
 
 const (
-	coreFuzzTime       = "1s"
-	fuzzCommandTimeout = 2 * time.Minute
-	maxFuzzOutput      = 2 << 20
-	maxTestSourceBytes = 4 << 20
+	coreFuzzTime              = "1s"
+	knowledgeSequenceFuzzTime = "32x"
+	fuzzCommandTimeout        = 2 * time.Minute
+	maxFuzzOutput             = 2 << 20
+	maxTestSourceBytes        = 4 << 20
 )
 
 type fuzzTarget struct {
@@ -45,6 +46,7 @@ var frozenCoreFuzzTargets = []fuzzTarget{
 	{Package: "./internal/blob", Name: "FuzzStoreOperationSequence"},
 	{Package: "./internal/ingest", Name: "FuzzChunkTextDeterministicAndBounded"},
 	{Package: "./internal/ingest", Name: "FuzzReadTextCanonicalAndBounded"},
+	{Package: "./internal/lifecycle", Name: "FuzzKnowledgeLifecycleOperationSequence"},
 	{Package: "./internal/pdfextract/protocol", Name: "FuzzDecodeResultRequiresCanonicalFrame"},
 }
 
@@ -57,6 +59,10 @@ func TestCoreFuzzTargetClosureAndExecution(t *testing.T) {
 
 	toolchain := reliabilityGoTool(t)
 	moduleMode := reliabilityModuleMode(t, root)
+	// cmd/go stores interesting inputs below GOCACHE. A private cache keeps the
+	// fixed mutation proof independent of prior developer fuzzing while all
+	// targets in this qualification run still share compiled package objects.
+	t.Setenv("GOCACHE", t.TempDir())
 	for _, target := range frozenCoreFuzzTargets {
 		target := target
 		t.Run(strings.TrimPrefix(target.Package, "./")+"/"+target.Name, func(t *testing.T) {
@@ -269,7 +275,7 @@ func runCoreFuzzTarget(t *testing.T, root string, toolchain reliabilityToolchain
 	defer cancel()
 	arguments := []string{
 		"test", "-mod=" + moduleMode, "-count=1", "-run=^$",
-		"-fuzz=^" + regexp.QuoteMeta(target.Name) + "$", "-fuzztime=" + coreFuzzTime,
+		"-fuzz=^" + regexp.QuoteMeta(target.Name) + "$", "-fuzztime=" + coreFuzzTimeForTarget(target),
 		"-parallel=1", "-timeout=90s", target.Package,
 	}
 	command := exec.CommandContext(ctx, toolchain.goTool, arguments...)
@@ -292,6 +298,13 @@ func runCoreFuzzTarget(t *testing.T, root string, toolchain reliabilityToolchain
 	if !strings.Contains(text, "fuzz:") || !strings.Contains(text, "execs:") || !strings.Contains(text, "PASS") {
 		t.Fatalf("direct Go fuzz command for %s did not prove mutation and PASS:\n%s", target.Name, text)
 	}
+}
+
+func coreFuzzTimeForTarget(target fuzzTarget) string {
+	if target.Package == "./internal/lifecycle" && target.Name == "FuzzKnowledgeLifecycleOperationSequence" {
+		return knowledgeSequenceFuzzTime
+	}
+	return coreFuzzTime
 }
 
 func reliabilityModuleRoot(t *testing.T) string {
