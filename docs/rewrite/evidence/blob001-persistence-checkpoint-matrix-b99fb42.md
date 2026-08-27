@@ -39,9 +39,9 @@ output.
 | BLOB-K04 | publication rename returned and exact final object verifies, before document reference transaction | exact object plus one candidate; startup deletes the unreferenced object and resolves the candidate | CLOSED by `TestBLOB001PublishedOrphanRecoversAfterForcedTermination` |
 | BLOB-K05 | document reference transaction is in flight and its commit outcome is not observed | either K04 state, or one referenced graph with no candidate; startup/replay converges without duplicate graph or object | OPEN |
 | BLOB-K06 | reference commit returned but upload response is not observed | one referenced graph and no candidate; exact replay before and after reopen returns the committed identities | CLOSED by `TestBLOB001ReferenceCommitResponseReplayAfterForcedTermination` |
-| BLOB-K07 | GC has committed/claimed a deletion candidate and is about to unlink the object | candidate and object remain, or the object is already absent; startup retries the same reference-aware decision | OPEN |
+| BLOB-K07 | a durable deletion candidate exists and GC is about to unlink the unreferenced object | candidate and object remain; startup retries the same reference-aware decision | CLOSED by the K04 child state; production has no separate persistent GC claim |
 | BLOB-K08 | object unlink returned, before its parent directory sync completes | object may be absent but the candidate remains; startup must not report resolution until deletion is durable | OPEN |
-| BLOB-K09 | parent directory sync returned, before candidate-resolution commit/response | object is absent and candidate remains or is atomically resolved; startup/replay drains it exactly once | OPEN |
+| BLOB-K09 | parent directory sync returned, before candidate-resolution commit/response | object is absent and candidate remains or is atomically resolved; startup/replay drains it exactly once | CLOSED by `TestBLOB001DurableDeleteBeforeCandidateResolveRecoversAfterForcedTermination` |
 
 K01A, K02 and K03 share only a qualification harness, not production state.
 For K01A a bounded reader returns an exact source prefix, then emits a frame and
@@ -76,6 +76,23 @@ returns `Created=false` with all four original IDs and leaves one graph/object.
 This closes committed-response loss only; it does not close the in-flight
 transaction outcome in K05.
 
+K07 is not a second persistence state in the production design. `Sweep` reads
+the same durable candidate already proven by K04 and takes only a process-local
+deletion guard; there is no persisted claim to recover after a crash. K04's
+object-plus-candidate, zero-reference child state is therefore the exact K07
+restart input, so duplicating it under another test name would add no evidence.
+
+For K09 the child creates an unreferenced published object and candidate, then
+calls the real `DeletionGuard.Delete`. That method returns only after unlinking
+the object and syncing its parent directory. Before resolving the candidate the
+child proves the object is absent and the candidate remains, emits the bounded
+frame, and blocks. After kill, the parent uses raw filesystem operations to
+prove the object and staging are absent. `app.Start` resolves exactly one
+missing-object candidate before routes; uploading the same bytes and exact
+replay after another reopen converge to one new graph/object and zero
+candidates. K08 remains open because no existing production boundary can
+deterministically block between unlink and directory sync without a fault seam.
+
 ## Final-tree ENOSPC and short-write seam assessment
 
 The current final tree has deterministic seams for directory sync and rename,
@@ -101,5 +118,6 @@ Run from `v2/` with the frozen Go 1.27.0 toolchain:
 ```text
 go test ./qualification/knowledge -run '^TestBLOB001(IncompleteStaging|DurableStagingBeforeCandidate|DurableCandidateBeforeRename)RecoversAfterForcedTermination$' -count=10
 go test ./qualification/knowledge -run '^TestBLOB001ReferenceCommitResponseReplayAfterForcedTermination$' -count=10
+go test ./qualification/knowledge -run '^TestBLOB001DurableDeleteBeforeCandidateResolveRecoversAfterForcedTermination$' -count=10
 go vet ./qualification/knowledge
 ```

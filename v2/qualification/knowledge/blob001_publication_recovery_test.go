@@ -41,6 +41,7 @@ const (
 	blob001PhaseCandidatePreRename  = "candidate_committed_pre_rename"
 	blob001PhasePublishedPreApply   = "published_pre_reference_apply"
 	blob001PhaseReferenceCommitted  = "reference_committed_response_unobserved"
+	blob001PhaseDeletePreResolve    = "delete_durable_pre_candidate_resolve"
 )
 
 type blob001PublicationCheckpoint struct {

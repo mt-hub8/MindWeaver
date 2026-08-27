@@ -135,7 +135,7 @@ func qualifyBLOB001PreRenameCrash(t *testing.T, test blob001PreRenameCrashCase) 
 		WorkerInterval:    10 * time.Second,
 		PDFHelperPath:     filepath.Join(root, "missing-pdf-helper.exe"),
 		ExtraRoutes: []app.RouteRegistrar{func(*localhttp.Router) error {
-			if err := verifyBLOB001PreRenameCleanup(ctx, vaultRoot, absentBlobIDs...); err != nil {
+			if err := verifyBLOB001AbsentObjectCleanup(ctx, vaultRoot, absentBlobIDs...); err != nil {
 				return err
 			}
 			cleanBeforeRoutes = true
@@ -364,7 +364,7 @@ func verifyRawBLOB001Staging(vaultRoot string, checkpoint blob001PublicationChec
 	return nil
 }
 
-func verifyBLOB001PreRenameCleanup(ctx context.Context, vaultRoot string, blobIDs ...string) error {
+func verifyBLOB001AbsentObjectCleanup(ctx context.Context, vaultRoot string, blobIDs ...string) error {
 	entries, err := os.ReadDir(filepath.Join(vaultRoot, "blobs", "staging"))
 	if err != nil || len(entries) != 0 {
 		return errors.New("BLOB001_ROUTE_STAGING_NOT_CLEAN")
