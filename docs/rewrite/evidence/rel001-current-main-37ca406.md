@@ -5,6 +5,8 @@ Status: **NOT_IMPLEMENTED**
 - Qualification-source baseline: `37ca406a23fc64a8dd8a5f6ea3aa823b64e49fb1`
 - Latest integrated ordinary-gate baseline:
   `71bd8049e70e5a0c1cc16df89f48870f72cdb426`
+- Blob operation-sequence fuzz target:
+  `57b469268d1505e48cee38298d8f1aa6e7721c7a`
 - Recorded: 2026-08-27 (Asia/Shanghai)
 - Scope: current committed developer signals only; no production, test, script,
   vendor, identity, or release-gate behavior is changed by this evidence.
@@ -16,16 +18,23 @@ This evidence therefore does not promote the row to `IMPLEMENTED` or `PASS`.
 
 ## KEEP: reproducible developer signals
 
-The owner-local fuzz closure discovers and runs exactly four production fuzz
+The owner-local fuzz closure discovers and runs exactly five production fuzz
 targets with the pinned Go toolchain, real mutation, a one-second fuzz duration,
 one worker, bounded output, and network-disabled module resolution:
 
 - `internal/blob/FuzzParseIDCanonical`;
+- `internal/blob/FuzzStoreOperationSequence`;
 - `internal/ingest/FuzzChunkTextDeterministicAndBounded`;
 - `internal/ingest/FuzzReadTextCanonicalAndBounded`;
 - `internal/pdfextract/protocol/FuzzDecodeResultRequiresCanonicalFrame`.
 
-The focused current-main run passed in 9.76 seconds. The three-second production
+The Blob sequence target drives the real filesystem-backed
+Prepare/Publish/Abort/Import/Delete/Cleanup/Reopen transitions and checks the
+exact object and staging state after every operation. A separate ten-second
+probe completed 493 executions and retained three new coverage inputs. It does
+not introduce a production hook, journal, or second state machine.
+
+The five-target focused run passed in 13.78 seconds. The three-second production
 short soak also passed with 81 upload/ingest/search/replay/trash/purge cycles and
 81 invariant checks. It observed at most four regular Vault files and 4,645,016
 bytes. This is a bounded smoke signal, not a long-soak result.
@@ -62,6 +71,14 @@ compiler and CGO-enabled qualification lane exists. The **race facet is
 BLOCKED**; the shipped CGO-disabled build must not be silently changed to make a
 qualification command run.
 
+The current machine does contain Visual Studio Build Tools 18.4.3 and MSVC
+`cl.exe` 19.50.35728.0 (SHA-256
+`194ddf4aafcb74452218a982309a97de30e0adb33edf4af02904ee107213e782`),
+but no GCC or Clang tool. A real `CGO_ENABLED=1 CC=cl go test -race` probe reaches
+`runtime/cgo` and fails because MSVC rejects the Go cgo driver flag `/Werror`.
+Ambient MSVC therefore does not close the race lane and is not silently treated
+as an approved compatible compiler.
+
 The following required release evidence is also absent:
 
 - a 24–48 hour supported-Windows soak under the accepted machine/EDR profile;
@@ -69,7 +86,8 @@ The following required release evidence is also absent:
   unacknowledged operation identities;
 - 10k/100k representative capacity, cold/hot latency, RSS, and versioned product
   SLO budgets;
-- operation-sequence fuzz beyond the four one-second owner-local targets.
+- an accepted duration/corpus and multi-component operation-sequence campaign
+  beyond the one-second Blob state-machine target.
 
 The three-second soak, selected forced exits, benchmark output, `go vet`, and a
 self-reported JSON result must not be relabeled as those missing gates.
