@@ -32,7 +32,8 @@ output.
 
 | ID | Forced termination boundary | Required post-kill state and recovery | Status at baseline |
 |---|---|---|---|
-| BLOB-K01 | staging copy is incomplete or the staging file has not completed `Sync` | no final object; stale private staging is removed by the next `app.Start` before routes | OPEN; deterministic write/file-sync fault seam also open |
+| BLOB-K01A | staging copy has written an exact prefix but has not observed source EOF, so file `Sync` has not started | incomplete private staging and no final object; startup removes staging before routes | CLOSED by `TestBLOB001IncompleteStagingRecoversAfterForcedTermination` |
+| BLOB-K01B | staging `Write` or file/directory `Sync` fails or its outcome is not observed | no partial final object; private staging is removed or explicitly recoverable | OPEN; deterministic write/file-sync fault seam remains absent |
 | BLOB-K02 | `Prepare` returned after staging file and directory sync, before GC candidate commit | exact staging exists; startup removes it; no candidate or final object exists | CLOSED by `TestBLOB001DurableStagingBeforeCandidateRecoversAfterForcedTermination` |
 | BLOB-K03 | GC candidate commit returned, after durable `Prepare`, before publication rename | exact staging and one durable candidate; startup removes staging and resolves the missing-object candidate | CLOSED by `TestBLOB001DurableCandidateBeforeRenameRecoversAfterForcedTermination` |
 | BLOB-K04 | publication rename returned and exact final object verifies, before document reference transaction | exact object plus one candidate; startup deletes the unreferenced object and resolves the candidate | CLOSED by `TestBLOB001PublishedOrphanRecoversAfterForcedTermination` |
@@ -42,18 +43,25 @@ output.
 | BLOB-K08 | object unlink returned, before its parent directory sync completes | object may be absent but the candidate remains; startup must not report resolution until deletion is durable | OPEN |
 | BLOB-K09 | parent directory sync returned, before candidate-resolution commit/response | object is absent and candidate remains or is atomically resolved; startup/replay drains it exactly once | OPEN |
 
-K02 and K03 share only a qualification harness, not production state. Each
-child returns from production `Prepare`, proves zero references and no final
-object, emits its distinct phase/nonce/Blob-ID/size frame and blocks. K02 also
-proves there is no candidate; K03 commits and re-reads exactly one candidate.
+K01A, K02 and K03 share only a qualification harness, not production state.
+For K01A a bounded reader returns an exact source prefix, then emits a frame and
+blocks on the next `Read`. Production `copyBounded` calls that second `Read`
+only after writing the prefix; because EOF has not been observed, `Prepare` has
+not reached file `Sync`. The frame is explicitly `complete=false` and binds the
+phase, nonce, prefix content address and prefix size rather than claiming a
+final Blob ID. K02 and K03 return from production `Prepare`, prove zero
+references and no final object, and emit `complete=true` frames. K02 proves
+there is no candidate; K03 commits and re-reads exactly one candidate.
+
 After kill and reap, the parent verifies the only staging identity through a
 raw read-only handle with exact size and SHA-256. `app.Start` removes that
 staging file before route registration; K03 additionally resolves exactly one
-missing-object candidate, while K02 processes none. Upload, exact replay,
+missing-object candidate, while K01A and K02 process none. Upload, exact replay,
 close/reopen and replay again converge to one graph, one object and zero
 candidates. Each test must pass ten consecutive runs before its row is closed.
 These tests are deliberately separate from the same-process lifecycle unit
-tests, which cannot prove forced termination or first-owner ordering.
+tests, which cannot prove forced termination or first-owner ordering. K01A does
+not close K01B or qualify ENOSPC/short-write behavior.
 
 ## Final-tree ENOSPC and short-write seam assessment
 
@@ -78,6 +86,6 @@ ENOSPC/short-write remains OPEN and cannot support PASS.
 Run from `v2/` with the frozen Go 1.27.0 toolchain:
 
 ```text
-go test ./qualification/knowledge -run '^TestBLOB001Durable(StagingBeforeCandidate|CandidateBeforeRename)RecoversAfterForcedTermination$' -count=10
+go test ./qualification/knowledge -run '^TestBLOB001(IncompleteStaging|DurableStagingBeforeCandidate|DurableCandidateBeforeRename)RecoversAfterForcedTermination$' -count=10
 go vet ./qualification/knowledge
 ```

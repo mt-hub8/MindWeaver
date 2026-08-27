@@ -25,16 +25,31 @@ import (
 type blob001PreRenameCrashCase struct {
 	childTest      string
 	phase          string
+	checkpointData []byte
+	complete       bool
 	idempotencyKey string
 	title          string
 	filename       string
 	wantSwept      int
 }
 
+func TestBLOB001IncompleteStagingRecoversAfterForcedTermination(t *testing.T) {
+	qualifyBLOB001PreRenameCrash(t, blob001PreRenameCrashCase{
+		childTest:      "TestBLOB001IncompleteStagingForcedTerminationChild",
+		phase:          blob001PhaseIncompleteStaging,
+		checkpointData: blob001IncompleteSource(),
+		idempotencyKey: "blob001-incomplete-staging-recovery",
+		title:          "BLOB-001 incomplete staging recovery",
+		filename:       "incomplete.txt",
+	})
+}
+
 func TestBLOB001DurableStagingBeforeCandidateRecoversAfterForcedTermination(t *testing.T) {
 	qualifyBLOB001PreRenameCrash(t, blob001PreRenameCrashCase{
 		childTest:      "TestBLOB001DurableStagingBeforeCandidateForcedTerminationChild",
 		phase:          blob001PhaseStagingPreCandidate,
+		checkpointData: blob001Source(),
+		complete:       true,
 		idempotencyKey: "blob001-staging-pre-candidate-recovery",
 		title:          "BLOB-001 staging recovery",
 		filename:       "staging.txt",
@@ -45,6 +60,8 @@ func TestBLOB001DurableCandidateBeforeRenameRecoversAfterForcedTermination(t *te
 	qualifyBLOB001PreRenameCrash(t, blob001PreRenameCrashCase{
 		childTest:      "TestBLOB001DurableCandidateBeforeRenameForcedTerminationChild",
 		phase:          blob001PhaseCandidatePreRename,
+		checkpointData: blob001Source(),
+		complete:       true,
 		idempotencyKey: "blob001-candidate-pre-rename-recovery",
 		title:          "BLOB-001 candidate recovery",
 		filename:       "candidate.txt",
@@ -78,7 +95,9 @@ func qualifyBLOB001PreRenameCrash(t *testing.T, test blob001PreRenameCrashCase) 
 			_ = command.Wait()
 		}
 	})
-	checkpoint, err := startBLOB001CheckpointChild(ctx, command, nonce, test.phase, 20*time.Second)
+	checkpoint, err := startBLOB001CheckpointChild(
+		ctx, command, nonce, newBLOB001CheckpointExpectation(test.phase, test.checkpointData, test.complete), 20*time.Second,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,16 +110,22 @@ func qualifyBLOB001PreRenameCrash(t *testing.T, test blob001PreRenameCrashCase) 
 	}
 	childExited = true
 
-	id, err := blob.ParseID(checkpoint.BlobID)
-	if err != nil {
-		t.Fatal("BLOB001_CHECKPOINT_ID_INVALID")
-	}
 	if err := verifyRawBLOB001Staging(vaultRoot, checkpoint); err != nil {
 		t.Fatal(err)
 	}
-	objectPath := blob001ObjectPath(vaultRoot, id)
-	if _, err := os.Lstat(objectPath); !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("BLOB001_PRE_RENAME_OBJECT_PRESENT")
+	uploadBlobID := blob001ContentID(blob001Source())
+	absentBlobIDs := []string{checkpoint.BlobID}
+	if uploadBlobID != checkpoint.BlobID {
+		absentBlobIDs = append(absentBlobIDs, uploadBlobID)
+	}
+	for _, rawID := range absentBlobIDs {
+		id, err := blob.ParseID(rawID)
+		if err != nil {
+			t.Fatal("BLOB001_CHECKPOINT_ID_INVALID")
+		}
+		if _, err := os.Lstat(blob001ObjectPath(vaultRoot, id)); !errors.Is(err, os.ErrNotExist) {
+			t.Fatal("BLOB001_PRE_RENAME_OBJECT_PRESENT")
+		}
 	}
 
 	cleanBeforeRoutes := false
@@ -110,7 +135,7 @@ func qualifyBLOB001PreRenameCrash(t *testing.T, test blob001PreRenameCrashCase) 
 		WorkerInterval:    10 * time.Second,
 		PDFHelperPath:     filepath.Join(root, "missing-pdf-helper.exe"),
 		ExtraRoutes: []app.RouteRegistrar{func(*localhttp.Router) error {
-			if err := verifyBLOB001PreRenameCleanup(ctx, vaultRoot, checkpoint.BlobID); err != nil {
+			if err := verifyBLOB001PreRenameCleanup(ctx, vaultRoot, absentBlobIDs...); err != nil {
 				return err
 			}
 			cleanBeforeRoutes = true
@@ -143,8 +168,14 @@ func qualifyBLOB001PreRenameCrash(t *testing.T, test blob001PreRenameCrashCase) 
 
 	recovered := openBLOB001Runtime(t, ctx, vaultRoot)
 	assertBLOB001Candidate(t, ctx, recovered.database, checkpoint.BlobID, 0)
-	if _, err := recovered.blobs.Open(id); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("pre-rename recovered object Open error = %v, want not-exist", err)
+	for _, rawID := range absentBlobIDs {
+		id, err := blob.ParseID(rawID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := recovered.blobs.Open(id); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("pre-rename recovered object Open error = %v, want not-exist", err)
+		}
 	}
 	request := workbench.UploadRequest{
 		IdempotencyKey: test.idempotencyKey,
@@ -153,7 +184,7 @@ func qualifyBLOB001PreRenameCrash(t *testing.T, test blob001PreRenameCrashCase) 
 		Source:         bytes.NewReader(blob001Source()),
 	}
 	first, err := recovered.service.Upload(ctx, request)
-	if err != nil || !first.Created || first.BlobID != checkpoint.BlobID {
+	if err != nil || !first.Created || first.BlobID != uploadBlobID {
 		t.Fatalf("post-recovery upload = %#v, err=%v", first, err)
 	}
 	request.Source = bytes.NewReader(blob001Source())
@@ -179,6 +210,73 @@ func qualifyBLOB001PreRenameCrash(t *testing.T, test blob001PreRenameCrashCase) 
 		t.Fatalf("reopened exact replay = %#v, err=%v; want %#v with Created=false", reopenReplay, err, first)
 	}
 	assertBLOB001AcceptedState(t, ctx, reopened, first, blob001Source())
+}
+
+func TestBLOB001IncompleteStagingForcedTerminationChild(t *testing.T) {
+	sandbox := os.Getenv(blob001ChildSandboxEnvironment)
+	nonce := os.Getenv(blob001ChildNonceEnvironment)
+	vaultRoot, release, ok := claimBLOB001Sandbox(sandbox, nonce)
+	if !ok {
+		t.Skip("authorized forced-termination child only")
+	}
+	defer release()
+	ctx := t.Context()
+	runtime := openBLOB001Runtime(t, ctx, vaultRoot)
+	pin, err := runtime.blobs.PinObjectsContext(ctx)
+	if err != nil {
+		t.Fatal("BLOB001_CHILD_PIN_FAILED")
+	}
+	_ = pin
+	partial := blob001IncompleteSource()
+	expected := newBLOB001CheckpointExpectation(blob001PhaseIncompleteStaging, partial, false)
+	assertBLOB001Candidate(t, ctx, runtime.database, expected.BlobID, 0)
+	for _, rawID := range []string{expected.BlobID, blob001ContentID(blob001Source())} {
+		referenced, err := runtime.database.BlobReferenced(ctx, rawID)
+		if err != nil || referenced {
+			t.Fatal("BLOB001_CHILD_REFERENCE_STATE_INVALID")
+		}
+		id, err := blob.ParseID(rawID)
+		if err != nil {
+			t.Fatal("BLOB001_CHILD_ID_INVALID")
+		}
+		if _, err := runtime.blobs.Open(id); !errors.Is(err, os.ErrNotExist) {
+			t.Fatal("BLOB001_CHILD_PRE_RENAME_OBJECT_PRESENT")
+		}
+	}
+	reader := &blob001CheckpointBlockingReader{
+		content: partial,
+		checkpoint: blob001PublicationCheckpoint{
+			Version: blob001CheckpointVersion, Nonce: nonce, Phase: expected.Phase,
+			BlobID: expected.BlobID, Size: expected.Size, Complete: false,
+		},
+	}
+	if _, err := runtime.blobs.Prepare(ctx, reader, int64(len(blob001Source()))); err == nil {
+		t.Fatal("BLOB001_CHILD_INCOMPLETE_PREPARE_RETURNED")
+	}
+	t.Fatal("BLOB001_CHILD_INCOMPLETE_PREPARE_FAILED")
+}
+
+type blob001CheckpointBlockingReader struct {
+	content    []byte
+	offset     int
+	checkpoint blob001PublicationCheckpoint
+}
+
+func (reader *blob001CheckpointBlockingReader) Read(target []byte) (int, error) {
+	if reader.offset < len(reader.content) {
+		written := copy(target, reader.content[reader.offset:])
+		reader.offset += written
+		return written, nil
+	}
+	if err := json.NewEncoder(os.Stdout).Encode(reader.checkpoint); err != nil {
+		return 0, errors.New("BLOB001_CHECKPOINT_WRITE_FAILED")
+	}
+	select {}
+}
+
+func blob001IncompleteSource() []byte {
+	source := blob001Source()
+	return bytes.Clone(source[:len(source)/2])
 }
 
 func TestBLOB001DurableStagingBeforeCandidateForcedTerminationChild(t *testing.T) {
@@ -225,7 +323,7 @@ func runBLOB001PreRenameForcedTerminationChild(t *testing.T, queueCandidate bool
 	checkpoint := blob001PublicationCheckpoint{
 		Version: blob001CheckpointVersion,
 		Nonce:   nonce, Phase: phase,
-		BlobID: prepared.ID().String(), Size: prepared.Size(),
+		BlobID: prepared.ID().String(), Size: prepared.Size(), Complete: true,
 	}
 	if _, err := runtime.blobs.Open(prepared.ID()); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("BLOB001_CHILD_PRE_RENAME_OBJECT_PRESENT")
@@ -266,17 +364,19 @@ func verifyRawBLOB001Staging(vaultRoot string, checkpoint blob001PublicationChec
 	return nil
 }
 
-func verifyBLOB001PreRenameCleanup(ctx context.Context, vaultRoot, blobID string) error {
+func verifyBLOB001PreRenameCleanup(ctx context.Context, vaultRoot string, blobIDs ...string) error {
 	entries, err := os.ReadDir(filepath.Join(vaultRoot, "blobs", "staging"))
 	if err != nil || len(entries) != 0 {
 		return errors.New("BLOB001_ROUTE_STAGING_NOT_CLEAN")
 	}
-	id, err := blob.ParseID(blobID)
-	if err != nil {
-		return errors.New("BLOB001_ROUTE_ID_INVALID")
-	}
-	if _, err := os.Lstat(blob001ObjectPath(vaultRoot, id)); !errors.Is(err, os.ErrNotExist) {
-		return errors.New("BLOB001_ROUTE_OBJECT_PRESENT")
+	for _, rawID := range blobIDs {
+		id, err := blob.ParseID(rawID)
+		if err != nil {
+			return errors.New("BLOB001_ROUTE_ID_INVALID")
+		}
+		if _, err := os.Lstat(blob001ObjectPath(vaultRoot, id)); !errors.Is(err, os.ErrNotExist) {
+			return errors.New("BLOB001_ROUTE_OBJECT_PRESENT")
+		}
 	}
 	database, err := store.Open(ctx, filepath.Join(vaultRoot, "data", store.DatabaseFileName), store.Options{BusyTimeout: time.Second})
 	if err != nil {

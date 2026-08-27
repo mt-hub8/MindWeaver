@@ -33,19 +33,28 @@ const (
 	blob001LegacyVaultEnvironment   = "MWQ_BLOB001_VAULT"
 	blob001LegacyMarkerEnvironment  = "MWQ_BLOB001_MARKER"
 	blob001CapabilityName           = "capability"
-	blob001CheckpointVersion        = 2
+	blob001CheckpointVersion        = 3
 	blob001CheckpointMaxBytes       = 1024
+	blob001PhaseIncompleteStaging   = "staging_copy_incomplete"
 	blob001PhaseStagingPreCandidate = "staging_durable_pre_candidate"
 	blob001PhaseCandidatePreRename  = "candidate_committed_pre_rename"
 	blob001PhasePublishedPreApply   = "published_pre_reference_apply"
 )
 
 type blob001PublicationCheckpoint struct {
-	Version int    `json:"version"`
-	Nonce   string `json:"nonce"`
-	Phase   string `json:"phase"`
-	BlobID  string `json:"blob_id"`
-	Size    int64  `json:"size"`
+	Version  int    `json:"version"`
+	Nonce    string `json:"nonce"`
+	Phase    string `json:"phase"`
+	BlobID   string `json:"blob_id"`
+	Size     int64  `json:"size"`
+	Complete bool   `json:"complete"`
+}
+
+type blob001CheckpointExpectation struct {
+	Phase    string
+	BlobID   string
+	Size     int64
+	Complete bool
 }
 
 func TestBLOB001PublishedOrphanRecoversAfterForcedTermination(t *testing.T) {
@@ -73,7 +82,9 @@ func TestBLOB001PublishedOrphanRecoversAfterForcedTermination(t *testing.T) {
 			_ = command.Wait()
 		}
 	})
-	checkpoint, err := startBLOB001CheckpointChild(ctx, command, nonce, blob001PhasePublishedPreApply, 20*time.Second)
+	checkpoint, err := startBLOB001CheckpointChild(
+		ctx, command, nonce, newBLOB001CheckpointExpectation(blob001PhasePublishedPreApply, blob001Source(), true), 20*time.Second,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +218,7 @@ func TestBLOB001PublishedOrphanForcedTerminationChild(t *testing.T) {
 	checkpoint := blob001PublicationCheckpoint{
 		Version: blob001CheckpointVersion,
 		Nonce:   nonce, Phase: blob001PhasePublishedPreApply,
-		BlobID: published.ID.String(), Size: published.Size,
+		BlobID: published.ID.String(), Size: published.Size, Complete: true,
 	}
 	if err := json.NewEncoder(os.Stdout).Encode(checkpoint); err != nil {
 		t.Fatal("BLOB001_CHECKPOINT_WRITE_FAILED")
@@ -474,7 +485,7 @@ func startBLOB001CheckpointChild(
 	ctx context.Context,
 	command *exec.Cmd,
 	nonce string,
-	expectedPhase string,
+	expected blob001CheckpointExpectation,
 	timeout time.Duration,
 ) (blob001PublicationCheckpoint, error) {
 	stdout, err := command.StdoutPipe()
@@ -510,14 +521,14 @@ func startBLOB001CheckpointChild(
 		result.raw[len(result.raw)-1] != '\n' {
 		return fail("BLOB001_CHECKPOINT_FRAME_INVALID")
 	}
-	checkpoint, err := decodeBLOB001Checkpoint(result.raw, nonce, expectedPhase)
+	checkpoint, err := decodeBLOB001Checkpoint(result.raw, nonce, expected)
 	if err != nil {
 		return fail("BLOB001_CHECKPOINT_CONTENT_INVALID")
 	}
 	return checkpoint, nil
 }
 
-func decodeBLOB001Checkpoint(raw []byte, nonce, expectedPhase string) (blob001PublicationCheckpoint, error) {
+func decodeBLOB001Checkpoint(raw []byte, nonce string, expected blob001CheckpointExpectation) (blob001PublicationCheckpoint, error) {
 	var checkpoint blob001PublicationCheckpoint
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
@@ -529,10 +540,22 @@ func decodeBLOB001Checkpoint(raw []byte, nonce, expectedPhase string) (blob001Pu
 	}
 	id, err := blob.ParseID(checkpoint.BlobID)
 	if err != nil || id.String() != checkpoint.BlobID || checkpoint.Version != blob001CheckpointVersion ||
-		checkpoint.Nonce != nonce || checkpoint.Phase != expectedPhase || checkpoint.Size != int64(len(blob001Source())) {
+		checkpoint.Nonce != nonce || checkpoint.Phase != expected.Phase || checkpoint.BlobID != expected.BlobID ||
+		checkpoint.Size != expected.Size || checkpoint.Complete != expected.Complete {
 		return blob001PublicationCheckpoint{}, errors.New("checkpoint identity differs")
 	}
 	return checkpoint, nil
+}
+
+func newBLOB001CheckpointExpectation(phase string, content []byte, complete bool) blob001CheckpointExpectation {
+	return blob001CheckpointExpectation{
+		Phase: phase, BlobID: blob001ContentID(content), Size: int64(len(content)), Complete: complete,
+	}
+}
+
+func blob001ContentID(content []byte) string {
+	digest := sha256.Sum256(content)
+	return "sha256:" + hex.EncodeToString(digest[:])
 }
 
 func verifyRawBLOB001Orphan(path string, checkpoint blob001PublicationCheckpoint) error {
