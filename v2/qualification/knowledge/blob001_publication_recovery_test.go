@@ -27,16 +27,17 @@ import (
 )
 
 const (
-	blob001ChildSandboxEnvironment = "MWQ_BLOB001_SANDBOX"
-	blob001ChildNonceEnvironment   = "MWQ_BLOB001_NONCE"
-	blob001LegacyModeEnvironment   = "MWQ_BLOB001_CHILD"
-	blob001LegacyVaultEnvironment  = "MWQ_BLOB001_VAULT"
-	blob001LegacyMarkerEnvironment = "MWQ_BLOB001_MARKER"
-	blob001CapabilityName          = "capability"
-	blob001CheckpointVersion       = 2
-	blob001CheckpointMaxBytes      = 1024
-	blob001PhaseCandidatePreRename = "candidate_committed_pre_rename"
-	blob001PhasePublishedPreApply  = "published_pre_reference_apply"
+	blob001ChildSandboxEnvironment  = "MWQ_BLOB001_SANDBOX"
+	blob001ChildNonceEnvironment    = "MWQ_BLOB001_NONCE"
+	blob001LegacyModeEnvironment    = "MWQ_BLOB001_CHILD"
+	blob001LegacyVaultEnvironment   = "MWQ_BLOB001_VAULT"
+	blob001LegacyMarkerEnvironment  = "MWQ_BLOB001_MARKER"
+	blob001CapabilityName           = "capability"
+	blob001CheckpointVersion        = 2
+	blob001CheckpointMaxBytes       = 1024
+	blob001PhaseStagingPreCandidate = "staging_durable_pre_candidate"
+	blob001PhaseCandidatePreRename  = "candidate_committed_pre_rename"
+	blob001PhasePublishedPreApply   = "published_pre_reference_apply"
 )
 
 type blob001PublicationCheckpoint struct {

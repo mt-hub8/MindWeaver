@@ -22,7 +22,38 @@ import (
 	"github.com/mt-hub8/MindWeaver/v2/internal/workbench"
 )
 
+type blob001PreRenameCrashCase struct {
+	childTest      string
+	phase          string
+	idempotencyKey string
+	title          string
+	filename       string
+	wantSwept      int
+}
+
+func TestBLOB001DurableStagingBeforeCandidateRecoversAfterForcedTermination(t *testing.T) {
+	qualifyBLOB001PreRenameCrash(t, blob001PreRenameCrashCase{
+		childTest:      "TestBLOB001DurableStagingBeforeCandidateForcedTerminationChild",
+		phase:          blob001PhaseStagingPreCandidate,
+		idempotencyKey: "blob001-staging-pre-candidate-recovery",
+		title:          "BLOB-001 staging recovery",
+		filename:       "staging.txt",
+	})
+}
+
 func TestBLOB001DurableCandidateBeforeRenameRecoversAfterForcedTermination(t *testing.T) {
+	qualifyBLOB001PreRenameCrash(t, blob001PreRenameCrashCase{
+		childTest:      "TestBLOB001DurableCandidateBeforeRenameForcedTerminationChild",
+		phase:          blob001PhaseCandidatePreRename,
+		idempotencyKey: "blob001-candidate-pre-rename-recovery",
+		title:          "BLOB-001 candidate recovery",
+		filename:       "candidate.txt",
+		wantSwept:      1,
+	})
+}
+
+func qualifyBLOB001PreRenameCrash(t *testing.T, test blob001PreRenameCrashCase) {
+	t.Helper()
 	ctx := t.Context()
 	root := t.TempDir()
 	sandbox := filepath.Join(root, "child-sandbox")
@@ -35,7 +66,7 @@ func TestBLOB001DurableCandidateBeforeRenameRecoversAfterForcedTermination(t *te
 	if err != nil {
 		t.Fatal("BLOB001_EXECUTABLE_UNAVAILABLE")
 	}
-	command := exec.Command(executable, "-test.run=^TestBLOB001DurableCandidateBeforeRenameForcedTerminationChild$")
+	command := exec.Command(executable, "-test.run=^"+test.childTest+"$")
 	command.Env = append(blob001CleanEnvironment(os.Environ()),
 		blob001ChildSandboxEnvironment+"="+sandbox,
 		blob001ChildNonceEnvironment+"="+nonce,
@@ -47,7 +78,7 @@ func TestBLOB001DurableCandidateBeforeRenameRecoversAfterForcedTermination(t *te
 			_ = command.Wait()
 		}
 	})
-	checkpoint, err := startBLOB001CheckpointChild(ctx, command, nonce, blob001PhaseCandidatePreRename, 20*time.Second)
+	checkpoint, err := startBLOB001CheckpointChild(ctx, command, nonce, test.phase, 20*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +131,7 @@ func TestBLOB001DurableCandidateBeforeRenameRecoversAfterForcedTermination(t *te
 	if !cleanBeforeRoutes {
 		t.Fatal("BLOB001_FIRST_OWNER_ORDER_UNPROVEN")
 	}
-	if evidence := application.Startup(); evidence.CleanedStagingFiles != 1 || evidence.SweptBlobCandidates != 1 {
+	if evidence := application.Startup(); evidence.CleanedStagingFiles != 1 || evidence.SweptBlobCandidates != test.wantSwept {
 		t.Fatalf("pre-rename restart evidence = %#v", evidence)
 	}
 	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
@@ -116,9 +147,9 @@ func TestBLOB001DurableCandidateBeforeRenameRecoversAfterForcedTermination(t *te
 		t.Fatalf("pre-rename recovered object Open error = %v, want not-exist", err)
 	}
 	request := workbench.UploadRequest{
-		IdempotencyKey: "blob001-candidate-pre-rename-recovery",
-		Title:          "BLOB-001 candidate recovery",
-		Filename:       "candidate.txt",
+		IdempotencyKey: test.idempotencyKey,
+		Title:          test.title,
+		Filename:       test.filename,
 		Source:         bytes.NewReader(blob001Source()),
 	}
 	first, err := recovered.service.Upload(ctx, request)
@@ -138,9 +169,9 @@ func TestBLOB001DurableCandidateBeforeRenameRecoversAfterForcedTermination(t *te
 	reopened := openBLOB001Runtime(t, ctx, vaultRoot)
 	assertBLOB001AcceptedState(t, ctx, reopened, first, blob001Source())
 	reopenRequest := workbench.UploadRequest{
-		IdempotencyKey: "blob001-candidate-pre-rename-recovery",
-		Title:          "BLOB-001 candidate recovery",
-		Filename:       "candidate.txt",
+		IdempotencyKey: test.idempotencyKey,
+		Title:          test.title,
+		Filename:       test.filename,
 		Source:         bytes.NewReader(blob001Source()),
 	}
 	reopenReplay, err := reopened.service.Upload(ctx, reopenRequest)
@@ -150,7 +181,16 @@ func TestBLOB001DurableCandidateBeforeRenameRecoversAfterForcedTermination(t *te
 	assertBLOB001AcceptedState(t, ctx, reopened, first, blob001Source())
 }
 
+func TestBLOB001DurableStagingBeforeCandidateForcedTerminationChild(t *testing.T) {
+	runBLOB001PreRenameForcedTerminationChild(t, false, blob001PhaseStagingPreCandidate)
+}
+
 func TestBLOB001DurableCandidateBeforeRenameForcedTerminationChild(t *testing.T) {
+	runBLOB001PreRenameForcedTerminationChild(t, true, blob001PhaseCandidatePreRename)
+}
+
+func runBLOB001PreRenameForcedTerminationChild(t *testing.T, queueCandidate bool, phase string) {
+	t.Helper()
 	sandbox := os.Getenv(blob001ChildSandboxEnvironment)
 	nonce := os.Getenv(blob001ChildNonceEnvironment)
 	vaultRoot, release, ok := claimBLOB001Sandbox(sandbox, nonce)
@@ -168,17 +208,23 @@ func TestBLOB001DurableCandidateBeforeRenameForcedTerminationChild(t *testing.T)
 	if err != nil {
 		t.Fatal("BLOB001_CHILD_PREPARE_FAILED")
 	}
-	if err := runtime.database.QueueBlobGCCandidate(ctx, prepared.ID().String()); err != nil {
-		t.Fatal("BLOB001_CHILD_CANDIDATE_COMMIT_FAILED")
+	if queueCandidate {
+		if err := runtime.database.QueueBlobGCCandidate(ctx, prepared.ID().String()); err != nil {
+			t.Fatal("BLOB001_CHILD_CANDIDATE_COMMIT_FAILED")
+		}
 	}
-	assertBLOB001Candidate(t, ctx, runtime.database, prepared.ID().String(), 1)
+	wantCandidate := 0
+	if queueCandidate {
+		wantCandidate = 1
+	}
+	assertBLOB001Candidate(t, ctx, runtime.database, prepared.ID().String(), wantCandidate)
 	referenced, err := runtime.database.BlobReferenced(ctx, prepared.ID().String())
 	if err != nil || referenced {
 		t.Fatal("BLOB001_CHILD_REFERENCE_STATE_INVALID")
 	}
 	checkpoint := blob001PublicationCheckpoint{
 		Version: blob001CheckpointVersion,
-		Nonce:   nonce, Phase: blob001PhaseCandidatePreRename,
+		Nonce:   nonce, Phase: phase,
 		BlobID: prepared.ID().String(), Size: prepared.Size(),
 	}
 	if _, err := runtime.blobs.Open(prepared.ID()); !errors.Is(err, os.ErrNotExist) {

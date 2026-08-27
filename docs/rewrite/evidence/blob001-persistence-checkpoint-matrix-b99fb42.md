@@ -33,7 +33,7 @@ output.
 | ID | Forced termination boundary | Required post-kill state and recovery | Status at baseline |
 |---|---|---|---|
 | BLOB-K01 | staging copy is incomplete or the staging file has not completed `Sync` | no final object; stale private staging is removed by the next `app.Start` before routes | OPEN; deterministic write/file-sync fault seam also open |
-| BLOB-K02 | `Prepare` returned after staging file and directory sync, before GC candidate commit | exact staging exists; startup removes it; no candidate or final object exists | OPEN |
+| BLOB-K02 | `Prepare` returned after staging file and directory sync, before GC candidate commit | exact staging exists; startup removes it; no candidate or final object exists | CLOSED by `TestBLOB001DurableStagingBeforeCandidateRecoversAfterForcedTermination` |
 | BLOB-K03 | GC candidate commit returned, after durable `Prepare`, before publication rename | exact staging and one durable candidate; startup removes staging and resolves the missing-object candidate | CLOSED by `TestBLOB001DurableCandidateBeforeRenameRecoversAfterForcedTermination` |
 | BLOB-K04 | publication rename returned and exact final object verifies, before document reference transaction | exact object plus one candidate; startup deletes the unreferenced object and resolves the candidate | CLOSED by `TestBLOB001PublishedOrphanRecoversAfterForcedTermination` |
 | BLOB-K05 | document reference transaction is in flight and its commit outcome is not observed | either K04 state, or one referenced graph with no candidate; startup/replay converges without duplicate graph or object | OPEN |
@@ -42,15 +42,18 @@ output.
 | BLOB-K08 | object unlink returned, before its parent directory sync completes | object may be absent but the candidate remains; startup must not report resolution until deletion is durable | OPEN |
 | BLOB-K09 | parent directory sync returned, before candidate-resolution commit/response | object is absent and candidate remains or is atomically resolved; startup/replay drains it exactly once | OPEN |
 
-K03 is deliberately separate from the existing same-process lifecycle unit
-test. The new qualification child returns from production `Prepare`, commits
-and re-reads the candidate, proves zero references and no final object, then
-emits the bounded phase/nonce/Blob-ID/size frame and blocks. After kill and
-reap, the parent verifies the only staging identity through a raw read-only handle with
-exact size and SHA-256. `app.Start` removes that staging file and resolves the
-missing-object candidate before route registration. Upload, exact replay,
+K02 and K03 share only a qualification harness, not production state. Each
+child returns from production `Prepare`, proves zero references and no final
+object, emits its distinct phase/nonce/Blob-ID/size frame and blocks. K02 also
+proves there is no candidate; K03 commits and re-reads exactly one candidate.
+After kill and reap, the parent verifies the only staging identity through a
+raw read-only handle with exact size and SHA-256. `app.Start` removes that
+staging file before route registration; K03 additionally resolves exactly one
+missing-object candidate, while K02 processes none. Upload, exact replay,
 close/reopen and replay again converge to one graph, one object and zero
-candidates. The test passed ten consecutive runs; this closes K03 only.
+candidates. Each test must pass ten consecutive runs before its row is closed.
+These tests are deliberately separate from the same-process lifecycle unit
+tests, which cannot prove forced termination or first-owner ordering.
 
 ## Final-tree ENOSPC and short-write seam assessment
 
@@ -75,6 +78,6 @@ ENOSPC/short-write remains OPEN and cannot support PASS.
 Run from `v2/` with the frozen Go 1.27.0 toolchain:
 
 ```text
-go test ./qualification/knowledge -run '^TestBLOB001DurableCandidateBeforeRenameRecoversAfterForcedTermination$' -count=10
+go test ./qualification/knowledge -run '^TestBLOB001Durable(StagingBeforeCandidate|CandidateBeforeRename)RecoversAfterForcedTermination$' -count=10
 go vet ./qualification/knowledge
 ```
