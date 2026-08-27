@@ -31,7 +31,12 @@ func stopREL001Process(process *runningApp) error {
 		false, uint32(process.command.Process.Pid),
 	)
 	if err != nil {
-		_ = process.command.Process.Kill()
+		killErr := process.command.Process.Kill()
+		waitErr, reaped := process.awaitWaitLocked(processReapTimeout)
+		var exitErr *exec.ExitError
+		if killErr != nil || !reaped || waitErr == nil || !errors.As(waitErr, &exitErr) || exitErr.ExitCode() == 0 {
+			return errors.New("REL001_KILL_PROCESS_OPEN_AND_REAP_FAILED")
+		}
 		return errors.New("REL001_KILL_PROCESS_OPEN_FAILED")
 	}
 	killErr := process.command.Process.Kill()
@@ -46,10 +51,9 @@ func stopREL001Process(process *runningApp) error {
 		}
 	}
 	closeErr := windows.CloseHandle(handle)
-	commandWaitErr := process.command.Wait()
-	process.finished = true
+	commandWaitErr, commandReaped := process.awaitWaitLocked(rel001FallbackReapTimeout)
 	var exitErr *exec.ExitError
-	if killErr != nil || !primaryClean || closeErr != nil || commandWaitErr == nil ||
+	if killErr != nil || !primaryClean || closeErr != nil || !commandReaped || commandWaitErr == nil ||
 		!errors.As(commandWaitErr, &exitErr) || exitErr.ExitCode() == 0 {
 		return errors.New("REL001_KILL_PROCESS_TERMINATION_INVALID")
 	}

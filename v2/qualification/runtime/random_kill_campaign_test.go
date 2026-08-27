@@ -97,6 +97,9 @@ func TestREL001DeterministicHTTPKillReplay(t *testing.T) {
 		t.Fatal(err)
 	}
 	frames := rel001KillFrames(t)
+	if got := rel001KillPlanDigest(frames); got != rel001KillPlanSHA256 {
+		t.Fatalf("REL001_KILL_PLAN_DIGEST_DRIFT got=%s", got)
+	}
 	limit := rel001KillSmokeRuns
 	if enabled {
 		limit = len(frames)
@@ -107,10 +110,14 @@ func TestREL001DeterministicHTTPKillReplay(t *testing.T) {
 	decisionOrders := [4][2]int{}
 	for _, frame := range frames[:limit] {
 		frame := frame
-		t.Run(fmt.Sprintf("%04d-%s", frame.sequence, rel001KillMutationNames[frame.mutation]), func(t *testing.T) {
+		passed := t.Run(fmt.Sprintf("%04d-%s", frame.sequence, rel001KillMutationNames[frame.mutation]), func(t *testing.T) {
 			decisionOrder := runREL001KillFrame(t, artifacts, campaignRoot, frame)
 			decisionOrders[frame.mutation][int(decisionOrder)-1]++
 		})
+		if !passed {
+			t.Fatalf("REL001_KILL_CAMPAIGN_STOPPED_AT_FRAME sequence=%d mutation=%s",
+				frame.sequence, rel001KillMutationNames[frame.mutation])
+		}
 	}
 	if entries, err := os.ReadDir(campaignRoot); err != nil || len(entries) != 0 {
 		t.Fatal("REL001_KILL_CAMPAIGN_CLEANUP_INCOMPLETE")

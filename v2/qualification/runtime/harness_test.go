@@ -215,6 +215,8 @@ type runningApp struct {
 	command  *exec.Cmd
 	stderr   *boundedBuffer
 	launch   launchInfo
+	waitDone <-chan error
+	waitErr  error
 	finished bool
 	mu       sync.Mutex
 }
@@ -244,7 +246,9 @@ func startMindWeaverWithEnvironment(t *testing.T, artifacts builtArtifacts, root
 	if err := command.Start(); err != nil {
 		t.Fatal("start real MindWeaver binary")
 	}
-	app := &runningApp{command: command, stderr: diagnostics}
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- command.Wait() }()
+	app := &runningApp{command: command, stderr: diagnostics, waitDone: waitDone}
 	t.Cleanup(func() { app.stop() })
 	launched := make(chan launchInfo, 1)
 	go func() {
@@ -291,11 +295,10 @@ func (app *runningApp) stop() {
 	if app.finished {
 		return
 	}
-	app.finished = true
 	if app.command.Process != nil {
 		_ = app.command.Process.Kill()
 	}
-	_, _ = waitForProcess(app.command, processReapTimeout)
+	_, _ = app.awaitWaitLocked(processReapTimeout)
 }
 
 func (app *runningApp) terminate(t *testing.T) {
@@ -311,21 +314,26 @@ func (app *runningApp) terminate(t *testing.T) {
 	if err := app.command.Process.Kill(); err != nil {
 		t.Fatal("controlled termination failed")
 	}
-	app.finished = true
-	waitErr, reaped := waitForProcess(app.command, processReapTimeout)
+	waitErr, reaped := app.awaitWaitLocked(processReapTimeout)
 	var exitErr *exec.ExitError
 	if !reaped || waitErr == nil || !errors.As(waitErr, &exitErr) || exitErr.ExitCode() == 0 {
 		t.Fatal("controlled termination did not reap a killed process")
 	}
 }
 
-func waitForProcess(command *exec.Cmd, timeout time.Duration) (error, bool) {
-	done := make(chan error, 1)
-	go func() { done <- command.Wait() }()
+// awaitWaitLocked is the sole consumer of the Cmd.Wait result. Callers must
+// hold app.mu. A timeout leaves the result channel available for one later,
+// bounded cleanup attempt and never marks the process as finished.
+func (app *runningApp) awaitWaitLocked(timeout time.Duration) (error, bool) {
+	if app.finished {
+		return app.waitErr, true
+	}
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
-	case err := <-done:
+	case err := <-app.waitDone:
+		app.waitErr = err
+		app.finished = true
 		return err, true
 	case <-timer.C:
 		return nil, false
