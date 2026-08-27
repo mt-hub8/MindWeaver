@@ -2,7 +2,9 @@
 
 Status: **NOT_IMPLEMENTED**
 
-- Audited baseline: `37ca406a23fc64a8dd8a5f6ea3aa823b64e49fb1`
+- Qualification-source baseline: `37ca406a23fc64a8dd8a5f6ea3aa823b64e49fb1`
+- Latest integrated ordinary-gate baseline:
+  `71bd8049e70e5a0c1cc16df89f48870f72cdb426`
 - Recorded: 2026-08-27 (Asia/Shanghai)
 - Scope: current committed developer signals only; no production, test, script,
   vendor, identity, or release-gate behavior is changed by this evidence.
@@ -88,6 +90,21 @@ The earlier unrelated current-main qualification regressions are closed:
 
 Those repairs restore their own qualification signals; they do not close any
 of the REL-001 release-scale gaps above.
+
+## Ordinary CI is green, not REL-001 qualification
+
+The controller's clean current-main verification at
+`71bd8049e70e5a0c1cc16df89f48870f72cdb426` passed both
+`v2/scripts/ci.ps1` and tracked-only `v2/scripts/verify-standalone.ps1`. The
+standalone gate archives the committed `v2` tree without Git metadata and runs
+the ordinary offline CI again from that extracted tree.
+
+This closes the earlier ordinary-CI regression and proves the committed tests,
+`go vet`, offline builds, and tracked-only extraction on that exact revision.
+Neither script runs `go test -race`, the three benchmarks, an extended soak, a
+1,000-kill campaign, or a release-machine performance qualification. Their
+green result is therefore KEEP integration evidence and does not promote
+REL-001 beyond `NOT_IMPLEMENTED`.
 
 ## Reproduction
 
