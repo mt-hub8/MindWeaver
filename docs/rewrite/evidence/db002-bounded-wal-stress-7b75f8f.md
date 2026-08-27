@@ -76,9 +76,9 @@ After every round the test independently verifies:
 - operation-ledger count equals the committed revision;
 - injected rollback operations are absent, including their balance changes.
 
-The three default-timeout scenarios passed ten complete repetitions. No default
-configuration `BUSY`, partial transition, integrity error, or acknowledged model
-loss was observed.
+The three expanded-pool scenarios using the default 5s timeout passed ten
+complete repetitions. No `BUSY`, partial transition, integrity error, or
+acknowledged model loss was observed under that specific configuration.
 
 ### Deliberate BUSY and exact complete-operation retry
 
@@ -138,8 +138,9 @@ $mwGo = 'C:\Users\24281\AppData\Local\MindWeaver\toolchains\go1.27.0\bin\go.exe'
   cause but production has no single-writer lane or complete-transaction
   retry/normalization layer. If such an error reaches the HTTP boundary,
   `classifyError` safely hides raw driver text but maps it to non-retryable
-  `INTERNAL` rather than a stable retryable code. Production-default 5s stress did
-  not reproduce BUSY, so this report records the gap without changing production.
+  `INTERNAL` rather than a stable retryable code. Expanded-pool stress with the
+  production 5s timeout did not reproduce BUSY, so this report records the gap
+  without changing production.
 
 This evidence does **not** replace or claim:
 
