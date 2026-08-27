@@ -34,16 +34,18 @@ type ragRuntime struct {
 	service  ragProductService
 	interval time.Duration
 
-	mu               sync.Mutex
-	accepting        bool
-	started          bool
-	ask              sync.WaitGroup
-	stopOnce         sync.Once
-	cancelReconciler context.CancelFunc
-	askContext       context.Context
-	cancelAsks       context.CancelFunc
-	reconciled       chan struct{}
-	drained          chan struct{}
+	mu                sync.Mutex
+	accepting         bool
+	started           bool
+	activeAsks        int
+	reconcilerStopped bool
+	drainedOnce       sync.Once
+	stopOnce          sync.Once
+	cancelReconciler  context.CancelFunc
+	askContext        context.Context
+	cancelAsks        context.CancelFunc
+	reconciled        chan struct{}
+	drained           chan struct{}
 }
 
 func newRAGRuntime(service ragProductService, interval time.Duration) (*ragRuntime, error) {
@@ -64,7 +66,7 @@ func newRAGRuntime(service ragProductService, interval time.Duration) (*ragRunti
 func (runtime *ragRuntime) Start() {
 	runtime.mu.Lock()
 	defer runtime.mu.Unlock()
-	if runtime.started {
+	if runtime.started || !runtime.accepting {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -74,7 +76,13 @@ func (runtime *ragRuntime) Start() {
 }
 
 func (runtime *ragRuntime) reconcileLoop(ctx context.Context) {
-	defer close(runtime.reconciled)
+	defer func() {
+		close(runtime.reconciled)
+		runtime.mu.Lock()
+		runtime.reconcilerStopped = true
+		runtime.maybeCloseDrainedLocked()
+		runtime.mu.Unlock()
+	}()
 	ticker := time.NewTicker(runtime.interval)
 	defer ticker.Stop()
 	for {
@@ -95,9 +103,14 @@ func (runtime *ragRuntime) Ask(ctx context.Context, request rag.AskRequest) (sto
 		runtime.mu.Unlock()
 		return store.Answer{}, errAskQuiescing
 	}
-	runtime.ask.Add(1)
+	runtime.activeAsks++
 	runtime.mu.Unlock()
-	defer runtime.ask.Done()
+	defer func() {
+		runtime.mu.Lock()
+		runtime.activeAsks--
+		runtime.maybeCloseDrainedLocked()
+		runtime.mu.Unlock()
+	}()
 	askContext, cancel := context.WithCancel(ctx)
 	stop := context.AfterFunc(runtime.askContext, cancel)
 	defer func() {
@@ -114,19 +127,22 @@ func (runtime *ragRuntime) Quiesce() {
 		cancelReconciler := runtime.cancelReconciler
 		cancelAsks := runtime.cancelAsks
 		started := runtime.started
+		if !started {
+			runtime.reconcilerStopped = true
+		}
+		runtime.maybeCloseDrainedLocked()
 		runtime.mu.Unlock()
 		cancelAsks()
 		if cancelReconciler != nil {
 			cancelReconciler()
 		}
-		go func() {
-			runtime.ask.Wait()
-			if started {
-				<-runtime.reconciled
-			}
-			close(runtime.drained)
-		}()
 	})
+}
+
+func (runtime *ragRuntime) maybeCloseDrainedLocked() {
+	if !runtime.accepting && runtime.activeAsks == 0 && runtime.reconcilerStopped {
+		runtime.drainedOnce.Do(func() { close(runtime.drained) })
+	}
 }
 
 func (runtime *ragRuntime) Wait(ctx context.Context) error {

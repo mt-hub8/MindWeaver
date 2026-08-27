@@ -18,6 +18,12 @@ import (
 	"github.com/mt-hub8/MindWeaver/v2/platform/version"
 )
 
+const serveShutdownLimit = 10 * time.Second
+
+type serveShutdowner interface {
+	Shutdown(context.Context) error
+}
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -70,18 +76,7 @@ func runServe(ctx context.Context, args []string, stdout io.Writer) error {
 		return err
 	}
 	shutdown := func() error {
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		err := application.Shutdown(shutdownContext)
-		cancel()
-		if !errors.Is(err, context.DeadlineExceeded) {
-			return err
-		}
-		if _, writeErr := fmt.Fprintln(stdout, "正在等待本地问答完成安全收敛……"); writeErr != nil {
-			// Output failure must not permit the process to exit while App still
-			// owns a terminal write or the Vault lock.
-			return errors.Join(outputError(writeErr), application.Shutdown(context.Background()))
-		}
-		return application.Shutdown(context.Background())
+		return shutdownServeApplication(application, serveShutdownLimit)
 	}
 	launchURL := application.LaunchURL()
 	if _, err := fmt.Fprintf(stdout, "MindWeaver 已就绪。请打开一次性本地链接：\n%s\n", launchURL); err != nil {
@@ -108,6 +103,22 @@ func runServe(ctx context.Context, args []string, stdout io.Writer) error {
 		}
 		return errors.Join(fmt.Errorf("local HTTP server stopped: %w", serveErr), shutdownErr)
 	}
+}
+
+func shutdownServeApplication(application serveShutdowner, limit time.Duration) error {
+	shutdownContext, cancel := context.WithTimeout(context.Background(), limit)
+	defer cancel()
+	// App owns a shorter fixed drain deadline. Call exactly once: an incomplete
+	// drain must return non-zero and let process exit reclaim still-open lower
+	// resources rather than waiting without a bound.
+	err := application.Shutdown(shutdownContext)
+	if errors.Is(err, app.ErrShutdownIncomplete) {
+		return apperror.Wrap(
+			err, apperror.KindDeadline, "runtime.shutdown_incomplete", "cli.shutdown",
+			"shutdown did not complete before its safety deadline",
+		)
+	}
+	return err
 }
 
 func runConfig(ctx context.Context, args []string, stdout io.Writer) error {

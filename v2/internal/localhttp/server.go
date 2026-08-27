@@ -173,7 +173,10 @@ func Start(router *Router, config Config) (*Server, BootstrapToken, error) {
 	closeListener = false
 	go func() {
 		err := server.http.Serve(listener)
-		if errors.Is(err, http.ErrServerClosed) {
+		server.mu.Lock()
+		closed := server.closed
+		server.mu.Unlock()
+		if errors.Is(err, http.ErrServerClosed) || (closed && errors.Is(err, net.ErrClosed)) {
 			err = nil
 		}
 		server.done <- err
@@ -208,6 +211,30 @@ func (server *Server) Done() <-chan error {
 	return server.done
 }
 
+// Quiesce synchronously closes the listener and invalidates process-memory
+// credentials without waiting for active handlers. Shutdown can then drain
+// those handlers under the App's single process-wide shutdown deadline.
+func (server *Server) Quiesce() error {
+	if server == nil {
+		return nil
+	}
+	server.mu.Lock()
+	alreadyClosed := server.closed
+	server.closed = true
+	server.bootstrapLive = false
+	server.bootstrapHash = [sha256.Size]byte{}
+	server.bootstrapUntil = time.Time{}
+	server.session = nil
+	server.mu.Unlock()
+	if alreadyClosed {
+		return nil
+	}
+	if err := server.listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+		return fmt.Errorf("quiesce local HTTP server: %w", err)
+	}
+	return nil
+}
+
 // Shutdown invalidates process-memory credentials before gracefully stopping
 // the HTTP server. It is safe to call more than once.
 func (server *Server) Shutdown(ctx context.Context) error {
@@ -217,15 +244,10 @@ func (server *Server) Shutdown(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("shutdown context is required")
 	}
-	server.mu.Lock()
-	if !server.closed {
-		server.closed = true
-		server.bootstrapLive = false
-		server.bootstrapHash = [sha256.Size]byte{}
-		server.session = nil
+	if err := server.Quiesce(); err != nil {
+		return err
 	}
-	server.mu.Unlock()
-	if err := server.http.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := server.http.Shutdown(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
 		return fmt.Errorf("shutdown local HTTP server: %w", err)
 	}
 	return nil

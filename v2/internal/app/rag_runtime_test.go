@@ -87,6 +87,31 @@ func TestRAGRuntimeQuiesceCancelsProviderAndWaitsForTerminalWrite(t *testing.T) 
 	}
 }
 
+func TestRAGRuntimeStartAndQuiesceAreLinearized(t *testing.T) {
+	for range 100 {
+		stub := &runtimeRAGStub{
+			started: make(chan struct{}), terminalWrite: make(chan struct{}), reconciled: make(chan struct{}),
+		}
+		runtime, err := newRAGRuntime(stub, 10*time.Millisecond)
+		if err != nil {
+			t.Fatal(err)
+		}
+		started := make(chan struct{})
+		go func() {
+			runtime.Start()
+			close(started)
+		}()
+		runtime.Quiesce()
+		<-started
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		if err := runtime.Wait(ctx); err != nil {
+			cancel()
+			t.Fatalf("Start/Quiesce drain = %v", err)
+		}
+		cancel()
+	}
+}
+
 func TestAnswerEndpointRejectsImpossibleDurableState(t *testing.T) {
 	stub := &runtimeRAGStub{answer: store.Answer{
 		ID: "answer", ConversationID: "conversation", ConversationRevision: 1,

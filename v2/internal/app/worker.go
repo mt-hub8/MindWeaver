@@ -31,7 +31,6 @@ type ingestionWorker struct {
 	wake             chan struct{}
 	quiesce          chan struct{}
 	gateMu           sync.Mutex
-	quiesced         bool
 	quiesceRequested atomic.Bool
 
 	mu          sync.RWMutex
@@ -88,16 +87,11 @@ func (worker *ingestionWorker) Stop() {
 // finish its fenced commit. Stop remains the bounded forced-cancellation path.
 func (worker *ingestionWorker) Quiesce() {
 	worker.quiesceOnce.Do(func() {
-		// Publish intent before waiting for an in-flight claim so the worker
-		// cannot win the mutex again and drain another queued job first.
+		// Publish intent before waking the loop. A claim which already crossed
+		// the atomic admission check is current work; Quiesce must not wait on
+		// its physical SQLite call because App owns the bounded drain deadline.
 		worker.quiesceRequested.Store(true)
-		// Serialize with the actual SQLite claim in claimOne. If that claim already
-		// committed it is current work and may finish; after Quiesce returns no
-		// later claim can begin.
-		worker.gateMu.Lock()
-		worker.quiesced = true
 		close(worker.quiesce)
-		worker.gateMu.Unlock()
 		worker.setStatus("quiescing")
 		worker.Wake()
 	})
@@ -106,7 +100,7 @@ func (worker *ingestionWorker) Quiesce() {
 func (worker *ingestionWorker) claimOne(ctx context.Context) (store.Job, error) {
 	worker.gateMu.Lock()
 	defer worker.gateMu.Unlock()
-	if worker.quiesced || worker.quiesceRequested.Load() {
+	if worker.quiesceRequested.Load() {
 		return store.Job{}, context.Canceled
 	}
 	return worker.runner.ClaimOne(ctx, "local-ingestion-worker", worker.lease)

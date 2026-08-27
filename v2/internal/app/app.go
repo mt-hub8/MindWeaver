@@ -75,9 +75,25 @@ type App struct {
 	bootstrap localhttp.BootstrapToken
 	startup   StartupEvidence
 
-	shutdownOnce sync.Once
-	shutdownDone chan struct{}
-	shutdownErr  error
+	shutdownOnce  sync.Once
+	shutdownDone  chan struct{}
+	shutdownErr   error
+	shutdownGrace time.Duration
+}
+
+// ErrShutdownIncomplete classifies a shutdown which reached its safety
+// deadline before every database user had drained.
+var ErrShutdownIncomplete = errors.New("app: shutdown incomplete")
+
+// ShutdownIncompleteError is deliberately content-free: component failures
+// must not escape through CLI diagnostics. It remains discoverable with
+// errors.As, ErrShutdownIncomplete with errors.Is, and is deadline-classified.
+type ShutdownIncompleteError struct{}
+
+func (*ShutdownIncompleteError) Error() string { return ErrShutdownIncomplete.Error() }
+
+func (*ShutdownIncompleteError) Is(target error) bool {
+	return target == ErrShutdownIncomplete || target == context.DeadlineExceeded
 }
 
 // Start opens the complete local runtime. No listener is created until every
@@ -266,15 +282,16 @@ func Start(ctx context.Context, options Options) (*App, error) {
 	closeDatabaseOnError = false
 	closeBackupOnError = false
 	return &App{
-		vault:        openedVault,
-		database:     database,
-		server:       server,
-		worker:       worker,
-		rag:          ragRuntime,
-		backups:      backupRuntime,
-		bootstrap:    bootstrap,
-		startup:      evidence,
-		shutdownDone: make(chan struct{}),
+		vault:         openedVault,
+		database:      database,
+		server:        server,
+		worker:        worker,
+		rag:           ragRuntime,
+		backups:       backupRuntime,
+		bootstrap:     bootstrap,
+		startup:       evidence,
+		shutdownDone:  make(chan struct{}),
+		shutdownGrace: shutdownGrace,
 	}, nil
 }
 
@@ -358,9 +375,10 @@ func (app *App) Done() <-chan error {
 	return app.server.Done()
 }
 
-// Shutdown quiesces ingress, cancels local work, then closes SQLite and finally
-// releases the Vault lock. A caller timeout does not abandon cleanup: the first
-// call starts cleanup and later calls may wait for its eventual safe completion.
+// Shutdown quiesces every admission boundary before draining them under one
+// absolute deadline. If any database user remains, lower resources stay open
+// for the OS to reclaim; the next startup performs durable reconciliation. A
+// caller context bounds only that caller's wait for the app-owned shutdown.
 func (app *App) Shutdown(ctx context.Context) error {
 	if app == nil {
 		return nil
@@ -379,33 +397,44 @@ func (app *App) Shutdown(ctx context.Context) error {
 
 func (app *App) shutdown() {
 	defer close(app.shutdownDone)
-	app.rag.Quiesce()
-	grace, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+	grace := app.shutdownGrace
+	if grace <= 0 {
+		grace = shutdownGrace
+	}
+	drainContext, cancel := context.WithTimeout(context.Background(), grace)
 	defer cancel()
-	serverErr := app.server.Shutdown(grace)
-	if serverErr != nil {
-		serverErr = errors.Join(serverErr, app.server.Close())
-	}
-	// Backup Create is detached from its fast HTTP admission response. Once
-	// ingress is closed, cancel that local operation, wait for its filesystem
-	// cleanup/publication decision, then release its retained Vault capability
-	// before SQLite or the Vault lock can be closed.
+
+	// Complete every quiesce transition before waiting on any component. This
+	// makes the shared deadline a drain bound rather than serial grace periods.
+	serverErr := app.server.Quiesce()
 	app.backups.Quiesce()
-	backupErr := app.backups.Wait(grace)
-	backupErr = errors.Join(backupErr, app.backups.Wait(context.Background()), app.backups.Close())
-	// Closing ingress may cancel an active provider call. Ask owns a bounded
-	// WithoutCancel terminal write; do not close SQLite until it has returned.
-	ragErr := app.rag.Wait(context.Background())
+	app.rag.Quiesce()
 	app.worker.Quiesce()
-	workerErr := app.worker.Wait(grace)
-	if workerErr != nil {
-		app.worker.Stop()
+	// Fenced ingestion is durable and startup recovery is authoritative. Cancel
+	// current execution immediately after every admission boundary is quiesced,
+	// then use the common deadline to prove it actually stopped.
+	app.worker.Stop()
+
+	serverErr = errors.Join(serverErr, app.server.Shutdown(drainContext))
+	backupErr := app.backups.Wait(drainContext)
+	ragErr := app.rag.Wait(drainContext)
+	workerErr := app.worker.Wait(drainContext)
+	if errors.Join(serverErr, backupErr, ragErr, workerErr) != nil {
+		app.shutdownErr = &ShutdownIncompleteError{}
+		return
 	}
-	// Never close SQLite underneath a worker. The caller retains its own wait
-	// bound, while this cleanup goroutine continues until the bounded local file
-	// operation observes cancellation and exits.
-	workerErr = errors.Join(workerErr, app.worker.Wait(context.Background()))
-	app.shutdownErr = errors.Join(serverErr, backupErr, ragErr, workerErr, app.database.Close(), app.vault.Close())
+
+	// backupRuntime.Close contains an unbounded Wait by contract, so it is only
+	// legal after the bounded drain above proved the retained operation stopped.
+	if err := app.backups.Close(); err != nil {
+		app.shutdownErr = err
+		return
+	}
+	if err := app.database.Close(); err != nil {
+		app.shutdownErr = err
+		return
+	}
+	app.shutdownErr = app.vault.Close()
 }
 
 func ensureConfig(ctx context.Context, path, firstVault string) (bool, error) {

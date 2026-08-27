@@ -16,6 +16,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/mt-hub8/MindWeaver/v2/internal/blob"
 	"github.com/mt-hub8/MindWeaver/v2/internal/lifecycle"
 	"github.com/mt-hub8/MindWeaver/v2/internal/localhttp"
+	"github.com/mt-hub8/MindWeaver/v2/internal/rag"
 	store "github.com/mt-hub8/MindWeaver/v2/internal/store/sqlite"
 	"github.com/mt-hub8/MindWeaver/v2/internal/transport"
 	"github.com/mt-hub8/MindWeaver/v2/internal/vault"
@@ -818,6 +821,13 @@ func TestAppShutdownCancelsAndDrainsAcceptedBackupBeforeClosingStore(t *testing.
 		},
 		close: func() error {
 			_, storeErr := application.database.ListDocuments(context.Background(), 1)
+			reopened, vaultErr := vault.Open(application.vault.Paths().Root)
+			if reopened != nil {
+				_ = reopened.Close()
+			}
+			if !errors.Is(vaultErr, vault.ErrLocked) {
+				storeErr = errors.Join(storeErr, fmt.Errorf("Vault unlocked before backup coordinator close: %w", vaultErr))
+			}
 			storeChecks <- storeErr
 			close(engineClosed)
 			return errors.Join(storeErr, realEngine.Close())
@@ -857,6 +867,243 @@ func TestAppShutdownCancelsAndDrainsAcceptedBackupBeforeClosingStore(t *testing.
 	}
 	if _, err := application.database.ListDocuments(context.Background(), 1); err == nil {
 		t.Fatal("store remained open after complete App shutdown")
+	}
+	reopened, err := vault.Open(application.vault.Paths().Root)
+	if err != nil {
+		t.Fatalf("Vault remained locked after complete App shutdown: %v", err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type trackedShutdownBackupEngine struct {
+	backupEngine
+	closed *atomic.Bool
+}
+
+func (engine trackedShutdownBackupEngine) Close() error {
+	engine.closed.Store(true)
+	return engine.backupEngine.Close()
+}
+
+type neverReleaseWorkerRunner struct {
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (runner *neverReleaseWorkerRunner) ClaimOne(context.Context, string, time.Duration) (store.Job, error) {
+	return store.Job{ID: "shutdown-fault", Kind: store.IngestDocumentJobKind, Status: store.JobRunning, LeaseToken: "lease"}, nil
+}
+
+func (runner *neverReleaseWorkerRunner) RunClaimed(context.Context, store.Job) (store.Job, error) {
+	runner.once.Do(func() { close(runner.entered) })
+	<-runner.release
+	return store.Job{}, nil
+}
+
+func TestAppShutdownNeverReleaseFaultsAreBoundedAndKeepLowerResourcesOpen(t *testing.T) {
+	for _, fault := range []string{"backup", "rag", "worker", "server"} {
+		t.Run(fault, func(t *testing.T) {
+			root := t.TempDir()
+			entered := make(chan struct{})
+			releaseChannel := make(chan struct{})
+			var releaseOnce sync.Once
+			release := func() { releaseOnce.Do(func() { close(releaseChannel) }) }
+			t.Cleanup(release)
+
+			options := Options{
+				ConfigPath:        filepath.Join(root, "configuration", "mindweaver.v1.json"),
+				FirstRunVaultRoot: "../vault", WorkerInterval: 10 * time.Millisecond,
+				PDFHelperPath: filepath.Join(root, "missing-pdf-helper"),
+			}
+			if fault == "server" {
+				options.ExtraRoutes = []RouteRegistrar{func(router *localhttp.Router) error {
+					return router.HandleFunc(http.MethodGet, "/api/test-shutdown-block", func(http.ResponseWriter, *http.Request) {
+						close(entered)
+						<-releaseChannel
+					})
+				}}
+			}
+			application := startTestApp(t, options)
+			application.shutdownGrace = 35 * time.Millisecond
+			backupClosed := &atomic.Bool{}
+			realBackupEngine := application.backups.engine
+			application.backups.engine = trackedShutdownBackupEngine{backupEngine: realBackupEngine, closed: backupClosed}
+
+			switch fault {
+			case "backup":
+				application.backups.engine = &backupEngineStub{
+					create: func(context.Context, string) (backup.Manifest, error) {
+						close(entered)
+						<-releaseChannel
+						return backup.Manifest{}, errors.New("raw-backup-shutdown-canary")
+					},
+					close: func() error {
+						backupClosed.Store(true)
+						return realBackupEngine.Close()
+					},
+				}
+				if _, err := application.backups.Start(context.Background(), "shutdown-never-release", filepath.Join(root, "blocked-backup")); err != nil {
+					t.Fatal(err)
+				}
+			case "rag":
+				application.rag.Quiesce()
+				if err := application.rag.Wait(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				stub := &runtimeRAGStub{started: entered, terminalWrite: releaseChannel, reconciled: make(chan struct{})}
+				faultRuntime, err := newRAGRuntime(stub, 10*time.Millisecond)
+				if err != nil {
+					t.Fatal(err)
+				}
+				faultRuntime.Start()
+				application.rag = faultRuntime
+				go func() { _, _ = faultRuntime.Ask(context.Background(), rag.AskRequest{}) }()
+			case "worker":
+				application.worker.Stop()
+				if err := application.worker.Wait(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				runner := &neverReleaseWorkerRunner{entered: entered, release: releaseChannel}
+				application.worker = newIngestionWorker(runner, nil, 10*time.Millisecond, time.Minute)
+				application.worker.Start()
+			case "server":
+				client := newHTTPClient(t)
+				session := exchangeApp(t, client, application)
+				request := appRequest(t, application, session, http.MethodGet, "/api/test-shutdown-block", nil)
+				go func() {
+					response, err := client.Do(request)
+					if err == nil {
+						_ = response.Body.Close()
+					}
+				}()
+			}
+
+			select {
+			case <-entered:
+			case <-time.After(2 * time.Second):
+				t.Fatalf("%s fault did not enter", fault)
+			}
+			started := time.Now()
+			err := application.Shutdown(context.Background())
+			if elapsed := time.Since(started); elapsed > time.Second {
+				t.Fatalf("Shutdown duration = %s", elapsed)
+			}
+			var incomplete *ShutdownIncompleteError
+			if !errors.Is(err, ErrShutdownIncomplete) || !errors.Is(err, context.DeadlineExceeded) || !errors.As(err, &incomplete) {
+				t.Fatalf("Shutdown error classification = %T %v", err, err)
+			}
+			if got := err.Error(); got != "app: shutdown incomplete" || strings.Contains(got, "canary") {
+				t.Fatalf("Shutdown error was not stable/content-free: %q", got)
+			}
+			select {
+			case <-application.shutdownDone:
+			default:
+				t.Fatal("shutdownDone remained open after bounded failure")
+			}
+			if backupClosed.Load() {
+				t.Fatal("backup coordinator closed while a database user was not drained")
+			}
+			if _, queryErr := application.database.ListDocuments(context.Background(), 1); queryErr != nil {
+				t.Fatalf("database closed under active shutdown fault: %v", queryErr)
+			}
+			if reopened, openErr := vault.Open(application.vault.Paths().Root); !errors.Is(openErr, vault.ErrLocked) {
+				if reopened != nil {
+					_ = reopened.Close()
+				}
+				t.Fatalf("Vault lock released under active shutdown fault: %v", openErr)
+			}
+
+			secondStarted := time.Now()
+			secondErr := application.Shutdown(context.Background())
+			if elapsed := time.Since(secondStarted); elapsed > 20*time.Millisecond {
+				t.Fatalf("second Shutdown blocked for %s", elapsed)
+			}
+			if !errors.Is(secondErr, ErrShutdownIncomplete) {
+				t.Fatalf("second Shutdown error = %v", secondErr)
+			}
+
+			release()
+			cleanupContext, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if cleanupErr := errors.Join(
+				application.server.Shutdown(cleanupContext),
+				application.backups.Wait(cleanupContext),
+				application.rag.Wait(cleanupContext),
+				application.worker.Wait(cleanupContext),
+			); cleanupErr != nil {
+				t.Fatalf("fault cleanup drain: %v", cleanupErr)
+			}
+			if cleanupErr := errors.Join(application.backups.Close(), application.database.Close(), application.vault.Close()); cleanupErr != nil {
+				t.Fatalf("fault cleanup close: %v", cleanupErr)
+			}
+		})
+	}
+}
+
+func TestAppShutdownFirstCallerTimeoutDoesNotFixFinalResult(t *testing.T) {
+	root := t.TempDir()
+	application := startTestApp(t, Options{
+		ConfigPath:        filepath.Join(root, "configuration", "mindweaver.v1.json"),
+		FirstRunVaultRoot: "../vault", WorkerInterval: 10 * time.Millisecond,
+		PDFHelperPath: filepath.Join(root, "missing-pdf-helper"),
+	})
+	application.shutdownGrace = time.Second
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	realEngine := application.backups.engine
+	application.backups.engine = &backupEngineStub{
+		create: func(context.Context, string) (backup.Manifest, error) {
+			close(entered)
+			<-release
+			return backup.Manifest{}, nil
+		},
+		close: realEngine.Close,
+	}
+	if _, err := application.backups.Start(context.Background(), "short-first-caller", filepath.Join(root, "short-first-backup")); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+
+	shortContext, cancelShort := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancelShort()
+	if err := application.Shutdown(shortContext); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("first short Shutdown error = %v", err)
+	}
+	select {
+	case <-application.shutdownDone:
+		t.Fatal("caller timeout terminated internal shutdown")
+	default:
+	}
+
+	const callers = 6
+	results := make(chan error, callers)
+	for range callers {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			results <- application.Shutdown(ctx)
+		}()
+	}
+	close(release)
+	for range callers {
+		if err := <-results; err != nil {
+			t.Fatalf("concurrent Shutdown error = %v", err)
+		}
+	}
+	if err := application.Shutdown(context.Background()); err != nil {
+		t.Fatalf("final Shutdown result = %v", err)
+	}
+	if _, err := application.database.ListDocuments(context.Background(), 1); err == nil {
+		t.Fatal("database remained open after complete concurrent drain")
+	}
+	if reopened, err := vault.Open(application.vault.Paths().Root); err != nil {
+		t.Fatalf("Vault did not reopen after complete drain: %v", err)
+	} else if closeErr := reopened.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 }
 

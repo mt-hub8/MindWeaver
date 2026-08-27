@@ -4,18 +4,39 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/mt-hub8/MindWeaver/v2/internal/app"
 	"github.com/mt-hub8/MindWeaver/v2/internal/localhttp"
 	"github.com/mt-hub8/MindWeaver/v2/platform/apperror"
 )
+
+type shutdownStub struct {
+	calls           atomic.Int32
+	deadlineOnFirst bool
+	incomplete      bool
+}
+
+func (stub *shutdownStub) Shutdown(ctx context.Context) error {
+	call := stub.calls.Add(1)
+	if call == 1 && stub.deadlineOnFirst {
+		return context.DeadlineExceeded
+	}
+	if stub.incomplete {
+		return &app.ShutdownIncompleteError{}
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
 
 func TestConfigInitAndCheck(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mindweaver.json")
@@ -51,6 +72,55 @@ func TestVersionIsRunnable(t *testing.T) {
 	if !strings.HasPrefix(output.String(), "mindweaver 0.1.0-dev") {
 		t.Fatalf("version output = %q", output.String())
 	}
+}
+
+func TestServeShutdownIsBoundedAndCallsAppOnce(t *testing.T) {
+	t.Run("caller bound", func(t *testing.T) {
+		stub := &shutdownStub{}
+		started := time.Now()
+		err := shutdownServeApplication(stub, 20*time.Millisecond)
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("shutdown error = %v", err)
+		}
+		if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
+			t.Fatalf("shutdown duration = %s", elapsed)
+		}
+		if calls := stub.calls.Load(); calls != 1 {
+			t.Fatalf("Shutdown calls = %d, want 1", calls)
+		}
+	})
+
+	t.Run("deadline is final", func(t *testing.T) {
+		stub := &shutdownStub{deadlineOnFirst: true}
+		result := make(chan error, 1)
+		go func() { result <- shutdownServeApplication(stub, time.Second) }()
+		select {
+		case err := <-result:
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("shutdown error = %v", err)
+			}
+		case <-time.After(500 * time.Millisecond):
+			t.Fatal("CLI retried deadline shutdown with an unbounded context")
+		}
+		if calls := stub.calls.Load(); calls != 1 {
+			t.Fatalf("Shutdown calls = %d, want 1", calls)
+		}
+	})
+
+	t.Run("incomplete has stable CLI classification", func(t *testing.T) {
+		stub := &shutdownStub{incomplete: true}
+		err := shutdownServeApplication(stub, time.Second)
+		if !errors.Is(err, app.ErrShutdownIncomplete) || apperror.KindOf(err) != apperror.KindDeadline ||
+			apperror.CodeOf(err) != "runtime.shutdown_incomplete" || exitCode(err) != 124 {
+			t.Fatalf("shutdown classification = kind %q, code %q, exit %d, err %v", apperror.KindOf(err), apperror.CodeOf(err), exitCode(err), err)
+		}
+		if public := apperror.PublicMessage(err); public != "shutdown did not complete before its safety deadline" {
+			t.Fatalf("shutdown public message = %q", public)
+		}
+		if calls := stub.calls.Load(); calls != 1 {
+			t.Fatalf("Shutdown calls = %d, want 1", calls)
+		}
+	})
 }
 
 func TestServeProcessOwnsVaultServesHealthAndReopensAfterKill(t *testing.T) {

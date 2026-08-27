@@ -186,7 +186,7 @@ func TestWorkerQuiesceDuringRecoveryAdmitsNoNewClaim(t *testing.T) {
 	}
 }
 
-func TestWorkerQuiesceSerializesWithPhysicalClaim(t *testing.T) {
+func TestWorkerQuiesceDoesNotWaitForAcceptedPhysicalClaim(t *testing.T) {
 	runner := &blockingClaimRunner{entered: make(chan struct{}, 1), release: make(chan struct{})}
 	worker := newIngestionWorker(runner, nil, 10*time.Millisecond, time.Minute)
 	worker.Start()
@@ -202,15 +202,10 @@ func TestWorkerQuiesceSerializesWithPhysicalClaim(t *testing.T) {
 	}()
 	select {
 	case <-quiesced:
-		t.Fatal("Quiesce returned while the physical claim was unresolved")
-	case <-time.After(20 * time.Millisecond):
+	case <-time.After(time.Second):
+		t.Fatal("Quiesce waited for the unresolved physical claim")
 	}
 	close(runner.release)
-	select {
-	case <-quiesced:
-	case <-time.After(time.Second):
-		t.Fatal("Quiesce did not finish after claim resolved")
-	}
 	wait, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := worker.Wait(wait); err != nil {
