@@ -1,5 +1,9 @@
 # Rewrite quality gates
 
+The acceptance ledger is the authoritative status record. These gates group
+related outcomes; passing one ledger row never implies that every item in the
+corresponding gate is complete.
+
 ## Gate 0: baseline and scope
 
 - Every legacy endpoint, page, persistent table, background task, provider,
@@ -9,14 +13,17 @@
 
 ## Gate 1: technical feasibility
 
-- SQLite driver/CGO, WAL, backup, job claim, disk-full, and crash behavior measured.
-- One production keyword-retrieval boundary is explicitly selected and passes
-  versioned minimum recall, scope-isolation, capacity, and latency thresholds;
-  rejected semantic candidates stay absent.
+- SQLite WAL/single-writer contention, stable retry semantics, logical
+  `SQLITE_FULL`, integrity/corruption, backup, job claim, and crash behavior are
+  measured. Physical-media and long-duration qualification belong to Gate 8.
+- The selected production retrieval boundary is a versioned literal continuous
+  phrase contract with deterministic scope/lifecycle behavior. Natural-question
+  understanding stays LATER, and release-scale capacity/latency belongs to Gate 8.
 - PDF parsing compared with existing corpus and isolated from the main process.
 - Loopback Ollama timeout, cancellation, malformed responses, and bounded output verified.
-- Windows locking, sleep/resume, signed MSI install, upgrade, rollback, and
-  uninstall verified. No credential store or built-in updater is implied.
+- Windows Vault locking is verified. Runtime sleep/resume qualification,
+  packaging, signing, install, upgrade, rollback, and uninstall belong to Gate 8.
+  No credential store or built-in updater is implied.
 
 ## Gate 2: standalone walking skeleton
 
@@ -28,9 +35,11 @@
 ## Gate 3: data safety kernel
 
 - Blob intents, durable jobs, fencing, reconciliation, backup/restore, purge planning,
-  low-disk mode, and fault injection pass.
-- A forced termination after every persistence checkpoint produces either a valid
-  state or an explicit recoverable `NEEDS_ATTENTION` state.
+  storage-exhaustion failure handling, and deterministic fault injection pass.
+- A forced termination at every externally distinguishable durable state in the
+  frozen checkpoint matrix produces either a valid state or an explicit
+  recoverable `NEEDS_ATTENTION` state. Unobservable syscall/VFS windows are owned
+  by the physical qualification campaign in Gate 8, not by production-only hooks.
 
 ## Gate 4: knowledge lifecycle
 
@@ -49,8 +58,10 @@
 
 ## Gate 6: product, security, and operability
 
-- First-run, no-model, offline, low-disk, recovery, backup, restore, uninstall, and
-  verified purge workflows pass on a clean Windows machine.
+- First-run, no-model, offline, storage-exhaustion response, recovery, backup,
+  restore, diagnostics, and verified purge are operable through the public UI or
+  recovery command with a fresh temporary Vault on supported Windows. Packaged
+  clean-machine, installer, and uninstall behavior belong to Gate 8.
 - Localhost CSRF/DNS rebinding/XSS, provider SSRF, credential leakage, malicious
   document, path traversal, and oversized response tests pass.
 - Keyboard, focus, high-contrast, scaling, and Chinese input acceptance pass.
@@ -66,8 +77,11 @@
 
 ## Gate 8: release qualification
 
-- Race, fuzz, fault injection, E2E, performance, soak, N-1/N-2 upgrade, backup
-  restore, offline egress, signing, SBOM, vulnerability, and license gates pass.
+- Race, accepted-duration/corpus fuzz, physical storage and power-loss fault
+  injection, E2E, performance, long soak, sleep/resume, and randomized-kill
+  gates pass.
+- MSI install, N-1/N-2 upgrade, rollback, uninstall, clean-machine backup/restore,
+  offline egress, signing, SBOM, vulnerability, and license gates pass.
 - No unaccepted P0/P1 data, security, upgrade, or release risk remains.
 
 ## Gate 9: fresh-Vault release and repository extraction
@@ -97,7 +111,7 @@ duplicate
 concurrency
 cancel/timeout
 forced termination/restart
-sleep/low disk
+sleep/storage-exhaustion response
 security/privacy
 diagnostics
 backup/upgrade
