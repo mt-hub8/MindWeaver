@@ -6,7 +6,7 @@
 - Executable evidence:
   `v2/internal/store/sqlite/qualification_stress_test.go`
 - Executable-evidence SHA-256:
-  `09803d12265e43790967d7af99ee70c960e42872626cee588f1179eb69cf44b6`
+  `758c223c5e8535672aeb8b2c1f7d0d6ef01261b51c50ad20024f4cd46e2ac258`
 - Ledger effect: none; `DB-002` remains `IMPLEMENTED`, not `PASS`
 
 This report adds a bounded, fixed-seed developer stress slice to the existing
@@ -38,7 +38,7 @@ temporary qualification database; embedded production migrations are unchanged.
 
 The plan is frozen by these seeds and dimensions:
 
-| Seed | Retained WAL readers | Concurrent writers | Rounds | Planned commits | Injected rollbacks | BUSY retry commit | Final commits |
+| Seed | Retained WAL readers | Writer goroutines | Rounds | Planned commits | Injected rollbacks | BUSY retry commit | Final commits |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `0x0db002001` | 1 | 4 | 12 | 40 | 8 | 1 | 41 |
 | `0x0db0020a5` | 4 | 4 | 12 | 38 | 10 | 1 | 39 |
@@ -53,13 +53,21 @@ and repeated execution; this slice does not claim a deterministic scheduler.
 
 ## Invariants exercised
 
-### Production-default concurrent writer pressure
+### Default-busy-timeout concurrent invocation pressure
 
-The randomized writer rounds use the production `5s` busy timeout, one real
-`Store`, and one `*sql.DB` pool. Four goroutines concurrently call the production
-`withTx` path while 1, 4, or 8 distinct physical reader connections retain a WAL
-snapshot. A scheduler yield occurs after each debit to widen the half-transition
-window, but readers must still see the exact pre-stress snapshot.
+The randomized writer rounds use the production `5s` busy timeout and one real
+`Store`. The pool capacity is deliberately expanded to retain 1, 4, or 8
+physical WAL readers while four writer goroutines exercise the production
+`withTx` path; it is not the production default connection count. Every reader
+and writer must report ready before the round releases a single start gate. A
+scheduler yield occurs after each debit to widen the half-transition window,
+but readers must still see the exact pre-stress snapshot.
+
+The ready gate proves concurrent invocation attempts, not that SQLite admitted
+multiple write transactions simultaneously or that the Go scheduler overlapped
+every callback. SQLite's single-writer serialization is the behavior under
+test; the separate retained-holder probe below is the direct contention/BUSY
+evidence.
 
 After every round the test independently verifies:
 

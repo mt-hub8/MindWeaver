@@ -109,6 +109,7 @@ func TestQualificationBoundedSeededWALStress(t *testing.T) {
 
 			for round := 0; round < qualificationStressRounds; round++ {
 				results := make(chan error, qualificationStressWriters+len(snapshots))
+				ready := make(chan struct{}, qualificationStressWriters+len(snapshots))
 				start := make(chan struct{})
 				var wait sync.WaitGroup
 				for writer := 0; writer < qualificationStressWriters; writer++ {
@@ -116,6 +117,7 @@ func TestQualificationBoundedSeededWALStress(t *testing.T) {
 					wait.Add(1)
 					go func() {
 						defer wait.Done()
+						ready <- struct{}{}
 						<-start
 						if err := qualificationStressExecute(ctx, store, operation); err != nil {
 							results <- fmt.Errorf("writer operation=%s: %w", operation.id, err)
@@ -129,6 +131,7 @@ func TestQualificationBoundedSeededWALStress(t *testing.T) {
 					wait.Add(1)
 					go func() {
 						defer wait.Done()
+						ready <- struct{}{}
 						<-start
 						if err := qualificationStressCheckState(ctx, snapshot.transaction, snapshotState); err != nil {
 							results <- fmt.Errorf("reader=%d: %w", index, err)
@@ -136,6 +139,9 @@ func TestQualificationBoundedSeededWALStress(t *testing.T) {
 							results <- nil
 						}
 					}()
+				}
+				for participant := 0; participant < qualificationStressWriters+len(snapshots); participant++ {
+					<-ready
 				}
 				close(start)
 				wait.Wait()
