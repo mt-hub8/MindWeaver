@@ -102,7 +102,7 @@ module closure, verifies command source manifests, derives the final declared
 table set across ordered migrations, and inspects the real CLI switches and
 fresh-Vault absence boundary.
 
-This is implementation-closure evidence for API-001 and ARC-003. It is not a
-browser compatibility, accessibility, usability, penetration-test, release,
-or signed-artifact result, and by itself must not mark UI or SEC acceptance
-gates as passed.
+This is implementation-closure evidence for API-001 and the ARC-002/CUT-001
+negative legacy-surface boundaries. It is not a browser compatibility,
+accessibility, usability, penetration-test, release, or signed-artifact result,
+and by itself must not mark UI or SEC acceptance gates as passed.

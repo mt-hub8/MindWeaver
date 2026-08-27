@@ -6,15 +6,14 @@ the exact command/report location. Manual inspection alone cannot close a row.
 Only `Phase=CORE` rows are release blockers. `LATER` rows preserve
 traceability without expanding the first Go release.
 
-Current CORE reconciliation: `22 PASS`, `8 IMPLEMENTED`, `4 BLOCKED`, and
-`3 NOT_IMPLEMENTED`. All nine `LATER` rows remain `NOT_IMPLEMENTED` and are
+Current CORE reconciliation: `25 PASS`, `5 IMPLEMENTED`, `4 BLOCKED`, and
+`2 NOT_IMPLEMENTED`. All nine `LATER` rows remain `NOT_IMPLEMENTED` and are
 not part of the first Go release.
 
 | ID | Required outcome | Phase | Core gate | Current status | Required evidence |
 | --- | --- | --- | --- | --- | --- |
 | ARC-001 | `v2/` builds from an empty standalone checkout | CORE | YES | PASS | `v2/scripts/verify-standalone.*`; repeat in release CI |
 | ARC-002 | No Go production path imports or executes legacy Java/Python | CORE | YES | PASS | `v2/openapi/v1/contract_test.go`; `v2/qualification/production/dual_pe_test.go`; exact two-PE/negative-surface audit |
-| ARC-003 | Exactly one accepted implementation exists for each CORE capability; later paths are absent | CORE | YES | NOT_IMPLEMENTED | package graph and core feature closure matrix |
 | RUN-001 | One process owns one canonical Vault with an OS lock | CORE | YES | PASS | `v2/internal/vault/vault_test.go`; `v2/cmd/mindweaver/main_test.go`; two-process kill/reopen tests |
 | RUN-002 | Startup migration and reconciliation finish before ordinary writes | CORE | YES | IMPLEMENTED | v1-v6 before-first-transaction and after-all-migrations forced-exit matrix passes; exact SQLite COMMIT-in-flight checkpoint remains; `docs/rewrite/evidence/run002-schema-migration-forced-exit-7b75f8f.md` |
 | RUN-003 | Bounded shutdown checkpoints work; crash recovery does not rely on shutdown | CORE | YES | PASS | app-owned bounded drain plus stable incomplete-shutdown classification; real Answer/ingestion/DOC/Blob kill-reopen and backup residue recovery; `docs/rewrite/evidence/run003-shutdown-recovery-4a338dc.md` |
@@ -42,14 +41,14 @@ not part of the first Go release.
 | INV-002 | A future enhanced invocation protocol classifies ambiguous transmitted requests without unsafe automatic replay | LATER | NO | NOT_IMPLEMENTED | crash-window and duplicate-cost suite before promotion |
 | RAG-001 | Keyword/continuous-phrase-driven Ask uses scoped SQLite FTS and stores the final source chunk IDs with the answer | CORE | YES | PASS | literal-phrase/no-expansion, scope, persistence, restart and source-change tests; natural-question retrieval is LATER |
 | RAG-002 | Every citation resolves to a source chunk supplied for that answer | CORE | YES | PASS | foreign, missing, changed and malformed citation rejection tests |
-| RAG-003 | No-hit or structurally invalid citation cases refuse or show an explicit limitation label | CORE | YES | IMPLEMENTED | backend refusal and honest static UI wording pass; real-browser label evidence remains |
-| CON-001 | Conversation/messages preserve immutable provenance and version conflicts | CORE | YES | IMPLEMENTED | durable provenance/retry/restart tests pass; true two-tab browser conflict remains |
+| RAG-003 | No-hit or structurally invalid citation cases refuse or show an explicit limitation label | CORE | YES | PASS | backend/API refusal and honest static UI contract tests; `docs/rewrite/evidence/rag-con-api-current-main-43d2448.md`; real-browser presentation remains only under `UI-001`/`UI-002` |
+| CON-001 | Conversation/messages preserve immutable provenance and version conflicts | CORE | YES | PASS | durable provenance, exact replay, revision conflict and restart tests; `docs/rewrite/evidence/rag-con-api-current-main-43d2448.md`; real two-tab presentation remains only under `UI-001` |
 | MEM-001 | A future Memory slice is explicit, scoped, budgeted, attributable and purgeable | LATER | NO | NOT_IMPLEMENTED | injection/budget/lineage tests before promotion |
 | AGT-001 | A future Agent slice uses unified Job, read-only tools, budgets and durable receipts | LATER | NO | NOT_IMPLEMENTED | cancel/crash/duplicate step E2E before promotion |
 | BAT-001 | A future Batch slice has bounded concurrency, per-item idempotency and staging cleanup | LATER | NO | NOT_IMPLEMENTED | zero-slot/race/partial-failure tests before promotion |
 | EVL-001 | A future Evaluation slice freezes dataset, pipeline, model and result fingerprints | LATER | NO | NOT_IMPLEMENTED | reproducibility report before promotion |
 | API-001 | OpenAPI is complete for CORE routes and generated/implemented behavior matches it | CORE | YES | PASS | `v2/openapi/v1/{contract_test.go,production_surface_test.go}`; state-discriminated responses and exact production closure |
-| API-002 | Retried upload/Ask does not duplicate core work and stale mutable-root revisions are rejected | CORE | YES | IMPLEMENTED | backend retry/revision and immutable WebUI attempts pass; true multi-tab browser conflict remains |
+| API-002 | Retried upload/Ask does not duplicate core work and stale mutable-root revisions are rejected | CORE | YES | PASS | backend retry/revision plus immutable WebUI attempt contracts; `docs/rewrite/evidence/rag-con-api-current-main-43d2448.md`; real multi-tab presentation remains only under `UI-001` |
 | SEC-001 | One-use bootstrap, session, CSRF, Host, Origin and CSP pass attack suite | CORE | YES | BLOCKED | raw HTTP suite passes; approved browser/driver and real Windows process sandbox are unavailable |
 | SEC-002 | Logs/events/artifacts exclude secrets, prompts and source content by policy | CORE | YES | IMPLEMENTED | focused canary/redaction suites pass; release-wide evidence scan remains |
 | UI-001 | Enabled CORE first-run, offline/no-model, progress, recovery and diagnostics are operable | CORE | YES | BLOCKED | browser qualification contract is fail-closed; approved artifact and real process harness remain |

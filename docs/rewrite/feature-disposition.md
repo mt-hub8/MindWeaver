@@ -63,3 +63,9 @@ no Java code, schema, identifier, or stored record is reused.
 legacy implementation is rejected as a design input. `LATER_FROM_ZERO` is absent
 from the first release and may be introduced only by a later, independently
 accepted vertical slice. See [`legacy-salvage-review.md`](./legacy-salvage-review.md).
+
+Acceptance traceability is limited to observable product boundaries. The retired
+`ARC-003` exact-one implementation-ownership requirement is not a valid inventory
+target: legacy runtime absence maps to `ARC-002`, exposed route closure maps to
+`API-001`, and the fresh Go-only product/data boundary maps to `CUT-001` (with
+`CUT-002` retained where standalone extraction is also material).

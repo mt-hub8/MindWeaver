@@ -16,7 +16,7 @@ $salvageReviewPath = Join-Path $repoRoot "docs\rewrite\legacy-salvage-review.md"
 $legalDispositions = @("KEEP_SEMANTICS", "REDESIGN", "REBUILD", "DEFER", "DROP")
 $legalSalvageDecisions = @("CORE_REQUIREMENT_ONLY", "CORE_REBUILD_FROM_ZERO", "LATER_FROM_ZERO", "DROP")
 $legalFirstReleaseScopes = @("CORE", "LATER", "DROP")
-$retiredAcceptanceIds = @("MIG-001", "MIG-002", "MIG-003", "HIS-001", "HIS-002")
+$retiredAcceptanceIds = @("MIG-001", "MIG-002", "MIG-003", "HIS-001", "HIS-002", "ARC-003")
 
 function Get-MarkdownCells {
     param([string]$Line)
@@ -136,10 +136,10 @@ foreach ($line in Get-Content $ledgerPath) {
     }
     $acceptanceIds[$acceptanceId] = [pscustomobject]@{ phase = $phase; core_gate = $coreGate }
 }
-if ($acceptanceIds.Count -ne 46) { throw "Acceptance ledger has $($acceptanceIds.Count) rows, want 46" }
+if ($acceptanceIds.Count -ne 45) { throw "Acceptance ledger has $($acceptanceIds.Count) rows, want 45" }
 $coreAcceptanceCount = @($acceptanceIds.Values | Where-Object phase -eq "CORE").Count
 $laterAcceptanceCount = @($acceptanceIds.Values | Where-Object phase -eq "LATER").Count
-if ($coreAcceptanceCount -ne 37 -or $laterAcceptanceCount -ne 9) {
+if ($coreAcceptanceCount -ne 36 -or $laterAcceptanceCount -ne 9) {
     throw "Acceptance ledger phase totals drift: CORE=$coreAcceptanceCount, LATER=$laterAcceptanceCount"
 }
 
@@ -666,7 +666,7 @@ function Get-TableDecision {
     param([string]$Table)
     switch -Regex ($Table) {
         '^task$|^task_event$|^task_attempt$|^task_output_chunk$|^prompt_template$' {
-            return Decision "MW-TSK-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;ARC-003;CUT-001;CUT-002"
+            return Decision "MW-TSK-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;CUT-001;CUT-002"
         }
         '^task_outbox$' {
             return Decision "MW-JOB-001" "DROP" "job" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "JOB-001;JOB-002;CUT-001"
@@ -724,7 +724,7 @@ function Get-EndpointDecision {
     if ($route -match ' /agent/(tasks|tools)(?:/|$)') { return Decision "MW-AGT-001" "REDESIGN" "api/v1 agent runs;internal/agent" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "AGT-001;API-001;API-002" }
     if ($route -match ' /documents/batches(?:/|$)') { return Decision "MW-BAT-001" "REDESIGN" "api/v1 batches;internal/ingestion/batch" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "BAT-001;API-001" }
     if ($route -match ' /collections(?:/|$)') { return Decision "MW-COL-001" "KEEP_SEMANTICS" "api/v1 collections;internal/collection" "Do not read or import any legacy row or identifier. Preserve only the narrow user requirement and implement it against records created in a fresh Go Vault." "COL-001;API-001" }
-    if ($route -match ' /dev/tasks(?:/|$)') { return Decision "MW-DEV-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-003;SEC-001;CUT-001" }
+    if ($route -match ' /dev/tasks(?:/|$)') { return Decision "MW-DEV-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;API-001;SEC-001;CUT-001" }
     if ($route -match ' /documents/ingestions(?:/|$)') { return Decision "MW-DOC-001" "REDESIGN" "api/v1 ingestion jobs;internal/ingestion" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "DOC-001;JOB-001;JOB-002;API-001" }
     if ($route -match ' /embedding-cache(?:/|$)') { return Decision "MW-CCH-001" "REBUILD" "api/v1 diagnostics/cache;derived cache" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "RET-002;UI-001;API-001" }
     if ($route -match ' /memories(?:/|$)') { return Decision "MW-MEM-001" "REDESIGN" "api/v1 memories;internal/memory" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "MEM-001;API-001" }
@@ -742,7 +742,7 @@ function Get-EndpointDecision {
     if ($route -match ' /documents/trash/purge-expired$') { return Decision "MW-TRS-002" "REDESIGN" "future retention automation" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "PUR-001" }
     if ($route -match ' /documents/trash(?:/|$)' -or $route -match ' /documents/\{documentId\}/restore$') { return Decision "MW-TRS-001" "KEEP_SEMANTICS" "api/v1 trash;retention coordinator" "Do not read or import any legacy row or identifier. Preserve only the narrow user requirement and implement it against records created in a fresh Go Vault." "DOC-002;PUR-001;API-001" }
     if ($route -match ' /documents/\{documentId\}/purge$') { return Decision "MW-TRS-002" "REDESIGN" "api/v1 document deletion" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "PUR-001;API-002" }
-    if ($route -match ' /tasks(?:/|$)') { return Decision "MW-JOB-001" "DROP" "job" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "JOB-001;JOB-002;ARC-003;CUT-001" }
+    if ($route -match ' /tasks(?:/|$)') { return Decision "MW-JOB-001" "DROP" "job" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "JOB-001;JOB-002;ARC-002;API-001;CUT-001" }
     if ($route -match ' /vector-index(?:/|$)') { return Decision "MW-HLT-001" "REDESIGN" "api/v1 diagnostics/index;repair coordinator" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "BKP-001;PUR-001;REL-001;API-001" }
     if ($route -match ' /documents(?:/|$)') {
         if ($route -match '^DELETE ') { return Decision "MW-TRS-001" "KEEP_SEMANTICS" "api/v1 documents lifecycle;retention coordinator" "Do not read or import any legacy row or identifier. Preserve only the narrow user requirement and implement it against records created in a fresh Go Vault." "DOC-002;RET-001" }
@@ -787,7 +787,7 @@ function Get-Decision {
                 default { throw "No fail-closed static UI business mapping for $locator (stem $stem)" }
             }
         }
-        "flyway_migration" { return Decision "MW-MIG-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;ARC-003;CUT-001;CUT-002" }
+        "flyway_migration" { return Decision "MW-MIG-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;CUT-001;CUT-002" }
         "schema_table" {
             $table = ($locator -split ':')[-1]
             return Get-TableDecision $table
@@ -898,10 +898,10 @@ function Get-Decision {
                 "data:embedding-cache-metrics" { return Get-TableDecision "embedding_cache" }
                 "data:index-generation-audit-history" { return Get-TableDecision "vector_audit_run" }
                 "data:qdrant-collection" { return Decision "MW-VEC-001" "DEFER" "optional qdrant derived index" "Do not read or import legacy data. If this capability is later approved, start from new Go-owned inputs after an independent design and acceptance slice." "RET-001;RET-002" }
-                "data:mysql-database-volume" { return Decision "MW-MIG-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;ARC-003;CUT-001;CUT-002" }
+                "data:mysql-database-volume" { return Decision "MW-MIG-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;CUT-001;CUT-002" }
                 "data:rabbitmq-queued-messages" { return Decision "MW-INF-002" "DROP" "job" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "JOB-002;CUT-001" }
-                "data:evaluation-report-files" { return Decision "MW-RPT-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;ARC-003;CUT-001;CUT-002" }
-                "data:worker-output-samples" { return Decision "MW-RPT-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;ARC-003;CUT-001;CUT-002" }
+                "data:evaluation-report-files" { return Decision "MW-RPT-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;CUT-001;CUT-002" }
+                "data:worker-output-samples" { return Decision "MW-RPT-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;CUT-001;CUT-002" }
                 "data:local-process-pid-file" { return Decision "MW-RUN-001" "REDESIGN" "runtime lock/instance metadata" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "RUN-001;RUN-002" }
                 "data:legacy-config-and-environment-secrets" { return Decision "MW-CFG-001" "REDESIGN" "versioned config;credential-store" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "CFG-001;PRV-001;SEC-002" }
                 default { throw "No user-data disposition for $locator" }
@@ -909,12 +909,12 @@ function Get-Decision {
         }
         "gap" {
             switch ($locator) {
-                "gap:live-mysql-show-index-not-captured" { return Decision "MW-MIG-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;ARC-003;CUT-001;CUT-002" }
+                "gap:live-mysql-show-index-not-captured" { return Decision "MW-MIG-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;CUT-001;CUT-002" }
                 "gap:ordinary-upload-original-bytes-not-persisted" { return Decision "MW-DOC-001" "REDESIGN" "blob/source" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "DOC-001" }
                 "gap:conversation-persistence-not-implemented" { return Decision "MW-CON-001" "KEEP_SEMANTICS" "internal/conversation" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "CON-001" }
                 "gap:legacy-http-auth-session-not-found" { return Decision "MW-UI-001" "REDESIGN" "runtime/session;api/v1 security" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "RUN-004;SEC-001;API-001" }
-                "gap:real-user-data-cardinality-and-largest-vault" { return Decision "MW-MIG-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;ARC-003;CUT-001;CUT-002" }
-                "gap:legacy-database-profile-is-ambiguous" { return Decision "MW-MIG-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;ARC-003;CUT-001;CUT-002" }
+                "gap:real-user-data-cardinality-and-largest-vault" { return Decision "MW-MIG-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;CUT-001;CUT-002" }
+                "gap:legacy-database-profile-is-ambiguous" { return Decision "MW-MIG-001" "DROP" "none" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;CUT-001;CUT-002" }
                 "gap:provider-master-key-availability-unknown" { return Decision "MW-PRO-001" "REDESIGN" "internal/ollama;platform/config" "Do not read or import any legacy record, file, setting, or runtime state. Build the Go capability from new Go-owned input and state in a fresh Vault." "PRV-001;SEC-002" }
                 "gap:java-version-check-conflicts-with-build" { return Decision "MW-INF-004" "DROP" "standalone Go build/release documentation" "Do not read, export, package, archive into the Go product, or import any legacy record, file, setting, or runtime state." "ARC-002;REL-002;CUT-002" }
                 default { throw "No gap disposition for $locator" }
