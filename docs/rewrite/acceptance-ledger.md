@@ -6,7 +6,7 @@ the exact command/report location. Manual inspection alone cannot close a row.
 Only `Phase=CORE` rows are release blockers. `LATER` rows preserve
 traceability without expanding the first Go release.
 
-Current CORE reconciliation: `20 PASS`, `9 IMPLEMENTED`, `4 BLOCKED`, and
+Current CORE reconciliation: `21 PASS`, `8 IMPLEMENTED`, `4 BLOCKED`, and
 `4 NOT_IMPLEMENTED`. All nine `LATER` rows remain `NOT_IMPLEMENTED` and are
 not part of the first Go release.
 
@@ -17,7 +17,7 @@ not part of the first Go release.
 | ARC-003 | Exactly one accepted implementation exists for each CORE capability; later paths are absent | CORE | YES | NOT_IMPLEMENTED | package graph and core feature closure matrix |
 | RUN-001 | One process owns one canonical Vault with an OS lock | CORE | YES | PASS | `v2/internal/vault/vault_test.go`; `v2/cmd/mindweaver/main_test.go`; two-process kill/reopen tests |
 | RUN-002 | Startup migration and reconciliation finish before ordinary writes | CORE | YES | IMPLEMENTED | startup ordering plus 20-run Answer/ingestion interruption qualification pass; full schema-migration checkpoint forced-exit matrix remains; `docs/rewrite/evidence/runtime-interruption-current.md` |
-| RUN-003 | Bounded shutdown checkpoints work; crash recovery does not rely on shutdown | CORE | YES | IMPLEMENTED | worker/RAG/backup shutdown ordering and two real-process kill/reopen cases pass; full Blob/backup/checkpoint kill matrix remains; `docs/rewrite/evidence/runtime-interruption-current.md` |
+| RUN-003 | Bounded shutdown checkpoints work; crash recovery does not rely on shutdown | CORE | YES | PASS | app-owned bounded drain plus stable incomplete-shutdown classification; real Answer/ingestion/DOC/Blob kill-reopen and backup residue recovery; `docs/rewrite/evidence/run003-shutdown-recovery-4a338dc.md` |
 | RUN-004 | Loopback ephemeral listener never becomes LAN reachable | CORE | YES | PASS | `v2/internal/localhttp/server_test.go`; IPv4 bind/Host/Origin/DNS-rebinding suite |
 | CFG-001 | Versioned core config rejects unknown/duplicate fields and unsafe Vault paths | CORE | YES | PASS | `v2/platform/config/config_test.go`; Vault path and clean-start integration tests |
 | DB-001 | SQLite schema migrates from every declared supported version | CORE | YES | PASS | `v2/internal/store/sqlite/migration_compat_test.go`; v1-v7 fixtures/checksum/future-version rejection; v7 removes the never-used `settings` table without changing historical checksums |
