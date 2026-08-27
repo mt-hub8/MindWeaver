@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -28,8 +29,10 @@ type licenseContract struct {
 }
 
 const (
-	expectedVendorFiles      = 698
-	expectedVendorTreeSHA256 = "f935ae79254d0fd1f5f32f4491f0b1f1e28e22fc088cef262bde2e860cf9c254"
+	expectedVendorFiles             = 698
+	expectedVendorTreeSHA256        = "f935ae79254d0fd1f5f32f4491f0b1f1e28e22fc088cef262bde2e860cf9c254"
+	expectedRootWorkflowSHA256      = "d354148491a6add88cab10ef0df3105f512c039cc980698009948b724e706886"
+	expectedExtractedWorkflowSHA256 = "d2439b66aeefd1c13849a2ff76b3feeb3fcccfd2ce899c1acc0f61472f02239b"
 )
 
 var vendoredPackages = []string{
@@ -121,13 +124,57 @@ var vendoredModules = []moduleContract{
 func TestVendoredModuleAndLicenseContract(t *testing.T) {
 	root := moduleRoot(t)
 	assertRepositoryAttributes(t, filepath.Join(root, ".gitattributes"))
-	assertPinnedWorkflow(t, filepath.Join(root, ".github", "workflows", "ci.yml"))
+	assertWorkflowContracts(t, root)
 	assertOfflineEntrypointPolicies(t, root)
 	assertToolchainAndNoReplace(t, filepath.Join(root, "go.mod"))
 	assertVendoredModuleSet(t, filepath.Join(root, "vendor", "modules.txt"))
 	assertModuleSums(t, filepath.Join(root, "go.sum"))
 	assertVendoredLicenseSet(t, root)
 	assertVendorTreeIdentity(t, filepath.Join(root, "vendor"))
+}
+
+func TestExtractedWorkflowContractIgnoresParentWorkflows(t *testing.T) {
+	root := moduleRoot(t)
+	parent := t.TempDir()
+	extracted := filepath.Join(parent, "extracted")
+	writeTestFile(t, filepath.Join(parent, ".github", "workflows", "evil.yml"), []byte("invalid parent input\n"))
+	writeTestFile(t, filepath.Join(extracted, ".github", "workflows", "ci.yml"),
+		readRegularFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"), 1<<20))
+
+	for _, declaredRoot := range []string{"", extracted} {
+		if err := validateWorkflowContracts(extracted, declaredRoot, extracted); err != nil {
+			t.Fatalf("extracted workflow contract with declared root %q depended on parent: %v", declaredRoot, err)
+		}
+	}
+}
+
+func TestMonorepoWorkflowContractRejectsExtraWorkflow(t *testing.T) {
+	root := moduleRoot(t)
+	repository := t.TempDir()
+	extracted := filepath.Join(repository, "v2")
+	writeTestFile(t, filepath.Join(extracted, ".github", "workflows", "ci.yml"),
+		readRegularFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"), 1<<20))
+	writeTestFile(t, filepath.Join(repository, ".github", "workflows", "go-ci.yml"),
+		[]byte("placeholder; exact-set rejection must happen before identity validation\n"))
+	writeTestFile(t, filepath.Join(repository, ".github", "workflows", "java-ci.yml"), []byte("legacy workflow\n"))
+
+	if err := validateWorkflowContracts(extracted, repository, repository); err == nil {
+		t.Fatal("monorepo workflow contract accepted an extra Java workflow")
+	}
+}
+
+func TestWorkflowIdentityRejectsDisabledGate(t *testing.T) {
+	root := moduleRoot(t)
+	repository := t.TempDir()
+	contents := string(readRegularFile(t, filepath.Join(root, ".github", "workflows", "ci.yml"), 1<<20))
+	contents = strings.Replace(contents,
+		"      - name: Empty-cache vendored CI\n",
+		"      - name: Empty-cache vendored CI\n        if: false\n", 1)
+	writeTestFile(t, filepath.Join(repository, ".github", "workflows", "ci.yml"), []byte(contents))
+
+	if err := validateWorkflowContracts(repository, repository, repository); err == nil {
+		t.Fatal("workflow identity accepted a disabled product gate")
+	}
 }
 
 func assertOfflineEntrypointPolicies(t *testing.T, root string) {
@@ -260,22 +307,142 @@ func assertRepositoryAttributes(t *testing.T, filename string) {
 	}
 }
 
-func assertPinnedWorkflow(t *testing.T, filename string) {
+func assertWorkflowContracts(t *testing.T, moduleRoot string) {
 	t.Helper()
-	contents := strings.ReplaceAll(string(readRegularFile(t, filename, 1<<20)), "\r\n", "\n")
-	required := []string{
-		"go-version: 1.27.0",
-		"GOFLAGS: -mod=vendor -trimpath -buildvcs=false",
-		"GOPROXY: \"off\"",
-		"GOSUMDB: \"off\"",
-		"GOTOOLCHAIN: local",
-		"GOVCS: \"*:off\"",
+	declaredRoot := strings.TrimSpace(os.Getenv("MW_CI_REPOSITORY_ROOT"))
+	gitRoot := repositoryTopLevel(t, moduleRoot)
+	if err := validateWorkflowContracts(moduleRoot, declaredRoot, gitRoot); err != nil {
+		t.Fatal(err)
 	}
-	for _, line := range required {
-		if strings.Count(contents, line) != 1 {
-			t.Fatalf("workflow must contain exactly one %q", line)
+}
+
+func validateWorkflowContracts(moduleRoot, declaredRoot, gitRoot string) error {
+	if err := validateWorkflowDirectory(
+		filepath.Join(moduleRoot, ".github", "workflows"),
+		[]string{"ci.yml"}, expectedExtractedWorkflowSHA256,
+	); err != nil {
+		return fmt.Errorf("extracted workflow contract: %w", err)
+	}
+	if gitRoot == "" {
+		if declaredRoot != "" {
+			return fmt.Errorf("declared repository root %q has no local Git boundary", declaredRoot)
+		}
+		return nil
+	}
+	var err error
+	gitRoot, err = filepath.Abs(gitRoot)
+	if err != nil {
+		return fmt.Errorf("resolve Git repository root: %w", err)
+	}
+	moduleRoot, err = filepath.Abs(moduleRoot)
+	if err != nil {
+		return fmt.Errorf("resolve module root: %w", err)
+	}
+	if declaredRoot != "" {
+		declaredRoot, err = filepath.Abs(declaredRoot)
+		if err != nil {
+			return fmt.Errorf("resolve declared repository root: %w", err)
+		}
+		if !samePath(declaredRoot, gitRoot) {
+			return fmt.Errorf("declared repository root %q is not verified Git top-level %q", declaredRoot, gitRoot)
 		}
 	}
+	if samePath(moduleRoot, gitRoot) {
+		return nil
+	}
+	if !samePath(moduleRoot, filepath.Join(gitRoot, "v2")) {
+		return fmt.Errorf("module root %q is neither declared repository root nor its v2 tree", moduleRoot)
+	}
+	if err := validateWorkflowDirectory(
+		filepath.Join(gitRoot, ".github", "workflows"),
+		[]string{"go-ci.yml"}, expectedRootWorkflowSHA256,
+	); err != nil {
+		return fmt.Errorf("monorepo workflow contract: %w", err)
+	}
+	return nil
+}
+
+func validateWorkflowDirectory(workflowRoot string, wantNames []string, wantSHA256 string) error {
+	entries, err := os.ReadDir(workflowRoot)
+	if err != nil {
+		return err
+	}
+	var names []string
+	for _, entry := range entries {
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("workflow entry is not a regular file: %s", entry.Name())
+		}
+		names = append(names, entry.Name())
+	}
+	sort.Strings(names)
+	if !slices.Equal(names, wantNames) {
+		return fmt.Errorf("workflow exact-set = %q, want %q", names, wantNames)
+	}
+	filename := filepath.Join(workflowRoot, wantNames[0])
+	info, err := os.Lstat(filename)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() > 1<<20 {
+		return fmt.Errorf("workflow must be a bounded regular non-link file: %v", err)
+	}
+	contents, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+	normalized := strings.ReplaceAll(string(contents), "\r\n", "\n")
+	digest := sha256.Sum256([]byte(normalized))
+	gotSHA256 := hex.EncodeToString(digest[:])
+	if gotSHA256 != wantSHA256 {
+		return fmt.Errorf("workflow SHA-256 = %s, want %s", gotSHA256, wantSHA256)
+	}
+	return nil
+}
+
+func repositoryTopLevel(t *testing.T, moduleRoot string) string {
+	t.Helper()
+	candidate := ""
+	if hasLocalGitBoundary(t, moduleRoot) {
+		candidate = moduleRoot
+	} else {
+		parent := filepath.Dir(moduleRoot)
+		if filepath.Base(moduleRoot) == "v2" && hasLocalGitBoundary(t, parent) {
+			candidate = parent
+		}
+	}
+	if candidate == "" {
+		return ""
+	}
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal("local repository boundary requires Git")
+	}
+	command := exec.Command(git, "-C", candidate, "rev-parse", "--show-toplevel")
+	output, err := command.Output()
+	if err != nil {
+		t.Fatalf("verify local repository root: %v", err)
+	}
+	top := strings.TrimSpace(string(output))
+	if !samePath(candidate, top) {
+		t.Fatalf("local Git boundary %q resolved to unexpected top-level %q", candidate, top)
+	}
+	return top
+}
+
+func hasLocalGitBoundary(t *testing.T, root string) bool {
+	t.Helper()
+	info, err := os.Lstat(filepath.Join(root, ".git"))
+	if os.IsNotExist(err) {
+		return false
+	}
+	if err != nil {
+		t.Fatalf("inspect local Git boundary: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || (!info.Mode().IsDir() && !info.Mode().IsRegular()) {
+		t.Fatalf("local Git boundary is neither a regular file nor directory: %s", root)
+	}
+	return true
+}
+
+func samePath(left, right string) bool {
+	return strings.EqualFold(filepath.Clean(left), filepath.Clean(right))
 }
 
 func assertToolchainAndNoReplace(t *testing.T, filename string) {

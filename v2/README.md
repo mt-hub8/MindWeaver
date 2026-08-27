@@ -110,6 +110,16 @@ with the Git tree and fails unless `scripts/ci.sh` and
 explicitly. A passing development gate is necessary evidence, not release
 qualification.
 
+In the monorepo, root `.github/workflows/go-ci.yml` is the only active
+workflow and enters `v2/`; the retired Java/MySQL/Rabbit build is not run.
+Both repository layouts pin checkout and Go setup actions to immutable commit
+SHAs. GitHub may download those actions and the pinned Go bootstrap, so the
+workflow runner setup is not described as offline. The offline product-build
+boundary begins when the scripts receive that exact Go executable: module
+resolution is vendor-only with network lookups disabled and empty caches.
+Each workflow declares its checked-out Git root explicitly; an extracted
+checkout validates only its own workflow directory and never inspects a parent.
+
 ## Closed local workflow
 
 ```text

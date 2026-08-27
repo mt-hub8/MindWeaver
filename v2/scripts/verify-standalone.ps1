@@ -54,6 +54,7 @@ $mwTempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $mwExtractionRoot = Join-Path $mwTempRoot ('mindweaver-v2-standalone-' + [guid]::NewGuid().ToString('N'))
 $mwStandaloneRoot = Join-Path $mwExtractionRoot 'source'
 $mwArchive = Join-Path $mwExtractionRoot 'source.zip'
+$mwSavedCIRepositoryRoot = [Environment]::GetEnvironmentVariable('MW_CI_REPOSITORY_ROOT', 'Process')
 New-Item -ItemType Directory -Path $mwStandaloneRoot | Out-Null
 
 try {
@@ -73,9 +74,17 @@ try {
     if (($mwExtractedPaths -join "`n") -cne ($mwTrackedPaths -join "`n")) {
         throw 'tracked archive path exact-set mismatch'
     }
+    # The archive is an extracted repository root with no parent contract.
+    # Never let a monorepo workflow declaration escape into the child gate.
+    Remove-Item Env:MW_CI_REPOSITORY_ROOT -ErrorAction SilentlyContinue
     & (Join-Path $mwStandaloneRoot 'scripts\ci.ps1') -Go $Go
     if ($LASTEXITCODE -ne 0) { throw 'standalone verification failed' }
 } finally {
+    if ($null -eq $mwSavedCIRepositoryRoot) {
+        Remove-Item Env:MW_CI_REPOSITORY_ROOT -ErrorAction SilentlyContinue
+    } else {
+        $env:MW_CI_REPOSITORY_ROOT = $mwSavedCIRepositoryRoot
+    }
     $mwResolvedExtraction = (Resolve-Path -LiteralPath $mwExtractionRoot).Path
     if (-not $mwResolvedExtraction.StartsWith($mwTempRoot, [StringComparison]::OrdinalIgnoreCase) -or
         -not (Split-Path -Leaf $mwResolvedExtraction).StartsWith('mindweaver-v2-standalone-')) {
