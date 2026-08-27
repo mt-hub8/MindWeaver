@@ -6,7 +6,7 @@ the exact command/report location. Manual inspection alone cannot close a row.
 Only `Phase=CORE` rows are release blockers. `LATER` rows preserve
 traceability without expanding the first Go release.
 
-Current CORE reconciliation: `28 PASS`, `3 IMPLEMENTED`, `3 BLOCKED`, and
+Current CORE reconciliation: `29 PASS`, `2 IMPLEMENTED`, `3 BLOCKED`, and
 `2 NOT_IMPLEMENTED`. All nine `LATER` rows remain `NOT_IMPLEMENTED` and are
 not part of the first Go release.
 
@@ -21,7 +21,7 @@ not part of the first Go release.
 | CFG-001 | Versioned core config rejects unknown/duplicate fields and unsafe Vault paths | CORE | YES | PASS | `v2/platform/config/config_test.go`; Vault path and clean-start integration tests |
 | DB-001 | SQLite schema migrates from every declared supported version | CORE | YES | PASS | `v2/internal/store/sqlite/migration_compat_test.go`; v1-v7 fixtures/checksum/future-version rejection; v7 removes the never-used `settings` table without changing historical checksums |
 | DB-002 | Single-writer WAL, busy timeout, disk-full, corruption and integrity modes are measured | CORE | YES | IMPLEMENTED | `v2/internal/store/sqlite/qualification_fault_test.go`; fixed-seed writer-attempt/retained-reader/BUSY/exact-retry/checkpoint evidence in `docs/rewrite/evidence/db002-bounded-wal-stress-7b75f8f.md`; retryable production BUSY semantics, physical fault, random-kill and 24-48h machine stress remain |
-| BLOB-001 | Bounded import never exposes partial bytes; publication, dedupe and cleanup are retry-safe within documented OS guarantees | CORE | YES | IMPLEMENTED | publication/orphan/cancellation evidence is in `docs/rewrite/evidence/blob001-publication-cancellation-0dff1d4.md`; the frozen crash matrix and deterministic staging failures are in `docs/rewrite/evidence/blob001-persistence-checkpoint-matrix-b99fb42.md`; K01B2/K05/K08 are endpoint-equivalent qualification limits, not separate product states, per `docs/rewrite/evidence/blob001-open-window-deletion-review-1a41c27.md`; backup/deletion exclusion is in `docs/rewrite/evidence/blob-backup-interaction.md`; registered-volume evidence is in `docs/rewrite/evidence/windows-registered-volume-boundary-57e293b.md`; clean-machine physical ENOSPC/sync durability and Linux atomic no-replace certification prevent PASS |
+| BLOB-001 | Bounded import never exposes partial bytes; publication, dedupe and cleanup are retry-safe within documented OS guarantees | CORE | YES | PASS | publication/orphan/cancellation and the frozen crash matrix remain executable; real Windows no-replace, exact concurrent dedupe and the machine/platform boundary are closed in `docs/rewrite/evidence/blob001-windows-closure-768d66e.md`; physical media/power-loss campaigns remain under REL-001 and Linux remains unsupported |
 | JOB-001 | A core background operation cannot be executed concurrently by two workers | CORE | YES | PASS | `v2/internal/store/sqlite/jobs_test.go`; concurrent claim and stale-owner fencing tests |
 | JOB-002 | Core retries stop at a configured limit; cancel and final failure stay visible | CORE | YES | PASS | ingestion retry/cancel/terminal/restart product tests |
 | PROG-001 | Document ingestion and Ask progress never reports success before durable completion | CORE | YES | PASS | real-process HTTP Ask/ingestion forced-exit, durable terminal-state and exact-replay tests; browser presentation stays under UI gates; `docs/rewrite/evidence/core-acceptance-boundary-reconciliation-43d2448.md` |
