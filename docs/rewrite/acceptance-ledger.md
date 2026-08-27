@@ -54,7 +54,7 @@ not part of the first Go release.
 | SEC-002 | Logs/events/artifacts exclude secrets, prompts and source content by policy | CORE | YES | IMPLEMENTED | focused canary/redaction suites pass; release-wide evidence scan remains |
 | UI-001 | Enabled CORE first-run, offline/no-model, progress, recovery and diagnostics are operable | CORE | YES | BLOCKED | browser qualification contract is fail-closed; approved artifact and real process harness remain |
 | UI-002 | Enabled CORE workflows pass keyboard, focus, scaling, high contrast and Chinese input checks | CORE | YES | BLOCKED | 13 browser scenarios remain `NOT_RUN` until approved artifact/process harness exists |
-| REL-001 | Race, fuzz, fault, performance and soak gates pass for CORE scope | CORE | YES | NOT_IMPLEMENTED | core release qualification bundle |
+| REL-001 | Race, fuzz, fault, performance and soak gates pass for CORE scope | CORE | YES | NOT_IMPLEMENTED | current developer signals and release-scale gaps are bounded in `docs/rewrite/evidence/rel001-current-main-37ca406.md`; approved race, 24-48h soak, 1,000 random-kill, 100k/SLO and operation-sequence-fuzz gates remain |
 | REL-002 | Windows package is signed, offline installable, upgradable and uninstallable | CORE | YES | NOT_IMPLEMENTED | clean-machine matrix, SBOM and signatures |
 | CUT-001 | Go is the sole product writer; installation creates a fresh Vault and exposes no Java/MySQL data-import path | CORE | YES | PASS | fresh-first-run, negative migration surface, exact two-PE and 890-file legacy DROP audit |
 | CUT-002 | Extracted repository builds/packages with no parent dependency | CORE | YES | NOT_IMPLEMENTED | clean-clone release CI |
