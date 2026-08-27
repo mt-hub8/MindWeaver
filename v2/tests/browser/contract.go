@@ -12,6 +12,7 @@ import (
 	"errors"
 	"io"
 	"runtime"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -148,12 +149,7 @@ type processBoundary interface {
 }
 
 type processEvidence struct {
-	ApprovalID              string
-	BrowserSHA256           string
-	DriverSHA256            string
-	BrowserVersion          string
-	DriverVersion           string
-	ExecutableSHA256        string
+	Artifacts               artifactEvidence
 	PolicySHA256            string
 	RootLineageSHA256       string
 	DescendantLineageSHA256 string
@@ -170,12 +166,19 @@ type processEvidence struct {
 // construct this proof. Controlled harnesses intentionally leave it nil.
 type realQualificationProof struct{}
 
+type binaryArtifactEvidence struct {
+	Role     string `json:"role"`
+	FileName string `json:"fileName"`
+	SHA256   string `json:"sha256"`
+	Size     int64  `json:"size"`
+	Version  string `json:"version"`
+}
+
 type artifactEvidence struct {
-	ApprovalID     string `json:"approvalId"`
-	BrowserSHA256  string `json:"browserSha256"`
-	DriverSHA256   string `json:"driverSha256"`
-	BrowserVersion string `json:"browserVersion"`
-	DriverVersion  string `json:"driverVersion"`
+	ApprovalID string                 `json:"approvalId"`
+	Browser    binaryArtifactEvidence `json:"browser"`
+	Driver     binaryArtifactEvidence `json:"driver"`
+	MindWeaver binaryArtifactEvidence `json:"mindweaver"`
 }
 
 // Report is opaque outside the package. Its wire vocabulary cannot carry
@@ -237,24 +240,21 @@ func runQualification(ctx context.Context, approval Approval, options RunOptions
 	if err != nil {
 		return failedReport(options.SourceRevision, started, completed)
 	}
-	if blocker == BlockerControlledHarness && validHarnessEvidence(evidence) {
+	if blocker == BlockerControlledHarness && validHarnessEvidence(evidence, *approval.artifact) {
 		return harnessReport(options.SourceRevision, started, completed, evidence)
 	}
 	if blocker != "" {
 		return blockedReport(options.SourceRevision, started, completed, blocker)
 	}
-	if !validProcessEvidence(evidence) {
+	if !validProcessEvidence(evidence, *approval.artifact) {
 		return failedReport(options.SourceRevision, started, completed)
 	}
 	wire := reportWire{
 		SchemaVersion: reportSchemaVersion, Qualification: qualificationName, Status: "PASS", Code: "QUALIFIED",
 		SourceRevision: options.SourceRevision, Platform: runtime.GOOS + "/" + runtime.GOARCH,
 		StartedAt: started.Format(time.RFC3339Nano), CompletedAt: completed.Format(time.RFC3339Nano),
-		Artifacts: &artifactEvidence{
-			ApprovalID: evidence.ApprovalID, BrowserSHA256: evidence.BrowserSHA256, DriverSHA256: evidence.DriverSHA256,
-			BrowserVersion: evidence.BrowserVersion, DriverVersion: evidence.DriverVersion,
-		},
-		ExecutableSHA256: evidence.ExecutableSHA256, PolicySHA256: evidence.PolicySHA256,
+		Artifacts:        &evidence.Artifacts,
+		ExecutableSHA256: evidence.Artifacts.MindWeaver.SHA256, PolicySHA256: evidence.PolicySHA256,
 		RootLineageSHA256: evidence.RootLineageSHA256, DescendantLineageSHA256: evidence.DescendantLineageSHA256,
 		Scenarios: append([]ScenarioResult(nil), evidence.Scenarios...), CleanupStatus: evidence.CleanupStatus,
 		CleanupProcesses: evidence.CleanupProcesses, CleanupActiveProcesses: evidence.CleanupActiveProcesses,
@@ -295,11 +295,8 @@ func harnessReport(revision string, started, completed time.Time, evidence proce
 		SchemaVersion: reportSchemaVersion, Qualification: qualificationName, Status: "BLOCKED", Code: string(BlockerControlledHarness),
 		SourceRevision: revision, Platform: runtime.GOOS + "/" + runtime.GOARCH,
 		StartedAt: started.Format(time.RFC3339Nano), CompletedAt: completed.Format(time.RFC3339Nano),
-		Artifacts: &artifactEvidence{
-			ApprovalID: evidence.ApprovalID, BrowserSHA256: evidence.BrowserSHA256, DriverSHA256: evidence.DriverSHA256,
-			BrowserVersion: evidence.BrowserVersion, DriverVersion: evidence.DriverVersion,
-		},
-		ExecutableSHA256: evidence.ExecutableSHA256, RootLineageSHA256: evidence.RootLineageSHA256,
+		Artifacts:        &evidence.Artifacts,
+		ExecutableSHA256: evidence.Artifacts.MindWeaver.SHA256, RootLineageSHA256: evidence.RootLineageSHA256,
 		Scenarios: append([]ScenarioResult(nil), evidence.Scenarios...), CleanupStatus: evidence.CleanupStatus,
 		CleanupProcesses: evidence.CleanupProcesses, CleanupActiveProcesses: evidence.CleanupActiveProcesses,
 		SessionClosed: evidence.SessionClosed, ArtifactsReverified: evidence.ArtifactsReverified,
@@ -308,9 +305,8 @@ func harnessReport(revision string, started, completed time.Time, evidence proce
 	return Report{wire: wire}
 }
 
-func validProcessEvidence(evidence processEvidence) bool {
-	if !stableToken(evidence.ApprovalID, 64) || !lowerSHA256(evidence.BrowserSHA256) || !lowerSHA256(evidence.DriverSHA256) ||
-		!lowerSHA256(evidence.ExecutableSHA256) || !stableVersion(evidence.BrowserVersion) || !stableVersion(evidence.DriverVersion) ||
+func validProcessEvidence(evidence processEvidence, approval artifactApproval) bool {
+	if !artifactEvidenceMatchesApproval(evidence.Artifacts, approval) ||
 		!lowerSHA256(evidence.PolicySHA256) || !lowerSHA256(evidence.RootLineageSHA256) ||
 		!lowerSHA256(evidence.DescendantLineageSHA256) || evidence.CleanupStatus != "PASS" ||
 		!validObservedProcessCount(evidence.CleanupProcesses) || evidence.CleanupActiveProcesses != 0 ||
@@ -327,10 +323,8 @@ func validProcessEvidence(evidence processEvidence) bool {
 	return true
 }
 
-func validHarnessEvidence(evidence processEvidence) bool {
-	if evidence.realProof != nil || !stableToken(evidence.ApprovalID, 64) || !lowerSHA256(evidence.BrowserSHA256) ||
-		!lowerSHA256(evidence.DriverSHA256) || !lowerSHA256(evidence.ExecutableSHA256) ||
-		!stableVersion(evidence.BrowserVersion) || !stableVersion(evidence.DriverVersion) ||
+func validHarnessEvidence(evidence processEvidence, approval artifactApproval) bool {
+	if evidence.realProof != nil || !artifactEvidenceMatchesApproval(evidence.Artifacts, approval) ||
 		evidence.CleanupStatus != "HARNESS_PASS" || !lowerSHA256(evidence.RootLineageSHA256) ||
 		!validObservedProcessCount(evidence.CleanupProcesses) || evidence.CleanupActiveProcesses != 0 ||
 		!evidence.SessionClosed || !evidence.ArtifactsReverified || len(evidence.Scenarios) != len(requiredScenarios) {
@@ -357,6 +351,26 @@ func MarshalReport(report Report) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
+// parseReport strictly verifies a serialized V2 report, including its
+// canonical receipt. It rejects duplicate keys, unknown fields and trailing
+// values so verifier fixtures cannot exploit a more permissive JSON dialect.
+func parseReport(data []byte) (Report, error) {
+	if len(data) == 0 || len(data) > maxReportBytes || !utf8.Valid(data) || rejectDuplicateJSONKeys(data) != nil {
+		return Report{}, errors.New("browser qualification: invalid report document")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var wire reportWire
+	if err := decoder.Decode(&wire); err != nil || requireJSONEOF(decoder) != nil {
+		return Report{}, errors.New("browser qualification: invalid report document")
+	}
+	report := Report{wire: wire}
+	if report.validate() != nil {
+		return Report{}, errors.New("browser qualification: invalid report document")
+	}
+	return report, nil
+}
+
 func (report Report) validate() error {
 	wire := report.wire
 	if wire.SchemaVersion != reportSchemaVersion || wire.Qualification != qualificationName || !lowerSHA1(wire.SourceRevision) ||
@@ -380,6 +394,7 @@ func (report Report) validate() error {
 		}
 		if wire.Code == string(BlockerControlledHarness) {
 			if wire.Artifacts == nil || !validArtifactEvidence(*wire.Artifacts) || !lowerSHA256(wire.ExecutableSHA256) ||
+				wire.ExecutableSHA256 != wire.Artifacts.MindWeaver.SHA256 ||
 				wire.PolicySHA256 != "" || !lowerSHA256(wire.RootLineageSHA256) || wire.DescendantLineageSHA256 != "" ||
 				wire.CleanupStatus != "HARNESS_PASS" || !lowerSHA256(wire.CleanupSHA256) ||
 				wire.CleanupSHA256 != reportReceiptDigest(wire) || !validObservedProcessCount(wire.CleanupProcesses) ||
@@ -406,7 +421,8 @@ func (report Report) validate() error {
 		}
 	case "PASS":
 		if wire.Code != "QUALIFIED" || wire.Artifacts == nil || !validArtifactEvidence(*wire.Artifacts) ||
-			!lowerSHA256(wire.ExecutableSHA256) || !lowerSHA256(wire.PolicySHA256) ||
+			!lowerSHA256(wire.ExecutableSHA256) || wire.ExecutableSHA256 != wire.Artifacts.MindWeaver.SHA256 ||
+			!lowerSHA256(wire.PolicySHA256) ||
 			!lowerSHA256(wire.RootLineageSHA256) || !lowerSHA256(wire.DescendantLineageSHA256) ||
 			wire.CleanupStatus != "PASS" || !lowerSHA256(wire.CleanupSHA256) || wire.CleanupSHA256 != reportReceiptDigest(wire) ||
 			!validObservedProcessCount(wire.CleanupProcesses) || wire.CleanupActiveProcesses != 0 ||
@@ -582,7 +598,30 @@ func allowedBlockerCode(value string) bool {
 		value == string(BlockerControlledHarness)
 }
 
+func artifactEvidenceFromApproval(approval artifactApproval) artifactEvidence {
+	return artifactEvidence{
+		ApprovalID: approval.ID,
+		Browser:    binaryArtifactEvidence{Role: "browser", FileName: approval.Browser.FileName, SHA256: approval.Browser.SHA256, Size: approval.Browser.Size, Version: approval.Browser.Version},
+		Driver:     binaryArtifactEvidence{Role: "driver", FileName: approval.Driver.FileName, SHA256: approval.Driver.SHA256, Size: approval.Driver.Size, Version: approval.Driver.Version},
+		MindWeaver: binaryArtifactEvidence{Role: "mindweaver", FileName: approval.MindWeaver.FileName, SHA256: approval.MindWeaver.SHA256, Size: approval.MindWeaver.Size, Version: approval.MindWeaver.Version},
+	}
+}
+
+func artifactEvidenceMatchesApproval(evidence artifactEvidence, approval artifactApproval) bool {
+	return evidence == artifactEvidenceFromApproval(approval)
+}
+
 func validArtifactEvidence(evidence artifactEvidence) bool {
-	return stableToken(evidence.ApprovalID, 64) && lowerSHA256(evidence.BrowserSHA256) && lowerSHA256(evidence.DriverSHA256) &&
-		stableVersion(evidence.BrowserVersion) && stableVersion(evidence.DriverVersion)
+	if !stableToken(evidence.ApprovalID, 64) || !validBinaryArtifactEvidence(evidence.Browser, "browser") ||
+		!validBinaryArtifactEvidence(evidence.Driver, "driver") || !validBinaryArtifactEvidence(evidence.MindWeaver, "mindweaver") {
+		return false
+	}
+	return !strings.EqualFold(evidence.Browser.FileName, evidence.Driver.FileName) &&
+		!strings.EqualFold(evidence.Browser.FileName, evidence.MindWeaver.FileName) &&
+		!strings.EqualFold(evidence.Driver.FileName, evidence.MindWeaver.FileName)
+}
+
+func validBinaryArtifactEvidence(evidence binaryArtifactEvidence, role string) bool {
+	return evidence.Role == role && safeArtifactLeaf(evidence.FileName) && lowerSHA256(evidence.SHA256) &&
+		evidence.Size > 0 && evidence.Size <= maxApprovedArtifactBytes && stableVersion(evidence.Version)
 }

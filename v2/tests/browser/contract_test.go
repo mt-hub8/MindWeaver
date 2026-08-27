@@ -1,6 +1,7 @@
 package browserqualification
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -18,6 +19,8 @@ import (
 )
 
 const testRevision = "0123456789abcdef0123456789abcdef01234567"
+
+const verifierFixtureReceipt = "990739d1510ac5529062fb416490d42aa55951f54037be096c1abbed43540950"
 
 func TestEmbeddedApprovalFailsClosedBeforeArtifactOrProcessBoundary(t *testing.T) {
 	approval, err := ParseEmbeddedApproval()
@@ -182,6 +185,10 @@ func TestControlledWebDriverHarnessAggregatesRequiredScenariosButNeverQualifies(
 	if report.Status() != "BLOCKED" || report.Code() != string(BlockerControlledHarness) || report.CleanupStatus() != "HARNESS_PASS" {
 		t.Fatalf("controlled harness report = %#v", report)
 	}
+	if report.wire.Artifacts == nil || !artifactEvidenceMatchesApproval(*report.wire.Artifacts, approval) ||
+		report.wire.ExecutableSHA256 != approval.MindWeaver.SHA256 {
+		t.Fatalf("controlled harness artifacts were not approval-bound: %#v", report.wire.Artifacts)
+	}
 	if !harness.cleanupCalled {
 		t.Fatal("controlled process cleanup was not called")
 	}
@@ -330,7 +337,10 @@ func TestPassEvidenceRequiresPolicyLineageAndObservedCleanupReceipt(t *testing.T
 	if _, err := MarshalReport(validReport); err != nil {
 		t.Fatal(err)
 	}
-	if !lowerSHA256(validReport.wire.PolicySHA256) || !lowerSHA256(validReport.wire.RootLineageSHA256) ||
+	approval := testArtifactApproval()
+	if validReport.wire.Artifacts == nil || !artifactEvidenceMatchesApproval(*validReport.wire.Artifacts, approval) ||
+		validReport.wire.ExecutableSHA256 != approval.MindWeaver.SHA256 ||
+		!lowerSHA256(validReport.wire.PolicySHA256) || !lowerSHA256(validReport.wire.RootLineageSHA256) ||
 		!lowerSHA256(validReport.wire.DescendantLineageSHA256) || validReport.wire.CleanupActiveProcesses != 0 ||
 		validReport.wire.CleanupProcesses != minObservedProcesses || validReport.wire.CleanupSHA256 != reportReceiptDigest(validReport.wire) {
 		t.Fatalf("pass evidence was not bound: %#v", validReport.wire)
@@ -342,6 +352,19 @@ func TestPassEvidenceRequiresPolicyLineageAndObservedCleanupReceipt(t *testing.T
 	}
 
 	mutations := map[string]func(*processEvidence){
+		"approval id":          func(value *processEvidence) { value.Artifacts.ApprovalID = "different-approved-bundle" },
+		"browser role":         func(value *processEvidence) { value.Artifacts.Browser.Role = "driver" },
+		"browser name":         func(value *processEvidence) { value.Artifacts.Browser.FileName = "other-browser.exe" },
+		"browser size":         func(value *processEvidence) { value.Artifacts.Browser.Size++ },
+		"browser hash":         func(value *processEvidence) { value.Artifacts.Browser.SHA256 = strings.Repeat("b", 64) },
+		"driver role":          func(value *processEvidence) { value.Artifacts.Driver.Role = "browser" },
+		"driver name":          func(value *processEvidence) { value.Artifacts.Driver.FileName = "other-driver.exe" },
+		"driver size":          func(value *processEvidence) { value.Artifacts.Driver.Size++ },
+		"driver hash":          func(value *processEvidence) { value.Artifacts.Driver.SHA256 = strings.Repeat("b", 64) },
+		"mindweaver role":      func(value *processEvidence) { value.Artifacts.MindWeaver.Role = "browser" },
+		"mindweaver name":      func(value *processEvidence) { value.Artifacts.MindWeaver.FileName = "other-mindweaver.exe" },
+		"mindweaver size":      func(value *processEvidence) { value.Artifacts.MindWeaver.Size++ },
+		"mindweaver hash":      func(value *processEvidence) { value.Artifacts.MindWeaver.SHA256 = strings.Repeat("b", 64) },
 		"policy":               func(value *processEvidence) { value.PolicySHA256 = "" },
 		"root lineage":         func(value *processEvidence) { value.RootLineageSHA256 = "" },
 		"descendant lineage":   func(value *processEvidence) { value.DescendantLineageSHA256 = "" },
@@ -371,7 +394,7 @@ func TestPassEvidenceRequiresPolicyLineageAndObservedCleanupReceipt(t *testing.T
 func TestPassReceiptRejectsPostQualificationMutation(t *testing.T) {
 	for name, mutate := range map[string]func(*reportWire){
 		"source":         func(wire *reportWire) { wire.SourceRevision = strings.Repeat("1", 40) },
-		"artifact":       func(wire *reportWire) { wire.Artifacts.BrowserSHA256 = strings.Repeat("b", 64) },
+		"artifact":       func(wire *reportWire) { wire.Artifacts.Browser.SHA256 = strings.Repeat("b", 64) },
 		"policy":         func(wire *reportWire) { wire.PolicySHA256 = strings.Repeat("b", 64) },
 		"root":           func(wire *reportWire) { wire.RootLineageSHA256 = strings.Repeat("b", 64) },
 		"descendant":     func(wire *reportWire) { wire.DescendantLineageSHA256 = strings.Repeat("b", 64) },
@@ -387,6 +410,76 @@ func TestPassReceiptRejectsPostQualificationMutation(t *testing.T) {
 				t.Fatalf("post-qualification %s mutation retained a valid receipt", name)
 			}
 		})
+	}
+}
+
+func TestReportParserRejectsAmbiguousOrForgedV2JSON(t *testing.T) {
+	valid, err := MarshalReport(qualifiedReport(t, minObservedProcesses))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := parseReport(valid)
+	if err != nil || parsed.Status() != "PASS" {
+		t.Fatalf("strict parse = %#v, %v", parsed, err)
+	}
+	replacements := map[string][]byte{
+		"duplicate root key": bytes.Replace(valid, []byte(`  "status": "PASS",`), []byte("  \"status\": \"BLOCKED\",\n  \"status\": \"PASS\","), 1),
+		"unknown root key":   bytes.Replace(valid, []byte(`  "code": "QUALIFIED",`), []byte("  \"code\": \"QUALIFIED\",\n  \"extra\": true,"), 1),
+		"unknown artifact":   bytes.Replace(valid, []byte(`    "approvalId": "controlled-offline-bundle-1",`), []byte("    \"approvalId\": \"controlled-offline-bundle-1\",\n    \"extra\": true,"), 1),
+		"unknown scenario":   bytes.Replace(valid, []byte(`      "code": "QUALIFIED",`), []byte("      \"code\": \"QUALIFIED\",\n      \"extra\": true,"), 1),
+		"string process count": bytes.Replace(valid, []byte(`  "cleanupOsTotalProcessCount": 3,`),
+			[]byte(`  "cleanupOsTotalProcessCount": "3",`), 1),
+		"forged receipt": bytes.Replace(valid, []byte(`"cleanupReceiptSha256": "`+qualifiedReport(t, minObservedProcesses).wire.CleanupSHA256+`"`),
+			[]byte(`"cleanupReceiptSha256": "`+strings.Repeat("a", 64)+`"`), 1),
+		"trailing value": append(append([]byte(nil), valid...), []byte(`{}`)...),
+	}
+	for name, candidate := range replacements {
+		t.Run(name, func(t *testing.T) {
+			if bytes.Equal(candidate, valid) {
+				t.Fatal("test mutation did not change the report")
+			}
+			if _, err := parseReport(candidate); err == nil {
+				t.Fatal("ambiguous or forged report unexpectedly parsed")
+			}
+		})
+	}
+}
+
+func TestCanonicalReceiptMatchesPowerShellVerifierFixture(t *testing.T) {
+	hash := strings.Repeat("a", 64)
+	artifacts := artifactEvidence{
+		ApprovalID: "self-test-approved-bundle",
+		Browser:    binaryArtifactEvidence{Role: "browser", FileName: "browser.exe", SHA256: hash, Size: 101, Version: "1.0+browser"},
+		Driver:     binaryArtifactEvidence{Role: "driver", FileName: "driver.exe", SHA256: hash, Size: 102, Version: "1.0+driver"},
+		MindWeaver: binaryArtifactEvidence{Role: "mindweaver", FileName: "mindweaver.exe", SHA256: hash, Size: 103, Version: "1.0+mindweaver"},
+	}
+	scenarios := make([]ScenarioResult, len(requiredScenarios))
+	for index, requirement := range requiredScenarios {
+		scenarios[index] = ScenarioResult{
+			AcceptanceID: requirement.AcceptanceID, ID: requirement.ID, Status: "PASS", Code: "QUALIFIED",
+			ScreenshotSHA256: hash, ScreenshotBytes: 1, TraceSHA256: hash, TraceBytes: 1,
+		}
+	}
+	wire := reportWire{
+		SchemaVersion: reportSchemaVersion, Qualification: qualificationName, Status: "PASS", Code: "QUALIFIED",
+		SourceRevision: testRevision, Platform: "windows/amd64",
+		StartedAt: "2026-08-27T00:00:00.123456789Z", CompletedAt: "2026-08-27T00:00:01.123456789Z",
+		Artifacts: &artifacts, ExecutableSHA256: hash, PolicySHA256: hash, RootLineageSHA256: hash, DescendantLineageSHA256: hash,
+		Scenarios: scenarios, SessionClosed: true, ArtifactsReverified: true, CleanupStatus: "PASS",
+		CleanupProcesses: 4, CleanupActiveProcesses: 0,
+	}
+	if got := reportReceiptDigest(wire); got != verifierFixtureReceipt {
+		t.Fatalf("canonical verifier fixture receipt = %q", got)
+	}
+}
+
+func TestSyntheticEvidenceCannotEnterPublicQualification(t *testing.T) {
+	approval := testArtifactApproval()
+	report := RunQualification(context.Background(), Approval{artifact: &approval}, RunOptions{
+		SourceRevision: testRevision, Now: fixedClock(),
+	})
+	if report.Status() == "PASS" {
+		t.Fatalf("public qualification accepted a synthetic verifier fixture: %#v", report)
 	}
 }
 
@@ -436,9 +529,7 @@ func qualifiedProcessEvidence(processCount int) processEvidence {
 		}
 	}
 	return processEvidence{
-		ApprovalID: approval.ID, BrowserSHA256: approval.Browser.SHA256, DriverSHA256: approval.Driver.SHA256,
-		BrowserVersion: approval.Browser.Version, DriverVersion: approval.Driver.Version,
-		ExecutableSHA256:        approval.MindWeaver.SHA256,
+		Artifacts:               artifactEvidenceFromApproval(approval),
 		PolicySHA256:            digest([]byte("approved-browser-launch-profile-and-network-policy-v2")),
 		RootLineageSHA256:       digest([]byte("observed-root-process-lineage-v2")),
 		DescendantLineageSHA256: digest([]byte("observed-descendant-process-lineage-v2")),

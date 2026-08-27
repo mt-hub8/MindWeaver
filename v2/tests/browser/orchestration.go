@@ -185,9 +185,7 @@ func (boundary *protocolBoundary) Run(parent context.Context) (processEvidence, 
 	}
 	closed = true
 	return processEvidence{
-		ApprovalID: boundary.approval.ID, BrowserSHA256: boundary.approval.Browser.SHA256,
-		DriverSHA256: boundary.approval.Driver.SHA256, ExecutableSHA256: boundary.approval.MindWeaver.SHA256,
-		BrowserVersion: boundary.approval.Browser.Version, DriverVersion: boundary.approval.Driver.Version,
+		Artifacts:         artifactEvidenceFromApproval(boundary.approval),
 		RootLineageSHA256: processLineageDigest(identities), Scenarios: scenarios, CleanupStatus: "HARNESS_PASS",
 		CleanupProcesses: receipt.ProcessCount, CleanupActiveProcesses: receipt.ActiveProcesses,
 		SessionClosed: sessionClosed, ArtifactsReverified: true,
