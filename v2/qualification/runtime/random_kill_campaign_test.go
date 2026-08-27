@@ -52,6 +52,21 @@ var rel001KillMutationNames = [...]string{
 	"collection-create", "conversation-create", "txt-upload", "ask-no-context",
 }
 
+// rel001DecisionLinearization records only the order between a completely
+// decoded response and the controller decision to terminate. The subsequent
+// Process.Kill and non-zero Wait are separately required for every frame.
+type rel001DecisionLinearization int32
+
+const (
+	rel001DecisionLinearizationUnset rel001DecisionLinearization = iota
+	rel001ResponseBeforeDecision
+	rel001DecisionBeforeResponse
+)
+
+var rel001DecisionLinearizationNames = [...]string{
+	"", "response-before-decision", "decision-before-response",
+}
+
 type rel001KillFrame struct {
 	sequence int
 	mutation rel001KillMutation
@@ -89,16 +104,12 @@ func TestREL001DeterministicHTTPKillReplay(t *testing.T) {
 	root := moduleRoot(t)
 	artifacts := buildREL001KillBinary(t, root)
 	campaignRoot := t.TempDir()
-	linearizations := [4][2]int{}
+	decisionOrders := [4][2]int{}
 	for _, frame := range frames[:limit] {
 		frame := frame
 		t.Run(fmt.Sprintf("%04d-%s", frame.sequence, rel001KillMutationNames[frame.mutation]), func(t *testing.T) {
-			acknowledged := runREL001KillFrame(t, artifacts, campaignRoot, frame)
-			index := 1
-			if acknowledged {
-				index = 0
-			}
-			linearizations[frame.mutation][index]++
+			decisionOrder := runREL001KillFrame(t, artifacts, campaignRoot, frame)
+			decisionOrders[frame.mutation][int(decisionOrder)-1]++
 		})
 	}
 	if entries, err := os.ReadDir(campaignRoot); err != nil || len(entries) != 0 {
@@ -106,14 +117,14 @@ func TestREL001DeterministicHTTPKillReplay(t *testing.T) {
 	}
 	if enabled {
 		total := 0
-		for mutation, counts := range linearizations {
+		for mutation, counts := range decisionOrders {
 			total += counts[0] + counts[1]
-			if counts[0]+counts[1] != rel001KillCampaignRuns/len(linearizations) {
+			if counts[0]+counts[1] != rel001KillCampaignRuns/len(decisionOrders) {
 				t.Fatalf("REL001_KILL_MUTATION_COUNT_DRIFT mutation=%s total=%d",
 					rel001KillMutationNames[mutation], counts[0]+counts[1])
 			}
 			if counts[0] == 0 || counts[1] == 0 {
-				t.Fatalf("REL001_KILL_LINEARIZATION_MISSING mutation=%s acknowledged=%d killed=%d",
+				t.Fatalf("REL001_KILL_DECISION_LINEARIZATION_MISSING mutation=%s response_before_decision=%d decision_before_response=%d",
 					rel001KillMutationNames[mutation], counts[0], counts[1])
 			}
 		}
@@ -143,6 +154,27 @@ func TestREL001KillPlanAndChildEnvironmentAreFailClosed(t *testing.T) {
 	}
 	if got := rel001KillPlanDigest(frames); got != rel001KillPlanSHA256 {
 		t.Fatalf("REL001_KILL_PLAN_DIGEST_DRIFT got=%s", got)
+	}
+	if rel001DecisionLinearizationNames[rel001ResponseBeforeDecision] != "response-before-decision" ||
+		rel001DecisionLinearizationNames[rel001DecisionBeforeResponse] != "decision-before-response" {
+		t.Fatal("REL001_KILL_DECISION_LINEARIZATION_NAMES_DRIFT")
+	}
+	for _, first := range []rel001DecisionLinearization{rel001ResponseBeforeDecision, rel001DecisionBeforeResponse} {
+		var state atomic.Int32
+		if !claimREL001DecisionLinearization(&state, first) {
+			t.Fatal("REL001_KILL_DECISION_LINEARIZATION_FIRST_CLAIM_REJECTED")
+		}
+		second := rel001ResponseBeforeDecision
+		if first == second {
+			second = rel001DecisionBeforeResponse
+		}
+		if claimREL001DecisionLinearization(&state, second) || rel001DecisionLinearization(state.Load()) != first {
+			t.Fatal("REL001_KILL_DECISION_LINEARIZATION_SECOND_CLAIM_CHANGED_OUTCOME")
+		}
+	}
+	var invalid atomic.Int32
+	if claimREL001DecisionLinearization(&invalid, rel001DecisionLinearizationUnset) || invalid.Load() != 0 {
+		t.Fatal("REL001_KILL_DECISION_LINEARIZATION_INVALID_CLAIM_ACCEPTED")
 	}
 
 	for _, test := range []struct {
@@ -202,6 +234,13 @@ func TestREL001KillPlanAndChildEnvironmentAreFailClosed(t *testing.T) {
 	if _, err := rel001KillChildEnvironment([]string{"SystemRoot=C:\\Windows", "systemroot=C:\\Other"}, `C:\temp`); err == nil {
 		t.Fatal("REL001_KILL_CHILD_ENVIRONMENT_DUPLICATE_ACCEPTED")
 	}
+}
+
+func claimREL001DecisionLinearization(state *atomic.Int32, outcome rel001DecisionLinearization) bool {
+	if state == nil || outcome != rel001ResponseBeforeDecision && outcome != rel001DecisionBeforeResponse {
+		return false
+	}
+	return state.CompareAndSwap(int32(rel001DecisionLinearizationUnset), int32(outcome))
 }
 
 func selectREL001KillCampaign(environment []string) (bool, error) {
@@ -329,7 +368,7 @@ func buildREL001KillBinary(t *testing.T, root string) builtArtifacts {
 	return builtArtifacts{mindweaver: binaryPath}
 }
 
-func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot string, frame rel001KillFrame) bool {
+func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot string, frame rel001KillFrame) rel001DecisionLinearization {
 	t.Helper()
 	runRoot := filepath.Join(campaignRoot, fmt.Sprintf("run-%04d", frame.sequence))
 	if err := os.Mkdir(runRoot, 0o700); err != nil {
@@ -390,7 +429,7 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 	}
 	template := rel001KillRequest(frame, conversationID)
 
-	var firstEvent atomic.Int32
+	var decisionOrder atomic.Int32
 	wroteHeaders := make(chan struct{})
 	var wroteOnce sync.Once
 	response := make(chan rel001KillResponse, 1)
@@ -406,7 +445,7 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 		request = request.WithContext(httptrace.WithClientTrace(requestContext, trace))
 		identity, _, err := executeREL001KillRequest(firstSession, request, frame.mutation)
 		if err == nil {
-			firstEvent.CompareAndSwap(0, 1)
+			claimREL001DecisionLinearization(&decisionOrder, rel001ResponseBeforeDecision)
 		}
 		response <- rel001KillResponse{identity: identity, err: err}
 	}()
@@ -416,18 +455,21 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 		t.Fatal("REL001_KILL_WROTE_HEADERS_TIMEOUT")
 	}
 	time.Sleep(frame.delay)
-	firstEvent.CompareAndSwap(0, 2)
-	first.terminate(t)
+	claimREL001DecisionLinearization(&decisionOrder, rel001DecisionBeforeResponse)
+	mustTerminateREL001Process(t, first)
 	cancelRequest()
-	var before rel001KillResponse
+	var firstResponse rel001KillResponse
 	select {
-	case before = <-response:
+	case firstResponse = <-response:
 	case <-time.After(rel001KillRequestTimeout):
 		t.Fatal("REL001_KILL_REQUEST_DRAIN_TIMEOUT")
 	}
-	acknowledged := firstEvent.Load() == 1
-	if acknowledged && before.err != nil {
-		t.Fatal("REL001_KILL_ACK_RESPONSE_INVALID")
+	decisionLinearization := rel001DecisionLinearization(decisionOrder.Load())
+	if decisionLinearization != rel001ResponseBeforeDecision && decisionLinearization != rel001DecisionBeforeResponse {
+		t.Fatal("REL001_KILL_DECISION_LINEARIZATION_INVALID")
+	}
+	if decisionLinearization == rel001ResponseBeforeDecision && firstResponse.err != nil {
+		t.Fatal("REL001_KILL_RESPONSE_BEFORE_DECISION_INVALID")
 	}
 
 	restarted := startMindWeaverWithEnvironment(t, artifacts, runRoot, childEnvironment)
@@ -440,12 +482,12 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 	if err != nil {
 		t.Fatalf("REL001_KILL_FIRST_REPLAY_FAILED mutation=%s error=%s", rel001KillMutationNames[frame.mutation], err)
 	}
-	if acknowledged && firstReplay != before.identity {
+	if firstResponse.err == nil && firstReplay != firstResponse.identity {
 		t.Fatalf("REL001_KILL_FIRST_REPLAY_IDENTITY_DRIFT mutation=%s primary=%t secondary=%t tertiary=%t status=%t limitation=%t code=%t",
-			rel001KillMutationNames[frame.mutation], firstReplay.primary == before.identity.primary,
-			firstReplay.secondary == before.identity.secondary, firstReplay.tertiary == before.identity.tertiary,
-			firstReplay.status == before.identity.status, firstReplay.limitation == before.identity.limitation,
-			firstReplay.code == before.identity.code)
+			rel001KillMutationNames[frame.mutation], firstReplay.primary == firstResponse.identity.primary,
+			firstReplay.secondary == firstResponse.identity.secondary, firstReplay.tertiary == firstResponse.identity.tertiary,
+			firstReplay.status == firstResponse.identity.status, firstReplay.limitation == firstResponse.identity.limitation,
+			firstReplay.code == firstResponse.identity.code)
 	}
 	secondReplay, created, err := executeREL001KillMutation(restartSession, template, frame.mutation)
 	if err != nil || created || secondReplay != firstReplay {
@@ -454,9 +496,9 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 	verifyREL001KillOracle(t, restartSession, frame, template, firstReplay, conversationID, providerAttempts.Load())
 	firstSession.client.CloseIdleConnections()
 	restartSession.client.CloseIdleConnections()
-	restarted.terminate(t)
+	mustTerminateREL001Process(t, restarted)
 	removeREL001KillRunRoot(t, runRoot)
-	return acknowledged
+	return decisionLinearization
 }
 
 func rel001KillRequest(frame rel001KillFrame, conversationID string) rel001KillTemplate {
@@ -778,25 +820,15 @@ func waitREL001KillJob(t *testing.T, session *apiSession, jobID string) {
 
 func strictREL001ProcessCleanup(t *testing.T, process *runningApp) {
 	t.Helper()
-	if process == nil || process.command == nil {
-		t.Error("REL001_KILL_CLEANUP_PROCESS_INVALID")
-		return
-	}
-	process.mu.Lock()
-	defer process.mu.Unlock()
-	if process.finished {
-		return
-	}
-	if process.command.Process == nil {
-		t.Error("REL001_KILL_CLEANUP_PROCESS_MISSING")
-		return
-	}
-	killErr := process.command.Process.Kill()
-	waitErr, reaped := waitForProcess(process.command, processReapTimeout)
-	process.finished = true
-	var exitErr *exec.ExitError
-	if killErr != nil || !reaped || waitErr == nil || !errors.As(waitErr, &exitErr) || exitErr.ExitCode() == 0 {
+	if err := stopREL001Process(process); err != nil {
 		t.Error("REL001_KILL_CLEANUP_FAILED")
+	}
+}
+
+func mustTerminateREL001Process(t *testing.T, process *runningApp) {
+	t.Helper()
+	if err := stopREL001Process(process); err != nil {
+		t.Fatal("REL001_KILL_REQUIRED_TERMINATION_FAILED")
 	}
 }
 
