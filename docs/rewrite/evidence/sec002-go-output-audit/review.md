@@ -95,15 +95,14 @@ if ([string]::IsNullOrWhiteSpace($go)) { throw 'MINDWEAVER_GO is required' }
 & $go vet ./cmd/mindweaver ./internal/localhttp ./platform/apperror ./internal/ollama ./internal/pdfextract/client ./internal/rag ./internal/app ./internal/webui
 ```
 
-Those checks were run against the clean candidate `e2d27e9` before this
-evidence commit. Its two changed code blobs are byte-identical to the
-integrated `89be0fb` blobs. All four focused canary groups passed at
-`-count=10`; the eight complete packages and their focused `go vet` set also
-passed. The CSV was independently recomputed against the integrated baseline:
-28 unique paths, with every SHA-256, byte count, line count, and range matching.
-The omitted browser boundary was found by an independent deletion review;
-`internal/webui` tests and vet then passed against the same unchanged product
-blobs before its two rows were added here.
+The four focused canary groups and the original seven-package test/vet set were
+run against the clean candidate `e2d27e9`; its two changed code blobs are
+byte-identical to the integrated `89be0fb` blobs. The omitted browser boundary
+was then found by an independent deletion review. The expanded eight-package
+set, including `internal/webui`, and its focused vet set passed against the
+unchanged integrated product blobs before the two WebUI rows were added. The
+CSV was independently recomputed against `89be0fb`: 28 unique paths, with every
+SHA-256, byte count, line count, and range matching.
 
 ## Still required at final release scope
 
