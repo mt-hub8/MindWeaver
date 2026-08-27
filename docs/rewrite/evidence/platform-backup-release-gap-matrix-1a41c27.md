@@ -49,6 +49,10 @@ the current binary identities final and do not promote `CUT-002` here.
   journal would violate the lean local-core decision.
 - `DB-001`: incoming DB work must preserve historical checksums and rerun the
   existing compatibility matrix; this evidence branch must not edit it.
+- `DB-002`: a post-baseline bounded stress slice confirms that numeric SQLite
+  `BUSY`/`LOCKED` is redacted at the HTTP boundary but still becomes
+  non-retryable `INTERNAL`; a minimal serialized-writer or stable retryable
+  product policy remains repository work before the external machine campaign.
 - `SEC-002` and `CUT-002`: their remaining scans and identities are properties
   of the final integrated release candidate. Freezing them before SEC/DB/ARC
   lands would knowingly record stale evidence.
@@ -107,6 +111,10 @@ inventory, not a legal conclusion.
 - **P1:** `BKP-001` cannot be promoted from in-repository restore tests because
   the ledger explicitly requires packaged clean-machine, installer lifecycle,
   and attestation evidence.
+- **P1:** the baseline DB-002 row was initially classified as machine-only.
+  Post-baseline fixed-seed WAL/BUSY evidence identified the additional
+  repository-owned retryability gap recorded above; the CSV now classifies the
+  row as repository-and-external while preserving `IMPLEMENTED`.
 
 The absence of a new implementation is the outcome of the audit: the next
 honest work is integration rerun or externally provisioned qualification, not

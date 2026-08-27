@@ -10,9 +10,9 @@ MindWeaver 是面向 Windows 10/11 x64 的单用户、本地优先知识工作�
 
 ## 当前 CORE 产品边界
 
-- 创建并独占一个新的本地 Vault；不读取或迁移旧 Java/MySQL 数据。
+- 首次创建、随后重开并独占一个本地 Vault；不读取或迁移旧 Java/MySQL 数据。
 - 上传不超过 4 MiB 的 TXT、Markdown 和带真实文本层的 PDF。
-- 管理文档、修订、集合成员关系、垃圾箱、恢复和永久清理。
+- 管理文档、集合成员关系、垃圾箱、恢复和永久清理；内部 revision 仅用于冲突保护。
 - 在指定集合范围内使用 SQLite FTS5 检索一段连续原文短语。
 - 可选连接固定 loopback Ollama，在检索命中后生成带来源引用的回答。
 - 在运行中的 UI 创建不可覆盖的明文备份；验证和恢复仅作为互斥的启动命令。
@@ -92,5 +92,6 @@ Qdrant、云模型供应商、插件或内置更新器。这些能力不得从�
 不要从旧数据库、队列、向量库或历史文件导入用户数据；应在新的 Go Vault 中
 重新上传受支持的源文件。
 
-现行架构决策和证据只在 [`docs/rewrite/`](docs/rewrite/README.md)；开发入口、
-限制与命令以 [`v2/README.md`](v2/README.md) 为准。
+现行架构决策与验收总账位于 [`docs/rewrite/`](docs/rewrite/README.md)，并由其
+链接到 `v2/` 中的资格测试、包测试、OpenAPI 合同与脚本；开发入口、限制与
+命令以 [`v2/README.md`](v2/README.md) 为准。
