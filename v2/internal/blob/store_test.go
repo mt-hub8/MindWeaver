@@ -338,11 +338,13 @@ func TestConcurrentStoreInstancesConvergeOnSameObject(t *testing.T) {
 
 	results := make(chan ImportResult, instances)
 	errorsChannel := make(chan error, instances)
+	start := make(chan struct{})
 	var group sync.WaitGroup
 	for _, store := range stores {
 		group.Add(1)
 		go func(store *Store) {
 			defer group.Done()
+			<-start
 			result, err := store.Import(context.Background(), bytes.NewReader(content), int64(len(content)))
 			if err != nil {
 				errorsChannel <- err
@@ -351,6 +353,7 @@ func TestConcurrentStoreInstancesConvergeOnSameObject(t *testing.T) {
 			results <- result
 		}(store)
 	}
+	close(start)
 	group.Wait()
 	close(results)
 	close(errorsChannel)
@@ -360,8 +363,12 @@ func TestConcurrentStoreInstancesConvergeOnSameObject(t *testing.T) {
 	}
 	var id BlobID
 	count := 0
+	created := 0
 	for result := range results {
 		count++
+		if result.Created {
+			created++
+		}
 		if id == "" {
 			id = result.ID
 		}
@@ -371,6 +378,9 @@ func TestConcurrentStoreInstancesConvergeOnSameObject(t *testing.T) {
 	}
 	if count != instances {
 		t.Fatalf("successful results = %d, want %d", count, instances)
+	}
+	if created != 1 {
+		t.Fatalf("Created results = %d, want exactly 1", created)
 	}
 	assertBlobContent(t, stores[0], id, content)
 	assertStagingEmpty(t, stores[0])
