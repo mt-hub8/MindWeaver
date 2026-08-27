@@ -16,9 +16,9 @@ callers can mechanically classify publication uncertainty.
   authorize the child; normal, legacy-environment, and forged-environment
   entries make no Vault write. The child re-reads the committed GC candidate,
   zero-reference state, and exact object bytes before sending one versioned,
-  bounded stdout checkpoint bound to the nonce, Blob ID, and size. The parent
-  kills and reaps the child, then verifies the orphan through a raw read-only
-  file handle before `app.Start`. Startup removes it before route registration.
+  bounded stdout checkpoint bound to the phase, nonce, Blob ID, and size. The
+  parent kills and reaps the child, then verifies the orphan through a raw
+  read-only file handle before `app.Start`. Startup removes it before route registration.
   Upload, replay, close/reopen, and replay again retain the same document,
   revision, job, and Blob IDs, one object, and zero candidates.
 - `d059dc6` makes every full publication hash context-aware. Prepared-source,
