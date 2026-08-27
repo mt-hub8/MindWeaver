@@ -1,0 +1,494 @@
+MindWeaver third-party notice candidate
+Inventory-SHA256: 99deb92e0df115906fe1ce0f06479573b0dfa4333b1e6de2249c57ee20ce0992
+Qualification-Version: 0.0.0-qualification.e8cf45d
+Source-Revision: e8cf45db8482504423c23e17a013f2ba1e2f1dfa
+Source-Module-Tree: git-sha1:abdc2a4b7c4932f441beff3dfd20b1d634f3d722
+Production-Source-Union-SHA256: 079e4f0a337b4a2d7df2ccf4e42e6f48132018bfe1ef269a18158b09558b4592
+Creation-Input: 2026-08-27T19:34:56Z
+Supply-Chain-Qualification-Blockers: FIXTURE_REGENERATION_NOT_IMPLEMENTED,PROJECT_LICENSE_MISSING,RELEASE_METADATA_MISSING,SOURCE_REVISION_ATTESTATION_MISSING,VULNERABILITY_EVIDENCE_MISSING
+This deterministic file is not a release authorization or legal conclusion.
+
+Artifacts
+- mindweaver-pdf.exe 8453632 bytes SHA256:a2a6a04b4ade9367aab6cce35e9a3c87351f9c8fabd33d9ea2fe108f7e732241
+- mindweaver.exe 32861696 bytes SHA256:127321290927e6816f94fafea4226d7be572d98b99d1c4d5bf17b799df7e587f
+
+Components
+- Go runtime go1.27.0 license:BSD-3-Clause
+- SQLite 3.53.4 license:LicenseRef-SQLite-Public-Domain
+- github.com/mgilbir/formalis v0.3.1 license:MIT go-module-h1:h1:NyYe/EcRYJ2jUjgaZG98lNXgJ7H+jgy6mq7HXOnQxl8=
+- github.com/mgilbir/golittlecms v0.0.0-20260727161601-f6af7cfe1556 license:MIT go-module-h1:h1:2ZUsOgMhxpHCYC8jyzeEnJZFLYGbXhqjAJWJBvY8q4U=
+- github.com/mgilbir/gopenjpeg v0.0.0-20260727163526-8a139bc479b2 license:BSD-2-Clause go-module-h1:h1:kdDIM4JNxn9gsRk5Zo6mtmcFpBqnl9gTVUwf9t6lIRk=
+- github.com/mgilbir/pdf0 v0.1.0 license:MIT go-module-h1:h1:rfBK18bcQ4kHQTXBmriAb07TafhG2w1fLflq9lHgaG4=
+- github.com/ncruces/go-sqlite3-wasm/v3 v3.2.35304 license:MIT-0 go-module-h1:h1:5NoQAewtgKNK3G4bjNPxVoGXu6F6NzLXWCTdD5FFAEY=
+- github.com/ncruces/go-sqlite3 v0.35.3 license:MIT go-module-h1:h1:Ei07Zv1qfV/vyXzelhFsyS5Oh9TArBZHsmFk14Xv3GY=
+- github.com/ncruces/julianday v1.0.0 license:MIT go-module-h1:h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M=
+- golang.org/x/sys v0.47.0 license:BSD-3-Clause go-module-h1:h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
+
+Bound legal and upstream evidence
+
+----- BEGIN third_party/sqlite/3.53.4/LICENSE.md -----
+Kind: UPSTREAM_LICENSE
+Raw-SHA256: ee6af51062b30d532991face5164136ae6f84e265ecf8abe89dc69dac45ca1e7
+SPDX-Candidate: LicenseRef-SQLite-Public-Domain
+
+License Information
+===================
+
+SQLite Is Public Domain
+-----------------------
+
+The SQLite source code, including all of the files in the directories
+listed in the bullets below are
+[Public Domain](https://sqlite.org/copyright.html).
+The authors have submitted written affidavits releasing their work to
+the public for any use.  Every byte of the public-domain code can be
+traced back to the original authors.  The files of this repository
+that are public domain include the following:
+
+  *  All of the primary SQLite source code files found in the
+     [src/ directory](https://sqlite.org/src/tree/src?type=tree&expand)
+  *  All of the test cases and testing code in the
+     [test/ directory](https://sqlite.org/src/tree/test?type=tree&expand)
+  *  All of the SQLite extension source code and test cases in the
+     [ext/ directory](https://sqlite.org/src/tree/ext?type=tree&expand)
+  *  All code that ends up in the "sqlite3.c" and "sqlite3.h" build products
+     that actually implement the SQLite RDBMS.
+  *  All of the code used to compile the
+     [command-line interface](https://sqlite.org/cli.html)
+  *  All of the code used to build various utility programs such as
+     "sqldiff", "sqlite3_rsync", and "sqlite3_analyzer".
+
+
+The public domain source files usually contain a header comment
+similar to the following to make it clear that the software is
+public domain.
+
+> The author disclaims copyright to this source code.  In place of
+> a legal notice, here is a blessing:
+>
+>   *   May you do good and not evil.
+>   *   May you find forgiveness for yourself and forgive others.
+>   *   May you share freely, never taking more than you give.
+
+Almost every file you find in this source repository will be
+public domain.  But there are a small number of exceptions:
+
+Non-Public-Domain Code Included With This Source Repository AS A Convenience
+----------------------------------------------------------------------------
+
+This repository contains a (relatively) small amount of non-public-domain
+code used to help implement the configuration and build logic.  In other
+words, there are some non-public-domain files used to implement:
+
+> ./configure && make
+
+In all cases, the non-public-domain files included with this
+repository have generous BSD-style licenses.  So anyone is free to
+use any of the code in this source repository for any purpose, though
+attribution may be required to reuse or republish the configure and
+build scripts.  None of the non-public-domain code ever actually reaches
+the build products, such as "sqlite3.c", however, so no attribution is
+required to use SQLite itself.  The non-public-domain code consists of
+scripts used to help compile SQLite.  The non-public-domain code is
+technically not part of SQLite.  The non-public-domain code is
+included in this repository as a convenience to developers, so that those
+who want to build SQLite do not need to go download a bunch of
+third-party build scripts in order to compile SQLite.
+
+Non-public-domain code included in this respository includes:
+
+  *  The ["autosetup"](http://msteveb.github.io/autosetup/) configuration
+     system that is contained (mostly) in the autosetup/ directory, but also
+     includes the "./configure" script at the top-level of this archive.
+     Autosetup has a separate BSD-style license.  See the
+     [autosetup/LICENSE](http://msteveb.github.io/autosetup/license/)
+     for details.
+
+  *  There are BSD-style licenses on some of the configuration
+     software found in the legacy autoconf/ directory and its
+     subdirectories.
+
+The following unix shell command can be run from the top-level
+of this source repository in order to remove all non-public-domain
+code:
+
+> rm -rf configure autosetup autoconf
+
+If you unpack this source repository and then run the command above, what
+is left will be 100% public domain.
+----- END third_party/sqlite/3.53.4/LICENSE.md -----
+
+----- BEGIN third_party/sqlite/3.53.4/manifest.uuid -----
+Kind: UPSTREAM_PROVENANCE
+Raw-SHA256: c613b5f6581cba368618c41ccfc16e476f65efa963c9c7c9fc3b4519daea71d9
+
+bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc
+----- END third_party/sqlite/3.53.4/manifest.uuid -----
+
+----- BEGIN toolchain/go1.27.0/LICENSE -----
+Kind: LICENSE
+Raw-SHA256: 911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad
+SPDX-Candidate: BSD-3-Clause
+
+Copyright 2009 The Go Authors.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * Neither the name of Google LLC nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+----- END toolchain/go1.27.0/LICENSE -----
+
+----- BEGIN toolchain/go1.27.0/PATENTS -----
+Kind: PATENT_GRANT
+Raw-SHA256: 96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc
+SPDX-Candidate: LicenseRef-Go-Patent-Grant
+
+Additional IP Rights Grant (Patents)
+
+"This implementation" means the copyrightable works distributed by
+Google as part of the Go project.
+
+Google hereby grants to You a perpetual, worldwide, non-exclusive,
+no-charge, royalty-free, irrevocable (except as stated in this section)
+patent license to make, have made, use, offer to sell, sell, import,
+transfer and otherwise run, modify and propagate the contents of this
+implementation of Go, where such license applies only to those patent
+claims, both currently owned or controlled by Google and acquired in
+the future, licensable by Google that are necessarily infringed by this
+implementation of Go.  This grant does not include claims that would be
+infringed only as a consequence of further modification of this
+implementation.  If you or your agent or exclusive licensee institute or
+order or agree to the institution of patent litigation against any
+entity (including a cross-claim or counterclaim in a lawsuit) alleging
+that this implementation of Go or any code incorporated within this
+implementation of Go constitutes direct or contributory patent
+infringement, or inducement of patent infringement, then any patent
+rights granted to you under this License for this implementation of Go
+shall terminate as of the date such litigation is filed.
+----- END toolchain/go1.27.0/PATENTS -----
+
+----- BEGIN toolchain/go1.27.0/VERSION -----
+Kind: TOOLCHAIN_IDENTITY
+Raw-SHA256: 964a484ac6011bfc2770d672c3ba1c466f64258fcb0441c8147adb1ac2ee3b30
+
+go1.27.0
+time 2026-08-18T21:24:23Z
+----- END toolchain/go1.27.0/VERSION -----
+
+----- BEGIN vendor/github.com/mgilbir/formalis/LICENSE -----
+Kind: LICENSE
+Raw-SHA256: 4e9651455e1b761ed462c50f60c4618c8985f46404e8db467def14848e77725a
+SPDX-Candidate: MIT
+
+MIT License
+
+Copyright (c) 2026 Miguel Eduardo Gil Biraud
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+----- END vendor/github.com/mgilbir/formalis/LICENSE -----
+
+----- BEGIN vendor/github.com/mgilbir/golittlecms/LICENSE -----
+Kind: LICENSE
+Raw-SHA256: 4b0b89edd67872e0507e20e03032e4dc4eb194f88082f80acee13a13fb73317c
+SPDX-Candidate: MIT
+
+MIT License
+
+Copyright (c) 2026 Miguel Eduardo Gil Biraud
+
+This software is a Go port of Little-CMS (https://github.com/mm2/Little-CMS):
+Copyright (c) 2023 Marti Maria Saguer
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject
+to the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+----- END vendor/github.com/mgilbir/golittlecms/LICENSE -----
+
+----- BEGIN vendor/github.com/mgilbir/gopenjpeg/LICENSE -----
+Kind: LICENSE_NOTICE_PATENT_STATEMENT
+Raw-SHA256: 958dc940b3916ca8b4d373f24027e26e29623828f41205de09e9c680e5539f78
+SPDX-Candidate: BSD-2-Clause
+
+The copyright in this software is being made available under the 2-clauses
+BSD License, included below. This software may be subject to other third
+party and contributor rights, including patent rights, and no such rights
+are granted under this license.
+
+gopenjpeg is a Go port of OpenJPEG (https://github.com/uclouvain/openjpeg)
+and retains the OpenJPEG copyright notices below.
+
+Copyright (c) 2026, Miguel Eduardo Gil Biraud
+Copyright (c) 2002-2014, Universite catholique de Louvain (UCL), Belgium
+Copyright (c) 2002-2014, Professor Benoit Macq
+Copyright (c) 2003-2014, Antonin Descampe
+Copyright (c) 2003-2009, Francois-Olivier Devaux
+Copyright (c) 2005, Herve Drolon, FreeImage Team
+Copyright (c) 2002-2003, Yannick Verschueren
+Copyright (c) 2001-2003, David Janssens
+Copyright (c) 2011-2012, Centre National d'Etudes Spatiales (CNES), France
+Copyright (c) 2012, CS Systemes d'Information, France
+
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS `AS IS'
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+----- END vendor/github.com/mgilbir/gopenjpeg/LICENSE -----
+
+----- BEGIN vendor/github.com/mgilbir/pdf0/LICENSE -----
+Kind: LICENSE
+Raw-SHA256: 4e9651455e1b761ed462c50f60c4618c8985f46404e8db467def14848e77725a
+SPDX-Candidate: MIT
+
+MIT License
+
+Copyright (c) 2026 Miguel Eduardo Gil Biraud
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+----- END vendor/github.com/mgilbir/pdf0/LICENSE -----
+
+----- BEGIN vendor/github.com/ncruces/go-sqlite3-wasm/v3/LICENSE -----
+Kind: MODULE_AUTHORED_LICENSE
+Raw-SHA256: 13219037ddf63dbbcf174bf59525d602df7a2e30083f63be566715c858fcb19e
+SPDX-Candidate: MIT-0
+
+MIT No Attribution License
+
+Copyright (c) 2026 Nuno Cruces
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+----- END vendor/github.com/ncruces/go-sqlite3-wasm/v3/LICENSE -----
+
+----- BEGIN vendor/github.com/ncruces/go-sqlite3-wasm/v3/README.md -----
+Kind: UPSTREAM_LICENSE_RETENTION_STATEMENT
+Raw-SHA256: fb8084fccb5733ccc4af421ff026812da7852e91516bdf7c70d007eb46744383
+
+# Go SQLite translation
+
+This repo contains a Go translation of SQLite (and other supporting libraries)
+for use with [`github.com/ncruces/go-sqlite3`](https://github.com/ncruces/go-sqlite3).
+
+Most of the code here is machine translated using
+[`wasm2go`](https://github.com/ncruces/wasm2go).
+As such, the original authors retain copyright
+and the original licenses remain in effect.
+
+Everything else is licensed under [MIT-0](LICENSE).
+----- END vendor/github.com/ncruces/go-sqlite3-wasm/v3/README.md -----
+
+----- BEGIN vendor/github.com/ncruces/go-sqlite3/LICENSE -----
+Kind: LICENSE
+Raw-SHA256: 8929c89a593807bf0c042272adc7301376a661050876bd702ebdd36cd7c55d2b
+SPDX-Candidate: MIT
+
+MIT License
+
+Copyright (c) 2023 Nuno Cruces
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+----- END vendor/github.com/ncruces/go-sqlite3/LICENSE -----
+
+----- BEGIN vendor/github.com/ncruces/julianday/LICENSE -----
+Kind: LICENSE
+Raw-SHA256: 38ae43959daf953a393a585b2988672cb65a5a541aca0d0be5e72595a0a16883
+SPDX-Candidate: MIT
+
+MIT License
+
+Copyright (c) 2022 Nuno Cruces
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+----- END vendor/github.com/ncruces/julianday/LICENSE -----
+
+----- BEGIN vendor/golang.org/x/sys/LICENSE -----
+Kind: LICENSE
+Raw-SHA256: 911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad
+SPDX-Candidate: BSD-3-Clause
+
+Copyright 2009 The Go Authors.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * Neither the name of Google LLC nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+----- END vendor/golang.org/x/sys/LICENSE -----
+
+----- BEGIN vendor/golang.org/x/sys/PATENTS -----
+Kind: PATENT_GRANT
+Raw-SHA256: 96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc
+SPDX-Candidate: LicenseRef-Go-Patent-Grant
+
+Additional IP Rights Grant (Patents)
+
+"This implementation" means the copyrightable works distributed by
+Google as part of the Go project.
+
+Google hereby grants to You a perpetual, worldwide, non-exclusive,
+no-charge, royalty-free, irrevocable (except as stated in this section)
+patent license to make, have made, use, offer to sell, sell, import,
+transfer and otherwise run, modify and propagate the contents of this
+implementation of Go, where such license applies only to those patent
+claims, both currently owned or controlled by Google and acquired in
+the future, licensable by Google that are necessarily infringed by this
+implementation of Go.  This grant does not include claims that would be
+infringed only as a consequence of further modification of this
+implementation.  If you or your agent or exclusive licensee institute or
+order or agree to the institution of patent litigation against any
+entity (including a cross-claim or counterclaim in a lawsuit) alleging
+that this implementation of Go or any code incorporated within this
+implementation of Go constitutes direct or contributory patent
+infringement, or inducement of patent infringement, then any patent
+rights granted to you under this License for this implementation of Go
+shall terminate as of the date such litigation is filed.
+----- END vendor/golang.org/x/sys/PATENTS -----

@@ -14,3 +14,5 @@
 vendor/** -text -whitespace
 third_party/sqlite/3.53.4/LICENSE.md -text -whitespace
 third_party/sqlite/3.53.4/manifest.uuid text eol=lf
+qualification/supplychain/testdata/release-documents/*.txt text eol=lf
+qualification/supplychain/schemas/** -text -whitespace

@@ -26,6 +26,8 @@ const (
 
 type artifactContract struct {
 	name    string
+	size    int64
+	sha256  string
 	modules []string
 }
 
@@ -64,7 +66,8 @@ type runtimeContract struct {
 
 var artifactContracts = []artifactContract{
 	{
-		name: "mindweaver.exe",
+		name: "mindweaver.exe", size: 32861696,
+		sha256: "127321290927e6816f94fafea4226d7be572d98b99d1c4d5bf17b799df7e587f",
 		modules: []string{
 			"github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304",
 			"github.com/ncruces/go-sqlite3@v0.35.3",
@@ -73,7 +76,8 @@ var artifactContracts = []artifactContract{
 		},
 	},
 	{
-		name: "mindweaver-pdf.exe",
+		name: "mindweaver-pdf.exe", size: 8453632,
+		sha256: "a2a6a04b4ade9367aab6cce35e9a3c87351f9c8fabd33d9ea2fe108f7e732241",
 		modules: []string{
 			"github.com/mgilbir/formalis@v0.3.1",
 			"github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556",
@@ -174,6 +178,7 @@ func TestPrepackageSupplyChainInputClosure(t *testing.T) {
 	}
 
 	actual := make(map[string][]string, len(artifactContracts))
+	builtArtifacts := make([]builtArtifact, 0, len(artifactContracts))
 	artifactRoot := filepath.Join(t.TempDir(), "artifacts")
 	if err := os.Mkdir(artifactRoot, 0o700); err != nil {
 		t.Fatal("create bounded artifact output directory")
@@ -183,6 +188,7 @@ func TestPrepackageSupplyChainInputClosure(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		builtArtifacts = append(builtArtifacts, built)
 		actual[artifact.name] = built.modules
 	}
 	if err := validateArtifactDirectory(artifactRoot, artifactContracts); err != nil {
@@ -203,6 +209,7 @@ func TestPrepackageSupplyChainInputClosure(t *testing.T) {
 	if !slices.Equal(blockers, wantBlockers) {
 		t.Fatalf("pre-package blockers = %q, want %q", blockers, wantBlockers)
 	}
+	assertDerivedSupplyChainDocuments(t, root, goTool, environment, builtArtifacts, blockers)
 }
 
 func TestPrepackageInventoryStructuralMutationsFailClosed(t *testing.T) {
@@ -265,6 +272,9 @@ func buildArtifact(t *testing.T, goTool, root, outputRoot string, environment []
 	}
 	digestBytes := sha256.Sum256(contents)
 	digest := hex.EncodeToString(digestBytes[:])
+	if int64(len(contents)) != artifact.size || digest != artifact.sha256 {
+		return builtArtifact{}, fmt.Errorf("%s: ARTIFACT_IDENTITY_MISMATCH", artifact.name)
+	}
 	information, err := buildinfo.Read(bytes.NewReader(contents))
 	if err != nil {
 		return builtArtifact{}, fmt.Errorf("%s: BUILDINFO_UNREADABLE", artifact.name)

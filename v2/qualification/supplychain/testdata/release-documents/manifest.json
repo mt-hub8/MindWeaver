@@ -1,0 +1,28 @@
+{
+  "schema": "mindweaver.release-documents.v1",
+  "inventorySha256": "99deb92e0df115906fe1ce0f06479573b0dfa4333b1e6de2249c57ee20ce0992",
+  "files": [
+    {
+      "name": "inventory.json",
+      "size": 29816,
+      "sha256": "99deb92e0df115906fe1ce0f06479573b0dfa4333b1e6de2249c57ee20ce0992"
+    },
+    {
+      "name": "sbom.spdx.json",
+      "size": 19471,
+      "sha256": "03b89bda348959cc3a9e0a1f1c3f39483487857add5f8913828cb7b6da0d0b27"
+    },
+    {
+      "name": "NOTICE.txt",
+      "size": 24054,
+      "sha256": "d0040d409cb19c4cc1e13f045362071bbeb6b8ef8bae71dc8cf9dc315b608550"
+    }
+  ],
+  "qualificationBlockers": [
+    "FIXTURE_REGENERATION_NOT_IMPLEMENTED",
+    "PROJECT_LICENSE_MISSING",
+    "RELEASE_METADATA_MISSING",
+    "SOURCE_REVISION_ATTESTATION_MISSING",
+    "VULNERABILITY_EVIDENCE_MISSING"
+  ]
+}
