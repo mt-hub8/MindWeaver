@@ -4,16 +4,16 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -178,82 +178,6 @@ func TestRetainedArtifactCapabilitiesRejectACLExpansionWriteAndReplacement(t *te
 	assertBlocked(t, report, BlockerArtifactBundleInvalid)
 }
 
-func TestControlledWebDriverHarnessAggregatesRequiredScenariosButNeverQualifies(t *testing.T) {
-	approval := testArtifactApproval()
-	bundle := writeArtifactBundle(t, approval)
-	harness := &fakeProcessHarness{}
-	boundary := &protocolBoundary{approval: approval, bundle: bundle, harness: harness, timeout: 5 * time.Second}
-	report := runQualification(context.Background(), Approval{artifact: &approval}, RunOptions{
-		SourceRevision: testRevision, BundleRoot: bundle, Now: fixedClock(),
-	}, boundary)
-	if report.Status() != "BLOCKED" || report.Code() != string(BlockerControlledHarness) || report.CleanupStatus() != "HARNESS_PASS" {
-		t.Fatalf("controlled harness report = %#v", report)
-	}
-	if report.wire.Artifacts == nil || !artifactEvidenceMatchesApproval(*report.wire.Artifacts, approval) ||
-		report.wire.ExecutableSHA256 != approval.MindWeaver.SHA256 {
-		t.Fatalf("controlled harness artifacts were not approval-bound: %#v", report.wire.Artifacts)
-	}
-	if !harness.cleanupCalled {
-		t.Fatal("controlled process cleanup was not called")
-	}
-	for _, scenario := range report.Scenarios() {
-		if scenario.Status != "HARNESS_PASS" || scenario.Code != "NOT_QUALIFIED" || !lowerSHA256(scenario.ScreenshotSHA256) ||
-			scenario.ScreenshotBytes == 0 || !lowerSHA256(scenario.TraceSHA256) || scenario.TraceBytes == 0 {
-			t.Fatalf("controlled scenario evidence = %#v", scenario)
-		}
-	}
-	data, err := MarshalReport(report)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, forbidden := range []string{bundle, "fake-screenshot-pixels", "webdriver-session", "__browser_qualification"} {
-		if strings.Contains(string(data), forbidden) {
-			t.Fatalf("content-free report leaked %q", forbidden)
-		}
-	}
-}
-
-func TestControlledHarnessFailuresCleanupAndFailClosed(t *testing.T) {
-	for name, configure := range map[string]func(*fakeProcessHarness){
-		"non literal driver": func(harness *fakeProcessHarness) { harness.driverEndpoint = "http://localhost:4444" },
-		"bad process tree":   func(harness *fakeProcessHarness) { harness.badTree = true },
-		"scenario failure":   func(harness *fakeProcessHarness) { harness.failScenario = 4 },
-		"session delete":     func(harness *fakeProcessHarness) { harness.failDelete = true },
-		"cleanup failure":    func(harness *fakeProcessHarness) { harness.failCleanup = true },
-		"webdriver redirect": func(harness *fakeProcessHarness) { harness.redirectSession = true },
-		"webdriver non-json": func(harness *fakeProcessHarness) { harness.nonJSONSession = true },
-		"extra process":      func(harness *fakeProcessHarness) { harness.extraProcess = true },
-	} {
-		t.Run(name, func(t *testing.T) {
-			approval := testArtifactApproval()
-			harness := &fakeProcessHarness{}
-			configure(harness)
-			boundary := &protocolBoundary{approval: approval, bundle: writeArtifactBundle(t, approval), harness: harness, timeout: 5 * time.Second}
-			report := runQualification(context.Background(), Approval{artifact: &approval}, RunOptions{
-				SourceRevision: testRevision, Now: fixedClock(),
-			}, boundary)
-			if report.Status() != "FAIL" || report.Code() != "PROCESS_OR_EVIDENCE_FAILED" || !harness.cleanupCalled {
-				t.Fatalf("failure report/cleanup = %#v/%v", report, harness.cleanupCalled)
-			}
-			if _, err := MarshalReport(report); err != nil {
-				t.Fatal(err)
-			}
-		})
-	}
-}
-
-func TestControlledHarnessTimeoutCleansUp(t *testing.T) {
-	approval := testArtifactApproval()
-	harness := &fakeProcessHarness{blockScenario: true}
-	boundary := &protocolBoundary{approval: approval, bundle: writeArtifactBundle(t, approval), harness: harness, timeout: 20 * time.Millisecond}
-	report := runQualification(context.Background(), Approval{artifact: &approval}, RunOptions{
-		SourceRevision: testRevision, Now: fixedClock(),
-	}, boundary)
-	if report.Status() != "FAIL" || !harness.cleanupCalled {
-		t.Fatalf("timeout report/cleanup = %#v/%v", report, harness.cleanupCalled)
-	}
-}
-
 func TestLiteralLoopbackEndpointRejectsAliasesAndDecorations(t *testing.T) {
 	for _, endpoint := range []string{
 		"http://localhost:4444", "http://[::1]:4444", "https://127.0.0.1:4444",
@@ -267,6 +191,105 @@ func TestLiteralLoopbackEndpointRejectsAliasesAndDecorations(t *testing.T) {
 	if _, err := literalLoopbackEndpoint("http://127.0.0.1:4444"); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestWebDriverTransportOnlyAcceptsBoundedJSONAndRejectsUnsafeResponses(t *testing.T) {
+	t.Run("create and delete", func(t *testing.T) {
+		requests := make(chan string, 2)
+		endpoint := newWebDriverTransportTestEndpoint(t, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			requests <- request.Method + " " + request.URL.Path
+			writer.Header().Set("Content-Type", "application/json")
+			switch {
+			case request.Method == http.MethodPost && request.URL.Path == "/session":
+				_, _ = writer.Write([]byte(`{"value":{"sessionId":"transport-session-1"}}`))
+			case request.Method == http.MethodDelete && request.URL.Path == "/session/transport-session-1":
+				_, _ = writer.Write([]byte(`{"value":null}`))
+			default:
+				http.NotFound(writer, request)
+			}
+		}))
+		client := newWebDriverClient(endpoint)
+		sessionID, err := client.createSession(context.Background())
+		if err != nil || sessionID != "transport-session-1" {
+			t.Fatalf("create session = %q, %v", sessionID, err)
+		}
+		if err := client.deleteSession(context.Background(), sessionID); err != nil {
+			t.Fatalf("delete session: %v", err)
+		}
+		if got := <-requests; got != "POST /session" {
+			t.Fatalf("create request = %q", got)
+		}
+		if got := <-requests; got != "DELETE /session/transport-session-1" {
+			t.Fatalf("delete request = %q", got)
+		}
+	})
+
+	t.Run("redirect", func(t *testing.T) {
+		requests := make(chan string, 2)
+		endpoint := newWebDriverTransportTestEndpoint(t, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+			requests <- request.URL.Path
+			http.Redirect(writer, request, "/redirected", http.StatusTemporaryRedirect)
+		}))
+		if _, err := newWebDriverClient(endpoint).createSession(context.Background()); err == nil {
+			t.Fatal("webdriver redirect was accepted")
+		}
+		if got := <-requests; got != "/session" {
+			t.Fatalf("redirect source request = %q", got)
+		}
+		select {
+		case got := <-requests:
+			t.Fatalf("webdriver followed redirect to %q", got)
+		default:
+		}
+	})
+
+	t.Run("non json", func(t *testing.T) {
+		endpoint := newWebDriverTransportTestEndpoint(t, http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writer.Header().Set("Content-Type", "text/plain")
+			_, _ = writer.Write([]byte(`{"value":{"sessionId":"transport-session-1"}}`))
+		}))
+		if _, err := newWebDriverClient(endpoint).createSession(context.Background()); err == nil {
+			t.Fatal("non-JSON webdriver response was accepted")
+		}
+	})
+
+	t.Run("oversize", func(t *testing.T) {
+		endpoint := newWebDriverTransportTestEndpoint(t, http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write(bytes.Repeat([]byte("x"), maxWebDriverBytes+1))
+		}))
+		if _, err := newWebDriverClient(endpoint).createSession(context.Background()); err == nil {
+			t.Fatal("oversized webdriver response was accepted")
+		}
+	})
+}
+
+func newWebDriverTransportTestEndpoint(t *testing.T, handler http.Handler) *url.URL {
+	t.Helper()
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{Handler: handler}
+	done := make(chan error, 1)
+	go func() {
+		done <- server.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			t.Errorf("shutdown webdriver transport test server: %v", err)
+		}
+		if err := <-done; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			t.Errorf("webdriver transport test server: %v", err)
+		}
+	})
+	endpoint, err := literalLoopbackEndpoint("http://" + listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return endpoint
 }
 
 func TestProcessErrorReportIsContentFree(t *testing.T) {
@@ -330,68 +353,6 @@ func TestRequiredScenarioGroupsCoverSecurityAndEnabledUIWithoutCLIRecovery(t *te
 		if strings.Contains(requiredScenarios[index].ID, "RECOVERY_VERIFY") || strings.Contains(requiredScenarios[index].ID, "RECOVERY_RESTORE") {
 			t.Fatalf("startup-only recovery was presented as a browser scenario: %q", requiredScenarios[index].ID)
 		}
-	}
-}
-
-func TestPassEvidenceRequiresPolicyLineageAndObservedCleanupReceipt(t *testing.T) {
-	validReport := qualifiedReport(t, minObservedProcesses)
-	if validReport.Status() != "PASS" || validReport.Code() != "QUALIFIED" {
-		t.Fatalf("valid qualification = %#v", validReport)
-	}
-	if _, err := MarshalReport(validReport); err != nil {
-		t.Fatal(err)
-	}
-	approval := testArtifactApproval()
-	if validReport.wire.Artifacts == nil || !artifactEvidenceMatchesApproval(*validReport.wire.Artifacts, approval) ||
-		validReport.wire.ExecutableSHA256 != approval.MindWeaver.SHA256 ||
-		!lowerSHA256(validReport.wire.PolicySHA256) || !lowerSHA256(validReport.wire.RootLineageSHA256) ||
-		!lowerSHA256(validReport.wire.DescendantLineageSHA256) || validReport.wire.CleanupActiveProcesses != 0 ||
-		validReport.wire.CleanupProcesses != minObservedProcesses || validReport.wire.CleanupSHA256 != reportReceiptDigest(validReport.wire) {
-		t.Fatalf("pass evidence was not bound: %#v", validReport.wire)
-	}
-
-	moreProcesses := qualifiedReport(t, minObservedProcesses+1)
-	if moreProcesses.Status() != "PASS" || validReport.wire.CleanupSHA256 == moreProcesses.wire.CleanupSHA256 {
-		t.Fatal("cleanup receipt did not bind the observed OS process count")
-	}
-
-	mutations := map[string]func(*processEvidence){
-		"approval id":          func(value *processEvidence) { value.Artifacts.ApprovalID = "different-approved-bundle" },
-		"browser role":         func(value *processEvidence) { value.Artifacts.Browser.Role = "driver" },
-		"browser name":         func(value *processEvidence) { value.Artifacts.Browser.FileName = "other-browser.exe" },
-		"browser size":         func(value *processEvidence) { value.Artifacts.Browser.Size++ },
-		"browser hash":         func(value *processEvidence) { value.Artifacts.Browser.SHA256 = strings.Repeat("b", 64) },
-		"driver role":          func(value *processEvidence) { value.Artifacts.Driver.Role = "browser" },
-		"driver name":          func(value *processEvidence) { value.Artifacts.Driver.FileName = "other-driver.exe" },
-		"driver size":          func(value *processEvidence) { value.Artifacts.Driver.Size++ },
-		"driver hash":          func(value *processEvidence) { value.Artifacts.Driver.SHA256 = strings.Repeat("b", 64) },
-		"mindweaver role":      func(value *processEvidence) { value.Artifacts.MindWeaver.Role = "browser" },
-		"mindweaver name":      func(value *processEvidence) { value.Artifacts.MindWeaver.FileName = "other-mindweaver.exe" },
-		"mindweaver size":      func(value *processEvidence) { value.Artifacts.MindWeaver.Size++ },
-		"mindweaver hash":      func(value *processEvidence) { value.Artifacts.MindWeaver.SHA256 = strings.Repeat("b", 64) },
-		"policy":               func(value *processEvidence) { value.PolicySHA256 = "" },
-		"root lineage":         func(value *processEvidence) { value.RootLineageSHA256 = "" },
-		"descendant lineage":   func(value *processEvidence) { value.DescendantLineageSHA256 = "" },
-		"active process":       func(value *processEvidence) { value.CleanupActiveProcesses = 1 },
-		"too few processes":    func(value *processEvidence) { value.CleanupProcesses = minObservedProcesses - 1 },
-		"too many processes":   func(value *processEvidence) { value.CleanupProcesses = maxObservedProcesses + 1 },
-		"session not closed":   func(value *processEvidence) { value.SessionClosed = false },
-		"artifact not checked": func(value *processEvidence) { value.ArtifactsReverified = false },
-		"no real proof":        func(value *processEvidence) { value.realProof = nil },
-		"wrong group":          func(value *processEvidence) { value.Scenarios[0].AcceptanceID = "UI-001" },
-	}
-	for name, mutate := range mutations {
-		t.Run(name, func(t *testing.T) {
-			evidence := qualifiedProcessEvidence(minObservedProcesses)
-			mutate(&evidence)
-			approval := testArtifactApproval()
-			report := runQualification(context.Background(), Approval{artifact: &approval}, RunOptions{
-				SourceRevision: testRevision, Now: fixedClock(),
-			}, &recordingBoundary{evidence: evidence})
-			if report.Status() != "FAIL" || report.Code() != "PROCESS_OR_EVIDENCE_FAILED" {
-				t.Fatalf("invalid %s evidence produced %#v", name, report)
-			}
-		})
 	}
 }
 
@@ -492,6 +453,29 @@ func TestSyntheticEvidenceCannotEnterPublicQualification(t *testing.T) {
 	}
 }
 
+func TestVerifierFixtureCannotEnterQualificationProducer(t *testing.T) {
+	approval := testArtifactApproval()
+	fixture := qualifiedReport(t, minObservedProcesses).wire
+	evidence := processEvidence{
+		Artifacts:               *fixture.Artifacts,
+		PolicySHA256:            fixture.PolicySHA256,
+		RootLineageSHA256:       fixture.RootLineageSHA256,
+		DescendantLineageSHA256: fixture.DescendantLineageSHA256,
+		Scenarios:               append([]ScenarioResult(nil), fixture.Scenarios...),
+		CleanupStatus:           fixture.CleanupStatus,
+		CleanupProcesses:        fixture.CleanupProcesses,
+		CleanupActiveProcesses:  fixture.CleanupActiveProcesses,
+		SessionClosed:           fixture.SessionClosed,
+		ArtifactsReverified:     fixture.ArtifactsReverified,
+	}
+	report := runQualification(context.Background(), Approval{artifact: &approval}, RunOptions{
+		SourceRevision: testRevision, Now: fixedClock(),
+	}, &recordingBoundary{evidence: evidence})
+	if report.Status() != "FAIL" || report.Code() != "PROCESS_OR_EVIDENCE_FAILED" {
+		t.Fatalf("verifier-only fixture entered qualification producer: %#v", report)
+	}
+}
+
 func assertBlocked(t *testing.T, report Report, code BlockerCode) {
 	t.Helper()
 	if report.Status() != "BLOCKED" || report.Code() != string(code) || report.CleanupStatus() != "NOT_STARTED" {
@@ -522,13 +506,6 @@ func (boundary *recordingBoundary) Run(context.Context) (processEvidence, Blocke
 func qualifiedReport(t *testing.T, processCount int) Report {
 	t.Helper()
 	approval := testArtifactApproval()
-	return runQualification(context.Background(), Approval{artifact: &approval}, RunOptions{
-		SourceRevision: testRevision, Now: fixedClock(),
-	}, &recordingBoundary{evidence: qualifiedProcessEvidence(processCount)})
-}
-
-func qualifiedProcessEvidence(processCount int) processEvidence {
-	approval := testArtifactApproval()
 	scenarios := make([]ScenarioResult, len(requiredScenarios))
 	for index, requirement := range requiredScenarios {
 		scenarios[index] = ScenarioResult{
@@ -537,14 +514,19 @@ func qualifiedProcessEvidence(processCount int) processEvidence {
 			TraceSHA256: digest([]byte(requirement.ID + "-trace")), TraceBytes: 96,
 		}
 	}
-	return processEvidence{
-		Artifacts:               artifactEvidenceFromApproval(approval),
-		PolicySHA256:            digest([]byte("approved-browser-launch-profile-and-network-policy-v2")),
-		RootLineageSHA256:       digest([]byte("observed-root-process-lineage-v2")),
-		DescendantLineageSHA256: digest([]byte("observed-descendant-process-lineage-v2")),
-		Scenarios:               scenarios, CleanupStatus: "PASS", CleanupProcesses: processCount, CleanupActiveProcesses: 0,
-		SessionClosed: true, ArtifactsReverified: true, realProof: &realQualificationProof{},
+	artifacts := artifactEvidenceFromApproval(approval)
+	wire := reportWire{
+		SchemaVersion: reportSchemaVersion, Qualification: qualificationName, Status: "PASS", Code: "QUALIFIED",
+		SourceRevision: testRevision, Platform: runtime.GOOS + "/" + runtime.GOARCH,
+		StartedAt: time.Unix(1, 0).UTC().Format(time.RFC3339Nano), CompletedAt: time.Unix(2, 0).UTC().Format(time.RFC3339Nano),
+		Artifacts: &artifacts, ExecutableSHA256: approval.MindWeaver.SHA256,
+		PolicySHA256:      digest([]byte("approved-browser-launch-profile-and-network-policy-v2")),
+		RootLineageSHA256: digest([]byte("observed-root-process-lineage-v2")), DescendantLineageSHA256: digest([]byte("observed-descendant-process-lineage-v2")),
+		Scenarios: scenarios, CleanupStatus: "PASS", CleanupProcesses: processCount, CleanupActiveProcesses: 0,
+		SessionClosed: true, ArtifactsReverified: true,
 	}
+	wire.CleanupSHA256 = reportReceiptDigest(wire)
+	return Report{wire: wire}
 }
 
 func testArtifactApproval() artifactApproval {
@@ -603,120 +585,5 @@ func fixedClock() func() time.Time {
 		value := times[index%len(times)]
 		index++
 		return value
-	}
-}
-
-type fakeProcessHarness struct {
-	mu              sync.Mutex
-	server          *http.Server
-	listener        net.Listener
-	approval        artifactApproval
-	driverEndpoint  string
-	cleanupCalled   bool
-	badTree         bool
-	failScenario    int
-	seenScenario    int
-	failDelete      bool
-	failCleanup     bool
-	blockScenario   bool
-	redirectSession bool
-	nonJSONSession  bool
-	extraProcess    bool
-}
-
-func (harness *fakeProcessHarness) Start(_ context.Context, artifacts *approvedArtifactSet) (managedProcessTree, error) {
-	harness.approval = artifacts.approval
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
-	if err != nil {
-		return nil, err
-	}
-	harness.listener = listener
-	harness.server = &http.Server{Handler: http.HandlerFunc(harness.serveWebDriver)}
-	go func() { _ = harness.server.Serve(listener) }()
-	if harness.driverEndpoint == "" {
-		harness.driverEndpoint = "http://" + listener.Addr().String()
-	}
-	return harness, nil
-}
-
-func (harness *fakeProcessHarness) DriverEndpoint() string { return harness.driverEndpoint }
-func (harness *fakeProcessHarness) MindWeaverEndpoint() string {
-	return "http://127.0.0.1:4242"
-}
-
-func (harness *fakeProcessHarness) Identities() []processIdentity {
-	driverPID := 101
-	identities := []processIdentity{
-		{Role: "browser", PID: 102, ParentPID: driverPID, SHA256: harness.approval.Browser.SHA256},
-		{Role: "driver", PID: driverPID, ParentPID: 0, SHA256: harness.approval.Driver.SHA256},
-		{Role: "mindweaver", PID: 103, ParentPID: 0, SHA256: harness.approval.MindWeaver.SHA256},
-	}
-	if harness.badTree {
-		identities[0].ParentPID = 999
-	}
-	if harness.extraProcess {
-		identities = append(identities, processIdentity{Role: "foreign", PID: 104, SHA256: harness.approval.Driver.SHA256})
-	}
-	return identities
-}
-
-func (harness *fakeProcessHarness) Cleanup(ctx context.Context) cleanupReceipt {
-	harness.mu.Lock()
-	harness.cleanupCalled = true
-	harness.mu.Unlock()
-	if harness.server != nil {
-		_ = harness.server.Shutdown(ctx)
-	}
-	if harness.listener != nil {
-		_ = harness.listener.Close()
-	}
-	if harness.failCleanup {
-		return cleanupReceipt{AllExited: false, ProcessCount: managedRootProcessCount, ActiveProcesses: 1}
-	}
-	return cleanupReceipt{AllExited: true, ProcessCount: managedRootProcessCount, ActiveProcesses: 0}
-}
-
-func (harness *fakeProcessHarness) serveWebDriver(writer http.ResponseWriter, request *http.Request) {
-	writer.Header().Set("Content-Type", "application/json")
-	switch {
-	case request.Method == http.MethodPost && request.URL.Path == "/session":
-		if harness.redirectSession {
-			http.Redirect(writer, request, "http://127.0.0.1:1/forbidden", http.StatusTemporaryRedirect)
-			return
-		}
-		if harness.nonJSONSession {
-			writer.Header().Set("Content-Type", "text/plain")
-		}
-		_, _ = writer.Write([]byte(`{"value":{"sessionId":"controlled-session-1"}}`))
-	case request.Method == http.MethodPost && strings.HasSuffix(request.URL.Path, "/url"):
-		harness.mu.Lock()
-		harness.seenScenario++
-		current := harness.seenScenario
-		block := harness.blockScenario
-		fail := harness.failScenario == current
-		harness.mu.Unlock()
-		if block {
-			select {
-			case <-request.Context().Done():
-			case <-time.After(100 * time.Millisecond):
-			}
-			return
-		}
-		if fail {
-			http.Error(writer, `{"value":{"error":"controlled"}}`, http.StatusInternalServerError)
-			return
-		}
-		_, _ = writer.Write([]byte(`{"value":null}`))
-	case request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/screenshot"):
-		value := base64.StdEncoding.EncodeToString([]byte("fake-screenshot-pixels"))
-		_, _ = fmt.Fprintf(writer, `{"value":%q}`, value)
-	case request.Method == http.MethodDelete && strings.HasPrefix(request.URL.Path, "/session/"):
-		if harness.failDelete {
-			http.Error(writer, `{"value":{"error":"controlled"}}`, http.StatusInternalServerError)
-			return
-		}
-		_, _ = writer.Write([]byte(`{"value":null}`))
-	default:
-		http.NotFound(writer, request)
 	}
 }

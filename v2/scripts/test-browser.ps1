@@ -410,8 +410,6 @@ function Test-BrowserRunnerResult([Text.Json.JsonElement]$Document, [int]$Runner
         $branch = @()
         if ($status -ceq "PASS") {
             $branch = @("artifacts", "executableSha256", "policySha256", "rootProcessLineageSha256", "descendantProcessLineageSha256", "cleanupReceiptSha256")
-        } elseif ($status -ceq "BLOCKED" -and $code -ceq "CONTROLLED_HARNESS_NOT_QUALIFIED") {
-            $branch = @("artifacts", "executableSha256", "rootProcessLineageSha256", "cleanupReceiptSha256")
         }
         if (-not (Test-ExactJsonProperties $Document ($common + $branch)) -or $RunnerOutput.Count -ne 1 -or
             (Get-RequiredJsonInt64 $Document "schemaVersion") -ne 2 -or
@@ -448,22 +446,10 @@ function Test-BrowserRunnerResult([Text.Json.JsonElement]$Document, [int]$Runner
         }
         $allowedBlockers = @(
             "BROWSER_ARTIFACT_NOT_APPROVED", "BROWSER_ARTIFACT_BUNDLE_INVALID",
-            "BROWSER_PROCESS_SANDBOX_NOT_IMPLEMENTED", "BROWSER_LAUNCH_PROFILE_NOT_APPROVED",
-            "CONTROLLED_HARNESS_NOT_QUALIFIED"
+            "BROWSER_PROCESS_SANDBOX_NOT_IMPLEMENTED", "BROWSER_LAUNCH_PROFILE_NOT_APPROVED"
         )
         if ($status -cne "BLOCKED" -or $RunnerExit -ne 3 -or $allowedBlockers -cnotcontains $code) {
             return $false
-        }
-        if ($code -ceq "CONTROLLED_HARNESS_NOT_QUALIFIED") {
-            $artifacts = Get-RequiredJsonProperty $Document "artifacts"
-            $receipt = Get-RequiredJsonString $Document "cleanupReceiptSha256"
-            return ($cleanupStatus -ceq "HARNESS_PASS" -and (Test-ArtifactEvidence $artifacts $ExpectedApproval) -and
-                (Get-RequiredJsonString $Document "executableSha256") -ceq $ExpectedApproval.MindWeaver.SHA256 -and
-                (Test-LowerSHA256 (Get-RequiredJsonString $Document "rootProcessLineageSha256")) -and
-                (Test-LowerSHA256 $receipt) -and $receipt -ceq (Get-BrowserReportReceiptSHA256 $Document) -and
-                $cleanupTotal -ge 3 -and $cleanupTotal -le 64 -and $cleanupActive -eq 0 -and
-                $sessionClosed -and $artifactsReverified -and
-                (Test-BrowserScenarioSet $scenarios "HARNESS_PASS" "NOT_QUALIFIED" $true))
         }
         return ($cleanupStatus -ceq "NOT_STARTED" -and $cleanupTotal -eq 0 -and $cleanupActive -eq 0 -and
             -not $sessionClosed -and -not $artifactsReverified -and

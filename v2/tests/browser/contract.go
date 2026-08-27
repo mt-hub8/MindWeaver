@@ -37,7 +37,6 @@ const (
 	BlockerArtifactBundleInvalid     BlockerCode = "BROWSER_ARTIFACT_BUNDLE_INVALID"
 	BlockerProcessSandboxUnavailable BlockerCode = "BROWSER_PROCESS_SANDBOX_NOT_IMPLEMENTED"
 	BlockerLaunchProfileNotApproved  BlockerCode = "BROWSER_LAUNCH_PROFILE_NOT_APPROVED"
-	BlockerControlledHarness         BlockerCode = "CONTROLLED_HARNESS_NOT_QUALIFIED"
 )
 
 // Approval is opaque: only a repository-owned, strictly parsed document can
@@ -163,7 +162,7 @@ type processEvidence struct {
 }
 
 // Only a future Windows Job/ACL-backed implementation in this package may
-// construct this proof. Controlled harnesses intentionally leave it nil.
+// construct this proof. Report-verifier fixtures never receive one.
 type realQualificationProof struct{}
 
 type binaryArtifactEvidence struct {
@@ -240,9 +239,6 @@ func runQualification(ctx context.Context, approval Approval, options RunOptions
 	if err != nil {
 		return failedReport(options.SourceRevision, started, completed)
 	}
-	if blocker == BlockerControlledHarness && validHarnessEvidence(evidence, *approval.artifact) {
-		return harnessReport(options.SourceRevision, started, completed, evidence)
-	}
 	if blocker != "" {
 		return blockedReport(options.SourceRevision, started, completed, blocker)
 	}
@@ -290,21 +286,6 @@ func failedReport(revision string, started, completed time.Time) Report {
 	}}
 }
 
-func harnessReport(revision string, started, completed time.Time, evidence processEvidence) Report {
-	wire := reportWire{
-		SchemaVersion: reportSchemaVersion, Qualification: qualificationName, Status: "BLOCKED", Code: string(BlockerControlledHarness),
-		SourceRevision: revision, Platform: runtime.GOOS + "/" + runtime.GOARCH,
-		StartedAt: started.Format(time.RFC3339Nano), CompletedAt: completed.Format(time.RFC3339Nano),
-		Artifacts:        &evidence.Artifacts,
-		ExecutableSHA256: evidence.Artifacts.MindWeaver.SHA256, RootLineageSHA256: evidence.RootLineageSHA256,
-		Scenarios: append([]ScenarioResult(nil), evidence.Scenarios...), CleanupStatus: evidence.CleanupStatus,
-		CleanupProcesses: evidence.CleanupProcesses, CleanupActiveProcesses: evidence.CleanupActiveProcesses,
-		SessionClosed: evidence.SessionClosed, ArtifactsReverified: evidence.ArtifactsReverified,
-	}
-	wire.CleanupSHA256 = reportReceiptDigest(wire)
-	return Report{wire: wire}
-}
-
 func validProcessEvidence(evidence processEvidence, approval artifactApproval) bool {
 	if !artifactEvidenceMatchesApproval(evidence.Artifacts, approval) ||
 		!lowerSHA256(evidence.PolicySHA256) || !lowerSHA256(evidence.RootLineageSHA256) ||
@@ -315,23 +296,6 @@ func validProcessEvidence(evidence processEvidence, approval artifactApproval) b
 	}
 	for index, result := range evidence.Scenarios {
 		if !validScenarioResult(result, requiredScenarios[index], "PASS", "QUALIFIED", true) ||
-			!lowerSHA256(result.ScreenshotSHA256) || result.ScreenshotBytes <= 0 || result.ScreenshotBytes > maxWebDriverBytes ||
-			!lowerSHA256(result.TraceSHA256) || result.TraceBytes <= 0 || result.TraceBytes > maxTraceBytes {
-			return false
-		}
-	}
-	return true
-}
-
-func validHarnessEvidence(evidence processEvidence, approval artifactApproval) bool {
-	if evidence.realProof != nil || !artifactEvidenceMatchesApproval(evidence.Artifacts, approval) ||
-		evidence.CleanupStatus != "HARNESS_PASS" || !lowerSHA256(evidence.RootLineageSHA256) ||
-		!validObservedProcessCount(evidence.CleanupProcesses) || evidence.CleanupActiveProcesses != 0 ||
-		!evidence.SessionClosed || !evidence.ArtifactsReverified || len(evidence.Scenarios) != len(requiredScenarios) {
-		return false
-	}
-	for index, result := range evidence.Scenarios {
-		if !validScenarioResult(result, requiredScenarios[index], "HARNESS_PASS", "NOT_QUALIFIED", true) ||
 			!lowerSHA256(result.ScreenshotSHA256) || result.ScreenshotBytes <= 0 || result.ScreenshotBytes > maxWebDriverBytes ||
 			!lowerSHA256(result.TraceSHA256) || result.TraceBytes <= 0 || result.TraceBytes > maxTraceBytes {
 			return false
@@ -392,31 +356,15 @@ func (report Report) validate() error {
 		if !allowedBlockerCode(wire.Code) {
 			return errors.New("browser qualification: invalid blocked report")
 		}
-		if wire.Code == string(BlockerControlledHarness) {
-			if wire.Artifacts == nil || !validArtifactEvidence(*wire.Artifacts) || !lowerSHA256(wire.ExecutableSHA256) ||
-				wire.ExecutableSHA256 != wire.Artifacts.MindWeaver.SHA256 ||
-				wire.PolicySHA256 != "" || !lowerSHA256(wire.RootLineageSHA256) || wire.DescendantLineageSHA256 != "" ||
-				wire.CleanupStatus != "HARNESS_PASS" || !lowerSHA256(wire.CleanupSHA256) ||
-				wire.CleanupSHA256 != reportReceiptDigest(wire) || !validObservedProcessCount(wire.CleanupProcesses) ||
-				wire.CleanupActiveProcesses != 0 || !wire.SessionClosed || !wire.ArtifactsReverified {
+		if wire.Artifacts != nil || wire.ExecutableSHA256 != "" || wire.PolicySHA256 != "" ||
+			wire.RootLineageSHA256 != "" || wire.DescendantLineageSHA256 != "" || wire.CleanupStatus != "NOT_STARTED" ||
+			wire.CleanupSHA256 != "" || wire.CleanupProcesses != 0 || wire.CleanupActiveProcesses != 0 ||
+			wire.SessionClosed || wire.ArtifactsReverified {
+			return errors.New("browser qualification: invalid blocked report")
+		}
+		for index, scenario := range wire.Scenarios {
+			if !validScenarioResult(scenario, requiredScenarios[index], "NOT_RUN", "PREREQUISITE_BLOCKED", false) {
 				return errors.New("browser qualification: invalid blocked report")
-			}
-			for index, scenario := range wire.Scenarios {
-				if !validScenarioResult(scenario, requiredScenarios[index], "HARNESS_PASS", "NOT_QUALIFIED", true) {
-					return errors.New("browser qualification: invalid blocked report")
-				}
-			}
-		} else {
-			if wire.Artifacts != nil || wire.ExecutableSHA256 != "" || wire.PolicySHA256 != "" ||
-				wire.RootLineageSHA256 != "" || wire.DescendantLineageSHA256 != "" || wire.CleanupStatus != "NOT_STARTED" ||
-				wire.CleanupSHA256 != "" || wire.CleanupProcesses != 0 || wire.CleanupActiveProcesses != 0 ||
-				wire.SessionClosed || wire.ArtifactsReverified {
-				return errors.New("browser qualification: invalid blocked report")
-			}
-			for index, scenario := range wire.Scenarios {
-				if !validScenarioResult(scenario, requiredScenarios[index], "NOT_RUN", "PREREQUISITE_BLOCKED", false) {
-					return errors.New("browser qualification: invalid blocked report")
-				}
 			}
 		}
 	case "PASS":
@@ -650,8 +598,7 @@ func stableVersion(value string) bool {
 
 func allowedBlockerCode(value string) bool {
 	return value == string(BlockerArtifactNotApproved) || value == string(BlockerArtifactBundleInvalid) ||
-		value == string(BlockerProcessSandboxUnavailable) || value == string(BlockerLaunchProfileNotApproved) ||
-		value == string(BlockerControlledHarness)
+		value == string(BlockerProcessSandboxUnavailable) || value == string(BlockerLaunchProfileNotApproved)
 }
 
 func artifactEvidenceFromApproval(approval artifactApproval) artifactEvidence {
