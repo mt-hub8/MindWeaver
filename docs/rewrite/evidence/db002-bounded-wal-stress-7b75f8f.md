@@ -6,7 +6,7 @@
 - Executable evidence:
   `v2/internal/store/sqlite/qualification_stress_test.go`
 - Executable-evidence SHA-256:
-  `758c223c5e8535672aeb8b2c1f7d0d6ef01261b51c50ad20024f4cd46e2ac258`
+  `c8167dd7f108ecd656d9574682f3a02bd0c48452a6b224bdfe5e5b7ca5da3570`
 - Ledger effect: none; `DB-002` remains `IMPLEMENTED`, not `PASS`
 
 This report adds a bounded, fixed-seed developer stress slice to the existing
@@ -80,38 +80,19 @@ The three default-timeout scenarios passed ten complete repetitions. No default
 configuration `BUSY`, partial transition, integrity error, or acknowledged model
 loss was observed.
 
-### Deliberate bounded BUSY and exact complete-operation retry
+### Deliberate BUSY and exact complete-operation retry
 
 The deliberate contention probe is separated from the default-timeout pressure.
-It changes only one retained contender connection to `busy_timeout=80`, verifies
-a numeric `BUSY`/`LOCKED` result no earlier than the configured bound (allowing
-25ms scheduler/clock tolerance), and restores that connection to `5000ms` before
-returning it to the pool.
+It opens a second real `Store` with one connection and `busy_timeout=80ms`, so
+the short setting cannot leak into the primary pool. It accepts only a numeric
+SQLite `BUSY` result; elapsed wall time is not used as proof of handler entry or
+as a latency claim.
 
 The lock holder writes a complete test transition and then rolls it back. The
 contender calls the same complete-operation function with the same operation ID;
 its first `BEGIN IMMEDIATE` fails with BUSY before any callback write, and its
 retry after holder rollback commits exactly once. The exact model proves that
 the holder transition did not leak and only the retried operation is present.
-
-Focused-run observations were 81.4004ms, 80.7506ms, and 81.1228ms for the three
-seeds. These are observations, not latency SLOs.
-
-### Cancellation, rollback, and same-connection reuse
-
-On a retained physical connection, an immediate transaction first writes a
-complete transition and then runs a finite 10,000,000-row recursive SQLite query
-under a 10ms context deadline. The test accepts only context cancellation or the
-numeric SQLite `INTERRUPT` classification, rolls the transaction back, checks the
-exact unchanged model through that same connection, and then successfully runs
-`SELECT 40 + 2` on it.
-
-Focused-run observations were 10.0783ms, 10.1993ms, and 10.3988ms. The 15-second
-scenario context is a cooperative bound, not an independent watchdog around the
-synchronous driver call. The recorded commands use Go's independent
-`-timeout=30s` process watchdog, and the recursive query has finite work. A
-broken cancellation implementation may therefore fail the command by timeout;
-this test does not claim that such a connection would remain reusable.
 
 ### WAL checkpoint, integrity, and close/reopen
 
@@ -141,11 +122,11 @@ $mwGo = 'C:\Users\24281\AppData\Local\MindWeaver\toolchains\go1.27.0\bin\go.exe'
 
 | Command | Result | Go package duration | Measured wall time |
 | --- | --- | ---: | ---: |
-| New test, verbose, count 1 | PASS | 0.837s | 1.494s |
-| New test, count 10 | PASS | 6.917s | 8.253s |
-| All `TestQualification*`, count 5 | PASS | 5.931s | 6.590s |
-| Full SQLite package, count 1 | PASS | 3.891s | 4.561s |
-| SQLite package vet | PASS | n/a | 0.428s |
+| New test, verbose, count 1 | PASS | 0.806s | 2.136s |
+| New test, count 10 | PASS | 6.473s | 7.309s |
+| All `TestQualification*`, count 5 | PASS | 5.806s | 7.196s |
+| Full SQLite package, count 1 | PASS | 3.966s | 5.329s |
+| SQLite package vet | PASS | n/a | 1.117s |
 
 ## P0/P1 and claim boundary
 

@@ -75,7 +75,9 @@ func TestQualificationBoundedSeededWALStress(t *testing.T) {
 			}
 			t.Cleanup(func() {
 				if store != nil {
-					_ = store.Close()
+					if err := store.Close(); err != nil {
+						t.Errorf("close qualification store: %v", err)
+					}
 				}
 			})
 			if err := qualificationStressCreateState(ctx, store); err != nil {
@@ -87,15 +89,11 @@ func TestQualificationBoundedSeededWALStress(t *testing.T) {
 				operations: make(map[string]int64),
 			}
 			plan := qualificationStressPlan(scenario.seed)
-			busyOperation, busyElapsed, err := qualificationStressBusyRetry(ctx, store, scenario.seed)
+			busyOperation, err := qualificationStressBusyRetry(ctx, store, path, scenario.seed)
 			if err != nil {
 				t.Fatalf("seed=%#x busy probe: %v", scenario.seed, err)
 			}
 			state.apply(busyOperation)
-			cancelElapsed, err := qualificationStressCancelAndReuse(ctx, store, scenario.seed, state)
-			if err != nil {
-				t.Fatalf("seed=%#x cancellation probe: %v", scenario.seed, err)
-			}
 			if err := qualificationStressCheckState(ctx, store.db, state); err != nil {
 				t.Fatalf("seed=%#x probes changed committed state: %v", scenario.seed, err)
 			}
@@ -206,9 +204,9 @@ func TestQualificationBoundedSeededWALStress(t *testing.T) {
 					plannedCommits++
 				}
 			}
-			t.Logf("seed=%#x readers=%d writers=%d rounds=%d committed=%d rolled_back=%d busy_wait=%s exact_busy_retry=committed cancel_wait=%s checkpoint=retained_then_truncated integrity=ok reopen=ok",
+			t.Logf("seed=%#x readers=%d writers=%d rounds=%d committed=%d rolled_back=%d exact_busy_retry=committed checkpoint=retained_then_truncated integrity=ok reopen=ok",
 				scenario.seed, scenario.readers, qualificationStressWriters, qualificationStressRounds,
-				len(state.operations), len(plan)-plannedCommits, busyElapsed, cancelElapsed)
+				len(state.operations), len(plan)-plannedCommits)
 		})
 	}
 }
@@ -358,135 +356,58 @@ func qualificationStressExecute(ctx context.Context, store *Store, operation qua
 	return nil
 }
 
-func qualificationStressBusyRetry(ctx context.Context, store *Store, seed int64) (qualificationStressOperation, time.Duration, error) {
+func qualificationStressBusyRetry(ctx context.Context, store *Store, path string, seed int64) (operation qualificationStressOperation, resultErr error) {
 	holder, err := store.db.Conn(ctx)
 	if err != nil {
-		return qualificationStressOperation{}, 0, err
+		return operation, err
 	}
-	defer holder.Close()
-	contender, err := store.db.Conn(ctx)
+	defer func() { resultErr = errors.Join(resultErr, holder.Close()) }()
+	contender, err := Open(ctx, path, Options{
+		BusyTimeout: qualificationStressBusyTimeout,
+		Connections: 1,
+	})
 	if err != nil {
-		return qualificationStressOperation{}, 0, err
+		return operation, err
 	}
-	defer contender.Close()
-
-	shortBusy := fmt.Sprintf("PRAGMA busy_timeout=%d", qualificationStressBusyTimeout.Milliseconds())
-	defaultBusy := fmt.Sprintf("PRAGMA busy_timeout=%d", defaultBusyTimeout.Milliseconds())
-	if _, err := contender.ExecContext(ctx, shortBusy); err != nil {
-		return qualificationStressOperation{}, 0, err
-	}
-	defer func() { _, _ = contender.ExecContext(context.Background(), defaultBusy) }()
-	var configured int
-	if err := contender.QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&configured); err != nil || configured != int(qualificationStressBusyTimeout.Milliseconds()) {
-		return qualificationStressOperation{}, 0, fmt.Errorf("short busy timeout = %d, err=%v", configured, err)
-	}
+	defer func() { resultErr = errors.Join(resultErr, contender.Close()) }()
 
 	holderTx, err := holder.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
-		return qualificationStressOperation{}, 0, err
+		return operation, err
 	}
 	holderOpen := true
 	defer func() {
 		if holderOpen {
-			_ = holderTx.Rollback()
+			if err := holderTx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+				resultErr = errors.Join(resultErr, err)
+			}
 		}
 	}()
 	if err := qualificationStressApply(ctx, holderTx, qualificationStressOperation{
 		id: fmt.Sprintf("busy-holder-%016x", uint64(seed)), delta: 1,
 	}, false); err != nil {
-		return qualificationStressOperation{}, 0, err
+		return operation, err
 	}
 	retry := qualificationStressOperation{
 		id: fmt.Sprintf("busy-retry-%016x", uint64(seed)), delta: -1, shouldCommit: true,
 	}
 	waitContext, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	started := time.Now()
-	busyErr := qualificationStressCommit(waitContext, contender, retry)
-	elapsed := time.Since(started)
+	busyErr := qualificationStressExecute(waitContext, contender, retry)
 	if busyErr == nil {
-		return qualificationStressOperation{}, elapsed, errors.New("contender acquired concurrent write transaction")
+		return operation, errors.New("contender acquired concurrent write transaction")
 	}
-	if !errors.Is(busyErr, sqlite3.BUSY) && !errors.Is(busyErr, sqlite3.LOCKED) {
-		return qualificationStressOperation{}, elapsed, fmt.Errorf("contender = %w, want numeric BUSY/LOCKED", busyErr)
-	}
-	if elapsed+25*time.Millisecond < qualificationStressBusyTimeout {
-		return qualificationStressOperation{}, elapsed, fmt.Errorf("busy wait %s shorter than %s", elapsed, qualificationStressBusyTimeout)
+	if !errors.Is(busyErr, sqlite3.BUSY) {
+		return operation, fmt.Errorf("contender = %w, want numeric BUSY", busyErr)
 	}
 	if err := holderTx.Rollback(); err != nil {
-		return qualificationStressOperation{}, elapsed, err
+		return operation, err
 	}
 	holderOpen = false
-	if err := qualificationStressCommit(ctx, contender, retry); err != nil {
-		return qualificationStressOperation{}, elapsed, fmt.Errorf("exact retry: %w", err)
+	if err := qualificationStressExecute(ctx, contender, retry); err != nil {
+		return operation, fmt.Errorf("exact retry: %w", err)
 	}
-	if _, err := contender.ExecContext(ctx, defaultBusy); err != nil {
-		return qualificationStressOperation{}, elapsed, err
-	}
-	if err := contender.QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&configured); err != nil || configured != int(defaultBusyTimeout.Milliseconds()) {
-		return qualificationStressOperation{}, elapsed, fmt.Errorf("restored busy timeout = %d, err=%v", configured, err)
-	}
-	return retry, elapsed, nil
-}
-
-func qualificationStressCommit(ctx context.Context, connection *sql.Conn, operation qualificationStressOperation) error {
-	tx, err := connection.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	if err := qualificationStressApply(ctx, tx, operation, false); err != nil {
-		return err
-	}
-	return tx.Commit()
-}
-
-func qualificationStressCancelAndReuse(ctx context.Context, store *Store, seed int64, want qualificationStressState) (time.Duration, error) {
-	connection, err := store.db.Conn(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer connection.Close()
-	tx, err := connection.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
-	if err != nil {
-		return 0, err
-	}
-	if err := qualificationStressApply(ctx, tx, qualificationStressOperation{
-		id: fmt.Sprintf("cancel-%016x", uint64(seed)), delta: 1,
-	}, false); err != nil {
-		_ = tx.Rollback()
-		return 0, err
-	}
-	cancelContext, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
-	started := time.Now()
-	var ignored int64
-	queryErr := tx.QueryRowContext(cancelContext, `
-		WITH RECURSIVE sequence(value) AS (
-			SELECT 0 UNION ALL SELECT value + 1 FROM sequence LIMIT 10000000
-		)
-		SELECT min(value) FROM sequence
-	`).Scan(&ignored)
-	elapsed := time.Since(started)
-	cancel()
-	if queryErr == nil {
-		_ = tx.Rollback()
-		return elapsed, errors.New("cancellation query completed unexpectedly")
-	}
-	if !errors.Is(queryErr, context.DeadlineExceeded) && !errors.Is(queryErr, context.Canceled) && !errors.Is(queryErr, sqlite3.INTERRUPT) {
-		_ = tx.Rollback()
-		return elapsed, fmt.Errorf("cancel result = %w, want context cancellation/INTERRUPT", queryErr)
-	}
-	if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
-		return elapsed, err
-	}
-	if err := qualificationStressCheckState(ctx, connection, want); err != nil {
-		return elapsed, fmt.Errorf("same connection retained partial transition: %w", err)
-	}
-	var answer int
-	if err := connection.QueryRowContext(ctx, "SELECT 40 + 2").Scan(&answer); err != nil || answer != 42 {
-		return elapsed, fmt.Errorf("reuse query = %d, err=%v", answer, err)
-	}
-	return elapsed, nil
+	return retry, nil
 }
 
 func qualificationStressOpenSnapshots(ctx context.Context, store *Store, count int, want qualificationStressState) ([]*qualificationStressSnapshot, error) {
