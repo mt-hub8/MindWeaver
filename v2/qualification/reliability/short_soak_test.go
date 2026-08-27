@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,34 +19,29 @@ import (
 const (
 	shortSoakScenario = "workbench-ingest-search-purge-v1"
 
-	shortSoakScenarioEnv          = "MW_REL001_SOAK_SCENARIO"
-	shortSoakDurationEnv          = "MW_REL001_SOAK_DURATION"
-	shortSoakMaxGoroutineDeltaEnv = "MW_REL001_SOAK_MAX_GOROUTINE_DELTA"
-	shortSoakMaxRegularFilesEnv   = "MW_REL001_SOAK_MAX_REGULAR_FILES"
-	shortSoakMaxStorageBytesEnv   = "MW_REL001_SOAK_MAX_STORAGE_BYTES"
+	shortSoakScenarioEnv        = "MW_REL001_SOAK_SCENARIO"
+	shortSoakDurationEnv        = "MW_REL001_SOAK_DURATION"
+	shortSoakMaxRegularFilesEnv = "MW_REL001_SOAK_MAX_REGULAR_FILES"
+	shortSoakMaxStorageBytesEnv = "MW_REL001_SOAK_MAX_STORAGE_BYTES"
 
-	defaultShortSoakDuration          = 3 * time.Second
-	maximumShortSoakDuration          = 24 * time.Hour
-	defaultShortSoakMaxGoroutineDelta = 8
-	maximumShortSoakMaxGoroutineDelta = 64
-	defaultShortSoakMaxRegularFiles   = 8
-	maximumShortSoakMaxRegularFiles   = 64
-	defaultShortSoakMaxStorageBytes   = 64 << 20
-	maximumShortSoakMaxStorageBytes   = 1 << 30
+	defaultShortSoakDuration        = 3 * time.Second
+	maximumShortSoakDuration        = 24 * time.Hour
+	defaultShortSoakMaxRegularFiles = 8
+	maximumShortSoakMaxRegularFiles = 64
+	defaultShortSoakMaxStorageBytes = 64 << 20
+	maximumShortSoakMaxStorageBytes = 1 << 30
 )
 
 type shortSoakConfig struct {
-	scenario          string
-	duration          time.Duration
-	maxGoroutineDelta int
-	maxRegularFiles   int
-	maxStorageBytes   int64
+	scenario        string
+	duration        time.Duration
+	maxRegularFiles int
+	maxStorageBytes int64
 }
 
 type shortSoakResources struct {
 	regularFiles int
 	storageBytes int64
-	goroutines   int
 }
 
 type shortSoakReport struct {
@@ -55,37 +49,38 @@ type shortSoakReport struct {
 	checks          int
 	maxRegularFiles int
 	maxStorageBytes int64
-	maxGoroutines   int
 }
 
 var shortSoakEnvironment = map[string]struct{}{
-	shortSoakScenarioEnv:          {},
-	shortSoakDurationEnv:          {},
-	shortSoakMaxGoroutineDeltaEnv: {},
-	shortSoakMaxRegularFilesEnv:   {},
-	shortSoakMaxStorageBytesEnv:   {},
+	shortSoakScenarioEnv:        {},
+	shortSoakDurationEnv:        {},
+	shortSoakMaxRegularFilesEnv: {},
+	shortSoakMaxStorageBytesEnv: {},
 }
 
 func TestShortSoakProductionInvariants(t *testing.T) {
 	config, err := parseShortSoakConfig(os.Environ())
 	qualificationRequire(t, "SOAK_CONFIG", err == nil)
 	runtimeState := newQualificationRuntime(t)
-	baselineGoroutines := runtime.NumGoroutine()
-	report := shortSoakReport{maxGoroutines: baselineGoroutines}
+	// runtime.NumGoroutine is process-global and includes lazily started Go/SQLite
+	// runtime workers, so a delta here is neither attributable nor reproducible.
+	// This bounded signal owns only exact Vault files/bytes; leak/race evidence
+	// remains part of the separate long-soak and race qualification gate.
+	report := shortSoakReport{}
 	deadline := time.Now().Add(config.duration)
 
 	for report.cycles == 0 || time.Now().Before(deadline) {
-		runShortSoakCycle(t, runtimeState, report.cycles, baselineGoroutines, config, &report)
+		runShortSoakCycle(t, runtimeState, report.cycles, config, &report)
 		report.cycles++
 	}
 
 	qualificationRequire(t, "SOAK_FINAL_INTEGRITY", runtimeState.database.IntegrityCheck(t.Context()) == nil)
 	qualificationRequire(t, "SOAK_FINAL_CANONICAL", runtimeState.database.CanonicalConsistencyCheck(t.Context()) == nil)
-	assertShortSoakResources(t, runtimeState, baselineGoroutines, config, &report)
+	assertShortSoakResources(t, runtimeState, config, &report)
 	t.Logf(
-		"REL001_SHORT_SOAK scenario=%s duration=%s cycles=%d checks=%d max_goroutines=%d max_regular_files=%d max_storage_bytes=%d",
+		"REL001_SHORT_SOAK scenario=%s duration=%s cycles=%d checks=%d max_regular_files=%d max_storage_bytes=%d",
 		config.scenario, config.duration, report.cycles, report.checks,
-		report.maxGoroutines, report.maxRegularFiles, report.maxStorageBytes,
+		report.maxRegularFiles, report.maxStorageBytes,
 	)
 }
 
@@ -93,7 +88,6 @@ func runShortSoakCycle(
 	t *testing.T,
 	runtimeState *qualificationRuntime,
 	sequence int,
-	baselineGoroutines int,
 	config shortSoakConfig,
 	report *shortSoakReport,
 ) {
@@ -128,7 +122,7 @@ func runShortSoakCycle(
 	qualificationRequire(t, "SOAK_PERIODIC_INTEGRITY", runtimeState.database.IntegrityCheck(t.Context()) == nil)
 	qualificationRequire(t, "SOAK_PERIODIC_CANONICAL", runtimeState.database.CanonicalConsistencyCheck(t.Context()) == nil)
 	report.checks++
-	assertShortSoakResources(t, runtimeState, baselineGoroutines, config, report)
+	assertShortSoakResources(t, runtimeState, config, report)
 
 	_, err = runtimeState.database.TrashDocument(t.Context(), upload.DocumentID)
 	qualificationRequire(t, "SOAK_TRASH", err == nil)
@@ -162,29 +156,26 @@ func runShortSoakCycle(
 	qualificationRequire(t, "SOAK_REFERENCES_DRAINED", err == nil && len(references) == 0)
 	_, err = runtimeState.database.GetDocumentPurgeStatus(t.Context(), upload.DocumentID)
 	qualificationRequire(t, "SOAK_PURGE_CLOSED", errors.Is(err, store.ErrNotFound))
-	assertShortSoakResources(t, runtimeState, baselineGoroutines, config, report)
+	assertShortSoakResources(t, runtimeState, config, report)
 }
 
 func assertShortSoakResources(
 	t *testing.T,
 	runtimeState *qualificationRuntime,
-	baselineGoroutines int,
 	config shortSoakConfig,
 	report *shortSoakReport,
 ) {
 	t.Helper()
 	resources, err := measureShortSoakResources(runtimeState.root)
 	qualificationRequire(t, "SOAK_RESOURCE_SCAN", err == nil)
-	qualificationRequire(t, "SOAK_GOROUTINE_BOUND", resources.goroutines <= baselineGoroutines+config.maxGoroutineDelta)
 	qualificationRequire(t, "SOAK_FILE_BOUND", resources.regularFiles <= config.maxRegularFiles)
 	qualificationRequire(t, "SOAK_STORAGE_BOUND", resources.storageBytes <= config.maxStorageBytes)
-	report.maxGoroutines = max(report.maxGoroutines, resources.goroutines)
 	report.maxRegularFiles = max(report.maxRegularFiles, resources.regularFiles)
 	report.maxStorageBytes = max(report.maxStorageBytes, resources.storageBytes)
 }
 
 func measureShortSoakResources(root string) (shortSoakResources, error) {
-	result := shortSoakResources{goroutines: runtime.NumGoroutine()}
+	result := shortSoakResources{}
 	err := filepath.WalkDir(root, func(_ string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return errors.New("resource walk failed")
@@ -233,11 +224,10 @@ func parseShortSoakConfig(environment []string) (shortSoakConfig, error) {
 	}
 
 	config := shortSoakConfig{
-		scenario:          shortSoakScenario,
-		duration:          defaultShortSoakDuration,
-		maxGoroutineDelta: defaultShortSoakMaxGoroutineDelta,
-		maxRegularFiles:   defaultShortSoakMaxRegularFiles,
-		maxStorageBytes:   defaultShortSoakMaxStorageBytes,
+		scenario:        shortSoakScenario,
+		duration:        defaultShortSoakDuration,
+		maxRegularFiles: defaultShortSoakMaxRegularFiles,
+		maxStorageBytes: defaultShortSoakMaxStorageBytes,
 	}
 	if value, present := values[shortSoakScenarioEnv]; present {
 		if value != shortSoakScenario {
@@ -256,10 +246,6 @@ func parseShortSoakConfig(environment []string) (shortSoakConfig, error) {
 		config.duration = parsed
 	}
 	var err error
-	config.maxGoroutineDelta, err = parseShortSoakInt(values, shortSoakMaxGoroutineDeltaEnv, config.maxGoroutineDelta, 0, maximumShortSoakMaxGoroutineDelta)
-	if err != nil {
-		return shortSoakConfig{}, err
-	}
 	config.maxRegularFiles, err = parseShortSoakInt(values, shortSoakMaxRegularFilesEnv, config.maxRegularFiles, 4, maximumShortSoakMaxRegularFiles)
 	if err != nil {
 		return shortSoakConfig{}, err
@@ -297,16 +283,15 @@ func TestShortSoakConfigIsFrozenAndBounded(t *testing.T) {
 	qualificationRequire(t, "CONFIG_DEFAULT", err == nil)
 	qualificationRequire(t, "CONFIG_DEFAULT_SCENARIO", defaults.scenario == shortSoakScenario)
 	qualificationRequire(t, "CONFIG_DEFAULT_DURATION", defaults.duration == defaultShortSoakDuration)
-	qualificationRequire(t, "CONFIG_DEFAULT_LIMITS", defaults.maxGoroutineDelta == defaultShortSoakMaxGoroutineDelta && defaults.maxRegularFiles == defaultShortSoakMaxRegularFiles && defaults.maxStorageBytes == defaultShortSoakMaxStorageBytes)
+	qualificationRequire(t, "CONFIG_DEFAULT_LIMITS", defaults.maxRegularFiles == defaultShortSoakMaxRegularFiles && defaults.maxStorageBytes == defaultShortSoakMaxStorageBytes)
 
 	extended, err := parseShortSoakConfig([]string{
 		shortSoakScenarioEnv + "=" + shortSoakScenario,
 		shortSoakDurationEnv + "=30m",
-		shortSoakMaxGoroutineDeltaEnv + "=16",
 		shortSoakMaxRegularFilesEnv + "=12",
 		shortSoakMaxStorageBytesEnv + "=134217728",
 	})
-	qualificationRequire(t, "CONFIG_EXTENDED", err == nil && extended.duration == 30*time.Minute && extended.maxGoroutineDelta == 16 && extended.maxRegularFiles == 12 && extended.maxStorageBytes == 128<<20)
+	qualificationRequire(t, "CONFIG_EXTENDED", err == nil && extended.duration == 30*time.Minute && extended.maxRegularFiles == 12 && extended.maxStorageBytes == 128<<20)
 
 	invalid := [][]string{
 		{shortSoakScenarioEnv + "="},
@@ -316,8 +301,7 @@ func TestShortSoakConfigIsFrozenAndBounded(t *testing.T) {
 		{shortSoakDurationEnv + "=999ms"},
 		{shortSoakDurationEnv + "=24h1s"},
 		{shortSoakDurationEnv + "=forever"},
-		{shortSoakMaxGoroutineDeltaEnv + "=-1"},
-		{shortSoakMaxGoroutineDeltaEnv + "=65"},
+		{"MW_REL001_SOAK_MAX_GOROUTINE_DELTA=8"},
 		{shortSoakMaxRegularFilesEnv + "=3"},
 		{shortSoakMaxRegularFilesEnv + "=065"},
 		{shortSoakMaxStorageBytesEnv + "=1048575"},
