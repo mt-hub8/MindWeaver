@@ -50,8 +50,9 @@ No P0 was found. This was the only open P1 in the reviewed operational egress.
   request; hostile response bodies, headers, framing, URLs, and model failures
   are collapsed to stable errors and never formatted into a Problem or durable
   error code.
-- RAG, ingestion, and purge durable failure projections accept controlled text
-  and stable safe codes. They do not persist raw Go/provider/parser errors.
+- The reachable RAG, ingestion, and purge services supply fixed controlled
+  terminal text and stable codes; SQLite bounds the text and validates the code
+  alphabet. They do not persist raw Go/provider/parser errors.
 - The PDF helper writes extracted text only to its bounded private stdout pipe.
   Its production failure channel is empty; the client discards the bounded
   hostile stderr buffer and returns a stable category.
@@ -99,8 +100,8 @@ SHA-256, byte count, line count, and range matching.
 This source and runtime boundary does not qualify release-wide artifacts.
 SEC-002 must remain short of final release closure until the final exact dual-PE
 build and installer environment perform a bounded canary scan over stdout,
-stderr, installer logs, crash/error artifacts, signed manifests, SBOM/NOTICE,
-browser screenshots/traces, and published qualification reports. Browser
+stderr, installer and OS event logs, crash/error artifacts, signed manifests,
+SBOM/NOTICE, browser screenshots/traces, and published qualification reports. Browser
 screenshots/traces are currently not produced because real browser
 qualification is blocked; no fake harness result may replace that evidence.
 The release scan must distinguish the deliberate data-bearing channels above
