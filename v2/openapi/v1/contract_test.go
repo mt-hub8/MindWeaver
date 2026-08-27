@@ -348,15 +348,26 @@ func TestContractFailsClosed(t *testing.T) {
 			t.Fatal("unknown surface field unexpectedly validated")
 		}
 	})
-	for _, packagePath := range []string{"internal/agent", "internal/batch", "internal/kbhealth"} {
+	for _, packagePath := range []string{
+		"internal/agent", "internal/batchrunner", "internal/cachestore", "internal/hybridsearch",
+		"internal/kbhealth", "internal/qdrantclient", "internal/queryunderstandingservice", "internal/storagesummary",
+	} {
 		t.Run("forbidden production package "+packagePath, func(t *testing.T) {
 			mutated := mutateObject(t, surface, func(document map[string]any) {
 				packages := append(document["packages"].([]any), packagePath)
 				sort.Slice(packages, func(left, right int) bool { return packages[left].(string) < packages[right].(string) })
 				document["packages"] = packages
+				command := document["commands"].([]any)[0].(map[string]any)
+				commandPackages := append(command["packages"].([]any), packagePath)
+				sort.Slice(commandPackages, func(left, right int) bool {
+					return commandPackages[left].(string) < commandPackages[right].(string)
+				})
+				command["packages"] = commandPackages
 			})
 			if _, err := contract.Validate(openAPI, mutated); err == nil {
 				t.Fatalf("forbidden production package %q unexpectedly validated", packagePath)
+			} else if !strings.Contains(err.Error(), "forbidden segment") {
+				t.Fatalf("forbidden production package %q failed for the wrong reason: %v", packagePath, err)
 			}
 		})
 	}

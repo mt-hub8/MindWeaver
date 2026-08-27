@@ -27,9 +27,12 @@ const (
 )
 
 var requiredForbiddenSegments = []string{
-	"agent", "agents", "batch", "batches", "embedding", "embeddings",
-	"evaluation", "evaluations", "kbhealth", "memories", "memory", "notification",
-	"notifications", "reindex", "reindexing", "rerank", "reranker", "vector", "vectors",
+	"agent", "agents", "batch", "batches", "boundedinstr", "cache", "caches", "embedding",
+	"embeddings", "evaluation", "evaluations", "expansion", "fusion", "hybrid",
+	"kbhealth", "memories", "memory", "naturalquestion", "notification",
+	"notifications", "profile", "profiles", "qdrant", "queryunderstanding",
+	"reindex", "reindexing", "rerank", "reranker", "rrf", "storage", "storages",
+	"termindex", "vector", "vectors",
 }
 
 var forbiddenLegacyBackendModuleSegments = []string{"flyway", "jdbc", "mariadb", "mysql"}
@@ -1252,14 +1255,108 @@ func forbiddenSegmentFrom(value string, segments []string) (string, bool) {
 	for _, segment := range segments {
 		forbidden[segment] = struct{}{}
 	}
-	for _, segment := range strings.FieldsFunc(strings.ToLower(value), func(character rune) bool {
-		return (character < 'a' || character > 'z') && (character < '0' || character > '9')
-	}) {
+	parts := contractIdentifierWords(value)
+	for index, segment := range parts {
 		if _, banned := forbidden[segment]; banned {
 			return segment, true
 		}
+		if base := contractForbiddenCompoundBase(segment); base != "" {
+			if _, banned := forbidden[base]; banned {
+				return base, true
+			}
+		}
+		if index+1 < len(parts) {
+			joined := segment + parts[index+1]
+			if _, banned := forbidden[joined]; banned {
+				return joined, true
+			}
+		}
 	}
 	return "", false
+}
+
+func contractForbiddenCompoundBase(value string) string {
+	switch value {
+	case "agentprofile", "agentservice", "createagent":
+		return "agent"
+	case "batchimporter", "batchrunner":
+		return "batch"
+	case "cachestore", "embeddingcache", "retrievalcache":
+		return "cache"
+	case "embeddingservice":
+		return "embedding"
+	case "evaluationrun":
+		return "evaluation"
+	case "fusionservice", "fusionstage":
+		return "fusion"
+	case "hybridretriever", "hybridsearch":
+		return "hybrid"
+	case "memoryrecord", "memorystore":
+		return "memory"
+	case "notificationprojection", "notificationservice":
+		return "notification"
+	case "profilestore":
+		return "profile"
+	case "qdrantclient":
+		return "qdrant"
+	case "reindexdocument":
+		return "reindex"
+	case "queryexpansion", "queryexpansionservice":
+		return "expansion"
+	case "queryunderstandingservice":
+		return "queryunderstanding"
+	case "rerankresults", "rerankservice":
+		return "rerank"
+	case "reciprocalrankfusion", "rrfscore":
+		return "rrf"
+	case "storagesummary":
+		return "storage"
+	case "vectorbackend", "vectorsearch":
+		return "vector"
+	case "boundedinstrretriever":
+		return "boundedinstr"
+	case "naturalquestionretriever":
+		return "naturalquestion"
+	case "relationaltermindex":
+		return "termindex"
+	default:
+		return ""
+	}
+}
+
+func contractIdentifierWords(value string) []string {
+	runes := []rune(value)
+	words := make([]string, 0, 8)
+	start := -1
+	flush := func(end int) {
+		if start >= 0 && end > start {
+			words = append(words, strings.ToLower(string(runes[start:end])))
+		}
+		start = -1
+	}
+	for index, current := range runes {
+		letter := (current >= 'a' && current <= 'z') || (current >= 'A' && current <= 'Z')
+		digit := current >= '0' && current <= '9'
+		if !letter && !digit {
+			flush(index)
+			continue
+		}
+		if start < 0 {
+			start = index
+			continue
+		}
+		previous := runes[index-1]
+		previousLower := previous >= 'a' && previous <= 'z'
+		previousUpper := previous >= 'A' && previous <= 'Z'
+		currentUpper := current >= 'A' && current <= 'Z'
+		nextLower := index+1 < len(runes) && runes[index+1] >= 'a' && runes[index+1] <= 'z'
+		if currentUpper && (previousLower || (previousUpper && nextLower)) {
+			flush(index)
+			start = index
+		}
+	}
+	flush(len(runes))
+	return words
 }
 
 func decodeCanonicalStrict(raw []byte, destination any) error {
