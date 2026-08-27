@@ -140,7 +140,7 @@ func runConfig(ctx context.Context, args []string, stdout io.Writer) error {
 		if err := config.WriteNew(ctx, *file, config.Default(*vault)); err != nil {
 			return err
 		}
-		_, err := fmt.Fprintf(stdout, "created %s (schema v%d)\n", *file, config.CurrentSchemaVersion)
+		_, err := fmt.Fprintf(stdout, "created configuration (schema v%d)\n", config.CurrentSchemaVersion)
 		return outputError(err)
 	case "check":
 		flags := flag.NewFlagSet("config check", flag.ContinueOnError)
@@ -156,7 +156,7 @@ func runConfig(ctx context.Context, args []string, stdout io.Writer) error {
 		if err != nil {
 			return err
 		}
-		_, err = fmt.Fprintf(stdout, "valid schema v%d; vault=%s\n", cfg.SchemaVersion, cfg.Vault.Root)
+		_, err = fmt.Fprintf(stdout, "valid configuration (schema v%d)\n", cfg.SchemaVersion)
 		return outputError(err)
 	default:
 		return apperror.New(apperror.KindInvalid, "cli.config_command_unknown", "unknown config command; use init or check")

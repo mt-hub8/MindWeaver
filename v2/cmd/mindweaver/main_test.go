@@ -38,13 +38,17 @@ func (stub *shutdownStub) Shutdown(ctx context.Context) error {
 	return ctx.Err()
 }
 
-func TestConfigInitAndCheck(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mindweaver.json")
+func TestConfigInitAndCheckOutputIsPathFree(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "configuration-path-canary", "mindweaver.json")
+	vaultPath := filepath.Join(root, "vault-path-canary")
 	var output bytes.Buffer
-	if err := run(context.Background(), []string{"config", "init", "-file", path, "-vault", "./my-vault"}, &output); err != nil {
+	if err := run(context.Background(), []string{"config", "init", "-file", path, "-vault", vaultPath}, &output); err != nil {
 		t.Fatalf("config init: %v", err)
 	}
-	if !strings.Contains(output.String(), "schema v1") {
+	if got := output.String(); got != "created configuration (schema v1)\n" ||
+		strings.Contains(got, path) || strings.Contains(got, vaultPath) ||
+		strings.Contains(got, "configuration-path-canary") || strings.Contains(got, "vault-path-canary") {
 		t.Fatalf("init output = %q", output.String())
 	}
 
@@ -52,7 +56,9 @@ func TestConfigInitAndCheck(t *testing.T) {
 	if err := run(context.Background(), []string{"config", "check", "-file", path}, &output); err != nil {
 		t.Fatalf("config check: %v", err)
 	}
-	if got := output.String(); !strings.Contains(got, "valid schema v1") || !strings.Contains(got, "vault=./my-vault") {
+	if got := output.String(); got != "valid configuration (schema v1)\n" ||
+		strings.Contains(got, path) || strings.Contains(got, vaultPath) ||
+		strings.Contains(got, "configuration-path-canary") || strings.Contains(got, "vault-path-canary") {
 		t.Fatalf("check output = %q", got)
 	}
 }
