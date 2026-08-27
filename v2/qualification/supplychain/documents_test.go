@@ -34,6 +34,7 @@ const (
 	qualificationVersion              = "0.0.0-qualification.e8cf45d"
 	qualificationGeneratorName        = "MindWeaver supply-chain qualification"
 	qualificationGeneratorVersion     = "1.0.0"
+	spdxVersion                       = "SPDX-2.3"
 )
 
 type releaseInventory struct {
@@ -696,9 +697,13 @@ type spdxExtractedLicenseInfo struct {
 }
 
 func renderSPDX(inventory releaseInventory, inventorySHA string) ([]byte, error) {
+	namespace, err := spdxDocumentNamespace(inventorySHA, spdxVersion, qualificationGeneratorName, qualificationGeneratorVersion)
+	if err != nil {
+		return nil, err
+	}
 	document := spdxDocument{
-		SPDXVersion: "SPDX-2.3", DataLicense: "CC0-1.0", SPDXID: "SPDXRef-DOCUMENT",
-		Name: "MindWeaver dual-PE SBOM", DocumentNamespace: "https://spdx.org/spdxdocs/mindweaver-" + inventorySHA,
+		SPDXVersion: spdxVersion, DataLicense: "CC0-1.0", SPDXID: "SPDXRef-DOCUMENT",
+		Name: "MindWeaver dual-PE SBOM", DocumentNamespace: namespace,
 		CreationInfo: spdxCreationInfo{Created: inventory.Creation.Timestamp, Creators: []string{qualificationToolCreator()}},
 	}
 	productID := "SPDXRef-Product"
@@ -741,6 +746,19 @@ func renderSPDX(inventory releaseInventory, inventorySHA string) ([]byte, error)
 
 func qualificationToolCreator() string {
 	return "Tool: " + qualificationGeneratorName + "-" + qualificationGeneratorVersion
+}
+
+func spdxDocumentNamespace(inventorySHA, version, generatorName, generatorVersion string) (string, error) {
+	if !validRawSHA256(inventorySHA) || version == "" || generatorName == "" || generatorVersion == "" ||
+		strings.ContainsAny(version, "\r\n") || strings.ContainsAny(generatorName, "\r\n") || strings.ContainsAny(generatorVersion, "\r\n") {
+		return "", errors.New("SPDX namespace inputs are invalid")
+	}
+	seed := "inventory-sha256:" + inventorySHA + "\n" +
+		"spdx-version:" + version + "\n" +
+		"generator-name:" + generatorName + "\n" +
+		"generator-version:" + generatorVersion + "\n"
+	digest := sha256.Sum256([]byte(seed))
+	return "https://spdx.org/spdxdocs/mindweaver-" + hex.EncodeToString(digest[:]), nil
 }
 
 func spdxComponentComment(component inventoryComponent, evidence []inventoryEvidence) string {
@@ -915,9 +933,13 @@ func validateGeneratedDocuments(inventory releaseInventory, documents []generate
 }
 
 func validateSPDXDocument(inventory releaseInventory, inventorySHA string, document spdxDocument) error {
-	if document.SPDXVersion != "SPDX-2.3" || document.DataLicense != "CC0-1.0" || document.SPDXID != "SPDXRef-DOCUMENT" ||
+	wantNamespace, err := spdxDocumentNamespace(inventorySHA, spdxVersion, qualificationGeneratorName, qualificationGeneratorVersion)
+	if err != nil {
+		return err
+	}
+	if document.SPDXVersion != spdxVersion || document.DataLicense != "CC0-1.0" || document.SPDXID != "SPDXRef-DOCUMENT" ||
 		document.Name != "MindWeaver dual-PE SBOM" ||
-		document.DocumentNamespace != "https://spdx.org/spdxdocs/mindweaver-"+inventorySHA || document.CreationInfo.Created != inventory.Creation.Timestamp ||
+		document.DocumentNamespace != wantNamespace || document.CreationInfo.Created != inventory.Creation.Timestamp ||
 		qualificationGeneratorName == "" || qualificationGeneratorVersion == "" || !slices.Equal(document.CreationInfo.Creators, []string{qualificationToolCreator()}) {
 		return errors.New("SPDX document header mismatch")
 	}
@@ -1281,6 +1303,31 @@ func TestDerivedSupplyChainDocumentMutationsFailClosed(t *testing.T) {
 		}
 		document.CreationInfo.Creators = []string{"Tool: MindWeaver supply-chain qualification"}
 		requireErrorContains(t, validateSPDXDocument(inventory, rawSHA256(read("inventory.json")), document), "header")
+	})
+
+	t.Run("SPDX namespace changes with generator version", func(t *testing.T) {
+		inventorySHA := rawSHA256(read("inventory.json"))
+		current, err := spdxDocumentNamespace(inventorySHA, spdxVersion, qualificationGeneratorName, qualificationGeneratorVersion)
+		if err != nil {
+			t.Fatal(err)
+		}
+		next, err := spdxDocumentNamespace(inventorySHA, spdxVersion, qualificationGeneratorName, qualificationGeneratorVersion+".next")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if current == next {
+			t.Fatal("SPDX namespace did not change with generator version")
+		}
+		var inventory releaseInventory
+		if err := strictJSON(read("inventory.json"), &inventory); err != nil {
+			t.Fatal(err)
+		}
+		var document spdxDocument
+		if err := strictJSON(read("sbom.spdx.json"), &document); err != nil {
+			t.Fatal(err)
+		}
+		document.DocumentNamespace = next
+		requireErrorContains(t, validateSPDXDocument(inventory, inventorySHA, document), "header")
 	})
 
 	t.Run("SPDX artifact fields are derived exactly", func(t *testing.T) {
