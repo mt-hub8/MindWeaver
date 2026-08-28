@@ -37,12 +37,13 @@ Two-code-point queries are unsupported. Ask is therefore keyword/phrase-driven
 grounded generation, not general natural-language question answering. Future
 natural-question retrieval quality and its recall/ranking/FDR/capacity budgets
 are `RET-003` LATER and remain unimplemented; every previous candidate has
-`Selection=NONE`. Clean-machine
-backup restore/reopen rehearsal, long-running SQLite stress, real browser
-qualification, packaging, and release qualification also remain incomplete.
-Live no-replace backup creation and startup-only verify/restore are
-implemented candidates, but their presence must not be read as a supported
-release promise.
+`Selection=NONE`. Startup-only standalone backup verification and
+no-active-Vault restore/reopen have passed the `BKP-001` development
+acceptance. Packaged clean-VM backup/restore lifecycle, long-running SQLite
+stress, real browser qualification, packaging, and release qualification remain
+incomplete. Live no-replace backup creation and startup-only verify/restore are
+accepted CORE behavior, but their presence must not be read as an installed,
+signed, or otherwise supported release promise.
 The product intentionally creates a fresh Vault and exposes no Java/MySQL data
 import command or compatibility path.
 

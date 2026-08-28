@@ -35,7 +35,7 @@ Statuses:
 | MW-HLT-001 | Vector/index health | REDESIGN | LATER_FROM_ZERO | LATER | diagnostics/repair | real backend capabilities, dry-run, backup and repair receipt |
 | MW-TRS-001 | Trash/restore | KEEP_SEMANTICS | CORE_REQUIREMENT_ONLY | CORE | retention coordinator | immediate retrieval exclusion and reversible restore |
 | MW-TRS-002 | Permanent delete | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | document deletion | delete known in-scope DB/FTS rows and reference-aware blobs; failures never report success |
-| MW-BKP-001 | Backup/restore | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | backup coordinator | DB snapshot + blob manifest; restore on a clean machine |
+| MW-BKP-001 | Backup/restore | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | backup coordinator | DB snapshot + blob manifest; standalone no-active-Vault restore and reopen; packaged clean-VM lifecycle remains under REL-002 release qualification |
 | MW-UI-001 | Static management UI | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | embedded web UI | API contract, browser security, accessibility and recovery workflows |
 | MW-CFG-001 | Versioned local configuration | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | platform/config | explicit allowlist, unknown/duplicate rejection; legacy and cloud secrets are never exported or imported |
 | MW-RUN-001 | Local launch, shutdown and environment scripts | REDESIGN | CORE_REBUILD_FROM_ZERO | CORE | single-process runtime and signed Windows package | one executable owns the Vault; install/start/stop/uninstall pass clean-machine tests |
