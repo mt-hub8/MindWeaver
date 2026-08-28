@@ -274,6 +274,17 @@ func assertEncryptedFixture(t *testing.T, path, password string) {
 }
 
 func TestPDFHelperTimeoutQualification(t *testing.T) {
+	const (
+		helperStartupBudget    = 2 * time.Second
+		helperTimeout          = 3 * time.Second
+		helperReapGrace        = 2 * time.Second
+		sentinelDelay          = 3100 * time.Millisecond
+		sentinelScheduleMargin = 500 * time.Millisecond
+	)
+	if helperStartupBudget >= helperTimeout || helperTimeout >= sentinelDelay ||
+		helperReapGrace <= 0 || sentinelScheduleMargin <= 0 {
+		t.Fatal("invalid PDF timeout qualification timing contract")
+	}
 	probe := buildPackage(t, "./qualification/pdf/adversarialprobe", "pdf-adversarial-probe")
 	root := t.TempDir()
 	source := writeFile(t, root, "source.pdf", []byte("%PDF-1.7\nqualification probe"))
@@ -281,26 +292,68 @@ func TestPDFHelperTimeoutQualification(t *testing.T) {
 	sentinel := filepath.Join(root, "must-not-survive")
 	t.Setenv(readyEnvironment, ready)
 	t.Setenv(sentinelEnvironment, sentinel)
-	t.Setenv(sentinelDelayEnvironment, "1100")
-	client, err := pdfclient.New(probe, time.Second)
+	t.Setenv(sentinelDelayEnvironment, fmt.Sprintf("%d", sentinelDelay/time.Millisecond))
+	client, err := pdfclient.New(probe, helperTimeout)
 	if err != nil {
 		t.Fatal(err)
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	done := make(chan error, 1)
+	callStarted := make(chan time.Time, 1)
 	go func() {
-		_, extractErr := client.Extract(context.Background(), source)
+		callStarted <- time.Now()
+		_, extractErr := client.Extract(ctx, source)
 		done <- extractErr
 	}()
-	waitForFile(t, ready, 2*time.Second)
+	started := <-callStarted
+	startupDeadline := started.Add(helperStartupBudget)
+	var readyObservedAt time.Time
+	for readyObservedAt.IsZero() {
+		if _, statErr := os.Lstat(ready); statErr == nil {
+			readyObservedAt = time.Now()
+			break
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(helperReapGrace):
+				t.Fatal("qualification helper startup failure did not reap the process")
+			}
+			t.Fatal(statErr)
+		}
+		select {
+		case extractErr := <-done:
+			t.Fatalf("qualification helper terminated before ready: %s", safeCategory(extractErr))
+		default:
+		}
+		if !time.Now().Before(startupDeadline) {
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(helperReapGrace):
+				t.Fatal("qualification helper startup cancellation did not reap the process")
+			}
+			t.Fatal("qualification helper did not start within the bounded startup window")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	reapDeadline := started.Add(helperTimeout + helperReapGrace)
+	reapWait := time.Until(reapDeadline)
+	if reapWait <= 0 {
+		t.Fatal("timed-out helper exceeded its bounded reap window")
+	}
 	select {
 	case err := <-done:
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("timeout category = %s", safeCategory(err))
 		}
-	case <-time.After(3 * time.Second):
+	case <-time.After(reapWait):
 		t.Fatal("timed-out helper was not reaped")
 	}
-	time.Sleep(1200 * time.Millisecond)
+	if observationWait := time.Until(readyObservedAt.Add(sentinelDelay + sentinelScheduleMargin)); observationWait > 0 {
+		time.Sleep(observationWait)
+	}
 	if _, err := os.Lstat(sentinel); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("timed-out helper survived: %v", err)
 	}
@@ -680,20 +733,6 @@ func writeFile(t *testing.T, directory, name string, data []byte) string {
 		t.Fatal(err)
 	}
 	return path
-}
-
-func waitForFile(t *testing.T, path string, timeout time.Duration) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if _, err := os.Lstat(path); err == nil {
-			return
-		} else if !errors.Is(err, os.ErrNotExist) {
-			t.Fatal(err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("qualification helper did not start")
 }
 
 func digest(data []byte) string {
