@@ -18,8 +18,10 @@ import (
 )
 
 type searchTestService struct {
-	hits   []store.ChunkHit
-	limits []int
+	hits       []store.ChunkHit
+	limits     []int
+	cancelled  []string
+	cancelHook func(string)
 }
 
 func (*searchTestService) Upload(context.Context, workbench.UploadRequest) (workbench.UploadResult, error) {
@@ -30,8 +32,12 @@ func (*searchTestService) GetJob(context.Context, string) (store.Job, error) {
 	panic("unexpected GetJob call")
 }
 
-func (*searchTestService) CancelJob(context.Context, string) error {
-	panic("unexpected CancelJob call")
+func (service *searchTestService) CancelJob(_ context.Context, id string) error {
+	service.cancelled = append(service.cancelled, id)
+	if service.cancelHook != nil {
+		service.cancelHook(id)
+	}
+	return nil
 }
 
 func (*searchTestService) RetryDocumentIngestion(context.Context, string, int64) (store.Document, bool, error) {
@@ -89,6 +95,47 @@ func (service *searchTestService) prefix(limit int) []store.ChunkHit {
 		limit = len(service.hits)
 	}
 	return append([]store.ChunkHit(nil), service.hits[:limit]...)
+}
+
+func TestCancelJobPersistsBeforeInterruptingMatchingWorkerContext(t *testing.T) {
+	runner := &cancellationRunner{entered: make(chan struct{}, 1), cancelled: make(chan struct{}, 1)}
+	worker := newIngestionWorker(runner, nil, time.Second, time.Minute)
+	worker.Start()
+	t.Cleanup(func() {
+		worker.Stop()
+		wait, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := worker.Wait(wait); err != nil {
+			t.Errorf("worker wait: %v", err)
+		}
+	})
+	select {
+	case <-runner.entered:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not enter cancellable job")
+	}
+	service := &searchTestService{cancelHook: func(id string) {
+		if id != "cancel-active" {
+			t.Fatalf("durable cancellation id = %q", id)
+		}
+		runner.cancelRequested.Store(true)
+	}}
+	api := &API{service: service, worker: worker}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/jobs/cancel", strings.NewReader(`{"id":"cancel-active"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	api.cancelJob(response, request)
+	if response.Code != http.StatusNoContent || len(service.cancelled) != 1 || service.cancelled[0] != "cancel-active" {
+		t.Fatalf("cancel response/requests = %d/%v", response.Code, service.cancelled)
+	}
+	select {
+	case <-runner.cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("API cancellation did not interrupt active worker context")
+	}
+	if runner.cancelWithoutDurable.Load() {
+		t.Fatal("worker context was cancelled before durable authority")
+	}
 }
 
 func TestSearchBoundsControlHeavyJSONAndContinuesWithoutDuplicates(t *testing.T) {

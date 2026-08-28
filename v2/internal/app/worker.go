@@ -14,6 +14,7 @@ import (
 type ingestionRunner interface {
 	ClaimOne(context.Context, string, time.Duration) (store.Job, error)
 	RunClaimed(context.Context, store.Job) (store.Job, error)
+	GetJob(context.Context, string) (store.Job, error)
 }
 
 type leaseRecoverer interface {
@@ -33,13 +34,15 @@ type ingestionWorker struct {
 	gateMu           sync.Mutex
 	quiesceRequested atomic.Bool
 
-	mu          sync.RWMutex
-	status      string
-	cancel      context.CancelFunc
-	done        chan struct{}
-	started     bool
-	quiesceOnce sync.Once
-	stopOnce    sync.Once
+	mu           sync.RWMutex
+	status       string
+	cancel       context.CancelFunc
+	activeJobID  string
+	activeCancel context.CancelFunc
+	done         chan struct{}
+	started      bool
+	quiesceOnce  sync.Once
+	stopOnce     sync.Once
 }
 
 func newIngestionWorker(runner ingestionRunner, recoverer leaseRecoverer, interval, lease time.Duration) *ingestionWorker {
@@ -124,6 +127,46 @@ func (worker *ingestionWorker) Status() string {
 	return worker.status
 }
 
+// CancelActive propagates an already durable user cancellation into only the
+// matching in-process operation. SQLite remains authoritative: callers must
+// persist the request before invoking this latency hint.
+func (worker *ingestionWorker) CancelActive(jobID string) bool {
+	worker.mu.Lock()
+	defer worker.mu.Unlock()
+	if worker.activeJobID != jobID || worker.activeCancel == nil {
+		return false
+	}
+	worker.activeCancel()
+	return true
+}
+
+func (worker *ingestionWorker) runClaimed(ctx context.Context, claimed store.Job) (store.Job, error) {
+	runContext, cancel := context.WithCancel(ctx)
+	worker.mu.Lock()
+	worker.activeJobID = claimed.ID
+	worker.activeCancel = cancel
+	worker.mu.Unlock()
+	defer func() {
+		worker.mu.Lock()
+		if worker.activeJobID == claimed.ID {
+			worker.activeJobID = ""
+			worker.activeCancel = nil
+		}
+		worker.mu.Unlock()
+		cancel()
+	}()
+
+	// Close the claim-to-registration race. If cancellation became durable
+	// before CancelActive could observe the child context, cancel it before any
+	// source read or PDF helper work proceeds. The claim itself is still passed
+	// to RunClaimed so its durable state converges through the normal fence.
+	current, err := worker.runner.GetJob(runContext, claimed.ID)
+	if err != nil || current.Status != store.JobRunning || current.LeaseToken != claimed.LeaseToken || current.CancelRequested {
+		cancel()
+	}
+	return worker.runner.RunClaimed(runContext, claimed)
+}
+
 func (worker *ingestionWorker) setStatus(status string) {
 	worker.mu.Lock()
 	worker.status = status
@@ -166,7 +209,7 @@ func (worker *ingestionWorker) loop(ctx context.Context) {
 		claimed, err := worker.claimOne(ctx)
 		if err == nil {
 			worker.setStatus("processing")
-			_, err = worker.runner.RunClaimed(ctx, claimed)
+			_, err = worker.runClaimed(ctx, claimed)
 		}
 		select {
 		case <-worker.quiesce:
@@ -180,7 +223,7 @@ func (worker *ingestionWorker) loop(ctx context.Context) {
 			continue // Drain already-queued work without waiting for the ticker.
 		case errors.Is(err, store.ErrNoRunnableJob):
 			worker.setStatus("ready")
-		case errors.Is(err, context.Canceled):
+		case errors.Is(err, context.Canceled) && ctx.Err() != nil:
 			worker.setStatus("stopped")
 			return
 		default:

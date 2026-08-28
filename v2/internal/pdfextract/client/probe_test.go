@@ -17,9 +17,11 @@ import (
 )
 
 const (
-	pdfHelperTestModeEnv   = "MW_PDF_HELPER_TEST_MODE"
-	pdfHelperTestMarkerEnv = "MW_PDF_HELPER_TEST_MARKER"
-	hostileHelperOutput    = "HOSTILE_HELPER_OUTPUT_DO_NOT_LEAK"
+	pdfHelperTestModeEnv          = "MW_PDF_HELPER_TEST_MODE"
+	pdfHelperTestMarkerEnv        = "MW_PDF_HELPER_TEST_MARKER"
+	pdfHelperTestSentinelEnv      = "MW_PDF_HELPER_TEST_SENTINEL"
+	pdfHelperTestSentinelDelayEnv = "MW_PDF_HELPER_TEST_SENTINEL_DELAY_MS"
+	hostileHelperOutput           = "HOSTILE_HELPER_OUTPUT_DO_NOT_LEAK"
 )
 
 var errNestedGoUnavailable = errors.New("nested Go tool is unavailable")
@@ -247,6 +249,19 @@ func runPDFHelperTestMode(mode string) {
 		if marker := os.Getenv(pdfHelperTestMarkerEnv); marker != "" {
 			_ = os.WriteFile(marker, []byte("started"), 0o600)
 		}
+		time.Sleep(30 * time.Second)
+	case "extract-sentinel":
+		marker := os.Getenv(pdfHelperTestMarkerEnv)
+		sentinel := os.Getenv(pdfHelperTestSentinelEnv)
+		delay, err := time.ParseDuration(os.Getenv(pdfHelperTestSentinelDelayEnv))
+		if marker == "" || sentinel == "" || err != nil || delay <= 0 {
+			os.Exit(64)
+		}
+		if err := os.WriteFile(marker, []byte("started"), 0o600); err != nil {
+			os.Exit(74)
+		}
+		time.Sleep(delay)
+		_ = os.WriteFile(sentinel, []byte("survived"), 0o600)
 		time.Sleep(30 * time.Second)
 	default:
 		os.Exit(97)

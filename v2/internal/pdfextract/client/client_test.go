@@ -63,6 +63,44 @@ func TestClientPreservesControlledHelperFailureCategories(t *testing.T) {
 	}
 }
 
+func TestClientExtractCancellationReapsHelperAndPreventsSentinel(t *testing.T) {
+	client := newPDFHelperProcessClient(t, 5*time.Second)
+	root := t.TempDir()
+	source := filepath.Join(root, "source.pdf")
+	writeSimplePDF(t, source, "cancel a real extract subprocess")
+	marker := filepath.Join(root, "started")
+	sentinel := filepath.Join(root, "survived")
+	const sentinelDelay = 750 * time.Millisecond
+	t.Setenv(pdfHelperTestModeEnv, "extract-sentinel")
+	t.Setenv(pdfHelperTestMarkerEnv, marker)
+	t.Setenv(pdfHelperTestSentinelEnv, sentinel)
+	t.Setenv(pdfHelperTestSentinelDelayEnv, sentinelDelay.String())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.Extract(ctx, source)
+		done <- err
+	}()
+	waitForHelperMarker(t, marker)
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Extract cancellation error = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancelled Extract did not reap its helper")
+	}
+
+	// Extract returning is the client boundary's reap point. Waiting past the
+	// helper's sentinel deadline proves the cancelled process did not survive it.
+	time.Sleep(sentinelDelay + 250*time.Millisecond)
+	if _, err := os.Lstat(sentinel); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("cancelled Extract helper survived: sentinel error = %v", err)
+	}
+}
+
 func TestBundledHelperFailureChannelIsEmpty(t *testing.T) {
 	helper := buildBundledHelper(t, runtime.GOOS, runtime.GOARCH)
 	root := t.TempDir()

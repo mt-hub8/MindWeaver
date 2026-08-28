@@ -3,7 +3,9 @@ package app
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +27,7 @@ import (
 	"github.com/mt-hub8/MindWeaver/v2/internal/blob"
 	"github.com/mt-hub8/MindWeaver/v2/internal/lifecycle"
 	"github.com/mt-hub8/MindWeaver/v2/internal/localhttp"
+	"github.com/mt-hub8/MindWeaver/v2/internal/pdfextract/protocol"
 	"github.com/mt-hub8/MindWeaver/v2/internal/rag"
 	store "github.com/mt-hub8/MindWeaver/v2/internal/store/sqlite"
 	"github.com/mt-hub8/MindWeaver/v2/internal/transport"
@@ -32,6 +35,41 @@ import (
 	"github.com/mt-hub8/MindWeaver/v2/internal/workbench"
 	"github.com/mt-hub8/MindWeaver/v2/platform/config"
 )
+
+const (
+	appPDFCancelHelperCapabilityEnvironment = "MW_APP_PDF_CANCEL_HELPER_CAPABILITY"
+	appPDFCancelHelperReadyEnvironment      = "MW_APP_PDF_CANCEL_READY"
+)
+
+func TestMain(m *testing.M) {
+	capability, err := hex.DecodeString(os.Getenv(appPDFCancelHelperCapabilityEnvironment))
+	if err == nil && len(capability) == 32 {
+		runAppPDFCancelHelperProcess()
+	}
+	os.Exit(m.Run())
+}
+
+func runAppPDFCancelHelperProcess() {
+	if len(os.Args) == 2 && os.Args[1] == protocol.ProbeArgument {
+		if err := protocol.WriteProbe(os.Stdout); err != nil {
+			os.Exit(74)
+		}
+		os.Exit(0)
+	}
+	if len(os.Args) != 3 || os.Args[1] != "-input" || strings.TrimSpace(os.Args[2]) == "" {
+		os.Exit(64)
+	}
+	ready := os.Getenv(appPDFCancelHelperReadyEnvironment)
+	if ready == "" {
+		os.Exit(64)
+	}
+	if err := os.WriteFile(ready, []byte("ready"), 0o600); err != nil {
+		os.Exit(74)
+	}
+	for {
+		time.Sleep(time.Hour)
+	}
+}
 
 type testSession struct {
 	cookie *http.Cookie
@@ -444,6 +482,93 @@ func TestCancelledIngestionProjectionRetryAndSucceededConflictHTTP(t *testing.T)
 	conflict := do(t, client, conflictRequest)
 	if conflict.StatusCode != http.StatusConflict || !bytes.Contains(conflict.body, []byte(`"code":"CONFLICT"`)) {
 		t.Fatalf("succeeded retry conflict status/body = %d %q", conflict.StatusCode, conflict.body)
+	}
+}
+
+func TestHTTPCancelInterruptsActiveIngestionAndWorkerContinuesAcrossReopen(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(root, "configuration", "mindweaver.v1.json")
+	ready := filepath.Join(root, "pdf-helper-ready")
+	t.Setenv(appPDFCancelHelperReadyEnvironment, ready)
+	options := Options{
+		ConfigPath: configPath, FirstRunVaultRoot: "../vault",
+		WorkerInterval: 10 * time.Millisecond, PDFHelperPath: appPDFCancelHelperExecutable(t),
+	}
+	application := startTestApp(t, options)
+	client := newHTTPClient(t)
+	session := exchangeApp(t, client, application)
+
+	upload := appRequest(t, application, session, http.MethodPost, "/api/v1/documents/upload",
+		strings.NewReader("%PDF-1.7\nreal helper cancellation boundary"))
+	upload.Header.Set("Content-Type", "application/octet-stream")
+	upload.Header.Set("Idempotency-Key", "active-pdf-cancel-e2e")
+	setUploadMetadata(upload, "Active PDF cancellation", "active-cancel.pdf")
+	uploadResult := do(t, client, upload)
+	var cancelledUpload struct {
+		DocumentID string `json:"documentId"`
+		JobID      string `json:"jobId"`
+		Created    bool   `json:"created"`
+	}
+	if uploadResult.StatusCode != http.StatusAccepted || json.Unmarshal(uploadResult.body, &cancelledUpload) != nil ||
+		cancelledUpload.DocumentID == "" || cancelledUpload.JobID == "" || !cancelledUpload.Created {
+		t.Fatalf("PDF upload status/body = %d %q, decoded = %#v", uploadResult.StatusCode, uploadResult.body, cancelledUpload)
+	}
+	waitForFile(t, ready)
+
+	cancelResult := do(t, client, appJSONRequest(t, application, session, "/api/v1/jobs/cancel",
+		fmt.Sprintf(`{"id":%q}`, cancelledUpload.JobID)))
+	if cancelResult.StatusCode != http.StatusNoContent || len(cancelResult.body) != 0 {
+		t.Fatalf("cancel status/body = %d %q", cancelResult.StatusCode, cancelResult.body)
+	}
+	cancelledJob := waitForJob(t, client, application, session, cancelledUpload.JobID, "cancelled")
+	if cancelledJob.Attempt != 1 || !cancelledJob.CancelRequested || cancelledJob.ErrorCode != "" {
+		t.Fatalf("cancelled job = %#v", cancelledJob)
+	}
+	cancelledDocument := requireDocumentView(t, listAllDocumentsHTTP(t, client, application, session, 10), cancelledUpload.DocumentID)
+	if cancelledDocument.IngestionStatus != "cancelled" || cancelledDocument.IngestionAttempt != 1 ||
+		cancelledDocument.IngestionErrorCode != "" || cancelledDocument.ActiveRevisionID != "" {
+		t.Fatalf("cancelled document projection = %#v", cancelledDocument)
+	}
+
+	// A user cancellation ends only the matching operation. The same worker
+	// must remain live and claim the next queued ingestion normally.
+	nextUpload := appRequest(t, application, session, http.MethodPost, "/api/v1/documents/upload",
+		strings.NewReader("the ingestion worker continues after one active cancellation"))
+	nextUpload.Header.Set("Content-Type", "application/octet-stream")
+	nextUpload.Header.Set("Idempotency-Key", "after-active-cancel-e2e")
+	setUploadMetadata(nextUpload, "After cancellation", "after-cancel.txt")
+	nextResult := do(t, client, nextUpload)
+	var succeededUpload struct {
+		DocumentID string `json:"documentId"`
+		JobID      string `json:"jobId"`
+		Created    bool   `json:"created"`
+	}
+	if nextResult.StatusCode != http.StatusAccepted || json.Unmarshal(nextResult.body, &succeededUpload) != nil ||
+		succeededUpload.DocumentID == "" || succeededUpload.JobID == "" || !succeededUpload.Created {
+		t.Fatalf("next upload status/body = %d %q, decoded = %#v", nextResult.StatusCode, nextResult.body, succeededUpload)
+	}
+	if succeeded := waitForJob(t, client, application, session, succeededUpload.JobID, "succeeded"); succeeded.Attempt != 1 {
+		t.Fatalf("next job = %#v", succeeded)
+	}
+	succeededDocument := requireDocumentView(t, listAllDocumentsHTTP(t, client, application, session, 10), succeededUpload.DocumentID)
+	if succeededDocument.IngestionStatus != "succeeded" || succeededDocument.ActiveRevisionID == "" {
+		t.Fatalf("next document projection = %#v", succeededDocument)
+	}
+
+	shutdownTestApp(t, application)
+	application = startTestApp(t, options)
+	session = exchangeApp(t, client, application)
+	reopenedCancelled := waitForJob(t, client, application, session, cancelledUpload.JobID, "cancelled")
+	reopenedSucceeded := waitForJob(t, client, application, session, succeededUpload.JobID, "succeeded")
+	if reopenedCancelled.Attempt != 1 || !reopenedCancelled.CancelRequested || reopenedSucceeded.Attempt != 1 {
+		t.Fatalf("reopened jobs: cancelled=%#v succeeded=%#v", reopenedCancelled, reopenedSucceeded)
+	}
+	reopenedDocuments := listAllDocumentsHTTP(t, client, application, session, 10)
+	reopenedCancelledDocument := requireDocumentView(t, reopenedDocuments, cancelledUpload.DocumentID)
+	reopenedSucceededDocument := requireDocumentView(t, reopenedDocuments, succeededUpload.DocumentID)
+	if reopenedCancelledDocument.IngestionStatus != "cancelled" || reopenedCancelledDocument.ActiveRevisionID != "" ||
+		reopenedSucceededDocument.IngestionStatus != "succeeded" || reopenedSucceededDocument.ActiveRevisionID == "" {
+		t.Fatalf("reopened projections: cancelled=%#v succeeded=%#v", reopenedCancelledDocument, reopenedSucceededDocument)
 	}
 }
 
@@ -901,6 +1026,10 @@ func (runner *neverReleaseWorkerRunner) RunClaimed(context.Context, store.Job) (
 	runner.once.Do(func() { close(runner.entered) })
 	<-runner.release
 	return store.Job{}, nil
+}
+
+func (runner *neverReleaseWorkerRunner) GetJob(context.Context, string) (store.Job, error) {
+	return store.Job{ID: "shutdown-fault", Kind: store.IngestDocumentJobKind, Status: store.JobRunning, LeaseToken: "lease"}, nil
 }
 
 func TestAppShutdownNeverReleaseFaultsAreBoundedAndKeepLowerResourcesOpen(t *testing.T) {
@@ -1488,6 +1617,39 @@ func waitForTerminalJob(t *testing.T, client *http.Client, application *App, ses
 	}
 	t.Fatalf("job %s did not reach a terminal status", id)
 	return jobView{}
+}
+
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("test process did not publish its ready marker")
+}
+
+func appPDFCancelHelperExecutable(t *testing.T) string {
+	t.Helper()
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	executable, err = filepath.Abs(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, statErr := os.Stat(executable); statErr != nil || !info.Mode().IsRegular() {
+		t.Fatalf("test helper executable %q is unavailable or not a regular file: %v", executable, statErr)
+	}
+	capability := make([]byte, 32)
+	if _, err := rand.Read(capability); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(appPDFCancelHelperCapabilityEnvironment, hex.EncodeToString(capability))
+	return executable
 }
 
 func do(t *testing.T, client *http.Client, request *http.Request) httpResult {

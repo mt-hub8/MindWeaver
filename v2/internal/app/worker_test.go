@@ -25,6 +25,10 @@ func (idleRunner) RunClaimed(context.Context, store.Job) (store.Job, error) {
 	panic("idle runner must not execute a claim")
 }
 
+func (idleRunner) GetJob(context.Context, string) (store.Job, error) {
+	panic("idle runner has no claim")
+}
+
 type countingRecoverer struct{ calls atomic.Int32 }
 
 type blockedRecoverer struct {
@@ -39,6 +43,44 @@ type blockingClaimRunner struct {
 	release  chan struct{}
 	claims   atomic.Int32
 	executed atomic.Int32
+}
+
+type cancellationRunner struct {
+	claimed              atomic.Bool
+	cancelRequested      atomic.Bool
+	cancelWithoutDurable atomic.Bool
+	entered              chan struct{}
+	cancelled            chan struct{}
+}
+
+func (runner *cancellationRunner) ClaimOne(context.Context, string, time.Duration) (store.Job, error) {
+	if !runner.claimed.CompareAndSwap(false, true) {
+		return store.Job{}, store.ErrNoRunnableJob
+	}
+	return store.Job{ID: "cancel-active", Kind: store.IngestDocumentJobKind, Status: store.JobRunning, LeaseToken: "cancel-lease"}, nil
+}
+
+func (runner *cancellationRunner) GetJob(context.Context, string) (store.Job, error) {
+	return store.Job{
+		ID: "cancel-active", Kind: store.IngestDocumentJobKind, Status: store.JobRunning, LeaseToken: "cancel-lease",
+		CancelRequested: runner.cancelRequested.Load(),
+	}, nil
+}
+
+func (runner *cancellationRunner) RunClaimed(ctx context.Context, _ store.Job) (store.Job, error) {
+	select {
+	case runner.entered <- struct{}{}:
+	default:
+	}
+	<-ctx.Done()
+	if !runner.cancelRequested.Load() {
+		runner.cancelWithoutDurable.Store(true)
+	}
+	select {
+	case runner.cancelled <- struct{}{}:
+	default:
+	}
+	return store.Job{}, ctx.Err()
 }
 
 func (runner *blockingClaimRunner) ClaimOne(ctx context.Context, _ string, _ time.Duration) (store.Job, error) {
@@ -60,6 +102,10 @@ func (runner *blockingClaimRunner) RunClaimed(context.Context, store.Job) (store
 	return store.Job{}, nil
 }
 
+func (runner *blockingClaimRunner) GetJob(context.Context, string) (store.Job, error) {
+	return store.Job{ID: "accepted", Kind: store.IngestDocumentJobKind, Status: store.JobRunning, LeaseToken: "lease"}, nil
+}
+
 func (runner *countingIdleRunner) ClaimOne(context.Context, string, time.Duration) (store.Job, error) {
 	runner.calls.Add(1)
 	return store.Job{}, store.ErrNoRunnableJob
@@ -67,6 +113,10 @@ func (runner *countingIdleRunner) ClaimOne(context.Context, string, time.Duratio
 
 func (runner *countingIdleRunner) RunClaimed(context.Context, store.Job) (store.Job, error) {
 	panic("counting idle runner must not execute a claim")
+}
+
+func (runner *countingIdleRunner) GetJob(context.Context, string) (store.Job, error) {
+	panic("counting idle runner has no claim")
 }
 
 func (recoverer *blockedRecoverer) RecoverExpired(ctx context.Context, _ time.Duration) (int64, error) {
@@ -105,6 +155,10 @@ func (runner *blockingRunner) RunClaimed(ctx context.Context, _ store.Job) (stor
 	}
 }
 
+func (runner *blockingRunner) GetJob(context.Context, string) (store.Job, error) {
+	return store.Job{ID: "claimed", Kind: store.IngestDocumentJobKind, Status: store.JobRunning, LeaseToken: "lease"}, nil
+}
+
 func TestWorkerQuiesceLetsCurrentJobFinishWithoutAnotherClaim(t *testing.T) {
 	runner := &blockingRunner{entered: make(chan struct{}, 1), release: make(chan struct{})}
 	worker := newIngestionWorker(runner, nil, 10*time.Millisecond, time.Minute)
@@ -136,6 +190,67 @@ func TestWorkerStopCancelsCurrentJob(t *testing.T) {
 	worker := newIngestionWorker(runner, nil, 10*time.Millisecond, time.Minute)
 	worker.Start()
 	<-runner.entered
+	worker.Stop()
+	wait, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := worker.Wait(wait); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWorkerDurableCancellationInterruptsOnlyMatchingActiveJob(t *testing.T) {
+	runner := &cancellationRunner{entered: make(chan struct{}, 1), cancelled: make(chan struct{}, 1)}
+	worker := newIngestionWorker(runner, nil, time.Second, time.Minute)
+	worker.Start()
+	select {
+	case <-runner.entered:
+	case <-time.After(time.Second):
+		t.Fatal("worker did not enter cancellable job")
+	}
+	if worker.CancelActive("other-job") {
+		t.Fatal("non-matching cancellation interrupted active job")
+	}
+	select {
+	case <-runner.cancelled:
+		t.Fatal("non-matching cancellation reached job context")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	// The API persists this flag before delivering the in-process latency hint.
+	runner.cancelRequested.Store(true)
+	if !worker.CancelActive("cancel-active") {
+		t.Fatal("matching active cancellation was not delivered")
+	}
+	select {
+	case <-runner.cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("active job did not observe cancellation")
+	}
+	deadline := time.Now().Add(time.Second)
+	for worker.Status() == "processing" && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if worker.Status() == "stopped" {
+		t.Fatal("user cancellation stopped the ingestion worker")
+	}
+	worker.Stop()
+	wait, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := worker.Wait(wait); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWorkerObservesCancellationCommittedBeforeActiveRegistration(t *testing.T) {
+	runner := &cancellationRunner{entered: make(chan struct{}, 1), cancelled: make(chan struct{}, 1)}
+	runner.cancelRequested.Store(true)
+	worker := newIngestionWorker(runner, nil, time.Second, time.Minute)
+	worker.Start()
+	select {
+	case <-runner.cancelled:
+	case <-time.After(time.Second):
+		t.Fatal("pre-registered durable cancellation did not cancel job context")
+	}
 	worker.Stop()
 	wait, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

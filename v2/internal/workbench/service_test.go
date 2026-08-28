@@ -22,6 +22,19 @@ type fixedPDFExtractor struct {
 	err    error
 }
 
+type blockingPDFExtractor struct {
+	entered chan struct{}
+}
+
+func (extractor *blockingPDFExtractor) Extract(ctx context.Context, _ string) (protocol.Result, error) {
+	select {
+	case extractor.entered <- struct{}{}:
+	default:
+	}
+	<-ctx.Done()
+	return protocol.Result{}, ctx.Err()
+}
+
 func (extractor fixedPDFExtractor) Extract(context.Context, string) (protocol.Result, error) {
 	return extractor.result, extractor.err
 }
@@ -328,6 +341,68 @@ func TestInterruptedClaimRetriesUnlessUserCancellationWins(t *testing.T) {
 				t.Fatalf("interrupted job = %#v", job)
 			}
 		})
+	}
+}
+
+func TestRunningPDFCancellationInterruptsHelperAndConvergesDurably(t *testing.T) {
+	ctx := t.Context()
+	root := t.TempDir()
+	blobs, err := blob.OpenStore(filepath.Join(root, "blobs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := store.Open(ctx, filepath.Join(root, "mindweaver.db"), store.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	extractor := &blockingPDFExtractor{entered: make(chan struct{}, 1)}
+	service, err := newWithPDFExtractor(database, blobs, extractor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upload, err := service.Upload(ctx, UploadRequest{
+		IdempotencyKey: "running-pdf-cancel", Title: "Cancel PDF", Filename: "cancel.pdf",
+		Source: strings.NewReader("%PDF-1.7\nsynthetic helper cancellation input"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := service.ClaimOne(ctx, "pdf-cancel-worker", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runContext, cancelRun := context.WithCancel(context.Background())
+	defer cancelRun()
+	type outcome struct {
+		job store.Job
+		err error
+	}
+	finished := make(chan outcome, 1)
+	go func() {
+		job, runErr := service.RunClaimed(runContext, claimed)
+		finished <- outcome{job: job, err: runErr}
+	}()
+	select {
+	case <-extractor.entered:
+	case <-time.After(time.Second):
+		t.Fatal("ingestion did not enter isolated PDF helper")
+	}
+	if err := database.Cancel(ctx, upload.JobID); err != nil {
+		t.Fatal(err)
+	}
+	cancelRun()
+	select {
+	case result := <-finished:
+		if !errors.Is(result.err, context.Canceled) || result.job.Status != store.JobCancelled || result.job.ErrorCode != "" {
+			t.Fatalf("cancelled helper result = %#v, %v", result.job, result.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancelled PDF helper did not converge")
+	}
+	document, err := service.GetDocument(ctx, upload.DocumentID)
+	if err != nil || document.ActiveRevisionID != "" || document.IngestionStatus != store.JobCancelled {
+		t.Fatalf("cancelled document projection = %#v, %v", document, err)
 	}
 }
 

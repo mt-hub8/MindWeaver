@@ -259,7 +259,7 @@ func (s *Service) RunClaimed(ctx context.Context, claimed store.Job) (store.Job,
 	var text string
 	var readErr error
 	if source.Format == string(ingest.FormatPDF) {
-		_, readErr = io.Copy(io.Discard, counter)
+		_, readErr = io.Copy(io.Discard, &contextReader{ctx: ctx, reader: counter})
 	} else {
 		text, readErr = ingest.ReadText(ctx, counter, ingest.MaxTextSourceBytes)
 	}
@@ -287,10 +287,16 @@ func (s *Service) RunClaimed(ctx context.Context, claimed store.Job) (store.Job,
 			return s.failClaim(ctx, claimed, sourceErrorCode(readErr), readErr)
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return s.failClaim(ctx, claimed, "WORK_CANCELLED", err)
+	}
 
 	prepared, err := ingest.ChunkText(text, ingest.DefaultChunkRunes, ingest.DefaultChunkOverlap)
 	if err != nil {
 		return s.failClaim(ctx, claimed, sourceErrorCode(err), err)
+	}
+	if err := ctx.Err(); err != nil {
+		return s.failClaim(ctx, claimed, "WORK_CANCELLED", err)
 	}
 	chunks := make([]store.IngestionChunk, len(prepared))
 	for index, chunk := range prepared {
@@ -535,6 +541,22 @@ func validFilename(value string) (string, error) {
 type countingReader struct {
 	reader io.Reader
 	count  int64
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (reader *contextReader) Read(buffer []byte) (int, error) {
+	if err := reader.ctx.Err(); err != nil {
+		return 0, err
+	}
+	n, err := reader.reader.Read(buffer)
+	if contextErr := reader.ctx.Err(); contextErr != nil {
+		return n, errors.Join(err, contextErr)
+	}
+	return n, err
 }
 
 func (reader *countingReader) Read(buffer []byte) (int, error) {

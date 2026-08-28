@@ -409,6 +409,12 @@ func (api *API) cancelJob(response http.ResponseWriter, request *http.Request) {
 		api.problem(response, request, code, detail)
 		return
 	}
+	// SQLite is authoritative: only propagate the in-process latency hint after
+	// the cancellation request is durable. A claim which has not registered its
+	// child context yet observes the same flag in ingestionWorker.runClaimed.
+	if api.worker != nil {
+		api.worker.CancelActive(input.ID)
+	}
 	response.WriteHeader(http.StatusNoContent)
 }
 
