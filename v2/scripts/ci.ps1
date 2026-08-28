@@ -65,9 +65,35 @@ try {
     $mwVendorPrefix = (Join-Path $mwModuleRoot 'vendor') + [IO.Path]::DirectorySeparatorChar
     $mwGoFiles = @(Get-ChildItem -LiteralPath $mwModuleRoot -Recurse -File -Filter '*.go' |
         Where-Object { -not $_.FullName.StartsWith($mwVendorPrefix, [StringComparison]::OrdinalIgnoreCase) } |
-        Select-Object -ExpandProperty FullName)
-    $mwUnformatted = @(& $mwGofmt -l $mwGoFiles)
-    if ($LASTEXITCODE -ne 0) { throw 'gofmt check failed' }
+        Select-Object -ExpandProperty FullName |
+        Sort-Object)
+    # Keep the native command line bounded. A tracked-only standalone archive
+    # lives below a deliberately long temporary path, so passing every source
+    # file to one gofmt process can exceed Windows' CreateProcess limit even
+    # though the same checkout succeeds from a short workspace path.
+    $mwGofmtArgumentLimit = 12000
+    $mwGofmtBatch = @()
+    $mwGofmtBatchCharacters = 0
+    $mwUnformatted = @()
+    foreach ($mwGoFile in $mwGoFiles) {
+        $mwArgumentCharacters = $mwGoFile.Length + 3
+        if ($mwArgumentCharacters -gt $mwGofmtArgumentLimit) {
+            throw 'Go source path exceeds the bounded gofmt command line'
+        }
+        if ($mwGofmtBatch.Count -gt 0 -and
+            ($mwGofmtBatchCharacters + $mwArgumentCharacters) -gt $mwGofmtArgumentLimit) {
+            $mwUnformatted += @(& $mwGofmt -l @mwGofmtBatch)
+            if ($LASTEXITCODE -ne 0) { throw 'gofmt check failed' }
+            $mwGofmtBatch = @()
+            $mwGofmtBatchCharacters = 0
+        }
+        $mwGofmtBatch += $mwGoFile
+        $mwGofmtBatchCharacters += $mwArgumentCharacters
+    }
+    if ($mwGofmtBatch.Count -gt 0) {
+        $mwUnformatted += @(& $mwGofmt -l @mwGofmtBatch)
+        if ($LASTEXITCODE -ne 0) { throw 'gofmt check failed' }
+    }
     if ($mwUnformatted.Count -gt 0) {
         throw ('Go files require formatting: ' + ($mwUnformatted -join ', '))
     }
