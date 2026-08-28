@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"syscall"
 	"testing"
 	"time"
 
@@ -64,7 +65,7 @@ func stopREL001Process(process *runningApp, requireKill bool) error {
 	}
 	if !initiallyExited {
 		var exitErr *exec.ExitError
-		if !killed || !primaryClean || waitErr == nil || !errors.As(waitErr, &exitErr) || exitErr.ExitCode() == 0 {
+		if !killed || !primaryClean || waitErr == nil || !errors.As(waitErr, &exitErr) || exitErr.ExitCode() != 1 {
 			return errors.New("REL001_KILL_PROCESS_TERMINATION_INVALID")
 		}
 	}
@@ -80,6 +81,36 @@ func closeREL001ProcessHandleLocked(process *runningApp) error {
 		process.nativeCloseErr = errors.New("REL001_KILL_PROCESS_HANDLE_CLOSE_FAILED")
 	}
 	return process.nativeCloseErr
+}
+
+func TestREL001TerminationUsesExactExitCode(t *testing.T) {
+	command := exec.Command(os.Getenv("SystemRoot")+`\System32\cmd.exe`, "/d", "/c", "exit", "0")
+	command.Env = []string{"SystemRoot=" + os.Getenv("SystemRoot"), "WINDIR=" + os.Getenv("WINDIR")}
+	command.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_SUSPENDED}
+	if err := command.Start(); err != nil {
+		t.Fatal("REL001_TERMINATION_EXIT_CODE_CHILD_START_FAILED")
+	}
+	handle, err := retainREL001ProcessHandle(command.Process.Pid)
+	if err != nil {
+		_ = command.Process.Kill()
+		_ = command.Wait()
+		t.Fatal("REL001_TERMINATION_EXIT_CODE_HANDLE_OPEN_FAILED")
+	}
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- command.Wait() }()
+	process := &runningApp{command: command, waitDone: waitDone, nativeHandle: handle}
+	t.Cleanup(func() {
+		if err := process.stop(); err != nil {
+			t.Error("REL001_TERMINATION_EXIT_CODE_CLEANUP_FAILED")
+		}
+	})
+	if err := stopREL001Process(process, true); err != nil {
+		t.Fatal("REL001_TERMINATION_EXIT_CODE_STOP_FAILED")
+	}
+	var exitErr *exec.ExitError
+	if !process.finished || !process.nativeCloseAttempted || !errors.As(process.waitErr, &exitErr) || exitErr.ExitCode() != 1 {
+		t.Fatal("REL001_TERMINATION_EXIT_CODE_NOT_EXACT")
+	}
 }
 
 func TestREL001RetainedHandleRetryAndCloseExactlyOnce(t *testing.T) {

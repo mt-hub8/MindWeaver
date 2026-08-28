@@ -85,8 +85,12 @@ type rel001KillIdentity struct {
 }
 
 type rel001KillResponse struct {
-	identity rel001KillIdentity
-	err      error
+	identity       rel001KillIdentity
+	status         int
+	created        bool
+	createdPresent bool
+	complete       bool
+	err            error
 }
 
 type rel001CatalogItem struct {
@@ -102,7 +106,7 @@ type rel001MutationWire struct {
 	DocumentID   string            `json:"documentId"`
 	RevisionID   string            `json:"revisionId"`
 	JobID        string            `json:"jobId"`
-	Created      bool              `json:"created"`
+	Created      *bool             `json:"created"`
 	Answer       struct {
 		ID                   string `json:"id"`
 		ConversationID       string `json:"conversationId"`
@@ -166,7 +170,7 @@ func TestREL001DeterministicHTTPKillReplay(t *testing.T) {
 		}
 	}
 	if entries, err := os.ReadDir(campaignRoot); err != nil || len(entries) != 0 {
-		t.Fatal("REL001_KILL_CAMPAIGN_CLEANUP_INCOMPLETE")
+		t.Fatal("REL001_KILL_TEST_SANDBOX_NOT_EMPTY")
 	}
 	if enabled {
 		total := 0
@@ -412,7 +416,7 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 	if err := os.Mkdir(runRoot, 0o700); err != nil {
 		t.Fatal("REL001_KILL_RUN_ROOT_CREATE_FAILED")
 	}
-	t.Cleanup(func() { removeREL001KillRunRoot(t, runRoot) })
+	t.Cleanup(func() { removeREL001KillTestSandbox(t, runRoot) })
 	processTemp := filepath.Join(runRoot, "temp")
 	if err := os.Mkdir(processTemp, 0o700); err != nil {
 		t.Fatal("REL001_KILL_PROCESS_TEMP_CREATE_FAILED")
@@ -434,6 +438,7 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 	firstSession := exchangeSession(t, first)
 	t.Cleanup(firstSession.client.CloseIdleConnections)
 	conversationID := ""
+	providerEndpoint := ""
 	var providerAttempts atomic.Int64
 	if frame.mutation == rel001KillAskNoContext {
 		listener, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -447,6 +452,7 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 		provider.Listener = listener
 		provider.Start()
 		t.Cleanup(provider.Close)
+		providerEndpoint = provider.URL
 		var configured struct {
 			Config struct {
 				Version int64 `json:"version"`
@@ -463,11 +469,11 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 			method: http.MethodPost, path: "/api/v1/conversations", key: fmt.Sprintf("rel001-setup-%04d", frame.sequence),
 			contentType: "application/json", body: `{"title":"REL001 Ask setup ` + fmt.Sprintf("%04d", frame.sequence) + `"}`,
 		}
-		identity, created, err := executeREL001KillMutation(firstSession, setup, rel001KillConversation)
-		if err != nil || !created {
+		setupResponse := executeREL001KillMutation(firstSession, setup, rel001KillConversation)
+		if setupResponse.err != nil || !validREL001InitialResponse(setupResponse, rel001KillConversation) {
 			t.Fatal("REL001_KILL_ASK_SETUP_FAILED")
 		}
-		conversationID = identity.primary
+		conversationID = setupResponse.identity.primary
 	}
 	template := rel001KillRequest(frame, conversationID)
 	var decisionOrder atomic.Int32
@@ -504,11 +510,11 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 			}
 		}}
 		request = request.WithContext(httptrace.WithClientTrace(requestContext, trace))
-		identity, _, err := executeREL001KillRequest(firstSession, request, frame.mutation)
-		if err == nil {
+		result := executeREL001KillRequest(firstSession, request, frame.mutation)
+		if result.complete {
 			claimREL001DecisionLinearization(&decisionOrder, rel001ResponseBeforeDecision)
 		}
-		response <- rel001KillResponse{identity: identity, err: err}
+		response <- result
 	}()
 	select {
 	case writeErr := <-requestWriteResult:
@@ -549,6 +555,9 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 	if decisionLinearization == rel001ResponseBeforeDecision && firstResponse.err != nil {
 		t.Fatal("REL001_KILL_RESPONSE_BEFORE_DECISION_INVALID")
 	}
+	if firstResponse.complete && (firstResponse.err != nil || !validREL001InitialResponse(firstResponse, frame.mutation)) {
+		t.Fatal("REL001_KILL_COMPLETE_INITIAL_RESPONSE_INVALID")
+	}
 	restarted := startMindWeaverWithEnvironment(t, artifacts, runRoot, childEnvironment)
 	if restarted.command.Process.Pid <= 0 || restarted.command.Process.Pid == firstPID {
 		t.Fatal("REL001_KILL_RESTART_PROCESS_ID_INVALID")
@@ -560,28 +569,32 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 	})
 	restartSession := exchangeSession(t, restarted)
 	t.Cleanup(restartSession.client.CloseIdleConnections)
-	firstReplay, _, err := executeREL001KillMutation(restartSession, template, frame.mutation)
-	if err != nil {
-		t.Fatalf("REL001_KILL_FIRST_REPLAY_FAILED mutation=%s error=%s", rel001KillMutationNames[frame.mutation], err)
+	firstReplay := executeREL001KillMutation(restartSession, template, frame.mutation)
+	if firstReplay.err != nil || !firstReplay.complete ||
+		firstResponse.complete && !validREL001ReplayResponse(firstReplay, frame.mutation) ||
+		!firstResponse.complete && !validREL001InitialOrReplayResponse(firstReplay, frame.mutation) {
+		t.Fatalf("REL001_KILL_FIRST_REPLAY_FAILED mutation=%s", rel001KillMutationNames[frame.mutation])
 	}
-	if firstResponse.err == nil && firstReplay != firstResponse.identity {
+	if firstResponse.complete && firstReplay.identity != firstResponse.identity {
 		t.Fatalf("REL001_KILL_FIRST_REPLAY_IDENTITY_DRIFT mutation=%s primary=%t secondary=%t tertiary=%t status=%t limitation=%t code=%t",
-			rel001KillMutationNames[frame.mutation], firstReplay.primary == firstResponse.identity.primary,
-			firstReplay.secondary == firstResponse.identity.secondary, firstReplay.tertiary == firstResponse.identity.tertiary,
-			firstReplay.status == firstResponse.identity.status, firstReplay.limitation == firstResponse.identity.limitation,
-			firstReplay.code == firstResponse.identity.code)
+			rel001KillMutationNames[frame.mutation], firstReplay.identity.primary == firstResponse.identity.primary,
+			firstReplay.identity.secondary == firstResponse.identity.secondary, firstReplay.identity.tertiary == firstResponse.identity.tertiary,
+			firstReplay.identity.status == firstResponse.identity.status, firstReplay.identity.limitation == firstResponse.identity.limitation,
+			firstReplay.identity.code == firstResponse.identity.code)
 	}
-	secondReplay, created, err := executeREL001KillMutation(restartSession, template, frame.mutation)
-	if err != nil || created || secondReplay != firstReplay {
+	secondReplay := executeREL001KillMutation(restartSession, template, frame.mutation)
+	if secondReplay.err != nil || !secondReplay.complete || !validREL001ReplayResponse(secondReplay, frame.mutation) ||
+		secondReplay.identity != firstReplay.identity {
 		t.Fatal("REL001_KILL_EXACT_REPLAY_FAILED")
 	}
-	verifyREL001KillOracle(t, restartSession, frame, template, firstReplay, conversationID, providerAttempts.Load())
+	verifyREL001KillOracle(t, restartSession, frame, template, firstReplay.identity, conversationID, providerAttempts.Load())
 	firstSession.client.CloseIdleConnections()
 	restartSession.client.CloseIdleConnections()
 	if err := stopREL001Process(restarted, true); err != nil {
 		t.Fatal("REL001_KILL_REQUIRED_TERMINATION_FAILED")
 	}
-	removeREL001KillRunRoot(t, runRoot)
+	assertREL001KillStorage(t, runRoot, frame, template, firstReplay.identity, conversationID, providerEndpoint)
+	removeREL001KillTestSandbox(t, runRoot)
 	return decisionLinearization
 }
 
@@ -629,57 +642,140 @@ func newREL001KillRequest(session *apiSession, template rel001KillTemplate) (*ht
 	return request, nil
 }
 
-func executeREL001KillMutation(session *apiSession, template rel001KillTemplate, mutation rel001KillMutation) (rel001KillIdentity, bool, error) {
+func executeREL001KillMutation(session *apiSession, template rel001KillTemplate, mutation rel001KillMutation) rel001KillResponse {
 	request, err := newREL001KillRequest(session, template)
 	if err != nil {
-		return rel001KillIdentity{}, false, errors.New("REL001_KILL_MUTATION_REQUEST_INVALID")
+		return rel001KillResponse{err: errors.New("REL001_KILL_MUTATION_REQUEST_INVALID")}
 	}
 	return executeREL001KillRequest(session, request, mutation)
 }
 
-func executeREL001KillRequest(session *apiSession, request *http.Request, mutation rel001KillMutation) (rel001KillIdentity, bool, error) {
+func executeREL001KillRequest(session *apiSession, request *http.Request, mutation rel001KillMutation) rel001KillResponse {
 	response, err := session.client.Do(request)
 	if err != nil {
-		return rel001KillIdentity{}, false, errors.New("REL001_KILL_MUTATION_TRANSPORT_FAILED")
+		return rel001KillResponse{err: errors.New("REL001_KILL_MUTATION_TRANSPORT_FAILED")}
 	}
+	result := rel001KillResponse{status: response.StatusCode}
 	var wire rel001MutationWire
 	err = decodeREL001KillJSON(response.Body, &wire)
-	var identity rel001KillIdentity
+	if wire.Created != nil {
+		result.createdPresent = true
+		result.created = *wire.Created
+	}
 	switch mutation {
 	case rel001KillCollection:
-		identity.primary = wire.Collection.ID
+		result.identity.primary = wire.Collection.ID
 	case rel001KillConversation:
-		identity.primary = wire.Conversation.ID
+		result.identity.primary = wire.Conversation.ID
 	case rel001KillUpload:
-		identity = rel001KillIdentity{primary: wire.DocumentID, secondary: wire.RevisionID, tertiary: wire.JobID}
+		result.identity = rel001KillIdentity{primary: wire.DocumentID, secondary: wire.RevisionID, tertiary: wire.JobID}
 	case rel001KillAskNoContext:
-		identity = rel001KillIdentity{
+		result.identity = rel001KillIdentity{
 			primary: wire.Answer.ID, secondary: wire.Answer.ConversationID,
 			tertiary: strconv.FormatInt(wire.Answer.ConversationRevision, 10),
 			status:   wire.Answer.Status, limitation: wire.Answer.LimitationCode, code: wire.Answer.ErrorCode,
 		}
 	default:
 		_ = response.Body.Close()
-		return identity, false, errors.New("REL001_KILL_MUTATION_INVALID")
+		return rel001KillResponse{err: errors.New("REL001_KILL_MUTATION_INVALID")}
 	}
 	closeErr := response.Body.Close()
 	if err != nil {
-		return rel001KillIdentity{}, false, errors.New("REL001_KILL_MUTATION_RESPONSE_DECODE_INVALID")
+		result.err = errors.New("REL001_KILL_MUTATION_RESPONSE_DECODE_INVALID")
+		return result
 	}
 	if closeErr != nil {
-		return rel001KillIdentity{}, false, errors.New("REL001_KILL_MUTATION_RESPONSE_CLOSE_FAILED")
+		result.err = errors.New("REL001_KILL_MUTATION_RESPONSE_CLOSE_FAILED")
+		return result
 	}
-	validStatus := response.StatusCode == http.StatusOK ||
-		response.StatusCode == http.StatusCreated && (mutation == rel001KillCollection || mutation == rel001KillConversation) ||
-		response.StatusCode == http.StatusAccepted && mutation == rel001KillUpload
-	if !validStatus {
-		return rel001KillIdentity{}, false, fmt.Errorf("REL001_KILL_MUTATION_STATUS_INVALID_%d", response.StatusCode)
+	result.complete = true
+	if !validREL001KillIdentity(result.identity, mutation) || !validREL001InitialOrReplayResponse(result, mutation) {
+		result.err = errors.New("REL001_KILL_MUTATION_RESPONSE_INVALID")
 	}
-	if !validREL001KillIdentity(identity, mutation) {
-		return rel001KillIdentity{}, false, fmt.Errorf("REL001_KILL_MUTATION_IDENTITY_INVALID status=%s limitation=%s code=%s revision=%s",
-			identity.status, identity.limitation, identity.code, identity.tertiary)
+	return result
+}
+
+func validREL001InitialResponse(response rel001KillResponse, mutation rel001KillMutation) bool {
+	if !response.complete || response.err != nil {
+		return false
 	}
-	return identity, wire.Created, nil
+	if mutation == rel001KillAskNoContext {
+		return response.status == http.StatusOK && !response.createdPresent
+	}
+	want := http.StatusCreated
+	if mutation == rel001KillUpload {
+		want = http.StatusAccepted
+	}
+	return response.createdPresent && response.created && response.status == want
+}
+
+func validREL001ReplayResponse(response rel001KillResponse, mutation rel001KillMutation) bool {
+	if !response.complete || response.err != nil {
+		return false
+	}
+	if mutation == rel001KillAskNoContext {
+		return response.status == http.StatusOK && !response.createdPresent
+	}
+	return response.status == http.StatusOK && response.createdPresent && !response.created
+}
+
+func validREL001InitialOrReplayResponse(response rel001KillResponse, mutation rel001KillMutation) bool {
+	return validREL001InitialResponse(response, mutation) || validREL001ReplayResponse(response, mutation)
+}
+
+func TestREL001MutationResponseContracts(t *testing.T) {
+	for mutation := rel001KillCollection; mutation <= rel001KillAskNoContext; mutation++ {
+		initial := rel001KillResponse{complete: true, created: true, createdPresent: true, status: http.StatusCreated}
+		if mutation == rel001KillUpload {
+			initial.status = http.StatusAccepted
+		}
+		if mutation == rel001KillAskNoContext {
+			initial.status, initial.created, initial.createdPresent = http.StatusOK, false, false
+		}
+		replay := rel001KillResponse{complete: true, createdPresent: true, status: http.StatusOK}
+		if mutation == rel001KillAskNoContext {
+			replay.createdPresent = false
+		}
+		if !validREL001InitialResponse(initial, mutation) || !validREL001ReplayResponse(replay, mutation) {
+			t.Fatalf("REL001_KILL_RESPONSE_CONTRACT_REJECTED mutation=%s", rel001KillMutationNames[mutation])
+		}
+		if mutation != rel001KillAskNoContext && (validREL001ReplayResponse(initial, mutation) || validREL001InitialResponse(replay, mutation)) {
+			t.Fatalf("REL001_KILL_RESPONSE_CONTRACT_REJECTED mutation=%s", rel001KillMutationNames[mutation])
+		}
+		invalidReplay := []rel001KillResponse{replay, replay, replay}
+		invalidReplay[0].complete = false
+		invalidReplay[1].status = http.StatusCreated
+		invalidReplay[2].createdPresent = !invalidReplay[2].createdPresent
+		if mutation != rel001KillAskNoContext {
+			invalidCreated := replay
+			invalidCreated.created = true
+			invalidReplay = append(invalidReplay, invalidCreated)
+		}
+		for _, invalid := range invalidReplay {
+			if validREL001ReplayResponse(invalid, mutation) {
+				t.Fatalf("REL001_KILL_REPLAY_CONTRACT_ACCEPTED_INVALID mutation=%s", rel001KillMutationNames[mutation])
+			}
+		}
+		mutations := []rel001KillResponse{initial, initial, initial}
+		mutations[0].complete = false
+		mutations[1].err = errors.New("injected")
+		mutations[2].status = http.StatusNoContent
+		if mutation == rel001KillAskNoContext {
+			invalid := initial
+			invalid.createdPresent = true
+			mutations = append(mutations, invalid)
+		} else {
+			invalidCreated, invalidPresence := initial, initial
+			invalidCreated.created = false
+			invalidPresence.createdPresent = false
+			mutations = append(mutations, invalidCreated, invalidPresence)
+		}
+		for _, invalid := range mutations {
+			if validREL001InitialOrReplayResponse(invalid, mutation) {
+				t.Fatalf("REL001_KILL_RESPONSE_CONTRACT_ACCEPTED_INVALID mutation=%s", rel001KillMutationNames[mutation])
+			}
+		}
+	}
 }
 
 func validREL001KillIdentity(identity rel001KillIdentity, mutation rel001KillMutation) bool {
@@ -842,13 +938,15 @@ func waitREL001KillJob(t *testing.T, session *apiSession, jobID string) {
 	}
 }
 
-func removeREL001KillRunRoot(t *testing.T, root string) {
+// removeREL001KillTestSandbox is harness hygiene, not a product residue oracle.
+// assertREL001KillStorage checks product staging and durable candidates first.
+func removeREL001KillTestSandbox(t *testing.T, root string) {
 	t.Helper()
 	if err := os.RemoveAll(root); err != nil {
-		t.Error("REL001_KILL_RUN_ROOT_CLEANUP_FAILED")
+		t.Error("REL001_KILL_TEST_SANDBOX_REMOVE_FAILED")
 		return
 	}
 	if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
-		t.Error("REL001_KILL_RUN_ROOT_REMAINS")
+		t.Error("REL001_KILL_TEST_SANDBOX_REMAINS")
 	}
 }
