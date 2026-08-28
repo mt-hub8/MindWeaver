@@ -22,7 +22,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -30,13 +29,13 @@ import (
 
 const (
 	rel001KillCampaignEnvironment = "MW_REL001_HTTP_KILL_CAMPAIGN"
-	rel001KillCampaignOptIn       = "RUN_1024_V1"
+	rel001KillCampaignOptIn       = "RUN_1024_V2"
 	rel001KillCampaignRuns        = 1024
-	rel001KillSmokeRuns           = 4
+	rel001KillEarlyDelayLimit     = 2 * time.Millisecond
 	rel001KillMaximumDelay        = 100 * time.Millisecond
 	rel001KillRequestTimeout      = 10 * time.Second
 	rel001KillMaximumBody         = 1 << 20
-	rel001KillPlanSHA256          = "454e42d3fc6ac6eaf834a64ac0d5a736ab97f06e81e3c43128f68874b035863d"
+	rel001KillPlanSHA256          = "70f1d8bf4971192da9db3304fbdf62ea5d9f4d258897a1a6c2664973df6c7906"
 	rel001KillSeedHex             = "72189cd5506845ea8bdd10c3849cd2a1c6391e90ab5f32608b33fc7d1826e8a4"
 )
 
@@ -72,6 +71,7 @@ type rel001KillFrame struct {
 	sequence int
 	mutation rel001KillMutation
 	delay    time.Duration
+	early    bool
 }
 
 type rel001KillTemplate struct {
@@ -89,6 +89,30 @@ type rel001KillResponse struct {
 	err      error
 }
 
+type rel001CatalogItem struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Title    string `json:"title"`
+	Revision int64  `json:"revision"`
+}
+
+type rel001MutationWire struct {
+	Collection   rel001CatalogItem `json:"collection"`
+	Conversation rel001CatalogItem `json:"conversation"`
+	DocumentID   string            `json:"documentId"`
+	RevisionID   string            `json:"revisionId"`
+	JobID        string            `json:"jobId"`
+	Created      bool              `json:"created"`
+	Answer       struct {
+		ID                   string `json:"id"`
+		ConversationID       string `json:"conversationId"`
+		Status               string `json:"status"`
+		LimitationCode       string `json:"limitationCode"`
+		ErrorCode            string `json:"errorCode"`
+		ConversationRevision int64  `json:"conversationRevision"`
+	} `json:"answer"`
+}
+
 func TestREL001DeterministicHTTPKillReplay(t *testing.T) {
 	if runtime.GOOS != "windows" || runtime.GOARCH != "amd64" {
 		t.Skip("REL-001 process-kill qualification requires Windows amd64")
@@ -101,18 +125,39 @@ func TestREL001DeterministicHTTPKillReplay(t *testing.T) {
 	if got := rel001KillPlanDigest(frames); got != rel001KillPlanSHA256 {
 		t.Fatalf("REL001_KILL_PLAN_DIGEST_DRIFT got=%s", got)
 	}
-	limit := rel001KillSmokeRuns
-	if enabled {
-		limit = len(frames)
+	selectedFrames := frames
+	if !enabled {
+		smoke := [4][2]rel001KillFrame{}
+		selected := [4][2]bool{}
+		for _, frame := range frames {
+			mode := 0
+			if frame.early {
+				mode = 1
+			}
+			if !selected[frame.mutation][mode] {
+				smoke[frame.mutation][mode] = frame
+				selected[frame.mutation][mode] = true
+			}
+		}
+		selectedFrames = make([]rel001KillFrame, 0, len(smoke)*2)
+		for mutation, modes := range selected {
+			if !modes[0] || !modes[1] {
+				t.Fatalf("REL001_KILL_SMOKE_PLAN_INCOMPLETE mutation=%s", rel001KillMutationNames[mutation])
+			}
+			selectedFrames = append(selectedFrames, smoke[mutation][:]...)
+		}
 	}
 	root := moduleRoot(t)
 	artifacts := buildREL001KillBinary(t, root)
 	campaignRoot := t.TempDir()
 	decisionOrders := [4][2]int{}
-	for _, frame := range frames[:limit] {
+	for _, frame := range selectedFrames {
 		frame := frame
 		passed := t.Run(fmt.Sprintf("%04d-%s", frame.sequence, rel001KillMutationNames[frame.mutation]), func(t *testing.T) {
 			decisionOrder := runREL001KillFrame(t, artifacts, campaignRoot, frame)
+			if frame.early && decisionOrder != rel001DecisionBeforeResponse {
+				t.Fatal("REL001_KILL_EARLY_DECISION_LINEARIZATION_FAILED")
+			}
 			decisionOrders[frame.mutation][int(decisionOrder)-1]++
 		})
 		if !passed {
@@ -146,6 +191,22 @@ func TestREL001KillPlanAndChildEnvironmentAreFailClosed(t *testing.T) {
 	frames := rel001KillFrames(t)
 	if got := rel001KillPlanDigest(frames); got != rel001KillPlanSHA256 {
 		t.Fatalf("REL001_KILL_PLAN_DIGEST_DRIFT got=%s", got)
+	}
+	early := [4]int{}
+	for _, frame := range frames {
+		if frame.early != (frame.delay < rel001KillEarlyDelayLimit) {
+			t.Fatal("REL001_KILL_EARLY_MODE_DRIFT")
+		}
+		if frame.early {
+			early[frame.mutation]++
+		}
+	}
+	wantEarly := [4]int{8, 2, 2, 4}
+	for mutation, count := range early {
+		if count != wantEarly[mutation] || count >= rel001KillCampaignRuns/4 {
+			t.Fatalf("REL001_KILL_EARLY_COVERAGE_INVALID mutation=%s got=%d want=%d",
+				rel001KillMutationNames[mutation], count, wantEarly[mutation])
+		}
 	}
 	if rel001DecisionLinearizationNames[rel001ResponseBeforeDecision] != "response-before-decision" ||
 		rel001DecisionLinearizationNames[rel001DecisionBeforeResponse] != "decision-before-response" {
@@ -254,18 +315,24 @@ func rel001KillFrames(t *testing.T) []rel001KillFrame {
 		frames[sequence] = rel001KillFrame{
 			sequence: sequence, mutation: rel001KillMutation(sequence % 4), delay: time.Duration(delay) * time.Microsecond,
 		}
+		frames[sequence].early = frames[sequence].delay < rel001KillEarlyDelayLimit
 	}
 	return frames
 }
 
 func rel001KillPlanDigest(frames []rel001KillFrame) string {
 	digest := sha256.New()
-	_, _ = digest.Write([]byte("mindweaver.rel001.http-kill-plan/v1\x00"))
-	var encoded [9]byte
+	_, _ = digest.Write([]byte("mindweaver.rel001.http-kill-plan/v2\x00"))
+	var encoded [10]byte
 	for _, frame := range frames {
 		binary.BigEndian.PutUint32(encoded[:4], uint32(frame.sequence))
 		encoded[4] = byte(frame.mutation)
 		binary.BigEndian.PutUint32(encoded[5:], uint32(frame.delay/time.Microsecond))
+		if frame.early {
+			encoded[9] = 1
+		} else {
+			encoded[9] = 0
+		}
 		_, _ = digest.Write(encoded[:])
 	}
 	return hex.EncodeToString(digest.Sum(nil))
@@ -362,6 +429,7 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 		}
 	})
 	firstSession := exchangeSession(t, first)
+	t.Cleanup(firstSession.client.CloseIdleConnections)
 	conversationID := ""
 	var providerAttempts atomic.Int64
 	if frame.mutation == rel001KillAskNoContext {
@@ -400,8 +468,15 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 	}
 	template := rel001KillRequest(frame, conversationID)
 	var decisionOrder atomic.Int32
-	wroteHeaders := make(chan struct{})
-	var wroteOnce sync.Once
+	requestWriteResult := make(chan error, 1)
+	firstResponseByte := make(chan struct{}, 1)
+	releaseResponse := make(chan struct{})
+	released := false
+	defer func() {
+		if !released {
+			close(releaseResponse)
+		}
+	}()
 	response := make(chan rel001KillResponse, 1)
 	requestContext, cancelRequest := context.WithCancel(t.Context())
 	defer cancelRequest()
@@ -411,7 +486,20 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 			response <- rel001KillResponse{err: err}
 			return
 		}
-		trace := &httptrace.ClientTrace{WroteHeaders: func() { wroteOnce.Do(func() { close(wroteHeaders) }) }}
+		trace := &httptrace.ClientTrace{WroteRequest: func(info httptrace.WroteRequestInfo) {
+			select {
+			case requestWriteResult <- info.Err:
+			default:
+			}
+		}, GotFirstResponseByte: func() {
+			if frame.early {
+				select {
+				case firstResponseByte <- struct{}{}:
+				default:
+				}
+				<-releaseResponse
+			}
+		}}
 		request = request.WithContext(httptrace.WithClientTrace(requestContext, trace))
 		identity, _, err := executeREL001KillRequest(firstSession, request, frame.mutation)
 		if err == nil {
@@ -420,14 +508,29 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 		response <- rel001KillResponse{identity: identity, err: err}
 	}()
 	select {
-	case <-wroteHeaders:
+	case writeErr := <-requestWriteResult:
+		if writeErr != nil {
+			t.Fatal("REL001_KILL_REQUEST_WRITE_FAILED")
+		}
 	case <-time.After(rel001KillRequestTimeout):
-		t.Fatal("REL001_KILL_WROTE_HEADERS_TIMEOUT")
+		t.Fatal("REL001_KILL_REQUEST_WRITE_TIMEOUT")
 	}
-	time.Sleep(frame.delay)
+	if frame.early {
+		select {
+		case <-firstResponseByte:
+		case <-time.After(rel001KillRequestTimeout):
+			t.Fatal("REL001_KILL_FIRST_RESPONSE_BYTE_TIMEOUT")
+		}
+	} else {
+		time.Sleep(frame.delay)
+	}
 	claimREL001DecisionLinearization(&decisionOrder, rel001DecisionBeforeResponse)
 	if err := stopREL001Process(first, true); err != nil {
 		t.Fatal("REL001_KILL_REQUIRED_TERMINATION_FAILED")
+	}
+	if frame.early {
+		close(releaseResponse)
+		released = true
 	}
 	cancelRequest()
 	var firstResponse rel001KillResponse
@@ -453,6 +556,7 @@ func runREL001KillFrame(t *testing.T, artifacts builtArtifacts, campaignRoot str
 		}
 	})
 	restartSession := exchangeSession(t, restarted)
+	t.Cleanup(restartSession.client.CloseIdleConnections)
 	firstReplay, _, err := executeREL001KillMutation(restartSession, template, frame.mutation)
 	if err != nil {
 		t.Fatalf("REL001_KILL_FIRST_REPLAY_FAILED mutation=%s error=%s", rel001KillMutationNames[frame.mutation], err)
@@ -535,48 +639,17 @@ func executeREL001KillRequest(session *apiSession, request *http.Request, mutati
 	if err != nil {
 		return rel001KillIdentity{}, false, errors.New("REL001_KILL_MUTATION_TRANSPORT_FAILED")
 	}
+	var wire rel001MutationWire
+	err = decodeREL001KillJSON(response.Body, &wire)
 	var identity rel001KillIdentity
-	created := false
 	switch mutation {
 	case rel001KillCollection:
-		var wire struct {
-			Collection struct {
-				ID string `json:"id"`
-			} `json:"collection"`
-			Created bool `json:"created"`
-		}
-		err = decodeREL001KillJSON(response.Body, &wire)
-		identity.primary, created = wire.Collection.ID, wire.Created
+		identity.primary = wire.Collection.ID
 	case rel001KillConversation:
-		var wire struct {
-			Conversation struct {
-				ID string `json:"id"`
-			} `json:"conversation"`
-			Created bool `json:"created"`
-		}
-		err = decodeREL001KillJSON(response.Body, &wire)
-		identity.primary, created = wire.Conversation.ID, wire.Created
+		identity.primary = wire.Conversation.ID
 	case rel001KillUpload:
-		var wire struct {
-			DocumentID string `json:"documentId"`
-			RevisionID string `json:"revisionId"`
-			JobID      string `json:"jobId"`
-			Created    bool   `json:"created"`
-		}
-		err = decodeREL001KillJSON(response.Body, &wire)
-		identity, created = rel001KillIdentity{primary: wire.DocumentID, secondary: wire.RevisionID, tertiary: wire.JobID}, wire.Created
+		identity = rel001KillIdentity{primary: wire.DocumentID, secondary: wire.RevisionID, tertiary: wire.JobID}
 	case rel001KillAskNoContext:
-		var wire struct {
-			Answer struct {
-				ID                   string `json:"id"`
-				ConversationID       string `json:"conversationId"`
-				Status               string `json:"status"`
-				LimitationCode       string `json:"limitationCode"`
-				ErrorCode            string `json:"errorCode"`
-				ConversationRevision int64  `json:"conversationRevision"`
-			} `json:"answer"`
-		}
-		err = decodeREL001KillJSON(response.Body, &wire)
 		identity = rel001KillIdentity{
 			primary: wire.Answer.ID, secondary: wire.Answer.ConversationID,
 			tertiary: strconv.FormatInt(wire.Answer.ConversationRevision, 10),
@@ -603,7 +676,7 @@ func executeREL001KillRequest(session *apiSession, request *http.Request, mutati
 		return rel001KillIdentity{}, false, fmt.Errorf("REL001_KILL_MUTATION_IDENTITY_INVALID status=%s limitation=%s code=%s revision=%s",
 			identity.status, identity.limitation, identity.code, identity.tertiary)
 	}
-	return identity, created, nil
+	return identity, wire.Created, nil
 }
 
 func validREL001KillIdentity(identity rel001KillIdentity, mutation rel001KillMutation) bool {
@@ -637,24 +710,15 @@ func verifyREL001KillOracle(t *testing.T, session *apiSession, frame rel001KillF
 	switch frame.mutation {
 	case rel001KillCollection:
 		var wire struct {
-			Collections []struct {
-				ID       string `json:"id"`
-				Name     string `json:"name"`
-				Revision int64  `json:"revision"`
-			} `json:"collections"`
+			Collections []rel001CatalogItem `json:"collections"`
 		}
 		rel001KillGetJSON(t, session, "/api/v1/collections?limit=100", &wire)
-		if template.expected == "" || len(wire.Collections) != 1 || wire.Collections[0].ID != identity.primary ||
-			wire.Collections[0].Name != template.expected || wire.Collections[0].Revision <= 0 {
+		if template.expected == "" || len(wire.Collections) != 1 || wire.Collections[0].ID != identity.primary || wire.Collections[0].Name != template.expected || wire.Collections[0].Revision <= 0 {
 			t.Fatal("REL001_KILL_COLLECTION_ORACLE_FAILED")
 		}
 	case rel001KillConversation:
 		var wire struct {
-			Conversations []struct {
-				ID       string `json:"id"`
-				Title    string `json:"title"`
-				Revision int64  `json:"revision"`
-			} `json:"conversations"`
+			Conversations []rel001CatalogItem `json:"conversations"`
 		}
 		rel001KillGetJSON(t, session, "/api/v1/conversations?limit=50", &wire)
 		if template.expected == "" || len(wire.Conversations) != 1 || wire.Conversations[0].ID != identity.primary ||
@@ -702,11 +766,7 @@ func verifyREL001KillOracle(t *testing.T, session *apiSession, frame rel001KillF
 			t.Fatal("REL001_KILL_ASK_RECONCILIATION_ORACLE_FAILED")
 		}
 		var conversations struct {
-			Conversations []struct {
-				ID       string `json:"id"`
-				Title    string `json:"title"`
-				Revision int64  `json:"revision"`
-			} `json:"conversations"`
+			Conversations []rel001CatalogItem `json:"conversations"`
 		}
 		rel001KillGetJSON(t, session, "/api/v1/conversations?limit=50", &conversations)
 		if identity.secondary != conversationID || len(conversations.Conversations) != 1 ||
