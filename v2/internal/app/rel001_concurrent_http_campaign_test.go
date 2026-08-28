@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -41,6 +42,22 @@ type rel001HTTPResult struct {
 	index int
 	httpResult
 	err error
+}
+
+type rel001HTTPAdmissionBarrier struct {
+	remainingHandlers atomic.Int32
+	remainingEOF      atomic.Int32
+	handlersReady     chan struct{}
+	eofReady          chan struct{}
+	release           chan struct{}
+	releaseOnce       sync.Once
+}
+
+type rel001BarrierBody struct {
+	barrier *rel001HTTPAdmissionBarrier
+	body    []byte
+	offset  int
+	eofOnce sync.Once
 }
 
 type rel001UploadIdentity struct {
@@ -74,6 +91,15 @@ type rel001DatabaseProjection struct {
 	expectedAnswerState string
 }
 
+type rel001AnswerExpectation struct {
+	answerID       string
+	conversationID string
+	question       string
+	content        string
+	upload         rel001UploadIdentity
+	sourceBody     []byte
+}
+
 func TestREL001ConcurrentHTTPReplay(t *testing.T) {
 	t.Run("same upload key and body converges", testREL001ConcurrentSameUpload)
 	t.Run("same upload key with two bodies elects one winner", testREL001ConcurrentConflictingUpload)
@@ -90,11 +116,14 @@ func testREL001ConcurrentSameUpload(t *testing.T) {
 
 	body := []byte("REL001 concurrent HTTP upload converges to one durable document identity.")
 	key := "rel001-concurrent-upload-same"
+	barrier := newREL001HTTPAdmissionBarrier(t, rel001ConcurrentHTTPParticipants)
 	requests := make([]*http.Request, rel001ConcurrentHTTPParticipants)
 	for index := range requests {
-		requests[index] = rel001UploadRequest(t, application, session, key, body)
+		requests[index] = rel001BarrierUploadRequest(t, application, session, key, body, barrier)
 	}
-	results := rel001CollectHTTPResults(t, rel001StartHTTPWave(client, requests), len(requests))
+	wave := rel001StartHTTPWave(client, requests)
+	barrier.awaitAndRelease(t)
+	results := rel001CollectHTTPResults(t, wave, len(requests))
 
 	var identity rel001UploadIdentity
 	created := 0
@@ -127,6 +156,7 @@ func testREL001ConcurrentSameUpload(t *testing.T) {
 
 	shutdownTestApp(t, application)
 	reopened := startTestApp(t, options)
+	rel001RequireRestartEvidence(t, reopened, 0)
 	reopenedSession := exchangeApp(t, client, reopened)
 	for index := range rel001ConcurrentHTTPParticipants {
 		result := do(t, client, rel001UploadRequest(t, reopened, reopenedSession, key, body))
@@ -161,11 +191,14 @@ func testREL001ConcurrentConflictingUpload(t *testing.T) {
 		[]byte("REL001 concurrent upload body alpha elects one durable winner."),
 		[]byte("REL001 concurrent upload body beta elects one durable winner."),
 	}
+	barrier := newREL001HTTPAdmissionBarrier(t, rel001ConcurrentHTTPParticipants)
 	requests := make([]*http.Request, rel001ConcurrentHTTPParticipants)
 	for index := range requests {
-		requests[index] = rel001UploadRequest(t, application, session, key, bodies[index%len(bodies)])
+		requests[index] = rel001BarrierUploadRequest(t, application, session, key, bodies[index%len(bodies)], barrier)
 	}
-	results := rel001CollectHTTPResults(t, rel001StartHTTPWave(client, requests), len(requests))
+	wave := rel001StartHTTPWave(client, requests)
+	barrier.awaitAndRelease(t)
+	results := rel001CollectHTTPResults(t, wave, len(requests))
 
 	winner := -1
 	created := 0
@@ -216,9 +249,7 @@ func testREL001ConcurrentConflictingUpload(t *testing.T) {
 	loserBlobID := rel001BlobID(bodies[loser])
 	shutdownTestApp(t, application)
 	reopened := startTestApp(t, options)
-	if reopened.Startup().SweptBlobCandidates != 1 {
-		t.Fatalf("restart swept candidates = %d, want exact losing body candidate", reopened.Startup().SweptBlobCandidates)
-	}
+	rel001RequireRestartEvidence(t, reopened, 1)
 	reopenedSession := exchangeApp(t, client, reopened)
 	rel001RequireUploadReplay(t,
 		do(t, client, rel001UploadRequest(t, reopened, reopenedSession, key, bodies[winner])),
@@ -228,7 +259,16 @@ func testREL001ConcurrentConflictingUpload(t *testing.T) {
 	rel001RequireLiveConsistency(t, reopened, []string{winnerBlobID}, []string{loserBlobID})
 	shutdownTestApp(t, reopened)
 
-	wantCounts := rel001UploadTableCounts(1)
+	converged := startTestApp(t, options)
+	rel001RequireRestartEvidence(t, converged, 1)
+	convergedSession := exchangeApp(t, client, converged)
+	rel001RequireUploadReplay(t,
+		do(t, client, rel001UploadRequest(t, converged, convergedSession, key, bodies[winner])),
+		identity, "winning converged replay")
+	rel001RequireLiveConsistency(t, converged, []string{winnerBlobID}, nil)
+	shutdownTestApp(t, converged)
+
+	wantCounts := rel001UploadTableCounts(0)
 	rel001AssertDatabaseProjection(t, filepath.Join(paths.Data, store.DatabaseFileName), rel001DatabaseProjection{
 		counts:            wantCounts,
 		uploadKey:         key,
@@ -236,13 +276,11 @@ func testREL001ConcurrentConflictingUpload(t *testing.T) {
 		blobID:            winnerBlobID,
 		blobSize:          len(bodies[winner]),
 		sourceBody:        bodies[winner],
-		candidateBlobIDs:  []string{loserBlobID},
 		referencedBlobIDs: []string{winnerBlobID},
 	})
 	rel001AssertBlobProjection(t, paths.Blobs, map[string][]byte{
 		winnerBlobID: bodies[winner],
-		loserBlobID:  bodies[loser],
-	})
+	}, loserBlobID)
 }
 
 func testREL001ConcurrentSameAsk(t *testing.T) {
@@ -285,6 +323,13 @@ func testREL001ConcurrentSameAsk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	wantAnswer := rel001AnswerExpectation{
+		conversationID: conversation.ID,
+		question:       "literal loopback concurrent replay evidence",
+		content:        "并发重放只调用一次本地模型 [1]。",
+		upload:         seedIdentity,
+		sourceBody:     seedBody,
+	}
 	requests := make([]*http.Request, rel001ConcurrentHTTPParticipants)
 	for index := range requests {
 		requests[index] = rel001AskRequest(t, application, session, askKey, askBody)
@@ -316,7 +361,8 @@ func testREL001ConcurrentSameAsk(t *testing.T) {
 	rel001RequireHTTPResult(t, terminalResult)
 	terminalAnswer := rel001DecodeAnswer(t, terminalResult.httpResult)
 	answerID = rel001MergeAnswerID(t, answerID, terminalAnswer.ID, terminalResult.index)
-	rel001RequireCompletedAnswer(t, terminalResult.httpResult, terminalAnswer, conversation.ID)
+	wantAnswer.answerID = answerID
+	rel001RequireCompletedAnswer(t, terminalResult.httpResult, terminalAnswer, wantAnswer)
 	terminalBody := slices.Clone(terminalResult.body)
 	if fake.calls.Load() != 1 {
 		t.Fatalf("provider calls after terminal write = %d, want 1", fake.calls.Load())
@@ -324,7 +370,7 @@ func testREL001ConcurrentSameAsk(t *testing.T) {
 	for index := range rel001ConcurrentHTTPParticipants {
 		result := do(t, client, rel001AskRequest(t, application, session, askKey, askBody))
 		answer := rel001DecodeAnswer(t, result)
-		rel001RequireCompletedAnswer(t, result, answer, conversation.ID)
+		rel001RequireCompletedAnswer(t, result, answer, wantAnswer)
 		if answer.ID != answerID || !bytes.Equal(result.body, terminalBody) {
 			t.Fatalf("participant %d terminal Ask replay identity/body changed: %q / %q", index, answer.ID, result.body)
 		}
@@ -335,10 +381,11 @@ func testREL001ConcurrentSameAsk(t *testing.T) {
 
 	shutdownTestApp(t, application)
 	reopened := startTestApp(t, options)
+	rel001RequireRestartEvidence(t, reopened, 0)
 	reopenedSession := exchangeApp(t, client, reopened)
 	restartResult := do(t, client, rel001AskRequest(t, reopened, reopenedSession, askKey, askBody))
 	restartAnswer := rel001DecodeAnswer(t, restartResult)
-	rel001RequireCompletedAnswer(t, restartResult, restartAnswer, conversation.ID)
+	rel001RequireCompletedAnswer(t, restartResult, restartAnswer, wantAnswer)
 	if restartAnswer.ID != answerID || !bytes.Equal(restartResult.body, terminalBody) || fake.calls.Load() != 1 {
 		t.Fatalf("restart Ask replay answer/body/provider calls = %q/%q/%d", restartAnswer.ID, restartResult.body, fake.calls.Load())
 	}
@@ -382,9 +429,13 @@ func rel001ConcurrentOptions(root string) Options {
 
 func rel001ConcurrentHTTPClient(t *testing.T) *http.Client {
 	t.Helper()
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.ExpectContinueTimeout = rel001ConcurrentHTTPTimeout
 	client := &http.Client{
 		Timeout:       rel001ConcurrentHTTPTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		Transport:     transport,
 	}
 	t.Cleanup(client.CloseIdleConnections)
 	return client
@@ -392,11 +443,88 @@ func rel001ConcurrentHTTPClient(t *testing.T) *http.Client {
 
 func rel001UploadRequest(t *testing.T, application *App, session testSession, key string, body []byte) *http.Request {
 	t.Helper()
-	request := appRequest(t, application, session, http.MethodPost, "/api/v1/documents/upload", bytes.NewReader(body))
+	return rel001UploadReaderRequest(t, application, session, key, bytes.NewReader(body))
+}
+
+func rel001UploadReaderRequest(t *testing.T, application *App, session testSession, key string, body io.Reader) *http.Request {
+	t.Helper()
+	request := appRequest(t, application, session, http.MethodPost, "/api/v1/documents/upload", body)
 	request.Header.Set("Content-Type", "application/octet-stream")
 	request.Header.Set("Idempotency-Key", key)
 	setUploadMetadata(request, "REL001 concurrent HTTP", "rel001-concurrent.md")
 	return request
+}
+
+func newREL001HTTPAdmissionBarrier(t *testing.T, participants int) *rel001HTTPAdmissionBarrier {
+	t.Helper()
+	if participants < 2 {
+		t.Fatalf("HTTP admission barrier participants = %d", participants)
+	}
+	barrier := &rel001HTTPAdmissionBarrier{
+		handlersReady: make(chan struct{}), eofReady: make(chan struct{}), release: make(chan struct{}),
+	}
+	barrier.remainingHandlers.Store(int32(participants))
+	barrier.remainingEOF.Store(int32(participants))
+	t.Cleanup(barrier.releaseAll)
+	return barrier
+}
+
+func rel001BarrierUploadRequest(t *testing.T, application *App, session testSession, key string, body []byte, barrier *rel001HTTPAdmissionBarrier) *http.Request {
+	t.Helper()
+	if barrier == nil {
+		t.Fatal("nil HTTP admission barrier")
+	}
+	request := rel001UploadReaderRequest(t, application, session, key, &rel001BarrierBody{barrier: barrier, body: slices.Clone(body)})
+	request.Header.Set("Expect", "100-continue")
+	var handlerOnce sync.Once
+	trace := &httptrace.ClientTrace{Got100Continue: func() {
+		handlerOnce.Do(func() { barrier.arrive(&barrier.remainingHandlers, barrier.handlersReady) })
+	}}
+	return request.WithContext(httptrace.WithClientTrace(request.Context(), trace))
+}
+
+func (barrier *rel001HTTPAdmissionBarrier) arrive(remaining *atomic.Int32, ready chan struct{}) {
+	if remaining.Add(-1) == 0 {
+		close(ready)
+	}
+}
+
+func (barrier *rel001HTTPAdmissionBarrier) awaitAndRelease(t *testing.T) {
+	t.Helper()
+	timer := time.NewTimer(rel001ConcurrentStepTimeout)
+	defer timer.Stop()
+	handlersReady, eofReady := false, false
+	for !handlersReady || !eofReady {
+		select {
+		case <-barrier.handlersReady:
+			handlersReady = true
+		case <-barrier.eofReady:
+			eofReady = true
+		case <-timer.C:
+			barrier.releaseAll()
+			t.Fatalf("HTTP admission barrier handlers/eof remaining = %d/%d",
+				barrier.remainingHandlers.Load(), barrier.remainingEOF.Load())
+		}
+	}
+	barrier.releaseAll()
+}
+
+func (barrier *rel001HTTPAdmissionBarrier) releaseAll() {
+	barrier.releaseOnce.Do(func() { close(barrier.release) })
+}
+
+func (body *rel001BarrierBody) Read(target []byte) (int, error) {
+	if len(target) == 0 {
+		return 0, nil
+	}
+	if body.offset < len(body.body) {
+		count := copy(target, body.body[body.offset:])
+		body.offset += count
+		return count, nil
+	}
+	body.eofOnce.Do(func() { body.barrier.arrive(&body.barrier.remainingEOF, body.barrier.eofReady) })
+	<-body.barrier.release
+	return 0, io.EOF
 }
 
 func rel001AskRequest(t *testing.T, application *App, session testSession, key string, body []byte) *http.Request {
@@ -463,11 +591,16 @@ func rel001RequireHTTPResult(t *testing.T, result rel001HTTPResult) {
 
 func rel001DecodeUpload(t *testing.T, result httpResult) rel001UploadWire {
 	t.Helper()
-	var wire rel001UploadWire
-	if err := json.Unmarshal(result.body, &wire); err != nil || wire.DocumentID == "" || wire.RevisionID == "" || wire.JobID == "" {
+	var wire struct {
+		DocumentID string `json:"documentId"`
+		RevisionID string `json:"revisionId"`
+		JobID      string `json:"jobId"`
+		Created    *bool  `json:"created"`
+	}
+	if err := json.Unmarshal(result.body, &wire); err != nil || wire.DocumentID == "" || wire.RevisionID == "" || wire.JobID == "" || wire.Created == nil {
 		t.Fatalf("upload response = %#v, error=%v, body=%q", wire, err, result.body)
 	}
-	return wire
+	return rel001UploadWire{DocumentID: wire.DocumentID, RevisionID: wire.RevisionID, JobID: wire.JobID, Created: *wire.Created}
 }
 
 func rel001MergeUploadIdentity(t *testing.T, current rel001UploadIdentity, wire rel001UploadWire, participant int) rel001UploadIdentity {
@@ -535,13 +668,33 @@ func rel001MergeAnswerID(t *testing.T, current, next string, participant int) st
 	return next
 }
 
-func rel001RequireCompletedAnswer(t *testing.T, result httpResult, answer answerView, conversationID string) {
+func rel001RequireCompletedAnswer(t *testing.T, result httpResult, answer answerView, want rel001AnswerExpectation) {
 	t.Helper()
-	if result.StatusCode != http.StatusOK || answer.Status != "completed" || answer.ConversationID != conversationID ||
-		answer.ProviderConfigVersion != 1 || len(answer.Sources) != 1 || len(answer.Citations) != 1 ||
-		answer.Citations[0].Occurrence != 1 || answer.Citations[0].Position != 1 ||
-		answer.Content != "并发重放只调用一次本地模型 [1]。" {
+	if result.StatusCode != http.StatusOK || answer.ID != want.answerID || answer.Status != "completed" ||
+		answer.ConversationID != want.conversationID || answer.ConversationRevision != 1 ||
+		answer.Question != want.question || answer.Content != want.content || answer.ProviderConfigVersion != 1 ||
+		answer.ScopeCollectionID != nil || answer.LimitationCode != "" || answer.ErrorCode != "" ||
+		answer.CreatedAt == "" || answer.CompletedAt == nil || *answer.CompletedAt == "" || answer.ReconcileAfter == "" ||
+		len(answer.Sources) != 1 || len(answer.Citations) != 1 ||
+		answer.Citations[0].Occurrence != 1 || answer.Citations[0].Position != 1 {
 		t.Fatalf("completed answer status/payload = %d %#v", result.StatusCode, answer)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, answer.CreatedAt); err != nil {
+		t.Fatalf("completed answer createdAt = %q", answer.CreatedAt)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, *answer.CompletedAt); err != nil {
+		t.Fatalf("completed answer completedAt = %q", *answer.CompletedAt)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, answer.ReconcileAfter); err != nil {
+		t.Fatalf("completed answer reconcileAfter = %q", answer.ReconcileAfter)
+	}
+	source := answer.Sources[0]
+	sourceHash := sha256.Sum256(want.sourceBody)
+	if source.Position != 1 || source.ChunkID == "" || source.DocumentID != want.upload.documentID ||
+		source.RevisionID != want.upload.revisionID || source.ChunkOrdinal != 0 ||
+		source.ContentHash != hex.EncodeToString(sourceHash[:]) || source.DocumentTitle != "REL001 concurrent HTTP" ||
+		!bytes.Equal([]byte(source.Content), want.sourceBody) {
+		t.Fatalf("completed answer source = %#v", source)
 	}
 }
 
@@ -589,6 +742,15 @@ func newREL001BlockingOllama(t *testing.T) *rel001BlockingOllama {
 
 func (fake *rel001BlockingOllama) releaseCall() {
 	fake.releaseOnce.Do(func() { close(fake.release) })
+}
+
+func rel001RequireRestartEvidence(t *testing.T, application *App, swept int) {
+	t.Helper()
+	evidence := application.Startup()
+	if evidence.ConfigCreated || evidence.RecoveredJobs != 0 || evidence.CleanedStagingFiles != 0 ||
+		evidence.SweptBlobCandidates != swept || evidence.ReconciledPendingAnswers != 0 {
+		t.Fatalf("restart evidence = %#v, want only sweptBlobCandidates=%d", evidence, swept)
+	}
 }
 
 func rel001RequireLiveConsistency(t *testing.T, application *App, wantReferences, wantCandidates []string) {
@@ -908,7 +1070,7 @@ func rel001OpenReadOnlyDatabase(t *testing.T, path string) *sql.DB {
 	return database
 }
 
-func rel001AssertBlobProjection(t *testing.T, root string, want map[string][]byte) {
+func rel001AssertBlobProjection(t *testing.T, root string, want map[string][]byte, allowedEmptyPrefixFor ...string) {
 	t.Helper()
 	objectsRoot := filepath.Join(root, "objects", "sha256")
 	wantPaths := make(map[string][]byte, len(want))
@@ -921,6 +1083,13 @@ func rel001AssertBlobProjection(t *testing.T, root string, want map[string][]byt
 		objectPath := filepath.Clean(filepath.Join(objectsRoot, digest[:2], digest[2:]))
 		wantPaths[objectPath] = content
 		wantDirectories[filepath.Dir(objectPath)] = struct{}{}
+	}
+	for _, id := range allowedEmptyPrefixFor {
+		digest := strings.TrimPrefix(id, "sha256:")
+		if len(digest) != sha256.Size*2 {
+			t.Fatalf("invalid empty-prefix blob ID %q", id)
+		}
+		wantDirectories[filepath.Clean(filepath.Join(objectsRoot, digest[:2]))] = struct{}{}
 	}
 	seen := make(map[string]struct{}, len(wantPaths))
 	if err := filepath.WalkDir(objectsRoot, func(path string, entry fs.DirEntry, walkErr error) error {
