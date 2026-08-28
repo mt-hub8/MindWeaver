@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptrace"
+	"net/url"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	store "github.com/mt-hub8/MindWeaver/v2/internal/store/sqlite"
+	"github.com/mt-hub8/MindWeaver/v2/internal/transport"
 )
 
 type rel001LifecycleHTTPFixture struct {
@@ -52,6 +54,8 @@ type rel001LifecycleDocumentProjection struct {
 func TestREL001ConcurrentHTTPLifecycle(t *testing.T) {
 	t.Run("same collection revision elects one member", testREL001ConcurrentCollectionRevision)
 	t.Run("membership add linearizes with trash", testREL001ConcurrentMembershipTrash)
+	t.Run("membership remove linearizes with purge", testREL001ConcurrentMembershipPurge)
+	t.Run("pinned upload retains blob during purge", testREL001ConcurrentPurgeUpload)
 }
 
 func testREL001ConcurrentCollectionRevision(t *testing.T) {
@@ -141,15 +145,7 @@ func testREL001ConcurrentMembershipTrash(t *testing.T) {
 	trashResult := fixture.retry503(t, results[1], func() *http.Request {
 		return fixture.jsonRequest(t, http.MethodPost, "/api/v1/documents/trash", trashBody)
 	})
-	trashed := rel001DecodeLifecycle(t, trashResult)
-	if trashResult.StatusCode != http.StatusOK || trashed.DocumentID != upload.identity.documentID || trashed.Status != "trashed" ||
-		trashed.Revision <= upload.document.Revision || trashed.TrashedAt == nil || trashed.PurgeRequestedAt != nil {
-		t.Fatalf("trash result = %d %#v", trashResult.StatusCode, trashed)
-	}
-	trashedAt, err := time.Parse(time.RFC3339Nano, *trashed.TrashedAt)
-	if err != nil || trashedAt.UnixMicro() != trashed.Revision {
-		t.Fatalf("trash timestamp/revision = %q/%d, error=%v", *trashed.TrashedAt, trashed.Revision, err)
-	}
+	trashed := rel001RequireTrashed(t, upload, trashResult)
 
 	membershipCount := 0
 	finalRevision := collection.Revision
@@ -188,6 +184,108 @@ func testREL001ConcurrentMembershipTrash(t *testing.T) {
 	rel001AssertBlobProjection(t, fixture.blobRoot, map[string][]byte{upload.blobID: upload.body})
 }
 
+func testREL001ConcurrentMembershipPurge(t *testing.T) {
+	fixture := newREL001LifecycleHTTPFixture(t)
+	upload := fixture.upload(t, "rel001-lifecycle-c-upload", []byte("REL001 lifecycle remove purge collision phrase"))
+	created := fixture.createCollection(t, "rel001-lifecycle-c-collection", "REL001 lifecycle C")
+	initial, changed := rel001DecodeMembership(t, do(t, fixture.client, fixture.jsonRequest(t, http.MethodPost,
+		"/api/v1/collections/members", rel001MembershipBody(t, created.ID, upload.identity.documentID, created.Revision))))
+	if !changed || initial.ID != created.ID || initial.Revision <= created.Revision {
+		t.Fatalf("setup membership = %#v changed=%t", initial, changed)
+	}
+	trashed := fixture.trash(t, upload)
+	removeBody := rel001MembershipBody(t, initial.ID, upload.identity.documentID, initial.Revision)
+	purgeBody := rel001DocumentMutationBody(t, upload.identity.documentID, trashed.Revision)
+	barrier := newREL001HTTPAdmissionBarrier(t, 2)
+	results := fixture.concurrentJSON(t, barrier,
+		fixture.barrierJSON(t, http.MethodDelete, "/api/v1/collections/members", removeBody, barrier),
+		fixture.barrierJSON(t, http.MethodPost, "/api/v1/documents/purge", purgeBody, barrier),
+	)
+	removeResult := fixture.retry503(t, results[0], func() *http.Request {
+		return fixture.jsonRequest(t, http.MethodDelete, "/api/v1/collections/members", removeBody)
+	})
+	purgeResult := fixture.retry503(t, results[1], func() *http.Request {
+		return fixture.jsonRequest(t, http.MethodPost, "/api/v1/documents/purge", purgeBody)
+	})
+	finalCollection, removeChanged := rel001DecodeMembership(t, removeResult)
+	if finalCollection.ID != initial.ID || finalCollection.Revision <= initial.Revision {
+		t.Fatalf("remove-vs-purge collection = %#v changed=%t, initial=%#v", finalCollection, removeChanged, initial)
+	}
+	rel001RequirePurge(t, purgeResult, upload.identity.documentID, 1, 0, true)
+	fixture.requireCollection(t, initial.ID, finalCollection.Revision, nil)
+	fixture.requireNoPurge(t, upload.identity.documentID)
+	if documents := listAllDocumentsHTTP(t, fixture.client, fixture.app, fixture.session, 10); len(documents) != 0 {
+		t.Fatalf("documents after purge = %#v", documents)
+	}
+	replayed, replayChanged := rel001DecodeMembership(t, do(t, fixture.client, fixture.jsonRequest(t, http.MethodDelete,
+		"/api/v1/collections/members", removeBody)))
+	if replayChanged || replayed.ID != initial.ID || replayed.Revision != finalCollection.Revision {
+		t.Fatalf("remove replay = %#v changed=%t", replayed, replayChanged)
+	}
+	fixture.requireSearch(t, "remove purge collision", "", nil)
+	fixture.requireSearch(t, "remove purge collision", initial.ID, nil)
+
+	fixture.restart(t, 0)
+	fixture.requireCollection(t, initial.ID, finalCollection.Revision, nil)
+	fixture.requireNoPurge(t, upload.identity.documentID)
+	fixture.requireSearch(t, "remove purge collision", "", nil)
+	fixture.requireLive(t, nil)
+	fixture.shutdown(t)
+	fixture.assertRaw(t, rel001LifecycleProjection{
+		counts: rel001LifecycleTableCounts(0, 1, 0, 0), collectionID: initial.ID,
+		collectionRevision: finalCollection.Revision,
+	})
+	rel001AssertBlobProjection(t, fixture.blobRoot, nil, upload.blobID)
+}
+
+func testREL001ConcurrentPurgeUpload(t *testing.T) {
+	fixture := newREL001LifecycleHTTPFixture(t)
+	body := []byte("REL001 lifecycle shared content collision phrase")
+	oldUpload := fixture.upload(t, "rel001-lifecycle-d-old", body)
+	trashed := fixture.trash(t, oldUpload)
+	purgeBody := rel001DocumentMutationBody(t, oldUpload.identity.documentID, trashed.Revision)
+	newKey := "rel001-lifecycle-d-new"
+	// The upload handler holds its shared object pin before reading the request
+	// body, so this EOF barrier deliberately qualifies only the retained ordering.
+	barrier := newREL001HTTPAdmissionBarrier(t, 2)
+	results := fixture.concurrentJSON(t, barrier,
+		fixture.barrierJSON(t, http.MethodPost, "/api/v1/documents/purge", purgeBody, barrier),
+		rel001BarrierUploadRequest(t, fixture.app, fixture.session, newKey, body, barrier),
+	)
+	for _, result := range results {
+		rel001RequireHTTPResult(t, result)
+	}
+	purgeResult, uploadResult := results[0].httpResult, results[1].httpResult
+	rel001RequirePurge(t, purgeResult, oldUpload.identity.documentID, 0, 1, false)
+	newUpload := fixture.acceptedUpload(t, newKey, body, uploadResult)
+	if newUpload.identity.documentID == oldUpload.identity.documentID ||
+		newUpload.identity.revisionID == oldUpload.identity.revisionID || newUpload.identity.jobID == oldUpload.identity.jobID {
+		t.Fatalf("old/new upload identities overlap = %#v/%#v", oldUpload.identity, newUpload.identity)
+	}
+	fixture.requireNoPurge(t, oldUpload.identity.documentID)
+	if documents := listAllDocumentsHTTP(t, fixture.client, fixture.app, fixture.session, 10); len(documents) != 1 || documents[0].ID != newUpload.identity.documentID {
+		t.Fatalf("documents after pinned purge/upload = %#v", documents)
+	}
+	fixture.requireSearch(t, "shared content collision", "", []string{newUpload.identity.documentID})
+	fixture.requireLive(t, []string{newUpload.blobID})
+
+	fixture.restart(t, 0)
+	replay := do(t, fixture.client, rel001UploadRequest(t, fixture.app, fixture.session, newKey, body))
+	rel001RequireUploadReplay(t, replay, newUpload.identity, "restart pinned upload")
+	fixture.requireNoPurge(t, oldUpload.identity.documentID)
+	fixture.requireSearch(t, "shared content collision", "", []string{newUpload.identity.documentID})
+	fixture.requireLive(t, []string{newUpload.blobID})
+	fixture.shutdown(t)
+	fixture.assertRaw(t, rel001LifecycleProjection{
+		counts: rel001LifecycleTableCounts(1, 0, 0, 0),
+		documents: map[string]rel001LifecycleDocumentProjection{
+			newUpload.identity.documentID: {status: "active", revision: newUpload.document.Revision},
+		},
+		uploads: []rel001LifecycleUpload{newUpload},
+	})
+	rel001AssertBlobProjection(t, fixture.blobRoot, map[string][]byte{newUpload.blobID: body})
+}
+
 func newREL001LifecycleHTTPFixture(t *testing.T) *rel001LifecycleHTTPFixture {
 	t.Helper()
 	options := rel001ConcurrentOptions(t.TempDir())
@@ -216,6 +314,11 @@ func (fixture *rel001LifecycleHTTPFixture) restart(t *testing.T, swept int) {
 func (fixture *rel001LifecycleHTTPFixture) upload(t *testing.T, key string, body []byte) rel001LifecycleUpload {
 	t.Helper()
 	result := do(t, fixture.client, rel001UploadRequest(t, fixture.app, fixture.session, key, body))
+	return fixture.acceptedUpload(t, key, body, result)
+}
+
+func (fixture *rel001LifecycleHTTPFixture) acceptedUpload(t *testing.T, key string, body []byte, result httpResult) rel001LifecycleUpload {
+	t.Helper()
 	if result.StatusCode != http.StatusAccepted {
 		t.Fatalf("setup upload status/body = %d %q", result.StatusCode, result.body)
 	}
@@ -233,6 +336,13 @@ func (fixture *rel001LifecycleHTTPFixture) upload(t *testing.T, key string, body
 		t.Fatalf("setup document = %#v", document)
 	}
 	return rel001LifecycleUpload{key: key, body: slices.Clone(body), blobID: rel001BlobID(body), identity: identity, document: document}
+}
+
+func (fixture *rel001LifecycleHTTPFixture) trash(t *testing.T, upload rel001LifecycleUpload) lifecycleView {
+	t.Helper()
+	result := do(t, fixture.client, fixture.jsonRequest(t, http.MethodPost, "/api/v1/documents/trash",
+		rel001DocumentMutationBody(t, upload.identity.documentID, upload.document.Revision)))
+	return rel001RequireTrashed(t, upload, result)
 }
 
 func (fixture *rel001LifecycleHTTPFixture) createCollection(t *testing.T, key, name string) collectionView {
@@ -354,6 +464,54 @@ func rel001DecodeLifecycle(t *testing.T, result httpResult) lifecycleView {
 		t.Fatalf("lifecycle status/payload = %d %#v", result.StatusCode, payload)
 	}
 	return payload.Document
+}
+
+func rel001RequireTrashed(t *testing.T, upload rel001LifecycleUpload, result httpResult) lifecycleView {
+	t.Helper()
+	trashed := rel001DecodeLifecycle(t, result)
+	if trashed.DocumentID != upload.identity.documentID || trashed.Status != "trashed" ||
+		trashed.Revision <= upload.document.Revision || trashed.TrashedAt == nil || trashed.PurgeRequestedAt != nil {
+		t.Fatalf("trash result = %d %#v", result.StatusCode, trashed)
+	}
+	trashedAt, err := time.Parse(time.RFC3339Nano, *trashed.TrashedAt)
+	if err != nil || trashedAt.UnixMicro() != trashed.Revision {
+		t.Fatalf("trash timestamp/revision = %q/%d, error=%v", *trashed.TrashedAt, trashed.Revision, err)
+	}
+	return trashed
+}
+
+func rel001RequirePurge(t *testing.T, result httpResult, documentID string, deleted, retained int, allRemoved bool) {
+	t.Helper()
+	var payload struct {
+		DocumentID                 string `json:"documentId"`
+		State                      string `json:"state"`
+		DatabaseDeleted            *bool  `json:"databaseDeleted"`
+		Complete                   *bool  `json:"complete"`
+		AllCandidateObjectsRemoved *bool  `json:"allCandidateObjectsRemoved"`
+		DeletedBlobCount           *int   `json:"deletedBlobCount"`
+		RetainedSharedCount        *int   `json:"retainedSharedCount"`
+		PendingBlobCount           *int   `json:"pendingBlobCount"`
+		DeletedJobCount            *int   `json:"deletedJobCount"`
+	}
+	if result.StatusCode != http.StatusOK || json.Unmarshal(result.body, &payload) != nil ||
+		payload.DocumentID != documentID || payload.State != "complete" || payload.DatabaseDeleted == nil || !*payload.DatabaseDeleted ||
+		payload.Complete == nil || !*payload.Complete || payload.AllCandidateObjectsRemoved == nil || *payload.AllCandidateObjectsRemoved != allRemoved ||
+		payload.DeletedBlobCount == nil || *payload.DeletedBlobCount != deleted || payload.RetainedSharedCount == nil || *payload.RetainedSharedCount != retained ||
+		payload.PendingBlobCount == nil || *payload.PendingBlobCount != 0 || payload.DeletedJobCount == nil || *payload.DeletedJobCount != 1 {
+		t.Fatalf("purge status/payload = %d %#v", result.StatusCode, payload)
+	}
+}
+
+func (fixture *rel001LifecycleHTTPFixture) requireNoPurge(t *testing.T, documentID string) {
+	t.Helper()
+	values := url.Values{"id": {documentID}}
+	result := do(t, fixture.client, appRequest(t, fixture.app, fixture.session, http.MethodGet,
+		"/api/v1/documents/purge-status?"+values.Encode(), nil))
+	var problem transport.Problem
+	if result.StatusCode != http.StatusNotFound || json.Unmarshal(result.body, &problem) != nil ||
+		problem.Validate() != nil || problem.Code != transport.CodeNotFound || problem.Retryable {
+		t.Fatalf("purge completion status/problem = %d %#v", result.StatusCode, problem)
+	}
 }
 
 func rel001OptionalMember(count int, documentID string) []string {
