@@ -6,18 +6,18 @@
   },
   "source": {
     "repository": "github.com/mt-hub8/MindWeaver",
-    "revision": "e8cf45db8482504423c23e17a013f2ba1e2f1dfa",
-    "moduleTree": "git-sha1:abdc2a4b7c4932f441beff3dfd20b1d634f3d722",
-    "productionSourceUnionSha256": "079e4f0a337b4a2d7df2ccf4e42e6f48132018bfe1ef269a18158b09558b4592",
+    "revision": "8a9195d5a20ddef3acfeacc974a049724fc2d34f",
+    "moduleTree": "git-sha1:40cdfdb1d3bcc0c5138da42d58111d3a6a8915bd",
+    "productionSourceUnionSha256": "4c7cf44e49052f688a4d7b231ca41ca8d0b48488e2a16e4187eb0b317986d553",
     "attestation": "reviewed qualification input; not independently derived from Git in standalone validation"
   },
   "version": {
-    "value": "0.0.0-qualification.e8cf45d",
+    "value": "0.0.0-qualification.8a9195d",
     "source": "qualification-only reviewed input; real release metadata is unavailable"
   },
   "creation": {
-    "timestamp": "2026-08-27T19:34:56Z",
-    "source": "qualification fixture SOURCE_DATE_EPOCH=1787859296 bound to source revision; not a release publication time"
+    "timestamp": "2026-08-28T16:47:51Z",
+    "source": "qualification fixture SOURCE_DATE_EPOCH=1787935671 bound to source revision; not a release publication time"
   },
   "artifacts": [
     {
@@ -36,8 +36,8 @@
     {
       "name": "mindweaver.exe",
       "mainPackage": "github.com/mt-hub8/MindWeaver/v2/cmd/mindweaver",
-      "size": 32861696,
-      "sha256": "127321290927e6816f94fafea4226d7be572d98b99d1c4d5bf17b799df7e587f",
+      "size": 32989184,
+      "sha256": "33ad35062dec40e6c89169646fb2d853ed5f58c0a6fe8e4b6eec99357b939fbb",
       "dependencies": [
         "pkg:generic/golang@1.27.0",
         "pkg:golang/github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304",

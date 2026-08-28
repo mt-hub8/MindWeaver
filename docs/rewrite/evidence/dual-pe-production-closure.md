@@ -6,9 +6,10 @@ installer or signed-release qualification**
 ## Current integrated CUT-002 result
 
 The current production-identity change is exact commit
-`d825e4e1b8421de3cacb68bb6d17f6578e965f34`; its reviewed frozen assertions are
-committed in `db44063106cbf07a9a2e10709c25e5961556ae96`. Later browser-test and
-documentation-only commits do not change the identities below. On a clean
+`8a9195d5a20ddef3acfeacc974a049724fc2d34f`; its frozen assertions are updated
+by the completion-record change containing this current-status section. The
+change closes active ingestion cancellation without adding a command, helper,
+or third shipped artifact. On a clean
 Windows/amd64 checkout with the repository-selected Go 1.27.0 toolchain, the
 controller reruns both committed gates before retaining CUT-002:
 
@@ -31,15 +32,15 @@ The focused production gate rebuilt each PE twice from independent empty build
 caches and passed with these current identities:
 
 - `mindweaver.exe`: 79 first-party source files,
-  `7abd64345e2e9821b823b01dc717de25c10d24a20c9f0f2ad48daf51f1fbd0e2`;
+  `7433ef472a75ce95dcc49e283cd96afee6bd67404fd763eeefb50101a40bf653`;
   PE SHA-256
-  `127321290927e6816f94fafea4226d7be572d98b99d1c4d5bf17b799df7e587f`;
+  `33ad35062dec40e6c89169646fb2d853ed5f58c0a6fe8e4b6eec99357b939fbb`;
 - `mindweaver-pdf.exe`: 5 first-party source files,
   `0bec9ddde1ea8778ffc3c20740ed55080d7ef0b537cfd070a2d563ccc5a087c6`;
   PE SHA-256
   `a2a6a04b4ade9367aab6cce35e9a3c87351f9c8fabd33d9ea2fe108f7e732241`;
 - deduplicated dual-PE union: 83 first-party source files,
-  `079e4f0a337b4a2d7df2ccf4e42e6f48132018bfe1ef269a18158b09558b4592`.
+  `4c7cf44e49052f688a4d7b231ca41ca8d0b48488e2a16e4187eb0b317986d553`.
 
 Each PE was built twice with independent empty build caches and matched its
 frozen bytes. The shipped command and artifact exact-set remains only

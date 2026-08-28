@@ -66,8 +66,8 @@ type runtimeContract struct {
 
 var artifactContracts = []artifactContract{
 	{
-		name: "mindweaver.exe", size: 32861696,
-		sha256: "127321290927e6816f94fafea4226d7be572d98b99d1c4d5bf17b799df7e587f",
+		name: "mindweaver.exe", size: 32989184,
+		sha256: "33ad35062dec40e6c89169646fb2d853ed5f58c0a6fe8e4b6eec99357b939fbb",
 		modules: []string{
 			"github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304",
 			"github.com/ncruces/go-sqlite3@v0.35.3",

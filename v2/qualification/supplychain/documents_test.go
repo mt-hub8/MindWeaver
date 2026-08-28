@@ -27,11 +27,11 @@ const (
 	releaseMetadataMissing            = "RELEASE_METADATA_MISSING"
 	sourceRevisionAttestationMissing  = "SOURCE_REVISION_ATTESTATION_MISSING"
 	vulnerabilityEvidenceMissing      = "VULNERABILITY_EVIDENCE_MISSING"
-	qualificationSourceDateEpoch      = int64(1787859296)
-	qualificationRevision             = "e8cf45db8482504423c23e17a013f2ba1e2f1dfa"
-	qualificationModuleTree           = "git-sha1:abdc2a4b7c4932f441beff3dfd20b1d634f3d722"
-	qualificationSourceUnion          = "079e4f0a337b4a2d7df2ccf4e42e6f48132018bfe1ef269a18158b09558b4592"
-	qualificationVersion              = "0.0.0-qualification.e8cf45d"
+	qualificationSourceDateEpoch      = int64(1787935671)
+	qualificationRevision             = "8a9195d5a20ddef3acfeacc974a049724fc2d34f"
+	qualificationModuleTree           = "git-sha1:40cdfdb1d3bcc0c5138da42d58111d3a6a8915bd"
+	qualificationSourceUnion          = "4c7cf44e49052f688a4d7b231ca41ca8d0b48488e2a16e4187eb0b317986d553"
+	qualificationVersion              = "0.0.0-qualification.8a9195d"
 	qualificationGeneratorName        = "MindWeaver supply-chain qualification"
 	qualificationGeneratorVersion     = "1.0.0"
 	spdxVersion                       = "SPDX-2.3"
@@ -184,7 +184,7 @@ func assembleReleaseInventory(root, goTool string, environment []string, artifac
 		},
 		Creation: inventoryCreation{
 			Timestamp: time.Unix(qualificationSourceDateEpoch, 0).UTC().Format(time.RFC3339),
-			Source:    "qualification fixture SOURCE_DATE_EPOCH=1787859296 bound to source revision; not a release publication time",
+			Source:    "qualification fixture SOURCE_DATE_EPOCH=1787935671 bound to source revision; not a release publication time",
 		},
 		QualificationBlockers: append(append([]string(nil), prepackageBlockers...),
 			fixtureRegenerationNotImplemented, releaseMetadataMissing, sourceRevisionAttestationMissing, vulnerabilityEvidenceMissing),
@@ -438,7 +438,7 @@ func validateReleaseInventory(inventory releaseInventory) error {
 	}
 	wantCreation := inventoryCreation{
 		Timestamp: time.Unix(qualificationSourceDateEpoch, 0).UTC().Format(time.RFC3339),
-		Source:    "qualification fixture SOURCE_DATE_EPOCH=1787859296 bound to source revision; not a release publication time",
+		Source:    "qualification fixture SOURCE_DATE_EPOCH=1787935671 bound to source revision; not a release publication time",
 	}
 	if inventory.Creation != wantCreation {
 		return errors.New("inventory creation input is not the explicit qualification fixture")

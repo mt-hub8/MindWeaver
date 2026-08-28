@@ -1,16 +1,16 @@
 MindWeaver third-party notice candidate
-Inventory-SHA256: 99deb92e0df115906fe1ce0f06479573b0dfa4333b1e6de2249c57ee20ce0992
-Qualification-Version: 0.0.0-qualification.e8cf45d
-Source-Revision: e8cf45db8482504423c23e17a013f2ba1e2f1dfa
-Source-Module-Tree: git-sha1:abdc2a4b7c4932f441beff3dfd20b1d634f3d722
-Production-Source-Union-SHA256: 079e4f0a337b4a2d7df2ccf4e42e6f48132018bfe1ef269a18158b09558b4592
-Creation-Input: 2026-08-27T19:34:56Z
+Inventory-SHA256: f594f758523241ce04f0ad4c449d7e1a8e595523b78ce7b1b696f0246b9cf095
+Qualification-Version: 0.0.0-qualification.8a9195d
+Source-Revision: 8a9195d5a20ddef3acfeacc974a049724fc2d34f
+Source-Module-Tree: git-sha1:40cdfdb1d3bcc0c5138da42d58111d3a6a8915bd
+Production-Source-Union-SHA256: 4c7cf44e49052f688a4d7b231ca41ca8d0b48488e2a16e4187eb0b317986d553
+Creation-Input: 2026-08-28T16:47:51Z
 Supply-Chain-Qualification-Blockers: FIXTURE_REGENERATION_NOT_IMPLEMENTED,PROJECT_LICENSE_MISSING,RELEASE_METADATA_MISSING,SOURCE_REVISION_ATTESTATION_MISSING,VULNERABILITY_EVIDENCE_MISSING
 This deterministic file is not a release authorization or legal conclusion.
 
 Artifacts
 - mindweaver-pdf.exe 8453632 bytes SHA256:a2a6a04b4ade9367aab6cce35e9a3c87351f9c8fabd33d9ea2fe108f7e732241
-- mindweaver.exe 32861696 bytes SHA256:127321290927e6816f94fafea4226d7be572d98b99d1c4d5bf17b799df7e587f
+- mindweaver.exe 32989184 bytes SHA256:33ad35062dec40e6c89169646fb2d853ed5f58c0a6fe8e4b6eec99357b939fbb
 
 Components
 - Go runtime go1.27.0 license:BSD-3-Clause

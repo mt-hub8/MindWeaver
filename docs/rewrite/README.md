@@ -94,6 +94,11 @@ End-to-end completion is tracked in
 [`acceptance-ledger.md`](./acceptance-ledger.md). A green unit test does not close
 a row that requires crash, schema-upgrade, security, or clean-machine evidence.
 
+The narrower completed decision covering valuable legacy Java domain logic and
+backend capabilities is recorded in
+[`java-domain-backend-completion.md`](./java-domain-backend-completion.md). It
+does not promote browser, installer, signing, or long-duration release gates.
+
 Gate 0 legacy coverage is tracked in the machine-readable
 [`legacy-inventory.csv`](./legacy-inventory.csv), with its human review in
 [`legacy-inventory-summary.md`](./legacy-inventory-summary.md). The binding
