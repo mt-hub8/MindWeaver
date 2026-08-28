@@ -184,6 +184,9 @@ func TestREL001DeterministicHTTPKillReplay(t *testing.T) {
 		if total != rel001KillCampaignRuns {
 			t.Fatalf("REL001_KILL_CAMPAIGN_COUNT_DRIFT total=%d", total)
 		}
+		t.Logf("REL001_KILL_CAMPAIGN_RESULT total=%d collection-create.response-before-decision=%d collection-create.decision-before-response=%d conversation-create.response-before-decision=%d conversation-create.decision-before-response=%d txt-upload.response-before-decision=%d txt-upload.decision-before-response=%d ask-no-context.response-before-decision=%d ask-no-context.decision-before-response=%d early=8,2,2,4 plan_sha256=%s",
+			total, decisionOrders[0][0], decisionOrders[0][1], decisionOrders[1][0], decisionOrders[1][1],
+			decisionOrders[2][0], decisionOrders[2][1], decisionOrders[3][0], decisionOrders[3][1], rel001KillPlanSHA256)
 	}
 }
 
