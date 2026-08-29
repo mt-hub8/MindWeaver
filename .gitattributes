@@ -1,4 +1,5 @@
-/mvnw text eol=lf
+/legacy/java/mvnw text eol=lf
+/legacy/java/** linguist-detectable=false
 .gitattributes text eol=lf
 *.cmd text eol=crlf
 *.java text eol=lf

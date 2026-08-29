@@ -16,6 +16,9 @@ $sourceRoots = @(
     "src/main/resources",
     "src/test/resources"
 )
+$archivePrefix = "legacy/java/"
+$physicalSourceRoots = [string[]]@($sourceRoots | ForEach-Object { "$archivePrefix$_" })
+$legacyPathBaseline = "0df22ddaf02c64bf73a7df12cd5fea6b52632c73"
 $expectedKindCounts = [ordered]@{
     MAIN_JAVA = 587
     TEST_JAVA = 193
@@ -310,12 +313,12 @@ function Get-Partition {
 }
 
 function Get-TrackedSources {
-    $status = Invoke-GitText -Arguments (@("status", "--porcelain=v1", "--untracked-files=no", "--") + $sourceRoots)
+    $status = Invoke-GitText -Arguments (@("status", "--porcelain=v1", "--untracked-files=no", "--") + $physicalSourceRoots)
     if (-not [string]::IsNullOrWhiteSpace($status)) {
         throw "Covered legacy source roots have tracked worktree or index changes"
     }
 
-    $tree = Invoke-GitText -Arguments (@("-c", "core.quotepath=false", "ls-tree", "-r", "--full-tree", "HEAD", "--") + $sourceRoots)
+    $tree = Invoke-GitText -Arguments (@("-c", "core.quotepath=false", "ls-tree", "-r", "--full-tree", "HEAD", "--") + $physicalSourceRoots)
     $entries = New-OrdinalDictionary
     foreach ($line in [regex]::Split($tree, "`r?`n")) {
         if ([string]::IsNullOrEmpty($line)) { continue }
@@ -324,10 +327,24 @@ function Get-TrackedSources {
         }
         $mode = $Matches[1]
         $objectID = $Matches[2]
-        $path = $Matches[3]
-        if ($mode -ne "100644") { throw "Covered source must be a regular non-executable Git blob: $path" }
-        if ($path -notmatch '^[A-Za-z0-9._/-]+$' -or $path.Contains("//") -or $path.Contains("/../") -or $path.Contains("/./")) {
+        $physicalPath = $Matches[3]
+        if ($mode -ne "100644") { throw "Covered source must be a regular non-executable Git blob: $physicalPath" }
+        if ($physicalPath -notmatch '^[A-Za-z0-9._/-]+$' -or $physicalPath.Contains("//") -or $physicalPath.Contains("/../") -or $physicalPath.Contains("/./")) {
             throw "Covered source has a non-canonical path"
+        }
+        if (-not $physicalPath.StartsWith($archivePrefix, [StringComparison]::Ordinal)) {
+            throw "Covered source is outside the retired Java archive"
+        }
+        $path = $physicalPath.Substring($archivePrefix.Length)
+        $matchesLogicalRoot = $false
+        foreach ($sourceRoot in $sourceRoots) {
+            if ($path.StartsWith("$sourceRoot/", [StringComparison]::Ordinal)) {
+                $matchesLogicalRoot = $true
+                break
+            }
+        }
+        if (-not $matchesLogicalRoot) {
+            throw "Covered source does not map to a frozen logical source root"
         }
         if ($entries.ContainsKey($path)) { throw "Duplicate tracked source path: $path" }
         $entries.Add($path, [pscustomobject]@{ path = $path; git_blob = $objectID })
@@ -690,7 +707,7 @@ function Invoke-SelfTests {
     $first.semantic_candidates = "self-test-candidate"
     $first.risk_ids = "ARCHITECTURE_COUPLING"
     $first.evidence = "self-test/evidence"
-    $first.reviewed_commit = (Invoke-GitText -Arguments @("rev-parse", "HEAD")).Trim()
+    $first.reviewed_commit = $legacyPathBaseline
     $first.reviewed_sha256 = $first.source_sha256
     $first.reviewer = "self-test"
     $first.notes = "Self-test only."

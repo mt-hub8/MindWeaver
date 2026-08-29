@@ -18,6 +18,12 @@ The initial manifest was generated from Git commit
 | `TEST_RESOURCE` | 2 | 2,668 | 57 | 48 |
 | **Total** | **866** | **2,807,567** | **72,502** | **61,730** |
 
+The current physical copies are isolated under `legacy/java/`, but the CSV
+`path` column deliberately retains the pre-archive logical locators (`src/...`).
+The validator reads `legacy/java/<path>`, strips that physical prefix, and then
+compares the same immutable blob identities. A directory move therefore does
+not masquerade as a source review or reset historical provenance.
+
 All 866 initial rows are `STRUCTURAL_SCAN_ONLY`. That level proves only the
 tracked path, Git blob identity, SHA-256, strict UTF-8 decoding, byte and line
 counts, Java package/path agreement, and structural partition. It is not a
@@ -45,7 +51,7 @@ This distinction is intentional:
 
 | Column | Meaning |
 | --- | --- |
-| `path` | Canonical repository-relative tracked path. |
+| `path` | Canonical pre-archive logical path; the current physical file is `legacy/java/<path>`. |
 | `git_blob` | Exact Git blob object ID read from `HEAD`. |
 | `source_sha256` | Lowercase SHA-256 of the raw Git blob bytes, not checkout bytes. |
 | `bytes` | Raw Git blob byte count. |
@@ -93,7 +99,7 @@ translation cannot change the recorded source SHA-256, bytes, or line counts.
 The manifest is strict UTF-8 without BOM and has one canonical logical CSV
 representation; it accepts either LF or uniformly Git-normalized CRLF in the
 checkout, then compares the normalized logical bytes. It also requires the four
-covered tracked roots to be clean before validating.
+covered physical roots below `legacy/java/` to be clean before validating.
 
 Validation fails on any exact-set/count drift, stale structural hash, malformed
 or noncanonical CSV, UTF-8 BOM or invalid UTF-8, duplicate or case-colliding

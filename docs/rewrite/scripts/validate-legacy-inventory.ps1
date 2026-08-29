@@ -8,6 +8,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+$legacyRoot = (Resolve-Path (Join-Path $repoRoot "legacy\java")).Path
 $inventoryPath = Join-Path $repoRoot "docs\rewrite\legacy-inventory.csv"
 $featurePath = Join-Path $repoRoot "docs\rewrite\feature-disposition.md"
 $ledgerPath = Join-Path $repoRoot "docs\rewrite\acceptance-ledger.md"
@@ -145,7 +146,12 @@ if ($coreAcceptanceCount -ne 36 -or $laterAcceptanceCount -ne 9) {
 
 function To-RepoPath {
     param([System.IO.FileSystemInfo]$Item)
-    return $Item.FullName.Substring($repoRoot.Length + 1).Replace("\", "/")
+    $legacyPrefix = $legacyRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+    $fullPath = [System.IO.Path]::GetFullPath($Item.FullName)
+    if (-not $fullPath.StartsWith($legacyPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Legacy inventory source is outside the retired archive root: $fullPath"
+    }
+    return $fullPath.Substring($legacyPrefix.Length).Replace("\", "/")
 }
 
 function To-KebabCase {
@@ -208,7 +214,7 @@ function Get-BlockEnd {
 }
 
 # Spring MVC endpoints. Class-level RequestMapping is joined with every method mapping.
-$controllerRoot = Join-Path $repoRoot "src\main\java\com\tuoman\ai_task_orchestrator\controller"
+$controllerRoot = Join-Path $legacyRoot "src\main\java\com\tuoman\ai_task_orchestrator\controller"
 Get-ChildItem $controllerRoot -Recurse -Filter "*Controller.java" -File | Sort-Object FullName | ForEach-Object {
     $relative = To-RepoPath $_
     $text = Get-Content $_.FullName -Raw
@@ -251,7 +257,7 @@ Get-ChildItem $controllerRoot -Recurse -Filter "*Controller.java" -File | Sort-O
 }
 
 # Every shipped legacy static asset, including CSS because it affects the user-visible UI.
-$staticRoot = Join-Path $repoRoot "src\main\resources\static"
+$staticRoot = Join-Path $legacyRoot "src\main\resources\static"
 Get-ChildItem $staticRoot -Recurse -File | Sort-Object FullName | ForEach-Object {
     $relative = To-RepoPath $_
     Add-Discovered "static_ui" $relative "Shipped static UI asset $relative."
@@ -259,7 +265,7 @@ Get-ChildItem $staticRoot -Recurse -File | Sort-Object FullName | ForEach-Object
 
 # Flyway files and the table/index objects they declare. This is a declaration-level schema,
 # not a claim about engine-created foreign-key indexes in a live MySQL instance.
-$migrationRoot = Join-Path $repoRoot "src\main\resources\db\migration"
+$migrationRoot = Join-Path $legacyRoot "src\main\resources\db\migration"
 $migrations = Get-ChildItem $migrationRoot -Recurse -Filter "*.sql" -File | Sort-Object {
     if ($_.BaseName -match '^V(\d+)') { [int]$Matches[1] } else { [int]::MaxValue }
 }
@@ -304,7 +310,7 @@ foreach ($migration in $migrations) {
 }
 
 # JPA persistence classes.
-$entityRoot = Join-Path $repoRoot "src\main\java\com\tuoman\ai_task_orchestrator\entity"
+$entityRoot = Join-Path $legacyRoot "src\main\java\com\tuoman\ai_task_orchestrator\entity"
 Get-ChildItem $entityRoot -Recurse -Filter "*.java" -File | Sort-Object FullName | ForEach-Object {
     $relative = To-RepoPath $_
     Add-Discovered "persistence_entity" $relative "JPA entity/persisted data class $($_.BaseName) declared in $relative."
@@ -312,7 +318,7 @@ Get-ChildItem $entityRoot -Recurse -Filter "*.java" -File | Sort-Object FullName
 
 # Scheduled and background execution surfaces. Message DTOs are excluded; consumers,
 # publishers, runners, executors, handlers and runtime queue configuration are included.
-$javaRoot = Join-Path $repoRoot "src\main\java"
+$javaRoot = Join-Path $legacyRoot "src\main\java"
 Get-ChildItem $javaRoot -Recurse -Filter "*.java" -File | Sort-Object FullName | ForEach-Object {
     $relative = To-RepoPath $_
     $text = Get-Content $_.FullName -Raw
@@ -342,7 +348,7 @@ Get-ChildItem $javaRoot -Recurse -Filter "*.java" -File | Sort-Object FullName |
 
 # Explicit property files.
 $configKeys = [ordered]@{}
-Get-ChildItem (Join-Path $repoRoot "src\main\resources") -Filter "application*.properties" -File | Sort-Object Name | ForEach-Object {
+Get-ChildItem (Join-Path $legacyRoot "src\main\resources") -Filter "application*.properties" -File | Sort-Object Name | ForEach-Object {
     foreach ($line in Get-Content $_.FullName) {
         if ($line -match '^\s*([^#!\s][^=\s]*)\s*=') {
             $configKeys[$Matches[1]] = $true
@@ -415,9 +421,9 @@ foreach ($key in ($configKeys.Keys | Sort-Object)) {
 $environmentKeys = [ordered]@{}
 $environmentSourceFiles = @()
 $environmentSourceFiles += Get-ChildItem $javaRoot -Recurse -Filter "*.java" -File
-$environmentSourceFiles += Get-ChildItem (Join-Path $repoRoot "workers") -Recurse -Filter "*.py" -File
-$environmentSourceFiles += Get-ChildItem (Join-Path $repoRoot "src\main\resources") -Filter "application*.properties" -File
-$environmentSourceFiles += Get-ChildItem $repoRoot -Filter "docker-compose*.yml" -File
+$environmentSourceFiles += Get-ChildItem (Join-Path $legacyRoot "workers") -Recurse -Filter "*.py" -File
+$environmentSourceFiles += Get-ChildItem (Join-Path $legacyRoot "src\main\resources") -Filter "application*.properties" -File
+$environmentSourceFiles += Get-ChildItem $legacyRoot -Filter "docker-compose*.yml" -File
 foreach ($sourceFile in $environmentSourceFiles) {
     $text = Get-Content $sourceFile.FullName -Raw
     foreach ($match in [regex]::Matches($text, 'System\.getenv\(\s*["'']([A-Z][A-Z0-9_]*)["'']\s*\)|os\.getenv\(\s*["'']([A-Z][A-Z0-9_]*)["'']|os\.environ\.get\(\s*["'']([A-Z][A-Z0-9_]*)["'']|os\.environ\[\s*["'']([A-Z][A-Z0-9_]*)["'']\s*\]|\$\{([A-Z][A-Z0-9_]*)(?::[^}]*)?\}')) {
@@ -450,7 +456,7 @@ foreach ($key in ($environmentKeys.Keys | Sort-Object)) {
 }
 
 # Direct Maven dependencies and parent.
-[xml]$pom = Get-Content (Join-Path $repoRoot "pom.xml") -Raw
+[xml]$pom = Get-Content (Join-Path $legacyRoot "pom.xml") -Raw
 $namespace = New-Object System.Xml.XmlNamespaceManager($pom.NameTable)
 $namespace.AddNamespace("m", $pom.DocumentElement.NamespaceURI)
 $parent = $pom.SelectSingleNode('/m:project/m:parent', $namespace)
@@ -476,7 +482,7 @@ if ($null -ne $javaVersion) {
 }
 
 # Maven wrapper distribution is a versioned external build input.
-$wrapperPropertiesPath = Join-Path $repoRoot ".mvn\wrapper\maven-wrapper.properties"
+$wrapperPropertiesPath = Join-Path $legacyRoot ".mvn\wrapper\maven-wrapper.properties"
 foreach ($line in Get-Content $wrapperPropertiesPath) {
     if ($line -match '^distributionUrl=.*?/apache-maven/([^/]+)/apache-maven-') {
         Add-Discovered "external_dependency" "toolchain:maven:$($Matches[1])" "Maven distribution version declared by .mvn/wrapper/maven-wrapper.properties: $($Matches[1])."
@@ -484,7 +490,7 @@ foreach ($line in Get-Content $wrapperPropertiesPath) {
 }
 
 # Python worker requirements, kept distinct per worker because the version policies differ.
-Get-ChildItem (Join-Path $repoRoot "workers") -Recurse -Filter "requirements.txt" -File | Sort-Object FullName | ForEach-Object {
+Get-ChildItem (Join-Path $legacyRoot "workers") -Recurse -Filter "requirements.txt" -File | Sort-Object FullName | ForEach-Object {
     $relative = To-RepoPath $_
     foreach ($line in Get-Content $_.FullName) {
         $trimmed = $line.Trim()
@@ -495,7 +501,7 @@ Get-ChildItem (Join-Path $repoRoot "workers") -Recurse -Filter "requirements.txt
 }
 
 # Compose service images.
-Get-ChildItem $repoRoot -Filter "docker-compose*.yml" -File | Sort-Object Name | ForEach-Object {
+Get-ChildItem $legacyRoot -Filter "docker-compose*.yml" -File | Sort-Object Name | ForEach-Object {
     $relative = To-RepoPath $_
     $inServices = $false
     $service = $null
@@ -510,19 +516,19 @@ Get-ChildItem $repoRoot -Filter "docker-compose*.yml" -File | Sort-Object Name |
 }
 
 # Binaries explicitly probed by the legacy Windows environment script.
-$checkEnvPath = Join-Path $repoRoot "scripts\windows\check-env.ps1"
+$checkEnvPath = Join-Path $legacyRoot "scripts\windows\check-env.ps1"
 $checkEnvText = Get-Content $checkEnvPath -Raw
 foreach ($match in [regex]::Matches($checkEnvText, 'Test-CommandAvailable\s+"([A-Za-z0-9_.-]+)"')) {
     Add-Discovered "external_dependency" "binary:$($match.Groups[1].Value.ToLowerInvariant())" "External executable probed by scripts/windows/check-env.ps1: $($match.Groups[1].Value)."
 }
-if (Test-Path (Join-Path $repoRoot "docker-compose.yml")) {
+if (Test-Path (Join-Path $legacyRoot "docker-compose.yml")) {
     Add-Discovered "external_dependency" "binary:docker" "Docker/Compose is required to execute the tracked legacy Compose definitions."
 }
 
 # Explicit configured/recommended model artifacts. These are external inputs even when
 # served locally. Only model identifiers are recorded; credentials and request content are not.
 $modelNames = [ordered]@{}
-Get-ChildItem (Join-Path $repoRoot "src\main\resources") -Filter "application*.properties" -File | ForEach-Object {
+Get-ChildItem (Join-Path $legacyRoot "src\main\resources") -Filter "application*.properties" -File | ForEach-Object {
     foreach ($line in Get-Content $_.FullName) {
         if ($line -match '^\s*[^#!=]*\.model\s*=\s*([^$#\s][^#\s]*)') {
             $modelNames[$Matches[1]] = $true
@@ -539,7 +545,7 @@ foreach ($modelName in ($modelNames.Keys | Sort-Object)) {
 }
 
 # Non-loopback configured provider hosts are network dependencies.
-Get-ChildItem (Join-Path $repoRoot "src\main\resources") -Filter "application*.properties" -File | ForEach-Object {
+Get-ChildItem (Join-Path $legacyRoot "src\main\resources") -Filter "application*.properties" -File | ForEach-Object {
     foreach ($line in Get-Content $_.FullName) {
         if ($line -match '^\s*[^#!=]*\.base-url\s*=\s*(https?://[^/\s#]+)') {
             $uri = [uri]$Matches[1]
@@ -552,10 +558,18 @@ Get-ChildItem (Join-Path $repoRoot "src\main\resources") -Filter "application*.p
 
 # Every tracked legacy worker artifact and legacy launch/build script. Tracked bytecode and
 # output samples are included so they cannot silently escape archive/drop decisions.
-$tracked = & git -C $repoRoot ls-files -- "workers/**" "scripts/**" ".mvn/**" "mvnw" "mvnw.cmd" "pom.xml" "docker-compose.yml" "docker-compose.qdrant.yml"
+$legacyTrackedPrefix = "legacy/java/"
+$tracked = & git -C $repoRoot ls-files -- "legacy/java/workers/**" "legacy/java/scripts/**" "legacy/java/.mvn/**" "legacy/java/mvnw" "legacy/java/mvnw.cmd" "legacy/java/pom.xml" "legacy/java/docker-compose.yml" "legacy/java/docker-compose.qdrant.yml"
 if ($LASTEXITCODE -ne 0) { throw "git ls-files failed" }
 foreach ($path in ($tracked | Sort-Object)) {
-    $normalized = $path.Replace("\", "/")
+    $physicalPath = $path.Replace("\", "/")
+    if (-not $physicalPath.StartsWith($legacyTrackedPrefix, [System.StringComparison]::Ordinal)) {
+        throw "Tracked legacy artifact is outside the retired archive root: $physicalPath"
+    }
+    $normalized = $physicalPath.Substring($legacyTrackedPrefix.Length)
+    if ([string]::IsNullOrWhiteSpace($normalized) -or $normalized.StartsWith("/")) {
+        throw "Tracked legacy artifact has an invalid logical locator: $physicalPath"
+    }
     if ($normalized.StartsWith("workers/")) {
         Add-Discovered "worker_file" $normalized "Tracked legacy worker artifact $normalized."
     } else {
@@ -564,7 +578,7 @@ foreach ($path in ($tracked | Sort-Object)) {
 }
 
 # Python worker HTTP endpoints are separately inventoried from the files that implement them.
-Get-ChildItem (Join-Path $repoRoot "workers") -Recurse -Filter "*.py" -File | Sort-Object FullName | ForEach-Object {
+Get-ChildItem (Join-Path $legacyRoot "workers") -Recurse -Filter "*.py" -File | Sort-Object FullName | ForEach-Object {
     $relative = To-RepoPath $_
     $text = Get-Content $_.FullName -Raw
     foreach ($match in [regex]::Matches($text, '@app\.(get|post|put|patch|delete)\("([^"]+)"')) {

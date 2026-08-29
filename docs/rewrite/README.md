@@ -4,8 +4,10 @@
 
 Replace the Java implementation with a local-first Go application that can be
 installed, operated, backed up, restored, upgraded, and removed without MySQL,
-RabbitMQ, or Python workers. The Java tree is read-only historical product
-evidence, not an implementation template or a supported user-data source.
+RabbitMQ, or Python workers. The retired Java-era tree is isolated under
+[`../../legacy/java/`](../../legacy/java/README.md) as read-only historical
+product evidence, not an implementation template or a supported user-data
+source.
 
 The Go implementation is developed under `v2/` and must be independently
 buildable from its first executable milestone. It will be extracted to a new

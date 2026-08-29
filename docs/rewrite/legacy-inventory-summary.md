@@ -7,6 +7,11 @@ rescans the repository and fails if a covered artifact is missing, stale, mapped
 to an unknown disposition, or lacks a Go target, data-disposition rule, or acceptance
 ledger row.
 
+The archived implementation now lives physically under `legacy/java/`.
+Inventory locators intentionally retain the original logical paths (`src/...`,
+`workers/...`, and similar) so each row continues to bind its historical source
+identity; the validator maps those locators to the archive root when rescanning.
+
 The inventory records what static source inspection proves. `SOURCE_IDENTIFIED`
 means that the artifact/declaration/data field was found in source; it does not
 mean that its full runtime or user-visible semantics have been confirmed.
@@ -115,9 +120,9 @@ and reports pass.
 - Legacy provider settings, ciphertext, credentials, environment values, and
   process metadata are not read or translated. Optional loopback Ollama is
   configured and probed afresh through the Go product.
-- Java source and schemas remain only historical review evidence in this parent
-  repository. They are absent from the extracted repository and the exact two-
-  executable Windows release.
+- Java source and schemas remain only historical review evidence under
+  `legacy/java/` in this parent repository. They are absent from the extracted
+  repository and the exact two-executable Windows release.
 - Normal SQLite `001` through `007` migrations remain Go-to-Go schema evolution;
   they do not authorize a legacy-data adapter or compatibility path.
 

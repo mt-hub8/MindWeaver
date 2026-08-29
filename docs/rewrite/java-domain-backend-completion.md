@@ -67,12 +67,14 @@ The old Java/Spring/MySQL/Rabbit/Python tree remains historical evidence only.
 The Go product creates a fresh Vault and exposes no legacy exporter, importer,
 migration command, third executable, or Java/MySQL data-upgrade path.
 
-The historical source itself was not deleted during this closure. Relative to
-the immutable review baseline
-`0df22ddaf02c64bf73a7df12cd5fea6b52632c73`, the current tree has no path or
-content change under `src/`, `.mvn/`, `mvnw*`, `pom.xml`, `workers/`, or the
-legacy Compose files. `src/` still contains 866 tracked files, including 780
-Java files, exactly matching that baseline.
+The historical source itself was not deleted. Its complete Java-era topology is
+now isolated under [`../../legacy/java/`](../../legacy/java/README.md), while
+the layout below that archive root and all tracked file blobs remain unchanged.
+Frozen manifests continue to use their original logical locators such as
+`src/...`; validators map the physical `legacy/java/` archive back to those
+locators before comparing the immutable review baseline
+`0df22ddaf02c64bf73a7df12cd5fea6b52632c73`. The archived `src/` still contains
+866 tracked files, including 780 Java files, exactly matching that baseline.
 
 For an additional stable recovery name, annotated tag
 `archive/legacy-java-v19-20260829` points to the historical Java main commit
@@ -113,6 +115,7 @@ cannot become product inputs:
 | `legacy-import-7d831cf-1f1a9dc.zip` | 4 | `41ab7c4c40076edec17adfd36a81ab0e0a134399e3812d38ccc1c94a00d81c46` |
 | `2026-08-29-v2-final-closure-preflight-complete.zip` | 2 untracked + tracked patches | `b5311b98e06274284ee337bf022c933312a4e1c4daa923c71247a5f3f2000972` |
 | `v2-vendor-head.zip` | 698 tracked dependency files | `feb9e6ed816d5165fbea348c9b89d0aedb59c6b633e449e3b52fcd2ff5d36cbe` |
+| `legacy-java-relocation-preflight-20260829-202938.zip` | 2,419 legacy/build + 4 WIP files | `c858ff8991783763dd0358b2d1db068ec788c20499ffb5e92e8516571a5edad0` |
 
 Each receipt represents the working files, staged and unstaged patches,
 untracked files, Git metadata, and a per-file hash manifest. These backups are
