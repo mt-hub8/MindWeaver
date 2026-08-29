@@ -134,13 +134,12 @@ Qdrant、云模型供应商、插件或内置更新器。这些能力不得从�
 
 ## 冻结的历史目录
 
-以下内容仅作为删除式审查和需求溯源的历史材料，不进入 Go 构建、运行、CI
-或发布，也不是受支持的数据迁移入口：
-
-- `src/`、`.mvn/`、`mvnw*`、`pom.xml`：旧 Java/Spring 实现；
-- `workers/`：旧 Python worker；
-- `docker-compose*.yml`：旧 MySQL、RabbitMQ、Qdrant 开发拓扑；
-- `docs/manual/`、旧开发/面试/API 文档：可能描述已删除能力，不能作为现行产品说明。
+全部旧 Java 时代材料已经集中到
+[`legacy/java/`](legacy/java/README.md)：包括 Java/Spring、Maven、Python
+worker、旧 Compose 拓扑、旧开发/面试/API 文档和 IDE 元数据。该目录仅用于
+删除式审查、需求溯源和历史恢复，不进入 Go 构建、运行、CI 或发布，也不是
+受支持的数据迁移入口。目录内说明和配置可能描述已删除能力或不安全旧默认值，
+不能作为现行产品说明或执行指令。
 
 不要运行 Maven、旧 Docker Compose 或 Python worker 来启动 MindWeaver。
 不要从旧数据库、队列、向量库或历史文件导入用户数据；应在新的 Go Vault 中
