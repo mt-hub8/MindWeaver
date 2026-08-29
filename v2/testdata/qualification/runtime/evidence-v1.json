@@ -1,0 +1,1210 @@
+{
+  "schema_version": 1,
+  "qualification": "mindweaver.runtime-interruption/v1",
+  "tested_commit": "6c76b3d25a9bb8c30baeab989e03174fe9f90833",
+  "binary": {
+    "name": "mindweaver.exe",
+    "sha256": "8af2fb0eb8e5c35f0e9e4474351eed9962d805ca4b1648871a549c4fd5f01329",
+    "toolchain": "go version go1.27.0 windows/amd64",
+    "goos": "windows",
+    "goarch": "amd64"
+  },
+  "fixture": {
+    "role": "qualification-only-pdf-blocker",
+    "sha256": "766493d8a50f09ab909dbceea63855995b6c6c70d1dbff46e7779e0a76c1f1cb"
+  },
+  "cases": [
+    {
+      "case_code": "ANSWER_PROVIDER_RECEIVED_BEFORE_TERMINAL",
+      "repetitions": 10,
+      "runs": [
+        {
+          "run": 1,
+          "checkpoint": {
+            "code": "PROVIDER_REQUEST_RECEIVED_ANSWER_PENDING",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 0,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "bfd115280f133123826d9a70b865efeca85957b432c7673065ae318753f101a1",
+              "answer": "6078f77a8a4fcc1b006e3483f7b086b86e438590a1c4aa93d597746ab04ed127",
+              "source_set": "153c60372d0c166a3daa73b27c99068938cdec663ceeccad0c2b7cf7cb30a07b",
+              "document": "b6bc0cfbe8b171d5593626995ba30d1607e843a78f0f7294b084766a73e1d333",
+              "revision": "45fbe9161ca1fe5b937bbc2e860a3d8385fff5eb806ef135e8c9e917a6461711",
+              "job": "12e71d5672c3c1b0adde57efa050b454f366d906b3b5a9e1f77f7d612b786a7e"
+            }
+          },
+          "final": {
+            "code": "ANSWER_FAILED_OUTCOME_UNCERTAIN",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 1,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "bfd115280f133123826d9a70b865efeca85957b432c7673065ae318753f101a1",
+              "answer": "6078f77a8a4fcc1b006e3483f7b086b86e438590a1c4aa93d597746ab04ed127",
+              "source_set": "153c60372d0c166a3daa73b27c99068938cdec663ceeccad0c2b7cf7cb30a07b",
+              "document": "b6bc0cfbe8b171d5593626995ba30d1607e843a78f0f7294b084766a73e1d333",
+              "revision": "45fbe9161ca1fe5b937bbc2e860a3d8385fff5eb806ef135e8c9e917a6461711",
+              "job": "12e71d5672c3c1b0adde57efa050b454f366d906b3b5a9e1f77f7d612b786a7e"
+            }
+          }
+        },
+        {
+          "run": 2,
+          "checkpoint": {
+            "code": "PROVIDER_REQUEST_RECEIVED_ANSWER_PENDING",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 0,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "736cb62e81f4c65f3b393189ea02b1c27fab6388fc19195604b55a00c8d19157",
+              "answer": "668722424f51fe1016fc41e05a3f779b736d93c7f615e53e48e0e0ba654fe235",
+              "source_set": "0b83a4c403f0a3600eddcd003e1495bef4f1bb009ba959fbb93ef0e5b0708f02",
+              "document": "672b2bb3133f9735c9a914d33dc702a7bac4e97856c07546e8258b8874e0cd2d",
+              "revision": "ee4570cca03bbfad01b67451f21127b72394d31fc12457e2446dff29c168a186",
+              "job": "5b448f04b8c321f7a612b0e54c2daead8bd1417713530ff6390298d5cd5fab56"
+            }
+          },
+          "final": {
+            "code": "ANSWER_FAILED_OUTCOME_UNCERTAIN",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 1,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "736cb62e81f4c65f3b393189ea02b1c27fab6388fc19195604b55a00c8d19157",
+              "answer": "668722424f51fe1016fc41e05a3f779b736d93c7f615e53e48e0e0ba654fe235",
+              "source_set": "0b83a4c403f0a3600eddcd003e1495bef4f1bb009ba959fbb93ef0e5b0708f02",
+              "document": "672b2bb3133f9735c9a914d33dc702a7bac4e97856c07546e8258b8874e0cd2d",
+              "revision": "ee4570cca03bbfad01b67451f21127b72394d31fc12457e2446dff29c168a186",
+              "job": "5b448f04b8c321f7a612b0e54c2daead8bd1417713530ff6390298d5cd5fab56"
+            }
+          }
+        },
+        {
+          "run": 3,
+          "checkpoint": {
+            "code": "PROVIDER_REQUEST_RECEIVED_ANSWER_PENDING",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 0,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "cb8a88e76607f031bcaa0932be910800a56bdb90692635b6feac10ee738b90df",
+              "answer": "d47202559249c43cd96509c16542c97782a855dfc4d05eff144693a2138465af",
+              "source_set": "2126dd028206283f6f2fd581c02e61f197a09408ebe4684cf2dc488ada5c7822",
+              "document": "f49d0449c60579d9d8ffd82ee1ae6707f12f3a22ab4e08630c3225514908d6a9",
+              "revision": "1a95657a4308e1ab769cbc7ea26ff326e48765c385ec2982794249d81d5069f7",
+              "job": "738f3751ed3bbee1a261869729800ce08879fe64418326ceff7d3d0e28804ca6"
+            }
+          },
+          "final": {
+            "code": "ANSWER_FAILED_OUTCOME_UNCERTAIN",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 1,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "cb8a88e76607f031bcaa0932be910800a56bdb90692635b6feac10ee738b90df",
+              "answer": "d47202559249c43cd96509c16542c97782a855dfc4d05eff144693a2138465af",
+              "source_set": "2126dd028206283f6f2fd581c02e61f197a09408ebe4684cf2dc488ada5c7822",
+              "document": "f49d0449c60579d9d8ffd82ee1ae6707f12f3a22ab4e08630c3225514908d6a9",
+              "revision": "1a95657a4308e1ab769cbc7ea26ff326e48765c385ec2982794249d81d5069f7",
+              "job": "738f3751ed3bbee1a261869729800ce08879fe64418326ceff7d3d0e28804ca6"
+            }
+          }
+        },
+        {
+          "run": 4,
+          "checkpoint": {
+            "code": "PROVIDER_REQUEST_RECEIVED_ANSWER_PENDING",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 0,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "e6e99d6bfaf72369fdc1944da3f5a22361f0f9031d39cba58d104a0c57f2d08c",
+              "answer": "0f3c4c11adbb7126f0aaba43e59a49d87441a4ed1ed290c0ce901d194710e255",
+              "source_set": "b381107cbd58aa41140cf6387b3fd2363a77e4437750f0ce2e300ed0632baff6",
+              "document": "32d5ad080e3a38091c29cb6e9ff46b13d4b3e43ece5f22c7628fd2a1168e8589",
+              "revision": "aa47a397bddc74af7659dc0fb66bd09fdfb80af14c381e182c10848c68dbcad5",
+              "job": "25ff4aa27593c57e54b899486e3844f27c2051c673e0a6a552c6dbc55c4d0b67"
+            }
+          },
+          "final": {
+            "code": "ANSWER_FAILED_OUTCOME_UNCERTAIN",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 1,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "e6e99d6bfaf72369fdc1944da3f5a22361f0f9031d39cba58d104a0c57f2d08c",
+              "answer": "0f3c4c11adbb7126f0aaba43e59a49d87441a4ed1ed290c0ce901d194710e255",
+              "source_set": "b381107cbd58aa41140cf6387b3fd2363a77e4437750f0ce2e300ed0632baff6",
+              "document": "32d5ad080e3a38091c29cb6e9ff46b13d4b3e43ece5f22c7628fd2a1168e8589",
+              "revision": "aa47a397bddc74af7659dc0fb66bd09fdfb80af14c381e182c10848c68dbcad5",
+              "job": "25ff4aa27593c57e54b899486e3844f27c2051c673e0a6a552c6dbc55c4d0b67"
+            }
+          }
+        },
+        {
+          "run": 5,
+          "checkpoint": {
+            "code": "PROVIDER_REQUEST_RECEIVED_ANSWER_PENDING",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 0,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "416f45491960c8471702dd2e5bafeed9b88a5a21f0124d2e55b1864fd5ea647f",
+              "answer": "0739a8a06c583feb5cc46d5788e26d2231adb9e4f5c01dd3c4e50d52247a1537",
+              "source_set": "6939504005872c001a6f25dfdc2c51b7c6bd24618ed2f39b181096e543a6931d",
+              "document": "8fded9319ce78d327394bea4218daf61be21602158d944cb96912ca51176bd6c",
+              "revision": "b5028437b155d1fa6b23c20479206faef1418dce3f98970607da348d16b5a381",
+              "job": "d717fc41b56a99d4609fd2eb9e4c6fd690766b54729fe92d76d1dcbe7cc80c61"
+            }
+          },
+          "final": {
+            "code": "ANSWER_FAILED_OUTCOME_UNCERTAIN",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 1,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "416f45491960c8471702dd2e5bafeed9b88a5a21f0124d2e55b1864fd5ea647f",
+              "answer": "0739a8a06c583feb5cc46d5788e26d2231adb9e4f5c01dd3c4e50d52247a1537",
+              "source_set": "6939504005872c001a6f25dfdc2c51b7c6bd24618ed2f39b181096e543a6931d",
+              "document": "8fded9319ce78d327394bea4218daf61be21602158d944cb96912ca51176bd6c",
+              "revision": "b5028437b155d1fa6b23c20479206faef1418dce3f98970607da348d16b5a381",
+              "job": "d717fc41b56a99d4609fd2eb9e4c6fd690766b54729fe92d76d1dcbe7cc80c61"
+            }
+          }
+        },
+        {
+          "run": 6,
+          "checkpoint": {
+            "code": "PROVIDER_REQUEST_RECEIVED_ANSWER_PENDING",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 0,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "e03e5a6bb134c0d9087e9ded4e099a69b34c107ae4b303f10b253002bb6bb370",
+              "answer": "2d15ebf45f5aa5385455a404f2af468a06780218d9abb4d170698fd6f975dd75",
+              "source_set": "79f65ee220dce15c0f2361b6f50820e84c26fe9163f28563f69039039b53a577",
+              "document": "4b0307d7dbe76f12ae17da823f4032045d8b503877aae009ec6d607c1bd09bab",
+              "revision": "5d9d51bf68d51aaa0ef5462e83ab25c24af034eeb145b3df8ed209dbe72d0316",
+              "job": "dd2c343822e6696ccc934aba51a87f04262751609e708a2228b16e24414cd7b5"
+            }
+          },
+          "final": {
+            "code": "ANSWER_FAILED_OUTCOME_UNCERTAIN",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 1,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "e03e5a6bb134c0d9087e9ded4e099a69b34c107ae4b303f10b253002bb6bb370",
+              "answer": "2d15ebf45f5aa5385455a404f2af468a06780218d9abb4d170698fd6f975dd75",
+              "source_set": "79f65ee220dce15c0f2361b6f50820e84c26fe9163f28563f69039039b53a577",
+              "document": "4b0307d7dbe76f12ae17da823f4032045d8b503877aae009ec6d607c1bd09bab",
+              "revision": "5d9d51bf68d51aaa0ef5462e83ab25c24af034eeb145b3df8ed209dbe72d0316",
+              "job": "dd2c343822e6696ccc934aba51a87f04262751609e708a2228b16e24414cd7b5"
+            }
+          }
+        },
+        {
+          "run": 7,
+          "checkpoint": {
+            "code": "PROVIDER_REQUEST_RECEIVED_ANSWER_PENDING",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 0,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "eadb5ad9c10d21d0597172683be78a11422275bac6d213562ec43f2b09408011",
+              "answer": "81db88bb4df4b817cb16c901a82ba848a115a39d7455210c5a185ae7fe99b823",
+              "source_set": "dc89d4e660dcdb5a4712354f5a391c827725ec71f9646fbf4f20843fa8bc6693",
+              "document": "d99829163af2668fa585a48578a24e83e8260fc98b96f6fe29d6b840e779624c",
+              "revision": "dafa7109c5553870cefbbadaf7e6cc06024873b0846adfe82214cb67c2837fbe",
+              "job": "ee6563ed1374b2309043409afd3dccfbbe31eadd538c09bbce2984fdca3ff9b3"
+            }
+          },
+          "final": {
+            "code": "ANSWER_FAILED_OUTCOME_UNCERTAIN",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 1,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "eadb5ad9c10d21d0597172683be78a11422275bac6d213562ec43f2b09408011",
+              "answer": "81db88bb4df4b817cb16c901a82ba848a115a39d7455210c5a185ae7fe99b823",
+              "source_set": "dc89d4e660dcdb5a4712354f5a391c827725ec71f9646fbf4f20843fa8bc6693",
+              "document": "d99829163af2668fa585a48578a24e83e8260fc98b96f6fe29d6b840e779624c",
+              "revision": "dafa7109c5553870cefbbadaf7e6cc06024873b0846adfe82214cb67c2837fbe",
+              "job": "ee6563ed1374b2309043409afd3dccfbbe31eadd538c09bbce2984fdca3ff9b3"
+            }
+          }
+        },
+        {
+          "run": 8,
+          "checkpoint": {
+            "code": "PROVIDER_REQUEST_RECEIVED_ANSWER_PENDING",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 0,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "e0f2550019585de783d0f82f445b0047de70c0af44a98ec9917f611caa3a07fa",
+              "answer": "102c694c1b415ed16f4bcdd3a589d9806b56541e54b769f70ab2cd225f5df9a3",
+              "source_set": "c48c5f69bf47ad3f6f9d06cb06b9de65221d137afb827b649fe89e9179bb8bcb",
+              "document": "d3531f5055f4a72ebf8cc64eb390fba3b22caa77c42c6a43cb0ae8739dfc0709",
+              "revision": "0491551eb17d75ef4c7c0c7becdad7d2489c5c58c86c63ec9e6bb6fc1b34aee4",
+              "job": "c47a8c0018112fc1ab15c58b12dc4d264d1dbce15f1c49384af32e1cbd8eafff"
+            }
+          },
+          "final": {
+            "code": "ANSWER_FAILED_OUTCOME_UNCERTAIN",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 1,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "e0f2550019585de783d0f82f445b0047de70c0af44a98ec9917f611caa3a07fa",
+              "answer": "102c694c1b415ed16f4bcdd3a589d9806b56541e54b769f70ab2cd225f5df9a3",
+              "source_set": "c48c5f69bf47ad3f6f9d06cb06b9de65221d137afb827b649fe89e9179bb8bcb",
+              "document": "d3531f5055f4a72ebf8cc64eb390fba3b22caa77c42c6a43cb0ae8739dfc0709",
+              "revision": "0491551eb17d75ef4c7c0c7becdad7d2489c5c58c86c63ec9e6bb6fc1b34aee4",
+              "job": "c47a8c0018112fc1ab15c58b12dc4d264d1dbce15f1c49384af32e1cbd8eafff"
+            }
+          }
+        },
+        {
+          "run": 9,
+          "checkpoint": {
+            "code": "PROVIDER_REQUEST_RECEIVED_ANSWER_PENDING",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 0,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "663f30d6d866e83e89c86b27ee32402690c5a17c9776b2be68b57560ecb2c43c",
+              "answer": "33fae5f9a5bd3ae4bd0552d44f60464c42502c4b316c65f4ed1f391adb6c4d9d",
+              "source_set": "a2a61086f842241ea9bd86419ba96c64980761e5d691d99016909b752962a4fd",
+              "document": "7e91313536bd4c27446057856cf70fc071cb88f07d9cd10e62f978b6fe8329a4",
+              "revision": "45a70750802d2a9b211c51ec9720b500abf8b84ac2b2c60f450d56bccd7bd69c",
+              "job": "d6d852e5b392b958e13540175e525b1e768be8a432c1a6913335551ce33cf60c"
+            }
+          },
+          "final": {
+            "code": "ANSWER_FAILED_OUTCOME_UNCERTAIN",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 1,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "663f30d6d866e83e89c86b27ee32402690c5a17c9776b2be68b57560ecb2c43c",
+              "answer": "33fae5f9a5bd3ae4bd0552d44f60464c42502c4b316c65f4ed1f391adb6c4d9d",
+              "source_set": "a2a61086f842241ea9bd86419ba96c64980761e5d691d99016909b752962a4fd",
+              "document": "7e91313536bd4c27446057856cf70fc071cb88f07d9cd10e62f978b6fe8329a4",
+              "revision": "45a70750802d2a9b211c51ec9720b500abf8b84ac2b2c60f450d56bccd7bd69c",
+              "job": "d6d852e5b392b958e13540175e525b1e768be8a432c1a6913335551ce33cf60c"
+            }
+          }
+        },
+        {
+          "run": 10,
+          "checkpoint": {
+            "code": "PROVIDER_REQUEST_RECEIVED_ANSWER_PENDING",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 0,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "ea1fecd0d3279667a32b361f1013a3fe5edd28281cc25d3a45c7f00f259f5f5b",
+              "answer": "bacbda08c5cc4c6b838d3c779a9cb65ab9da65ce22bfea588b038263ded90d78",
+              "source_set": "4324148e439fdbf9323b26903c0df7da8a0087fcb28c548285f85c9bc8d35161",
+              "document": "77797599a71d8ef80ea1edb3d98ba7cf5c6cb26621b35a60b16108a45a1296ef",
+              "revision": "33b9952a56b2c0d6e6373d4f7a95cd1b6a57c6bc227dbe49fa2feb77aa4d8e09",
+              "job": "9d6a8557fe3c2884795482e3290382101e1d9006df71d94330242b68a97c5584"
+            }
+          },
+          "final": {
+            "code": "ANSWER_FAILED_OUTCOME_UNCERTAIN",
+            "counts": {
+              "answer_citations": 0,
+              "answer_sources": 1,
+              "ask_requests": 1,
+              "chunks": 1,
+              "conversations": 1,
+              "distinct_blobs": 1,
+              "documents": 1,
+              "fts_rows": 1,
+              "fts_term_matches": 1,
+              "messages": 2,
+              "provider_attempts": 1,
+              "reconciled_answers": 1,
+              "revisions": 1
+            },
+            "id_hashes": {
+              "conversation": "ea1fecd0d3279667a32b361f1013a3fe5edd28281cc25d3a45c7f00f259f5f5b",
+              "answer": "bacbda08c5cc4c6b838d3c779a9cb65ab9da65ce22bfea588b038263ded90d78",
+              "source_set": "4324148e439fdbf9323b26903c0df7da8a0087fcb28c548285f85c9bc8d35161",
+              "document": "77797599a71d8ef80ea1edb3d98ba7cf5c6cb26621b35a60b16108a45a1296ef",
+              "revision": "33b9952a56b2c0d6e6373d4f7a95cd1b6a57c6bc227dbe49fa2feb77aa4d8e09",
+              "job": "9d6a8557fe3c2884795482e3290382101e1d9006df71d94330242b68a97c5584"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "case_code": "INGESTION_ACCEPTED_WHILE_WORKER_OCCUPIED",
+      "repetitions": 10,
+      "runs": [
+        {
+          "run": 1,
+          "checkpoint": {
+            "code": "BLOCKER_RUNNING_TARGET_QUEUED",
+            "counts": {
+              "active_revisions": 0,
+              "blob_files": 2,
+              "blocker_attempts": 1,
+              "blocker_fts_term_matches": 0,
+              "chunks": 0,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 0,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 0,
+              "revisions": 2,
+              "target_attempts": 0,
+              "target_chunks": 0,
+              "target_fts_rows": 0,
+              "target_fts_term_matches": 0,
+              "terminal_jobs": 0
+            },
+            "id_hashes": {
+              "document": "5c76b816b3e18a5c9983e07259502b64de717c2492e3fb81d15e79a360bc3691",
+              "revision": "aaf543a0da55ffc894c249d9096437c16a36105c53ec519fdd6d2605e50686ba",
+              "job": "6551669fc384044a98b3e303ad17ef558fc7d0d16b4f5757dbbaafd76b70bec4",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          },
+          "final": {
+            "code": "TARGET_SUCCEEDED_SEARCHABLE_NO_DUPLICATES",
+            "counts": {
+              "active_revisions": 2,
+              "blob_files": 2,
+              "blocker_attempts": 2,
+              "blocker_fts_term_matches": 1,
+              "chunks": 2,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 2,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 1,
+              "revisions": 2,
+              "target_attempts": 1,
+              "target_chunks": 1,
+              "target_fts_rows": 1,
+              "target_fts_term_matches": 1,
+              "terminal_jobs": 2
+            },
+            "id_hashes": {
+              "document": "5c76b816b3e18a5c9983e07259502b64de717c2492e3fb81d15e79a360bc3691",
+              "revision": "aaf543a0da55ffc894c249d9096437c16a36105c53ec519fdd6d2605e50686ba",
+              "job": "6551669fc384044a98b3e303ad17ef558fc7d0d16b4f5757dbbaafd76b70bec4",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          }
+        },
+        {
+          "run": 2,
+          "checkpoint": {
+            "code": "BLOCKER_RUNNING_TARGET_QUEUED",
+            "counts": {
+              "active_revisions": 0,
+              "blob_files": 2,
+              "blocker_attempts": 1,
+              "blocker_fts_term_matches": 0,
+              "chunks": 0,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 0,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 0,
+              "revisions": 2,
+              "target_attempts": 0,
+              "target_chunks": 0,
+              "target_fts_rows": 0,
+              "target_fts_term_matches": 0,
+              "terminal_jobs": 0
+            },
+            "id_hashes": {
+              "document": "86ddf989ca68f7a15ca75022bfcecbf1c43fe5a327fbfd2db738015246fb6eae",
+              "revision": "2ca97fbe22e8325939e393cfc91b86d9ac1f386351b032888af083d67b52f968",
+              "job": "2f31632a71eca4a840ca4c2ae50787cf059bc81cc45e5c449301c02c484ae5d4",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          },
+          "final": {
+            "code": "TARGET_SUCCEEDED_SEARCHABLE_NO_DUPLICATES",
+            "counts": {
+              "active_revisions": 2,
+              "blob_files": 2,
+              "blocker_attempts": 2,
+              "blocker_fts_term_matches": 1,
+              "chunks": 2,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 2,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 1,
+              "revisions": 2,
+              "target_attempts": 1,
+              "target_chunks": 1,
+              "target_fts_rows": 1,
+              "target_fts_term_matches": 1,
+              "terminal_jobs": 2
+            },
+            "id_hashes": {
+              "document": "86ddf989ca68f7a15ca75022bfcecbf1c43fe5a327fbfd2db738015246fb6eae",
+              "revision": "2ca97fbe22e8325939e393cfc91b86d9ac1f386351b032888af083d67b52f968",
+              "job": "2f31632a71eca4a840ca4c2ae50787cf059bc81cc45e5c449301c02c484ae5d4",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          }
+        },
+        {
+          "run": 3,
+          "checkpoint": {
+            "code": "BLOCKER_RUNNING_TARGET_QUEUED",
+            "counts": {
+              "active_revisions": 0,
+              "blob_files": 2,
+              "blocker_attempts": 1,
+              "blocker_fts_term_matches": 0,
+              "chunks": 0,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 0,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 0,
+              "revisions": 2,
+              "target_attempts": 0,
+              "target_chunks": 0,
+              "target_fts_rows": 0,
+              "target_fts_term_matches": 0,
+              "terminal_jobs": 0
+            },
+            "id_hashes": {
+              "document": "ee5e05fb488181230cf62d91afef34a370d37ad2f2d31ffed1617fdba2cfefe5",
+              "revision": "7e7481b083987e296ad8b08fd915b6115ef120b90659af55d317a0f8ebd429d0",
+              "job": "8e7a63370a5e71ffa1823e7caea874af1b1354a2a7916c9f63f61f7b3fa4692e",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          },
+          "final": {
+            "code": "TARGET_SUCCEEDED_SEARCHABLE_NO_DUPLICATES",
+            "counts": {
+              "active_revisions": 2,
+              "blob_files": 2,
+              "blocker_attempts": 2,
+              "blocker_fts_term_matches": 1,
+              "chunks": 2,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 2,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 1,
+              "revisions": 2,
+              "target_attempts": 1,
+              "target_chunks": 1,
+              "target_fts_rows": 1,
+              "target_fts_term_matches": 1,
+              "terminal_jobs": 2
+            },
+            "id_hashes": {
+              "document": "ee5e05fb488181230cf62d91afef34a370d37ad2f2d31ffed1617fdba2cfefe5",
+              "revision": "7e7481b083987e296ad8b08fd915b6115ef120b90659af55d317a0f8ebd429d0",
+              "job": "8e7a63370a5e71ffa1823e7caea874af1b1354a2a7916c9f63f61f7b3fa4692e",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          }
+        },
+        {
+          "run": 4,
+          "checkpoint": {
+            "code": "BLOCKER_RUNNING_TARGET_QUEUED",
+            "counts": {
+              "active_revisions": 0,
+              "blob_files": 2,
+              "blocker_attempts": 1,
+              "blocker_fts_term_matches": 0,
+              "chunks": 0,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 0,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 0,
+              "revisions": 2,
+              "target_attempts": 0,
+              "target_chunks": 0,
+              "target_fts_rows": 0,
+              "target_fts_term_matches": 0,
+              "terminal_jobs": 0
+            },
+            "id_hashes": {
+              "document": "31b84444debaa274600cf6804425b51dc39939899adfa60e4577f6a8741b0926",
+              "revision": "d7ad7eaeda6c5a1ed611f95c2ce433a9ede459ca8515a4ac2aab7d056e50e518",
+              "job": "dcad0bf479aa312f4aaff470d808eb3d78084743377295e43dd7b4ae1fc1cea4",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          },
+          "final": {
+            "code": "TARGET_SUCCEEDED_SEARCHABLE_NO_DUPLICATES",
+            "counts": {
+              "active_revisions": 2,
+              "blob_files": 2,
+              "blocker_attempts": 2,
+              "blocker_fts_term_matches": 1,
+              "chunks": 2,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 2,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 1,
+              "revisions": 2,
+              "target_attempts": 1,
+              "target_chunks": 1,
+              "target_fts_rows": 1,
+              "target_fts_term_matches": 1,
+              "terminal_jobs": 2
+            },
+            "id_hashes": {
+              "document": "31b84444debaa274600cf6804425b51dc39939899adfa60e4577f6a8741b0926",
+              "revision": "d7ad7eaeda6c5a1ed611f95c2ce433a9ede459ca8515a4ac2aab7d056e50e518",
+              "job": "dcad0bf479aa312f4aaff470d808eb3d78084743377295e43dd7b4ae1fc1cea4",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          }
+        },
+        {
+          "run": 5,
+          "checkpoint": {
+            "code": "BLOCKER_RUNNING_TARGET_QUEUED",
+            "counts": {
+              "active_revisions": 0,
+              "blob_files": 2,
+              "blocker_attempts": 1,
+              "blocker_fts_term_matches": 0,
+              "chunks": 0,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 0,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 0,
+              "revisions": 2,
+              "target_attempts": 0,
+              "target_chunks": 0,
+              "target_fts_rows": 0,
+              "target_fts_term_matches": 0,
+              "terminal_jobs": 0
+            },
+            "id_hashes": {
+              "document": "50d77eeb638ae0b588780e15611ed24298e399f417ba69c58654b4c07758b4fd",
+              "revision": "5eb20080f6d19f41db863c503d107f5dd0d1ae49ad5293fd452ee983538a9285",
+              "job": "283fbc7a9e4f11bd881867f5f988310b7230f55cba015689e9d058bf474b258c",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          },
+          "final": {
+            "code": "TARGET_SUCCEEDED_SEARCHABLE_NO_DUPLICATES",
+            "counts": {
+              "active_revisions": 2,
+              "blob_files": 2,
+              "blocker_attempts": 2,
+              "blocker_fts_term_matches": 1,
+              "chunks": 2,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 2,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 1,
+              "revisions": 2,
+              "target_attempts": 1,
+              "target_chunks": 1,
+              "target_fts_rows": 1,
+              "target_fts_term_matches": 1,
+              "terminal_jobs": 2
+            },
+            "id_hashes": {
+              "document": "50d77eeb638ae0b588780e15611ed24298e399f417ba69c58654b4c07758b4fd",
+              "revision": "5eb20080f6d19f41db863c503d107f5dd0d1ae49ad5293fd452ee983538a9285",
+              "job": "283fbc7a9e4f11bd881867f5f988310b7230f55cba015689e9d058bf474b258c",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          }
+        },
+        {
+          "run": 6,
+          "checkpoint": {
+            "code": "BLOCKER_RUNNING_TARGET_QUEUED",
+            "counts": {
+              "active_revisions": 0,
+              "blob_files": 2,
+              "blocker_attempts": 1,
+              "blocker_fts_term_matches": 0,
+              "chunks": 0,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 0,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 0,
+              "revisions": 2,
+              "target_attempts": 0,
+              "target_chunks": 0,
+              "target_fts_rows": 0,
+              "target_fts_term_matches": 0,
+              "terminal_jobs": 0
+            },
+            "id_hashes": {
+              "document": "a8f563369075e4560ad2a6dc8130d5a4cdd0a512a49db91ad43b1ce69822fb95",
+              "revision": "7d8ab59114a2a880cc200ab6abfd16ad2cc158336e740a318b93cb7c7e7121dc",
+              "job": "866eedee2d53f36d00dd54350a68d91a99090b82a0bdbc2a0009d1bb2e97fe1b",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          },
+          "final": {
+            "code": "TARGET_SUCCEEDED_SEARCHABLE_NO_DUPLICATES",
+            "counts": {
+              "active_revisions": 2,
+              "blob_files": 2,
+              "blocker_attempts": 2,
+              "blocker_fts_term_matches": 1,
+              "chunks": 2,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 2,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 1,
+              "revisions": 2,
+              "target_attempts": 1,
+              "target_chunks": 1,
+              "target_fts_rows": 1,
+              "target_fts_term_matches": 1,
+              "terminal_jobs": 2
+            },
+            "id_hashes": {
+              "document": "a8f563369075e4560ad2a6dc8130d5a4cdd0a512a49db91ad43b1ce69822fb95",
+              "revision": "7d8ab59114a2a880cc200ab6abfd16ad2cc158336e740a318b93cb7c7e7121dc",
+              "job": "866eedee2d53f36d00dd54350a68d91a99090b82a0bdbc2a0009d1bb2e97fe1b",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          }
+        },
+        {
+          "run": 7,
+          "checkpoint": {
+            "code": "BLOCKER_RUNNING_TARGET_QUEUED",
+            "counts": {
+              "active_revisions": 0,
+              "blob_files": 2,
+              "blocker_attempts": 1,
+              "blocker_fts_term_matches": 0,
+              "chunks": 0,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 0,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 0,
+              "revisions": 2,
+              "target_attempts": 0,
+              "target_chunks": 0,
+              "target_fts_rows": 0,
+              "target_fts_term_matches": 0,
+              "terminal_jobs": 0
+            },
+            "id_hashes": {
+              "document": "75a2573559601ebd089202c20b1edf19f3157af3e2885a9917d445c8864825ae",
+              "revision": "bb86dacd1dddade075b7b8a7cbe64f4560887a3f2d6ad41972a33cb573058eb6",
+              "job": "e5b7a223f3be3fb536ed8e67811884b85297cf3e39974de6226b9ea52ac5a142",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          },
+          "final": {
+            "code": "TARGET_SUCCEEDED_SEARCHABLE_NO_DUPLICATES",
+            "counts": {
+              "active_revisions": 2,
+              "blob_files": 2,
+              "blocker_attempts": 2,
+              "blocker_fts_term_matches": 1,
+              "chunks": 2,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 2,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 1,
+              "revisions": 2,
+              "target_attempts": 1,
+              "target_chunks": 1,
+              "target_fts_rows": 1,
+              "target_fts_term_matches": 1,
+              "terminal_jobs": 2
+            },
+            "id_hashes": {
+              "document": "75a2573559601ebd089202c20b1edf19f3157af3e2885a9917d445c8864825ae",
+              "revision": "bb86dacd1dddade075b7b8a7cbe64f4560887a3f2d6ad41972a33cb573058eb6",
+              "job": "e5b7a223f3be3fb536ed8e67811884b85297cf3e39974de6226b9ea52ac5a142",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          }
+        },
+        {
+          "run": 8,
+          "checkpoint": {
+            "code": "BLOCKER_RUNNING_TARGET_QUEUED",
+            "counts": {
+              "active_revisions": 0,
+              "blob_files": 2,
+              "blocker_attempts": 1,
+              "blocker_fts_term_matches": 0,
+              "chunks": 0,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 0,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 0,
+              "revisions": 2,
+              "target_attempts": 0,
+              "target_chunks": 0,
+              "target_fts_rows": 0,
+              "target_fts_term_matches": 0,
+              "terminal_jobs": 0
+            },
+            "id_hashes": {
+              "document": "f35e6822c1dd5ae8fff2dae93935e984e98220443df3929151d1845468f45338",
+              "revision": "3a1d4e5eebc215319271c0cd0ec030b7fdd7af2f4b0c63d81d3da07cd44fcc3a",
+              "job": "869938ec8ee25cac808296e284dcaf88df74819a872de5398d6193e643e9e89c",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          },
+          "final": {
+            "code": "TARGET_SUCCEEDED_SEARCHABLE_NO_DUPLICATES",
+            "counts": {
+              "active_revisions": 2,
+              "blob_files": 2,
+              "blocker_attempts": 2,
+              "blocker_fts_term_matches": 1,
+              "chunks": 2,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 2,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 1,
+              "revisions": 2,
+              "target_attempts": 1,
+              "target_chunks": 1,
+              "target_fts_rows": 1,
+              "target_fts_term_matches": 1,
+              "terminal_jobs": 2
+            },
+            "id_hashes": {
+              "document": "f35e6822c1dd5ae8fff2dae93935e984e98220443df3929151d1845468f45338",
+              "revision": "3a1d4e5eebc215319271c0cd0ec030b7fdd7af2f4b0c63d81d3da07cd44fcc3a",
+              "job": "869938ec8ee25cac808296e284dcaf88df74819a872de5398d6193e643e9e89c",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          }
+        },
+        {
+          "run": 9,
+          "checkpoint": {
+            "code": "BLOCKER_RUNNING_TARGET_QUEUED",
+            "counts": {
+              "active_revisions": 0,
+              "blob_files": 2,
+              "blocker_attempts": 1,
+              "blocker_fts_term_matches": 0,
+              "chunks": 0,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 0,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 0,
+              "revisions": 2,
+              "target_attempts": 0,
+              "target_chunks": 0,
+              "target_fts_rows": 0,
+              "target_fts_term_matches": 0,
+              "terminal_jobs": 0
+            },
+            "id_hashes": {
+              "document": "3bf30829f95d8476efe9d0b72ad1bb84147cae944aa2a6f3c182b276f3461340",
+              "revision": "e82184d196fc32e3b9525d5c9eaba75a7168df2aa34464c17a9f6010d964f5d2",
+              "job": "d2bac8f096e49d3feb993b9e3e50bfe666da81e0c7b7fc0f3d4a71d09310cbda",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          },
+          "final": {
+            "code": "TARGET_SUCCEEDED_SEARCHABLE_NO_DUPLICATES",
+            "counts": {
+              "active_revisions": 2,
+              "blob_files": 2,
+              "blocker_attempts": 2,
+              "blocker_fts_term_matches": 1,
+              "chunks": 2,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 2,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 1,
+              "revisions": 2,
+              "target_attempts": 1,
+              "target_chunks": 1,
+              "target_fts_rows": 1,
+              "target_fts_term_matches": 1,
+              "terminal_jobs": 2
+            },
+            "id_hashes": {
+              "document": "3bf30829f95d8476efe9d0b72ad1bb84147cae944aa2a6f3c182b276f3461340",
+              "revision": "e82184d196fc32e3b9525d5c9eaba75a7168df2aa34464c17a9f6010d964f5d2",
+              "job": "d2bac8f096e49d3feb993b9e3e50bfe666da81e0c7b7fc0f3d4a71d09310cbda",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          }
+        },
+        {
+          "run": 10,
+          "checkpoint": {
+            "code": "BLOCKER_RUNNING_TARGET_QUEUED",
+            "counts": {
+              "active_revisions": 0,
+              "blob_files": 2,
+              "blocker_attempts": 1,
+              "blocker_fts_term_matches": 0,
+              "chunks": 0,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 0,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 0,
+              "revisions": 2,
+              "target_attempts": 0,
+              "target_chunks": 0,
+              "target_fts_rows": 0,
+              "target_fts_term_matches": 0,
+              "terminal_jobs": 0
+            },
+            "id_hashes": {
+              "document": "544fe5935c3d00addb125a2b7a5022bb946c6eb6b68a8d8b65d52c6e84925c34",
+              "revision": "93964df6895a267c6818d3a0d469a31dcdd357bc44e2b751baa5c1cab6caa5ea",
+              "job": "874ef8db54f45686051447c7bd9ffb9cdba20abd9b83b71ff73f1a5fc17802e7",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          },
+          "final": {
+            "code": "TARGET_SUCCEEDED_SEARCHABLE_NO_DUPLICATES",
+            "counts": {
+              "active_revisions": 2,
+              "blob_files": 2,
+              "blocker_attempts": 2,
+              "blocker_fts_term_matches": 1,
+              "chunks": 2,
+              "distinct_blobs": 2,
+              "documents": 2,
+              "duplicate_chunk_slots": 0,
+              "fts_rows": 2,
+              "ingestions": 2,
+              "jobs": 2,
+              "recovered_jobs": 1,
+              "revisions": 2,
+              "target_attempts": 1,
+              "target_chunks": 1,
+              "target_fts_rows": 1,
+              "target_fts_term_matches": 1,
+              "terminal_jobs": 2
+            },
+            "id_hashes": {
+              "document": "544fe5935c3d00addb125a2b7a5022bb946c6eb6b68a8d8b65d52c6e84925c34",
+              "revision": "93964df6895a267c6818d3a0d469a31dcdd357bc44e2b751baa5c1cab6caa5ea",
+              "job": "874ef8db54f45686051447c7bd9ffb9cdba20abd9b83b71ff73f1a5fc17802e7",
+              "blob": "023e80df0bcccb6311c99c566d1ac41aa7ea4eb253badaab3e398c3a74d54cf4",
+              "blocker_blob": "ca14530a084ae5d559333284273afb5c1209315a6c7d0ab6588e10661114e79c"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

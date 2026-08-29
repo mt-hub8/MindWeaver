@@ -41,427 +41,111 @@ MindWeaver 要把个人记忆建设成一层独立于具体模型与服务、能
 - **记忆由用户决定**：系统不应擅自替用户遗忘，也不能剥夺用户检查、纠正、
   导出和主动删除记忆的权利。
 
-这是 MindWeaver 的长期演进方向，不是对当前版本能力的声明。当前已经实现的
-范围与限制见下文。
+这是 MindWeaver 的长期演进方向，不是对当前版本能力的声明。现阶段，
+MindWeaver 正在建设本地 Vault、可靠持久化、可追溯检索和备份恢复等基础能力；
+当前已经实现的范围与限制见下文。
 
----
+## 当前实现
 
-# Personal AI Knowledge Workspace
-# 个人 AI 知识工作台
+MindWeaver 当前是面向 Windows 10/11 x64 的单用户、本地优先知识工作台。
+当前产品实现位于 [`v2/`](v2/README.md)，使用 Go、SQLite、不可变 Blob 与
+内嵌 loopback Web UI；它不依赖 Java、MySQL、RabbitMQ 或 Python worker。
 
+本仓库仍处于开发和资格验证阶段，不是已签名或完成安装验证的正式发布。
+准确的完成状态以
+[`acceptance-ledger.md`](docs/rewrite/acceptance-ledger.md) 为准。
+Java 中值得保留的领域逻辑和后端能力已经按 Go-owned 语义收口；范围、审计依据
+和未包含的发布资格见
+[`java-domain-backend-completion.md`](docs/rewrite/java-domain-backend-completion.md)。
 
+## 当前 CORE 产品边界
 
+- 首次创建、随后重开并独占一个本地 Vault；不读取或迁移旧 Java/MySQL 数据。
+- 上传不超过 4 MiB 的 TXT、Markdown 和带真实文本层的 PDF。
+- 管理文档、集合成员关系、垃圾箱、恢复和永久清理；内部 revision 仅用于冲突保护。
+- 在指定集合范围内使用 SQLite FTS5 检索一段连续原文短语。
+- 可选连接固定 loopback Ollama，在检索命中后生成带来源引用的回答。
+- 在运行中的 UI 创建不可覆盖的明文备份；验证和恢复仅作为互斥的启动命令。
+- 仅构建 `mindweaver.exe` 与 `mindweaver-pdf.exe` 两个 Windows PE。
 
-一个**本地优先**的个人 AI 应用：你可以上传自己的资料，配置本地或外部模型，构建个人知识库，并让 AI 基于你的知识执行问答、总结、报告生成和任务编排。
+检索不是自然语言语义搜索。系统把完整输入作为一段连续原文短语，要求至少
+3 个 Unicode 码点且不超过 1024 个 UTF-8 字节；不做分词、同义词扩展、
+query rewrite、向量搜索、混合召回或 rerank。Ask 使用同一个检索边界，
+没有命中时应拒答，而不是把一般自然问题描述成已经支持。
 
-> 仓库技术名仍为 `ai-task-orchestrator`，但产品面向个人用户，**不是企业级 SaaS**。  
-> 详细产品说明见 [V9.0 手册](docs/manual/local-personal-knowledge-workspace.md)。
+Vault 和备份没有应用层加密。其保密性依赖当前 Windows 账户、文件访问控制
+和用户选择的磁盘加密；现有完整性验证不能被描述为加密保证。
 
+## 开发构建与运行
 
-
-<img width="3824" height="1912" alt="ScreenShot_2026-07-06_140548_155" src="https://github.com/user-attachments/assets/d33fb762-7ba6-4bcd-a409-54e5b570c0ff" />
-
-
----
-
-## 1. 项目简介
-
-本项目帮你把「自己的文档」变成「可对话、可检索、可生成报告」的个人知识库。
-
-核心特点：
-
-- **本地优先**：资料与索引留在你的机器或你控制的环境中；配合 Ollama 时，文档内容不必上传到云端大模型服务。
-- **个人知识库**：上传 `.txt`、`.md`、文本型 PDF，系统自动切块、向量化并建立索引。
-- **多模型可配置**：支持默认 **mock**（开发测试）与 **local-ai**（Ollama 本地模型）；模型信息可在「模型设置」页查看。
-- **RAG 问答**（Retrieval-Augmented Generation，检索增强生成）：基于知识库检索后生成回答，并附带**引用来源**，便于核对。
-- **AI 任务编排**（AI Task Orchestration）：提交任务后，系统在后台检索知识库、调用工具、生成结构化报告。
-- **Tool Workflow**（工具工作流）：固定安全工具链（检索 → 总结 → 报告），可查看每一步执行过程。
-- **后续 Skill 扩展**：路线图包含 Skill System，当前阶段尚未实现。
-
-底层具备较完整的 Java 后端工程能力（异步任务、消息队列、向量检索抽象等），但 README 以**产品使用**为主；深入技术细节见文末附录。
-
----
-
-## 2. 适合谁使用
-
-- **想构建个人知识库的用户** — 论文笔记、项目文档、学习资料统一管理，随时向 AI 提问。
-- **想本地体验 RAG 的开发者** — 从上传到检索、引用、问答的完整链路，可在浏览器中操作。
-- **想学习 AI 应用后端 / Agent 基础设施的人** — 涵盖文档摄入、Embedding、向量库、异步任务、Tool-Using Workflow 等典型模块。
-- **想用本地模型处理私人资料的人** — 通过 Ollama + Python Worker，在本地完成向量化与文本生成，无需把原文发给云端。
-
----
-
-## 3. 核心功能
-
-- **文档上传** — 支持 `.txt`、`.md`、文本型 PDF，异步处理，不阻塞页面。
-- **文本提取** — 从上传文件中提取可索引纯文本（扫描版 PDF / 图片 OCR 暂不支持）。
-- **知识库分组** — 按主题把文档归入不同分组，便于分类管理。
-- **范围检索** — 问答或 AI 任务时可选择「全部文档」或「仅某一分组」。
-- **引用来源** — 回答与报告列出引用的文档片段，降低「AI 胡说」风险。
-- **文档生命周期** — ACTIVE / TRASHED / PURGED；删除后进入**垃圾箱**，7 天内可恢复；永久删除后清理底层数据。
-- **垃圾箱** — `/trash.html` 查看、恢复或立即永久删除；不参与问答、检索与 AI 任务。
-- **本地存储管理** — 系统设置展示存储占用估算与**缓存管理**（清理缓存不删除知识库）。
-- **重新索引** — 基于原始文本重新切块与向量化，无需重新上传文件。
-- **本地 Ollama 模型** — `local-ai` 模式下使用 `qwen3-embedding` 与 `qwen2.5` 系列模型。
-- **模型供应商配置（V10.0）** — 在「模型设置」管理 Ollama / OpenAI-compatible 供应商，设置默认 LLM 与 Embedding；**API Key 不会明文展示**。
-- **RAG 质量评分与诊断（V11.0）** — Ask 页面展示**综合评分**、四维质量分、**主要扣分原因**与**优化建议**；支持平衡 / 精准 / 全面三种评分模式；技术详情可折叠查看原始指标与权重。
-- **批量文档导入（V13.0）** — 一次上传多个文件，按批次队列处理；支持文件级 / 文本级去重；失败可重试、可取消剩余任务。
-- **通知中心（V13.0）** — 批量导入完成、部分失败、失败或取消时生成站内通知，可跳转批次详情。
-- **知识库体检报告（V14.0）** — 基于自建 **Gold Test Set** 评测知识库检索与生成质量；支持多检索策略对比（Vector / Hybrid / **RRF** / Rerank）；输出 **0–100 健康分**、**CrossCollectionLeakRate（跨集合污染率）**、**WrongVersionLeakRate（错误版本污染率）** 与可执行优化建议；适合**万级文档** RAG 诊断。
-- **结构化切分与混合检索（V15.0）** — 结构化 chunk（section_path、chunk_type、prev/next/parent）、metadata 增强、**RetrievalFilter** 预过滤、BM25/keyword 检索、**Hybrid + RRF**、启发式 Reranker、parent/adjacent 上下文回填、检索诊断与重新索引。
-- **向量索引健康（V16.0）** — 稳定 **vector_id** 幂等 upsert、**generation** 代际隔离、trash/purge 向量同步、batch retry 防重复；**CrossCollectionVectorLeakRate（跨集合向量污染率）** 等存储层审计；页面 `/vector-index-health.html`。
-- **查询理解与检索路由（V17.0）** — 自动识别版本、最新方案、文档类型、代码符号、配置项和 API 路径；根据 query type 选择 Vector / Hybrid RRF / Rerank / parent-adjacent context；模糊问题触发澄清提示，防止全库盲搜；Ask 页面展示查询理解、检索路由和改写后的查询。
-- **可信回答生成（V18.0）** — 建立 Grounded Answer Contract、可追踪 final context、chunk/section 级 citation、引用校验、上下文不足拒答、未支持主张检测和 Answer Grounding Score；Ask 页面展示可信回答状态、引用校验与未支持主张。
-- **记忆中心（V19.0）** — 在 `/memory-center.html` 查看、手动新增、编辑、软删除、归档、恢复和诊断短事实、偏好、约束、决策与任务摘要；每条记忆都带作用域、来源、可信度和重要性，支持随时关闭上下文读取。
-- **智能体角色（V19.0）** — 在 `/agent-profiles.html` 管理角色职责与 system instruction；内置产品经理、架构师、RAG 工程和风险审查四个 Agent Profile。
-- **Agent 私有记忆与共享记忆（V19.0）** — Agent 私有记忆按 `agent_profile_id` 隔离，不能被其他 Agent 默认读取；只有用户显式 share 后才进入 Shared Memory。
-- **AI 任务编排** — 提交目标后自动生成检索、总结与最终报告。
-- **工具执行过程** — 查看每一步工具输入、输出与事件时间线。
-- **模型设置** — 查看运行模式、Worker / Ollama 连接状态，支持连接测试。
-- **技术详情折叠** — 页面默认中文友好；`metadata`、`traceId` 等工程字段折叠展示，需要时再展开。
-
----
-
-## 4. 当前产品页面
-
-启动服务后访问 `http://localhost:8080`：
-
-| 页面 | 路径 | 说明 |
-|------|------|------|
-| 首页 | `/` | 产品入口与核心功能导航 |
-| 文档管理 | `/documents.html` | 上传文档、查看状态、重新索引、放入垃圾箱 |
-| 批量导入 | `/batch-ingestion.html` | 多文件批次上传、进度、重试与取消（V13.0） |
-| 通知中心 | `/notifications.html` | 站内通知、标记已读（V13.0） |
-| 垃圾箱 | `/trash.html` | 恢复或永久删除已删除文档 |
-| 知识库分组 | `/collections.html` | 创建分组、管理文档归属 |
-| 知识库问答 | `/ask.html` | 选择范围提问，查看回答、引用来源与 **RAG 质量评分** |
-| 知识库体检 | `/knowledge-health.html` | 评测集运行、健康评分、指标拆解、策略对比（V14.0） |
-| 检索设置 | `/retrieval-settings.html` | 结构化切分、混合检索、RRF、重排序、查询理解设置、重新索引（V15.0/V17.0） |
-| 向量索引健康 | `/vector-index-health.html` | 向量重复/污染/残留审计与清理（V16.0） |
-| AI 任务 | `/agent-tasks.html` | 提交任务，查看报告与执行过程 |
-| 记忆中心 | `/memory-center.html` | 管理、筛选、关闭和诊断 User / Project / Agent / Task / Shared Memory（V19.0） |
-| 智能体角色 | `/agent-profiles.html` | 管理 Agent Profile、角色说明、私有记忆与共享记忆（V19.0） |
-| 模型设置 | `/model-settings.html` | 管理**模型供应商**、默认 LLM/Embedding、**测试连接**（V10.0） |
-| 系统设置 | `/settings.html` | 运行模式、本地数据目录规划等只读信息 |
-| 文档处理分析 | `/ingestion-analytics.html` | 查看摄入成功率、耗时与失败原因（偏工程向） |
-
----
-
-## 5. 快速开始
-
-### 前置依赖
-
-开发模式需要：**JDK 17+**、**Maven**（或项目自带 `mvnw.cmd`）、**MySQL**、**RabbitMQ**。  
-向量检索推荐 **Qdrant**（见 `docker-compose.qdrant.yml`）。完整环境说明见 [docs/local-dev.md](docs/local-dev.md)。
-
-### 开发模式（默认 mock，不依赖真实模型）
+需要冻结的 Go 1.27.0 Windows/amd64 工具链。`go.mod` 保留 Go 1.26
+语言/模块指令。首次构建需要联网下载模块；`go.sum` 校验模块内容，下载完成后
+可复用 Go 模块缓存。构建时联网不改变应用运行时的本地优先边界。
 
 ```powershell
-cd E:\code\ai-task-orchestrator
-docker compose up -d
-.\mvnw.cmd test
-.\mvnw.cmd spring-boot:run
+Set-Location .\v2
+$go = 'C:\path\to\go1.27.0\bin\go.exe'
+New-Item -ItemType Directory -Force .\dist | Out-Null
+& $go mod download
+& $go mod verify
+& $go build -mod=readonly -trimpath -buildvcs=false -o .\dist\mindweaver.exe .\cmd\mindweaver
+& $go build -mod=readonly -trimpath -buildvcs=false -o .\dist\mindweaver-pdf.exe .\cmd\mindweaver-pdf
+& .\dist\mindweaver.exe serve -config .\mindweaver.v1.json -vault .\vault
 ```
 
-浏览器打开：`http://localhost:8080`
+首次 `serve` 会创建缺失的版本化配置。打开程序输出的一次性
+`127.0.0.1` URL；PDF 摄取要求两个 PE 位于同一目录。Ollama 是可选的，
+未配置或不可用时文档管理和连续短语检索仍可使用。
 
-> 默认 **mock** 模式下，Embedding 与 LLM 均为模拟实现，适合跑通流程与自动化测试，**不代表真实模型效果**。
-
-### local-ai 模式（真实本地 Ollama）
-
-1. **启动 Ollama**（桌面应用或 `ollama serve`）
-2. **启动 Python AI Runtime Worker**（另开终端）：
+备份恢复是 startup-only 模式，永不覆盖或合并已有 Vault：
 
 ```powershell
-cd E:\code\ai-task-orchestrator\workers\ai-runtime-worker
-pip install -r requirements.txt
-python -m uvicorn main:app --host 127.0.0.1 --port 8001
+& .\dist\mindweaver.exe recovery verify -backup C:\absolute\backup
+& .\dist\mindweaver.exe recovery restore -backup C:\absolute\backup -vault C:\absolute\new-vault
 ```
 
-3. **启动 Spring Boot（local-ai profile）**：
+备份目标和恢复目标应是用户明确提供、由当前账户控制的本地固定卷绝对路径。
+
+## 构建验证
+
+从 `v2/` 运行：
 
 ```powershell
-cd E:\code\ai-task-orchestrator
-.\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local-ai
+.\scripts\ci.ps1 -Go C:\path\to\go1.27.0\bin\go.exe
+.\scripts\verify-standalone.ps1 -Go C:\path\to\go1.27.0\bin\go.exe
+.\scripts\test-browser.ps1 -GoExecutable C:\path\to\go1.27.0\bin\go.exe -SelfTest
 ```
 
-### Windows 一键脚本（可选）
-
-```powershell
-cd E:\code\ai-task-orchestrator
-.\scripts\windows\check-env.ps1
-.\scripts\windows\start-local.ps1
-```
-
-说明见 [scripts/windows/README.md](scripts/windows/README.md)。
-
----
-
-## 6. 本地 Ollama 模型体验
-
-### 安装与拉取模型
-
-1. 安装 [Ollama](https://ollama.com/) 并确保服务运行。
-2. 拉取推荐模型：
-
-```powershell
-ollama list
-ollama pull qwen3-embedding:0.6b
-ollama pull qwen2.5:7b
-```
-
-内存或显卡较紧张时，LLM 可改用较轻量的 `qwen2.5:3b`：
-
-```powershell
-ollama pull qwen2.5:3b
-```
-
-### 调用链路说明
-
-```text
-Java（Spring Boot）→ Python AI Runtime Worker → Ollama
-```
-
-- **Java** 负责业务编排、文档管理、RAG 检索逻辑，**不直接调用 Ollama**。
-- **Python Worker** 提供 `/embed` 与 `/generate` 接口，内部调用 Ollama API。
-- **Ollama** 在本机运行 Embedding 与 LLM 模型。
-
-启动后可在 **模型设置** 页（`/model-settings.html`）查看连接状态并测试 Embedding / LLM。  
-更详细说明：[real-local-ai-runtime-with-ollama.md](docs/manual/real-local-ai-runtime-with-ollama.md)
-
----
-
-## 7. 使用流程
-
-按以下五步即可走完主路径：
-
-1. **上传文档** — 打开「文档管理」，上传 `.txt` / `.md` / 文本型 PDF。
-2. **等待文档处理完成** — 列表状态变为「已完成」后，切块与向量索引才可用于问答。
-3. **（可选）创建知识库分组** — 在「知识库分组」中新建分组并加入文档，便于按主题提问。
-4. **在知识库问答页面提问** — 选择「全部文档」或指定分组，输入问题，查看回答与引用来源。
-5. **在 AI 任务页面生成报告** — 填写任务目标，系统在后台检索、总结并输出结构化报告。
-
----
-
-## 8. 技术架构
-
-```text
-Browser UI（浏览器页面）
-    ↓
-Spring Boot Backend（Java 业务编排）
-    ↓
-MySQL / Qdrant / RabbitMQ
-    ↓
-Python AI Runtime Worker
-    ↓
-Ollama（本地模型）
-```
-
-各组件职责：
-
-| 组件 | 职责 |
-|------|------|
-| **Java / Spring Boot** | HTTP API、文档生命周期、RAG 编排、AI 任务调度、业务规则 |
-| **Python Worker** | AI Runtime：调用 Ollama 完成 Embedding 与文本生成 |
-| **Ollama** | 本地运行 Embedding / LLM 模型 |
-| **Qdrant** | 向量存储与相似度检索（可配置；亦支持内存 exact 检索 baseline） |
-| **RabbitMQ** | 异步任务投递（文档摄入、AI 任务执行等） |
-| **MySQL** | 文档、任务、分组、事件等元数据持久化 |
-
-这是典型的 **Java + Python** 分层：Java 做可靠业务底座，Python 做 AI 运行时适配。
-
----
-
-## 9. 本地数据与隐私
-
-- **当前开发模式**仍使用项目配置中的 MySQL、Qdrant、RabbitMQ 与 Worker 地址，尚未迁移到统一个人数据目录。
-- **后续规划**的 Windows 本地数据目录：`%APPDATA%\PersonalAIKnowledgeWorkspace\`（见「系统设置」页说明）。
-- **local-ai + Ollama** 模式下，文档原文与向量索引留在本地；向 Ollama 发送的是切块后的文本片段，而非把整个仓库推到云端 SaaS。
-- **API Key**：后续将在模型设置中心管理；当前阶段不做完整 Key 加密存储。**请勿把 API Key 提交到 Git**。
-- 删除文档进入**垃圾箱（TRASHED）**，**7 天内可恢复**，恢复后无需重新索引。
-- **永久删除（PURGED）** 会清理原始文本、片段、向量与相关缓存，不可恢复。
-- **缓存管理**可在系统设置中清理 Embedding Cache；**清理缓存不会删除原始文档**。
-
----
-
-## 10. 默认 mock 与 local-ai profile
-
-| 模式 | 说明 |
-|------|------|
-| **默认 mock** | 用于开发与自动化测试。Embedding / LLM 均为模拟实现，**不依赖** Ollama、Python Worker、外部 API。`.\mvnw.cmd test` 在此模式下运行。 |
-| **local-ai profile** | 启用真实本地链路：Java → Python Worker → Ollama。需手工启动 Worker 与 Ollama，并使用 `qwen3-embedding:0.6b` 等已拉取模型。 |
-
-切换方式：
-
-```powershell
-# 开发 / 测试（mock）
-.\mvnw.cmd spring-boot:run
-
-# 本地真实模型
-.\mvnw.cmd spring-boot:run -Dspring-boot.run.profiles=local-ai
-```
-
-配置详见 `application.properties` 与 `application-local-ai.properties`。
-
-### 模型供应商（V10.0）
-
-在 **模型设置** 页面可添加 **Ollama** 与 **OpenAI-compatible** 模型供应商，设置默认问答 / 向量模型。**API Key 不会明文展示**，加密主密钥通过 `app.security.secret-key` 或环境变量 `MODEL_PROVIDER_SECRET_KEY` 配置（勿提交到 Git）。详见 [model-provider-settings.md](docs/manual/model-provider-settings.md)。
-
----
-
-## 11. 测试
-
-### 默认测试（低依赖）
-
-```powershell
-cd E:\code\ai-task-orchestrator
-.\mvnw.cmd test
-```
-
-**为什么默认测试低依赖？**  
-为了保证任何开发者 clone 仓库后，无需安装 Ollama、无需 Docker 中的 Qdrant、无需真实 API Key，也能在 CI 与本地快速验证业务逻辑。测试通过 Maven Surefire 注入 `app.embedding.provider=mock` 与 `app.llm.provider=mock`，并关闭数据库模型覆盖（`app.model-provider.database-overrides-enabled=false`）。**默认测试不依赖真实外部 LLM**，**默认测试不依赖真实外部 API**。
-
-默认测试**不要求**：
-
-- Ollama 已启动  
-- Python Worker 已启动  
-- Qdrant / Docker 已运行  
-- 真实模型已下载  
-- 外部网络 / API Key  
-
-### Python Worker 测试（单独运行）
-
-```powershell
-cd E:\code\ai-task-orchestrator\workers\ai-runtime-worker
-python -m pytest test_worker.py -q
-```
-
-Worker 测试使用 mock HTTP，**不调用真实 Ollama**。
-
----
-
-## 12. 当前不做
-
-请把本项目当作**个人知识工作台原型**，而非可直接上线的企业产品：
-
-- **不是企业 SaaS** — 无多租户、无订阅计费、无运维大屏。
-- **不做登录** — 无账号体系。
-- **不做多用户** — 单用户本地使用场景。
-- **不做权限** — 无角色与访问控制。
-- **不做 workspace** — 无团队空间隔离。
-- **不做云端同步** — 资料不会自动同步到云端账户。
-- **不做多 Agent 圆桌** — 当前为固定工具链，非多 Agent 协作。
-- **不做插件市场** — 无第三方插件生态。
-- **不做生产级部署** — 无完整监控、限流、高可用方案。
-- **不做桌面安装包** — 需自行启动 Java / Python / 依赖服务。
-
----
-
-## 13. 后续路线
-
-| 版本 | 方向 |
-|------|------|
-| **V9.0** | 本地个人知识工作台产品化（当前）：中文 UI、模型设置、系统设置、Windows 脚本 |
-| **V10.0** | 模型 Provider 设置：Ollama / OpenAI-compatible 供应商、API Key 加密、默认模型 |
-| **V11.0** | RAG 质量评分与诊断（当前）：Ask 综合评分、扣分原因、优化建议、三种评分模式 |
-| **V12.0** | 垃圾箱与本地存储管理（当前）：ACTIVE → TRASHED → PURGED、7 天恢复、缓存管理 |
-| **V13.0** | 批量文档导入与通知中心：UploadBatch、文件级去重、文本级去重、站内通知 |
-| **V14.0** | 知识库体检报告与万级文档 RAG 诊断：评测集、多检索策略、健康评分、污染率指标、run 对比 |
-| **V15.0** | 结构化切分与混合检索主链路优化（当前）：section_path、metadata filter、Hybrid+RRF、rerank、context expansion |
-| **V16.0** | 向量索引隔离与去重防污染强化：稳定 vector_id、幂等 upsert、generation 代际、vector audit、cleanup |
-| **V17.0** | 查询理解与检索路由（当前）：自动识别版本、doc_type、代码符号、配置项、API 路径；动态选择 retrieval strategy；防止模糊问题全库盲搜 |
-| **V18.0** | 可信回答生成与引用校验（当前）：Grounded Answer Contract、citation verification、unsupported claim detection、context-insufficient refusal、AnswerGroundingScore |
-| **V19.0** | 记忆机制底座与智能体角色档案：可控 Memory、作用域隔离、Agent Profile、Memory Context、诊断与管理页面 |
-| **V20.0** | 基于 V19 Agent Profile / Agent Memory / Shared Memory 的多智能体编排 |
-| **后续** | Skill System MVP；不与 V19 Memory Foundation 混做 |
-
----
-
-## 14. 面试表达
-
-若在技术面试中介绍本项目，可从以下角度组织（约 2–3 分钟）：
-
-**产品价值**  
-「这是一个本地优先的个人 AI 知识工作台：用户上传私有文档，基于 RAG 获得带引用的问答，并能通过 AI 任务生成结构化报告。」
-
-**系统架构**  
-「浏览器 + Spring Boot 做业务编排，MySQL 存元数据，Qdrant 做向量检索，RabbitMQ 做异步任务，Python Worker 适配 Ollama，实现 Java + Python 分层。」
-
-**RAG 工程**  
-「文档切块 → Embedding → 向量入库 → TopK 检索 → 引用拼接 → LLM 生成；支持分组范围过滤与文档生命周期过滤，避免已删除或旧版本片段进入上下文。」
-
-**Agent Workflow**  
-「AI 任务走固定 Tool Workflow：检索知识库、总结上下文、生成报告；步骤与工具 I/O 可追踪，便于调试与演示。」
-
-**低依赖测试**  
-「默认测试全部使用 mock Embedding / LLM，不依赖 Ollama 与外部 API，保证 CI 稳定；真实本地模型通过 `local-ai` profile 与 Worker 集成测试验证。」
-
-更多面试材料：[docs/resume-interview.md](docs/resume-interview.md)
-
----
-
-## 15. FAQ
-
-### 为什么不叫「企业级」？
-
-因为产品定位是**个人本地知识工作台**，不是面向多租户、权限、计费的企业 SaaS。底层虽有较完整的任务编排与 RAG 工程，但用户体验与边界按单用户场景收敛。
-
-### 为什么 Java + Python？
-
-Java（Spring Boot）擅长可靠的业务服务、事务、异步任务与 API 治理；Python 更适合快速对接 Ollama 与 AI Runtime。两者通过 HTTP 解耦，各自演进。
-
-### 为什么默认不用真实模型？
-
-为了让 `.\mvnw.cmd test` 与 CI **零外部依赖**、结果稳定。真实效果请在 `local-ai` profile 下体验。
-
-### Ollama 失败怎么办？
-
-1. 确认 Ollama 已启动：`ollama list`  
-2. 确认模型已拉取：`ollama pull qwen3-embedding:0.6b`  
-3. 确认 Python Worker 运行且 `http://127.0.0.1:8001/health` 可访问  
-4. 在「模型设置」页执行连接测试  
-5. 详见 [scripts/windows/README.md](scripts/windows/README.md) 与 [Ollama 手册](docs/manual/real-local-ai-runtime-with-ollama.md)
-
-### Embedding 维度变了怎么办？
-
-向量维度必须与索引一致。若从 mock（128 维）切换到 Ollama（如 1024 维），需**删除旧文档并重新上传**，或重新建立索引，否则检索会异常。
-
-### 为什么删除文档后不立即物理删除向量？
-
-采用**垃圾箱**策略：删除后进入 TRASHED，7 天内可恢复且保留 chunks / vectors；到期或手动 **PURGED** 后清理底层数据。详见 [垃圾箱与本地存储管理](docs/manual/trash-and-local-storage-management.md)。
-
-### 上千文档后续怎么处理？
-
-当前原型面向个人规模（数百篇量级）。更大规模需：Qdrant 集群调优、分批摄入、检索策略优化、可能的冷热分层——列入后续路线图，**当前不做**生产级海量优化承诺。
-
----
-
-## 附录：开发文档索引
-
-主 README 以产品说明为主。按能力查阅详细手册：
-
-| 主题 | 文档 |
-|------|------|
-| V9.0 个人知识工作台 | [local-personal-knowledge-workspace.md](docs/manual/local-personal-knowledge-workspace.md) |
-| V10.0 模型供应商设置 | [model-provider-settings.md](docs/manual/model-provider-settings.md) |
-| 上传与问答 | [upload-to-ask.md](docs/manual/upload-to-ask.md) |
-| Knowledge Base Lifecycle（V4.0）· 软删除 · 重新索引 | [knowledge-base-lifecycle-management.md](docs/manual/knowledge-base-lifecycle-management.md) |
-| 知识库分组 · 范围检索（V5.0）· `collectionId` | [scoped-retrieval-and-collections.md](docs/manual/scoped-retrieval-and-collections.md) |
-| AI 任务编排（V6.0） | [ai-runtime-and-agent-task-orchestration.md](docs/manual/ai-runtime-and-agent-task-orchestration.md) |
-| Tool Workflow（V7.0）· `/agent-tasks.html` | [tool-using-agent-workflow.md](docs/manual/tool-using-agent-workflow.md) |
-| 本地 Ollama（V8.0） | [real-local-ai-runtime-with-ollama.md](docs/manual/real-local-ai-runtime-with-ollama.md) |
-| 垃圾箱与本地存储（V12.0） | [trash-and-local-storage-management.md](docs/manual/trash-and-local-storage-management.md) |
-| V13.0 Batch Ingestion & Notification | [batch-ingestion-and-notification.md](docs/manual/batch-ingestion-and-notification.md) |
-| V14.0 Knowledge Base Health Report | [knowledge-base-health-report-and-large-scale-rag-diagnostics.md](docs/manual/knowledge-base-health-report-and-large-scale-rag-diagnostics.md) |
-| V15.0 Structured Chunking & Hybrid Retrieval | [structured-chunking-and-hybrid-retrieval-pipeline.md](docs/manual/structured-chunking-and-hybrid-retrieval-pipeline.md) |
-| V16.0 Vector Index Isolation & Deduplication | [vector-index-isolation-and-deduplication-hardening.md](docs/manual/vector-index-isolation-and-deduplication-hardening.md) |
-| V17.0 Query Understanding & Retrieval Routing | [query-understanding-and-retrieval-routing.md](docs/manual/query-understanding-and-retrieval-routing.md) |
-| V18.0 Grounded Answer Contract & Citation Verification | [grounded-answer-contract-and-citation-verification.md](docs/manual/grounded-answer-contract-and-citation-verification.md) |
-| V19.0 Memory Foundation & Agent Profiles | [memory-foundation-and-agent-profiles.md](docs/manual/memory-foundation-and-agent-profiles.md) |
-| 本地开发环境 | [docs/local-dev.md](docs/local-dev.md) |
-| API 示例 | [docs/api-examples.md](docs/api-examples.md) |
-| 面试 deep-dive | [docs/interview](docs/interview) |
-
----
-
-**Personal AI Knowledge Workspace** — 你的文档，你的模型，你的知识库。
+这些脚本先执行 `go mod download` 与 `go mod verify`，再以
+`-mod=readonly` 验证 Go 格式、测试、vet、双 PE 构建与 tracked-only 独立
+抽取。CI 可缓存由 `go.sum` 绑定的模块；首次构建或缓存未命中需要网络。
+通过开发门禁不等于安装、签名、真实浏览器或 clean-VM 发布资格已经完成。
+
+## 明确未实现或未发布
+
+首个 Go CORE 不包含自然问题理解、Embedding/向量检索、Hybrid/RRF、
+rerank、reindex、OCR/扫描 PDF、Agent、Memory、Batch、Evaluation、
+Qdrant、云模型供应商、插件或内置更新器。这些能力不得从旧实现恢复，只有在
+以后从零设计并通过独立验收后才可能进入产品。
+
+签名 MSI、项目许可证、最终 SBOM/NOTICE、Authenticode/ICE、N-1/N-2
+升级/回滚以及 clean non-admin VM 安装/卸载矩阵尚未闭合。仓库中的开发构建
+不得被称为已安装、已签名或可发布产品。
+
+## 冻结的历史目录
+
+以下内容仅作为删除式审查和需求溯源的历史材料，不进入 Go 构建、运行、CI
+或发布，也不是受支持的数据迁移入口：
+
+- `src/`、`.mvn/`、`mvnw*`、`pom.xml`：旧 Java/Spring 实现；
+- `workers/`：旧 Python worker；
+- `docker-compose*.yml`：旧 MySQL、RabbitMQ、Qdrant 开发拓扑；
+- `docs/manual/`、旧开发/面试/API 文档：可能描述已删除能力，不能作为现行产品说明。
+
+不要运行 Maven、旧 Docker Compose 或 Python worker 来启动 MindWeaver。
+不要从旧数据库、队列、向量库或历史文件导入用户数据；应在新的 Go Vault 中
+重新上传受支持的源文件。
+
+现行架构决策与验收总账位于 [`docs/rewrite/`](docs/rewrite/README.md)，并由其
+链接到 `v2/` 中的资格测试、包测试、OpenAPI 合同与脚本；开发入口、限制与
+命令以 [`v2/README.md`](v2/README.md) 为准。

@@ -1,0 +1,254 @@
+{
+  "schema_version": 1,
+  "evidence_status": "spike_evidence_only_not_a_selection_decision",
+  "passed": true,
+  "started_at": "2026-08-23T15:25:31.0164094Z",
+  "duration_ms": 487,
+  "candidate": {
+    "module": "github.com/ncruces/go-sqlite3",
+    "pinned_version": "v0.35.3",
+    "built_version": "v0.35.3",
+    "cgo_free": true,
+    "comparison_scope": "single-candidate Windows feasibility spike"
+  },
+  "runtime": {
+    "goos": "windows",
+    "goarch": "amd64",
+    "go_version": "go1.27.0",
+    "cgo_enabled": "0"
+  },
+  "sqlite": {
+    "version": "3.53.4",
+    "source_id": "2026-07-24 19:02:57 bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc"
+  },
+  "rss": {
+    "supported": true,
+    "measurement": "Windows GetProcessMemoryInfo working set",
+    "start_bytes": 7045120,
+    "end_bytes": 18456576,
+    "peak_bytes": 18784256
+  },
+  "probes": [
+    {
+      "name": "engine_metadata",
+      "passed": true,
+      "duration_ms": 11,
+      "details": {
+        "sqlite_source_id": "2026-07-24 19:02:57 bf7c7f30031888f4e796e429ab3978879485813aaca6f641c7b33e4e09459bcc",
+        "sqlite_version": "3.53.4"
+      }
+    },
+    {
+      "name": "connection_pragmas",
+      "passed": true,
+      "duration_ms": 45,
+      "details": {
+        "foreign_key_error": {
+          "message": "sqlite3: constraint failed: FOREIGN KEY constraint failed",
+          "primary_code": 19,
+          "extended_code": 787,
+          "primary_name": "constraint failed",
+          "extended_name": "constraint failed",
+          "category": "constraint",
+          "retryable": false
+        },
+        "physical_connections_checked": 3,
+        "settings": [
+          {
+            "foreign_keys": 1,
+            "journal_mode": "wal",
+            "synchronous": 2,
+            "busy_timeout_ms": 250,
+            "trusted_schema": 0
+          },
+          {
+            "foreign_keys": 1,
+            "journal_mode": "wal",
+            "synchronous": 2,
+            "busy_timeout_ms": 250,
+            "trusted_schema": 0
+          },
+          {
+            "foreign_keys": 1,
+            "journal_mode": "wal",
+            "synchronous": 2,
+            "busy_timeout_ms": 250,
+            "trusted_schema": 0
+          }
+        ]
+      }
+    },
+    {
+      "name": "fts5",
+      "passed": true,
+      "duration_ms": 15,
+      "details": {
+        "highlights": [
+          "one [writer] can commit while [readers] keep snapshots"
+        ],
+        "match_query": "writer AND readers",
+        "matched_titles": [
+          "WAL notes"
+        ],
+        "virtual_table_created": true
+      }
+    },
+    {
+      "name": "wal_writer_readers",
+      "passed": true,
+      "duration_ms": 73,
+      "details": {
+        "final_rows": 41,
+        "readers": 3,
+        "successful_reads": 240,
+        "writer_committed_with_snapshot": true,
+        "writers": 1,
+        "writes_committed": 41
+      }
+    },
+    {
+      "name": "context_cancellation_health",
+      "passed": true,
+      "duration_ms": 15,
+      "details": {
+        "cancel_elapsed_ms": 10,
+        "cancel_error": {
+          "message": "sqlite3: interrupted",
+          "primary_code": 9,
+          "extended_code": 9,
+          "primary_name": "interrupted",
+          "extended_name": "interrupted",
+          "category": "interrupted",
+          "retryable": false
+        },
+        "health_query": 42,
+        "same_connection": true
+      }
+    },
+    {
+      "name": "sqlite_full_atomic_rollback",
+      "passed": true,
+      "duration_ms": 8,
+      "details": {
+        "baseline_rows": 1,
+        "error": {
+          "message": "sqlite3: database or disk is full",
+          "primary_code": 13,
+          "extended_code": 13,
+          "primary_name": "database or disk is full",
+          "extended_name": "database or disk is full",
+          "category": "capacity",
+          "retryable": false
+        },
+        "leaked_rows": 0,
+        "max_page_count": 4,
+        "page_count_before": 2
+      }
+    },
+    {
+      "name": "online_backup_restore",
+      "passed": true,
+      "duration_ms": 27,
+      "details": {
+        "api": "BackupInit/Step/Restore",
+        "backup_pages": 5,
+        "backup_steps": 2,
+        "integrity_check": "ok",
+        "restored_id_sum": 125250,
+        "restored_rows": 500
+      }
+    },
+    {
+      "name": "numeric_error_codes",
+      "passed": true,
+      "duration_ms": 9,
+      "details": {
+        "observed_constraint": {
+          "message": "sqlite3: constraint failed: UNIQUE constraint failed: unique_values.value",
+          "primary_code": 19,
+          "extended_code": 2067,
+          "primary_name": "constraint failed",
+          "extended_name": "constraint failed",
+          "category": "constraint",
+          "retryable": false
+        },
+        "primary_constants": {
+          "BUSY": 5,
+          "CONSTRAINT": 19,
+          "FULL": 13,
+          "INTERRUPT": 9,
+          "LOCKED": 6
+        }
+      }
+    },
+    {
+      "name": "two_process_lock",
+      "passed": true,
+      "duration_ms": 275,
+      "details": {
+        "contender": {
+          "observed_busy": true,
+          "busy_timeout_ms": 200,
+          "expected_elapsed_min_ms": 100,
+          "expected_elapsed_max_ms": 1000,
+          "actual_elapsed_ms": 201,
+          "error": {
+            "message": "sqlite3: database is locked",
+            "primary_code": 5,
+            "extended_code": 5,
+            "primary_name": "database is locked",
+            "extended_name": "database is locked",
+            "category": "contention",
+            "retryable": true
+          }
+        },
+        "holder_force_killed": true,
+        "post_close_sidecars": [
+          {
+            "relative_path": "two-process.db-wal",
+            "exists": false,
+            "size_bytes": 0
+          },
+          {
+            "relative_path": "two-process.db-shm",
+            "exists": false,
+            "size_bytes": 0
+          }
+        ],
+        "post_kill_sidecars": [
+          {
+            "relative_path": "two-process.db-wal",
+            "exists": true,
+            "size_bytes": 0
+          },
+          {
+            "relative_path": "two-process.db-shm",
+            "exists": true,
+            "size_bytes": 65536
+          }
+        ],
+        "post_reopen_sidecars": [
+          {
+            "relative_path": "two-process.db-wal",
+            "exists": true,
+            "size_bytes": 0
+          },
+          {
+            "relative_path": "two-process.db-shm",
+            "exists": true,
+            "size_bytes": 65536
+          }
+        ],
+        "processes": 2,
+        "reopen_integrity_check": "ok",
+        "uncommitted_rows_after_kill": 0,
+        "writer_lock_released_on_exit": true
+      }
+    }
+  ],
+  "notes": [
+    "This output is reproducible feasibility evidence, not a production dependency decision.",
+    "All databases and process-coordination files are created below the OS temporary directory.",
+    "The optional modernc comparison is intentionally outside this non-blocking spike."
+  ]
+}

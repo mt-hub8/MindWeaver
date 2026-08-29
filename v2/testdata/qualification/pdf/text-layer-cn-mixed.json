@@ -1,0 +1,16 @@
+{
+  "schema_version": "mindweaver.qualification.pdf-text-layer/v1",
+  "document_id": "doc-calibration-pdf",
+  "media_box": [0, 0, 595, 842],
+  "expected_generated_pdf_sha256": "b12e1d90b4303b6bbb8d8d5188608b05e841c8d95bdf9ecd220124eb3f5cb6b5",
+  "pages": [
+    {
+      "lines": [
+        "设备校准单 / Calibration Note",
+        "扭矩传感器代号 MWQ-17。",
+        "Setpoint 12.5 N·m，复核温度 23 °C。",
+        "检索词：扭矩校准、torque sensor。"
+      ]
+    }
+  ]
+}

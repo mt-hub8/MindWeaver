@@ -1,0 +1,320 @@
+{
+  "spdxVersion": "SPDX-2.3",
+  "dataLicense": "CC0-1.0",
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "name": "MindWeaver dual-PE SBOM",
+  "documentNamespace": "https://spdx.org/spdxdocs/mindweaver-4f6ad3e66ad658affaf2e0abef5661fcbefc6e58fcf1a798f760800cfc3df1f7",
+  "creationInfo": {
+    "created": "2026-08-29T04:33:41Z",
+    "creators": [
+      "Tool: MindWeaver supply-chain qualification-1.0.0"
+    ]
+  },
+  "packages": [
+    {
+      "name": "github.com/mgilbir/gopenjpeg",
+      "SPDXID": "SPDXRef-0cbd9072b59d722b6db07707",
+      "versionInfo": "v0.0.0-20260727163526-8a139bc479b2",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-2-Clause",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2"
+        }
+      ],
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:kdDIM4JNxn9gsRk5Zo6mtmcFpBqnl9gTVUwf9t6lIRk= Evidence inventory bindings (not analyzed package files): module-cache/github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2/LICENSE@sha256:958dc940b3916ca8b4d373f24027e26e29623828f41205de09e9c680e5539f78"
+    },
+    {
+      "name": "SQLite",
+      "SPDXID": "SPDXRef-1ec0e0db423ad20435ffb949",
+      "versionInfo": "3.53.4",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "LicenseRef-SQLite-Public-Domain",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:generic/sqlite@3.53.4"
+        }
+      ],
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Evidence inventory bindings (not analyzed package files): third_party/sqlite/3.53.4/LICENSE.md@sha256:ee6af51062b30d532991face5164136ae6f84e265ecf8abe89dc69dac45ca1e7,third_party/sqlite/3.53.4/manifest.uuid@sha256:c613b5f6581cba368618c41ccfc16e476f65efa963c9c7c9fc3b4519daea71d9"
+    },
+    {
+      "name": "github.com/mgilbir/formalis",
+      "SPDXID": "SPDXRef-2e5c72f4aca1d151f33ef2d9",
+      "versionInfo": "v0.3.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/github.com/mgilbir/formalis@v0.3.1"
+        }
+      ],
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:NyYe/EcRYJ2jUjgaZG98lNXgJ7H+jgy6mq7HXOnQxl8= Evidence inventory bindings (not analyzed package files): module-cache/github.com/mgilbir/formalis@v0.3.1/LICENSE@sha256:4e9651455e1b761ed462c50f60c4618c8985f46404e8db467def14848e77725a"
+    },
+    {
+      "name": "mindweaver-pdf.exe",
+      "SPDXID": "SPDXRef-3d974cb4e156c414fd79dea6",
+      "versionInfo": "0.0.0-qualification.3c7e92a",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "b9cc03b7c139e9fadde86f2ec9564dbe368d85822bd96ac64385e7aa75827384"
+        }
+      ],
+      "sourceInfo": "repository=github.com/mt-hub8/MindWeaver; revision=3c7e92a1848ee7e37e579467428d99f7a7f93e6a; moduleTree=git-sha1:e267e3f0c7028b1033a4fa563fee5cc1e20a2aec; productionSourceUnionSHA256=34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff; attestation=reviewed qualification input; not independently derived from Git in standalone validation; mainPackage=github.com/mt-hub8/MindWeaver/v2/cmd/mindweaver-pdf"
+    },
+    {
+      "name": "github.com/ncruces/go-sqlite3",
+      "SPDXID": "SPDXRef-411354e2d4cf6e798cd25087",
+      "versionInfo": "v0.35.3",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/github.com/ncruces/go-sqlite3@v0.35.3"
+        }
+      ],
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:Ei07Zv1qfV/vyXzelhFsyS5Oh9TArBZHsmFk14Xv3GY= Evidence inventory bindings (not analyzed package files): module-cache/github.com/ncruces/go-sqlite3@v0.35.3/LICENSE@sha256:8929c89a593807bf0c042272adc7301376a661050876bd702ebdd36cd7c55d2b"
+    },
+    {
+      "name": "github.com/ncruces/julianday",
+      "SPDXID": "SPDXRef-4a5ea710f7a559c6fd17e646",
+      "versionInfo": "v1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/github.com/ncruces/julianday@v1.0.0"
+        }
+      ],
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M= Evidence inventory bindings (not analyzed package files): module-cache/github.com/ncruces/julianday@v1.0.0/LICENSE@sha256:38ae43959daf953a393a585b2988672cb65a5a541aca0d0be5e72595a0a16883"
+    },
+    {
+      "name": "mindweaver.exe",
+      "SPDXID": "SPDXRef-51694530710b344963b025a3",
+      "versionInfo": "0.0.0-qualification.3c7e92a",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "f2c63996741bf6306b8c48a251464961b78e99f7b42bdf07402253de1e511de2"
+        }
+      ],
+      "sourceInfo": "repository=github.com/mt-hub8/MindWeaver; revision=3c7e92a1848ee7e37e579467428d99f7a7f93e6a; moduleTree=git-sha1:e267e3f0c7028b1033a4fa563fee5cc1e20a2aec; productionSourceUnionSHA256=34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff; attestation=reviewed qualification input; not independently derived from Git in standalone validation; mainPackage=github.com/mt-hub8/MindWeaver/v2/cmd/mindweaver"
+    },
+    {
+      "name": "github.com/mgilbir/pdf0",
+      "SPDXID": "SPDXRef-5329db630251aa722447b919",
+      "versionInfo": "v0.1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/github.com/mgilbir/pdf0@v0.1.0"
+        }
+      ],
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:rfBK18bcQ4kHQTXBmriAb07TafhG2w1fLflq9lHgaG4= Evidence inventory bindings (not analyzed package files): module-cache/github.com/mgilbir/pdf0@v0.1.0/LICENSE@sha256:4e9651455e1b761ed462c50f60c4618c8985f46404e8db467def14848e77725a"
+    },
+    {
+      "name": "golang.org/x/sys",
+      "SPDXID": "SPDXRef-93a90b14b5dd68acad4b1b3e",
+      "versionInfo": "v0.47.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/golang.org/x/sys@v0.47.0"
+        }
+      ],
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs= Evidence inventory bindings (not analyzed package files): module-cache/golang.org/x/sys@v0.47.0/LICENSE@sha256:911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad,module-cache/golang.org/x/sys@v0.47.0/PATENTS@sha256:96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc"
+    },
+    {
+      "name": "github.com/ncruces/go-sqlite3-wasm/v3",
+      "SPDXID": "SPDXRef-96f978a110f728aa765a7fbc",
+      "versionInfo": "v3.2.35304",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT-0",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304"
+        }
+      ],
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:5NoQAewtgKNK3G4bjNPxVoGXu6F6NzLXWCTdD5FFAEY= Evidence inventory bindings (not analyzed package files): module-cache/github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304/LICENSE@sha256:13219037ddf63dbbcf174bf59525d602df7a2e30083f63be566715c858fcb19e,module-cache/github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304/README.md@sha256:fb8084fccb5733ccc4af421ff026812da7852e91516bdf7c70d007eb46744383"
+    },
+    {
+      "name": "MindWeaver",
+      "SPDXID": "SPDXRef-Product",
+      "versionInfo": "0.0.0-qualification.3c7e92a",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "comment": "Pre-package supply-chain qualification blocked: FIXTURE_REGENERATION_NOT_IMPLEMENTED,PROJECT_LICENSE_MISSING,RELEASE_METADATA_MISSING,SOURCE_REVISION_ATTESTATION_MISSING,VULNERABILITY_EVIDENCE_MISSING",
+      "sourceInfo": "repository=github.com/mt-hub8/MindWeaver; revision=3c7e92a1848ee7e37e579467428d99f7a7f93e6a; moduleTree=git-sha1:e267e3f0c7028b1033a4fa563fee5cc1e20a2aec; productionSourceUnionSHA256=34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff; attestation=reviewed qualification input; not independently derived from Git in standalone validation"
+    },
+    {
+      "name": "Go runtime",
+      "SPDXID": "SPDXRef-a198b21b99676eb0ac289b62",
+      "versionInfo": "go1.27.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:generic/golang@1.27.0"
+        }
+      ],
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Evidence inventory bindings (not analyzed package files): toolchain/go1.27.0/LICENSE@sha256:911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad,toolchain/go1.27.0/PATENTS@sha256:96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc,toolchain/go1.27.0/VERSION@sha256:964a484ac6011bfc2770d672c3ba1c466f64258fcb0441c8147adb1ac2ee3b30"
+    },
+    {
+      "name": "github.com/mgilbir/golittlecms",
+      "SPDXID": "SPDXRef-d96d9407449b661d6fba447a",
+      "versionInfo": "v0.0.0-20260727161601-f6af7cfe1556",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556"
+        }
+      ],
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:2ZUsOgMhxpHCYC8jyzeEnJZFLYGbXhqjAJWJBvY8q4U= Evidence inventory bindings (not analyzed package files): module-cache/github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556/LICENSE@sha256:4b0b89edd67872e0507e20e03032e4dc4eb194f88082f80acee13a13fb73317c"
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-3d974cb4e156c414fd79dea6",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-0cbd9072b59d722b6db07707"
+    },
+    {
+      "spdxElementId": "SPDXRef-3d974cb4e156c414fd79dea6",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-2e5c72f4aca1d151f33ef2d9"
+    },
+    {
+      "spdxElementId": "SPDXRef-3d974cb4e156c414fd79dea6",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-5329db630251aa722447b919"
+    },
+    {
+      "spdxElementId": "SPDXRef-3d974cb4e156c414fd79dea6",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-a198b21b99676eb0ac289b62"
+    },
+    {
+      "spdxElementId": "SPDXRef-3d974cb4e156c414fd79dea6",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-d96d9407449b661d6fba447a"
+    },
+    {
+      "spdxElementId": "SPDXRef-51694530710b344963b025a3",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-411354e2d4cf6e798cd25087"
+    },
+    {
+      "spdxElementId": "SPDXRef-51694530710b344963b025a3",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-4a5ea710f7a559c6fd17e646"
+    },
+    {
+      "spdxElementId": "SPDXRef-51694530710b344963b025a3",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-93a90b14b5dd68acad4b1b3e"
+    },
+    {
+      "spdxElementId": "SPDXRef-51694530710b344963b025a3",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-96f978a110f728aa765a7fbc"
+    },
+    {
+      "spdxElementId": "SPDXRef-51694530710b344963b025a3",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-a198b21b99676eb0ac289b62"
+    },
+    {
+      "spdxElementId": "SPDXRef-96f978a110f728aa765a7fbc",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-1ec0e0db423ad20435ffb949"
+    },
+    {
+      "spdxElementId": "SPDXRef-DOCUMENT",
+      "relationshipType": "DESCRIBES",
+      "relatedSpdxElement": "SPDXRef-Product"
+    },
+    {
+      "spdxElementId": "SPDXRef-Product",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-3d974cb4e156c414fd79dea6"
+    },
+    {
+      "spdxElementId": "SPDXRef-Product",
+      "relationshipType": "CONTAINS",
+      "relatedSpdxElement": "SPDXRef-51694530710b344963b025a3"
+    }
+  ],
+  "hasExtractedLicensingInfos": [
+    {
+      "licenseId": "LicenseRef-SQLite-Public-Domain",
+      "extractedText": "License Information\n===================\n\nSQLite Is Public Domain\n-----------------------\n\nThe SQLite source code, including all of the files in the directories\nlisted in the bullets below are \n[Public Domain](https://sqlite.org/copyright.html).\nThe authors have submitted written affidavits releasing their work to\nthe public for any use.  Every byte of the public-domain code can be\ntraced back to the original authors.  The files of this repository\nthat are public domain include the following:\n\n  *  All of the primary SQLite source code files found in the\n     [src/ directory](https://sqlite.org/src/tree/src?type=tree\u0026expand)\n  *  All of the test cases and testing code in the\n     [test/ directory](https://sqlite.org/src/tree/test?type=tree\u0026expand)\n  *  All of the SQLite extension source code and test cases in the\n     [ext/ directory](https://sqlite.org/src/tree/ext?type=tree\u0026expand)\n  *  All code that ends up in the \"sqlite3.c\" and \"sqlite3.h\" build products\n     that actually implement the SQLite RDBMS.\n  *  All of the code used to compile the\n     [command-line interface](https://sqlite.org/cli.html)\n  *  All of the code used to build various utility programs such as\n     \"sqldiff\", \"sqlite3_rsync\", and \"sqlite3_analyzer\".\n\n\nThe public domain source files usually contain a header comment\nsimilar to the following to make it clear that the software is\npublic domain.\n\n\u003e The author disclaims copyright to this source code.  In place of\n\u003e a legal notice, here is a blessing:\n\u003e \n\u003e   *   May you do good and not evil.\n\u003e   *   May you find forgiveness for yourself and forgive others.\n\u003e   *   May you share freely, never taking more than you give.\n\nAlmost every file you find in this source repository will be\npublic domain.  But there are a small number of exceptions:\n\nNon-Public-Domain Code Included With This Source Repository AS A Convenience\n----------------------------------------------------------------------------\n\nThis repository contains a (relatively) small amount of non-public-domain\ncode used to help implement the configuration and build logic.  In other\nwords, there are some non-public-domain files used to implement:\n\n\u003e ./configure \u0026\u0026 make\n\nIn all cases, the non-public-domain files included with this\nrepository have generous BSD-style licenses.  So anyone is free to\nuse any of the code in this source repository for any purpose, though\nattribution may be required to reuse or republish the configure and\nbuild scripts.  None of the non-public-domain code ever actually reaches\nthe build products, such as \"sqlite3.c\", however, so no attribution is\nrequired to use SQLite itself.  The non-public-domain code consists of\nscripts used to help compile SQLite.  The non-public-domain code is\ntechnically not part of SQLite.  The non-public-domain code is\nincluded in this repository as a convenience to developers, so that those\nwho want to build SQLite do not need to go download a bunch of\nthird-party build scripts in order to compile SQLite.\n\nNon-public-domain code included in this respository includes:\n\n  *  The [\"autosetup\"](http://msteveb.github.io/autosetup/) configuration\n     system that is contained (mostly) in the autosetup/ directory, but also\n     includes the \"./configure\" script at the top-level of this archive.\n     Autosetup has a separate BSD-style license.  See the\n     [autosetup/LICENSE](http://msteveb.github.io/autosetup/license/)\n     for details.\n\n  *  There are BSD-style licenses on some of the configuration\n     software found in the legacy autoconf/ directory and its\n     subdirectories.\n\nThe following unix shell command can be run from the top-level\nof this source repository in order to remove all non-public-domain\ncode:\n\n\u003e rm -rf configure autosetup autoconf\n\nIf you unpack this source repository and then run the command above, what\nis left will be 100% public domain.\n",
+      "name": "SQLite public-domain dedication and blessing"
+    }
+  ]
+}

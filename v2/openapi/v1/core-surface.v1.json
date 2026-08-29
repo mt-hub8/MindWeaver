@@ -1,0 +1,905 @@
+{
+  "commands": [
+    {
+      "aliases": [
+        "--help",
+        "-h"
+      ],
+      "defaultVerb": "serve",
+      "externalModules": [
+        "github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304#h1:5NoQAewtgKNK3G4bjNPxVoGXu6F6NzLXWCTdD5FFAEY=",
+        "github.com/ncruces/go-sqlite3@v0.35.3#h1:Ei07Zv1qfV/vyXzelhFsyS5Oh9TArBZHsmFk14Xv3GY=",
+        "github.com/ncruces/julianday@v1.0.0#h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M=",
+        "golang.org/x/sys@v0.47.0#h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs="
+      ],
+      "name": "mindweaver",
+      "nestedVerbs": {
+        "config": [
+          "check",
+          "init"
+        ],
+        "recovery": [
+          "restore",
+          "verify"
+        ]
+      },
+      "packages": [
+        "internal/app",
+        "internal/backup",
+        "internal/blob",
+        "internal/ingest",
+        "internal/lifecycle",
+        "internal/localhttp",
+        "internal/ollama",
+        "internal/pdfextract/client",
+        "internal/pdfextract/protocol",
+        "internal/rag",
+        "internal/store/sqlite",
+        "internal/transport",
+        "internal/vault",
+        "internal/webui",
+        "internal/workbench",
+        "platform",
+        "platform/apperror",
+        "platform/config",
+        "platform/version"
+      ],
+      "public": true,
+      "sourceManifestSHA256": "3f3cf6de017bae3aa0af4a939baade6f626a503302a3060b575f6066151ac01a",
+      "verbs": [
+        "config",
+        "help",
+        "recovery",
+        "serve",
+        "version"
+      ]
+    },
+    {
+      "aliases": [],
+      "externalModules": [
+        "github.com/mgilbir/formalis@v0.3.1#h1:NyYe/EcRYJ2jUjgaZG98lNXgJ7H+jgy6mq7HXOnQxl8=",
+        "github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556#h1:2ZUsOgMhxpHCYC8jyzeEnJZFLYGbXhqjAJWJBvY8q4U=",
+        "github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2#h1:kdDIM4JNxn9gsRk5Zo6mtmcFpBqnl9gTVUwf9t6lIRk=",
+        "github.com/mgilbir/pdf0@v0.1.0#h1:rfBK18bcQ4kHQTXBmriAb07TafhG2w1fLflq9lHgaG4="
+      ],
+      "name": "mindweaver-pdf",
+      "nestedVerbs": {},
+      "packages": [
+        "internal/pdfextract/parser",
+        "internal/pdfextract/protocol"
+      ],
+      "public": false,
+      "sourceManifestSHA256": "0bec9ddde1ea8778ffc3c20740ed55080d7ef0b537cfd070a2d563ccc5a087c6",
+      "verbs": []
+    }
+  ],
+  "forbiddenSegments": [
+    "agent",
+    "agents",
+    "batch",
+    "batches",
+    "boundedinstr",
+    "cache",
+    "caches",
+    "embedding",
+    "embeddings",
+    "evaluation",
+    "evaluations",
+    "expansion",
+    "fusion",
+    "hybrid",
+    "kbhealth",
+    "memories",
+    "memory",
+    "naturalquestion",
+    "notification",
+    "notifications",
+    "profile",
+    "profiles",
+    "qdrant",
+    "queryunderstanding",
+    "reindex",
+    "reindexing",
+    "rerank",
+    "reranker",
+    "rrf",
+    "storage",
+    "storages",
+    "termindex",
+    "vector",
+    "vectors"
+  ],
+  "migrations": [
+    "001_core.sql",
+    "002_fts.sql",
+    "003_document_ingestion.sql",
+    "004_rag_answers.sql",
+    "005_document_lifecycle.sql",
+    "006_pdf_ingestion.sql",
+    "007_drop_unused_settings.sql"
+  ],
+  "module": "github.com/mt-hub8/MindWeaver/v2",
+  "packages": [
+    "internal/app",
+    "internal/backup",
+    "internal/blob",
+    "internal/ingest",
+    "internal/lifecycle",
+    "internal/localhttp",
+    "internal/ollama",
+    "internal/pdfextract/client",
+    "internal/pdfextract/parser",
+    "internal/pdfextract/protocol",
+    "internal/rag",
+    "internal/store/sqlite",
+    "internal/transport",
+    "internal/vault",
+    "internal/webui",
+    "internal/workbench",
+    "platform",
+    "platform/apperror",
+    "platform/config",
+    "platform/version"
+  ],
+  "productionDiscovery": {
+    "evidenceOnlyMainPackages": [
+      "qualification/pdf/adversarialprobe",
+      "qualification/runtime/pdfblocker",
+      "spikes/sqlite/cmd/sqlite-spike",
+      "tests/browser/runner"
+    ],
+    "excludedFileSuffixes": [
+      "_test.go"
+    ],
+    "excludedRootPrefixes": [
+      "docs",
+      "openapi",
+      "qualification",
+      "release",
+      "spikes",
+      "testdata",
+      "tests"
+    ],
+    "externalModules": [
+      "github.com/mgilbir/formalis@v0.3.1#h1:NyYe/EcRYJ2jUjgaZG98lNXgJ7H+jgy6mq7HXOnQxl8=",
+      "github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556#h1:2ZUsOgMhxpHCYC8jyzeEnJZFLYGbXhqjAJWJBvY8q4U=",
+      "github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2#h1:kdDIM4JNxn9gsRk5Zo6mtmcFpBqnl9gTVUwf9t6lIRk=",
+      "github.com/mgilbir/pdf0@v0.1.0#h1:rfBK18bcQ4kHQTXBmriAb07TafhG2w1fLflq9lHgaG4=",
+      "github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304#h1:5NoQAewtgKNK3G4bjNPxVoGXu6F6NzLXWCTdD5FFAEY=",
+      "github.com/ncruces/go-sqlite3@v0.35.3#h1:Ei07Zv1qfV/vyXzelhFsyS5Oh9TArBZHsmFk14Xv3GY=",
+      "github.com/ncruces/julianday@v1.0.0#h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M=",
+      "golang.org/x/sys@v0.47.0#h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs="
+    ],
+    "libraryRoots": [
+      "internal",
+      "platform"
+    ]
+  },
+  "routes": [
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "getAnswer",
+      "path": "/api/v1/answers",
+      "problemStatuses": [
+        400,
+        404,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200,
+        202
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "required",
+      "method": "POST",
+      "operationId": "ask",
+      "path": "/api/v1/ask",
+      "problemStatuses": [
+        400,
+        404,
+        409,
+        413,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200,
+        202
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "required",
+      "method": "POST",
+      "operationId": "createBackup",
+      "path": "/api/v1/backups",
+      "problemStatuses": [
+        400,
+        409,
+        413,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        202
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "none",
+      "method": "POST",
+      "operationId": "cancelBackup",
+      "path": "/api/v1/backups/cancel",
+      "problemStatuses": [
+        400,
+        404,
+        500
+      ],
+      "session": "required",
+      "successStatuses": [
+        202
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "getBackupStatus",
+      "path": "/api/v1/backups/status",
+      "problemStatuses": [
+        400,
+        404,
+        500
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "listCollections",
+      "path": "/api/v1/collections",
+      "problemStatuses": [
+        400,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "required",
+      "method": "POST",
+      "operationId": "createCollection",
+      "path": "/api/v1/collections",
+      "problemStatuses": [
+        400,
+        409,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200,
+        201
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "none",
+      "method": "DELETE",
+      "operationId": "removeCollectionMember",
+      "path": "/api/v1/collections/members",
+      "problemStatuses": [
+        400,
+        404,
+        409,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "listCollectionMembers",
+      "path": "/api/v1/collections/members",
+      "problemStatuses": [
+        400,
+        404,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "none",
+      "method": "POST",
+      "operationId": "addCollectionMember",
+      "path": "/api/v1/collections/members",
+      "problemStatuses": [
+        400,
+        404,
+        409,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "none",
+      "method": "DELETE",
+      "operationId": "deleteConversation",
+      "path": "/api/v1/conversations",
+      "problemStatuses": [
+        400,
+        404,
+        409,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "listConversations",
+      "path": "/api/v1/conversations",
+      "problemStatuses": [
+        400,
+        413,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "required",
+      "method": "POST",
+      "operationId": "createConversation",
+      "path": "/api/v1/conversations",
+      "problemStatuses": [
+        400,
+        409,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200,
+        201
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "listConversationMessages",
+      "path": "/api/v1/conversations/messages",
+      "problemStatuses": [
+        400,
+        404,
+        413,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "getDiagnostics",
+      "path": "/api/v1/diagnostics",
+      "problemStatuses": [
+        400
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "listDocuments",
+      "path": "/api/v1/documents",
+      "problemStatuses": [
+        400,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "none",
+      "method": "POST",
+      "operationId": "purgeDocument",
+      "path": "/api/v1/documents/purge",
+      "problemStatuses": [
+        400,
+        404,
+        409,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200,
+        202
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "getPurgeStatus",
+      "path": "/api/v1/documents/purge-status",
+      "problemStatuses": [
+        400,
+        404,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "listPurges",
+      "path": "/api/v1/documents/purges",
+      "problemStatuses": [
+        400,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "none",
+      "method": "POST",
+      "operationId": "restoreDocument",
+      "path": "/api/v1/documents/restore",
+      "problemStatuses": [
+        400,
+        404,
+        409,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "none",
+      "method": "POST",
+      "operationId": "retryDocumentIngestion",
+      "path": "/api/v1/documents/retry-ingestion",
+      "problemStatuses": [
+        400,
+        404,
+        409,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "none",
+      "method": "POST",
+      "operationId": "trashDocument",
+      "path": "/api/v1/documents/trash",
+      "problemStatuses": [
+        400,
+        404,
+        409,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "required",
+      "method": "POST",
+      "operationId": "uploadDocument",
+      "path": "/api/v1/documents/upload",
+      "problemStatuses": [
+        400,
+        409,
+        413,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200,
+        202
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "getJob",
+      "path": "/api/v1/jobs",
+      "problemStatuses": [
+        400,
+        404,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "none",
+      "method": "POST",
+      "operationId": "cancelJob",
+      "path": "/api/v1/jobs/cancel",
+      "problemStatuses": [
+        400,
+        404,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        204
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "getOllamaConfiguration",
+      "path": "/api/v1/ollama",
+      "problemStatuses": [
+        400,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "none",
+      "method": "PUT",
+      "operationId": "configureOllama",
+      "path": "/api/v1/ollama",
+      "problemStatuses": [
+        400,
+        409,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "required",
+      "idempotencyKey": "none",
+      "method": "POST",
+      "operationId": "probeOllama",
+      "path": "/api/v1/ollama/probe",
+      "problemStatuses": [
+        400,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "getRuntime",
+      "path": "/api/v1/runtime",
+      "problemStatuses": [
+        400
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "search",
+      "path": "/api/v1/search",
+      "problemStatuses": [
+        400,
+        500,
+        503
+      ],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        401,
+        403
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "POST",
+      "operationId": "exchangeBootstrap",
+      "path": "/bootstrap/exchange",
+      "problemStatuses": [],
+      "session": "none",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        400,
+        401,
+        403,
+        405,
+        503
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "getHealth",
+      "path": "/healthz",
+      "problemStatuses": [],
+      "session": "none",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        403,
+        405
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "HEAD",
+      "operationId": "headHealth",
+      "path": "/healthz",
+      "problemStatuses": [],
+      "session": "none",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        403,
+        405
+      ]
+    },
+    {
+      "csrf": "none",
+      "idempotencyKey": "none",
+      "method": "GET",
+      "operationId": "refreshCSRF",
+      "path": "/session/csrf",
+      "problemStatuses": [],
+      "session": "required",
+      "successStatuses": [
+        200
+      ],
+      "transportStatuses": [
+        400,
+        401,
+        403,
+        405
+      ]
+    }
+  ],
+  "schemaVersion": "mindweaver.core-surface.v1",
+  "tables": [
+    "answer_citations",
+    "answer_sources",
+    "ask_requests",
+    "blob_gc_candidates",
+    "chunks",
+    "chunks_fts",
+    "collection_documents",
+    "collections",
+    "conversation_messages",
+    "conversations",
+    "document_ingestions",
+    "document_lifecycle",
+    "document_purge_blobs",
+    "document_purges",
+    "document_revisions",
+    "documents",
+    "jobs",
+    "ollama_config_versions",
+    "schema_migrations"
+  ]
+}

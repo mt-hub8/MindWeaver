@@ -1,0 +1,3967 @@
+{
+  "components": {
+    "parameters": {
+      "BootstrapToken": {
+        "description": "One-use 256-bit bootstrap token; never place it in a URL query or cookie.",
+        "in": "header",
+        "name": "X-MindWeaver-Bootstrap",
+        "required": true,
+        "schema": {
+          "maxLength": 43,
+          "minLength": 43,
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "type": "string"
+        }
+      },
+      "CSRFToken": {
+        "description": "CSRF token returned by the bootstrap exchange or session refresh.",
+        "in": "header",
+        "name": "X-MindWeaver-CSRF",
+        "required": true,
+        "schema": {
+          "maxLength": 43,
+          "minLength": 43,
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "type": "string"
+        }
+      },
+      "Cursor": {
+        "description": "Opaque directory cursor bound to its endpoint and scope.",
+        "in": "query",
+        "name": "cursor",
+        "schema": {
+          "maxLength": 1024,
+          "type": "string"
+        }
+      },
+      "IdempotencyKey": {
+        "description": "Required non-control UTF-8 value, trimmed, and bounded to 256 encoded bytes. Reuse with different content returns conflict.",
+        "in": "header",
+        "name": "Idempotency-Key",
+        "required": true,
+        "schema": {
+          "description": "The implementation enforces the byte bound in addition to this textual shape.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "Limit100": {
+        "description": "Bounded page size.",
+        "in": "query",
+        "name": "limit",
+        "schema": {
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "Limit50": {
+        "description": "Bounded history page size.",
+        "in": "query",
+        "name": "limit",
+        "schema": {
+          "maximum": 50,
+          "minimum": 1,
+          "type": "integer"
+        }
+      }
+    },
+    "responses": {
+      "Problem400": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "description": "INVALID_ARGUMENT"
+      },
+      "Problem401": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "description": "UNAUTHENTICATED"
+      },
+      "Problem403": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "description": "FORBIDDEN"
+      },
+      "Problem404": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "description": "NOT_FOUND"
+      },
+      "Problem409": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "description": "CONFLICT"
+      },
+      "Problem413": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "description": "RESOURCE_LIMIT"
+      },
+      "Problem500": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "description": "INTERNAL"
+      },
+      "Problem503": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        },
+        "description": "SERVICE_UNAVAILABLE"
+      },
+      "Rejected400": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RejectedRequest"
+            }
+          }
+        },
+        "description": "Transport rejected malformed metadata before the business handler."
+      },
+      "Rejected401": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RejectedRequest"
+            }
+          }
+        },
+        "description": "Transport rejected a missing, expired, replayed, or invalid process-memory session credential."
+      },
+      "Rejected403": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RejectedRequest"
+            }
+          }
+        },
+        "description": "Transport rejected Host, Origin, loopback peer, Fetch Metadata, or CSRF evidence."
+      },
+      "Rejected405": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RejectedRequest"
+            }
+          }
+        },
+        "description": "Transport rejected an unsupported method."
+      },
+      "Rejected503": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RejectedRequest"
+            }
+          }
+        },
+        "description": "Transport could not create session credentials from secure randomness."
+      }
+    },
+    "schemas": {
+      "Answer": {
+        "additionalProperties": true,
+        "oneOf": [
+          {
+            "properties": {
+              "citations": {
+                "maxItems": 0,
+                "type": "array"
+              },
+              "completedAt": {
+                "type": "null"
+              },
+              "content": {
+                "enum": [
+                  ""
+                ],
+                "type": "string"
+              },
+              "errorCode": {
+                "enum": [
+                  ""
+                ],
+                "type": "string"
+              },
+              "limitationCode": {
+                "enum": [
+                  ""
+                ],
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "citations": {
+                "minItems": 1,
+                "type": "array"
+              },
+              "completedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "content": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "errorCode": {
+                "enum": [
+                  ""
+                ],
+                "type": "string"
+              },
+              "limitationCode": {
+                "enum": [
+                  ""
+                ],
+                "type": "string"
+              },
+              "sources": {
+                "minItems": 1,
+                "type": "array"
+              },
+              "status": {
+                "enum": [
+                  "completed"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "citations": {
+                "maxItems": 0,
+                "type": "array"
+              },
+              "completedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "content": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "errorCode": {
+                "enum": [
+                  ""
+                ],
+                "type": "string"
+              },
+              "limitationCode": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Z0-9_]+$",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "refused"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "citations": {
+                "maxItems": 0,
+                "type": "array"
+              },
+              "completedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "content": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "errorCode": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Z0-9_]+$",
+                "type": "string"
+              },
+              "limitationCode": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Z0-9_]+$",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "failed"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "completedAt": {
+            "oneOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "conversationId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "conversationRevision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "errorCode": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "limitationCode": {
+            "type": "string"
+          },
+          "providerConfigVersion": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "question": {
+            "description": "Exact unpadded Ask input persisted for display. CORE searches the complete value unchanged as one literal continuous source phrase; it does not perform natural-question understanding, token OR, rewriting, or semantic expansion.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "reconcileAfter": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "scopeCollectionId": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/AnswerSource"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "completed",
+              "failed",
+              "pending",
+              "refused"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "citations",
+          "completedAt",
+          "content",
+          "conversationId",
+          "conversationRevision",
+          "createdAt",
+          "errorCode",
+          "id",
+          "limitationCode",
+          "providerConfigVersion",
+          "question",
+          "reconcileAfter",
+          "scopeCollectionId",
+          "sources",
+          "status"
+        ],
+        "type": "object"
+      },
+      "AnswerEnvelope": {
+        "additionalProperties": true,
+        "properties": {
+          "answer": {
+            "$ref": "#/components/schemas/Answer"
+          }
+        },
+        "required": [
+          "answer"
+        ],
+        "type": "object"
+      },
+      "AnswerSource": {
+        "additionalProperties": true,
+        "properties": {
+          "chunkId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "chunkOrdinal": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "content": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "contentHash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "documentId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "documentTitle": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "position": {
+            "maximum": 8,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "revisionId": {
+            "$ref": "#/components/schemas/Identifier"
+          }
+        },
+        "required": [
+          "chunkId",
+          "chunkOrdinal",
+          "content",
+          "contentHash",
+          "documentId",
+          "documentTitle",
+          "position",
+          "revisionId"
+        ],
+        "type": "object"
+      },
+      "AskRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "conversationId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "expectedRevision": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "question": {
+            "description": "Exact unpadded input with at least three Unicode code points and at most 1024 UTF-8 bytes. CORE searches the complete value unchanged as one literal continuous source phrase. Natural-question understanding, word segmentation, token OR, rewriting, synonym expansion, and semantic retrieval are unsupported.",
+            "minLength": 3,
+            "type": "string"
+          },
+          "scopeCollectionId": {
+            "$ref": "#/components/schemas/Identifier"
+          }
+        },
+        "required": [
+          "conversationId",
+          "expectedRevision",
+          "question"
+        ],
+        "type": "object"
+      },
+      "BackupCancelRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "operationId": {
+            "$ref": "#/components/schemas/BackupOperationID"
+          }
+        },
+        "required": [
+          "operationId"
+        ],
+        "type": "object"
+      },
+      "BackupCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "destination": {
+            "description": "Exact absolute path under an existing fixed-local parent. The implementation also enforces a 4096 UTF-8 byte limit and never returns this value.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "destination"
+        ],
+        "type": "object"
+      },
+      "BackupOperationID": {
+        "maxLength": 64,
+        "minLength": 64,
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "BackupOperationStatus": {
+        "additionalProperties": true,
+        "properties": {
+          "artifactCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "blobCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cancelRequested": {
+            "type": "boolean"
+          },
+          "failureCode": {
+            "enum": [
+              "BACKUP_CANCELLED",
+              "BACKUP_CLEANUP_REQUIRED",
+              "BACKUP_CORRUPT",
+              "BACKUP_DESTINATION_INVALID",
+              "BACKUP_DESTINATION_UNSUPPORTED",
+              "BACKUP_DISK_FULL",
+              "BACKUP_FAILED",
+              "BACKUP_EXISTING_VERIFIED",
+              "BACKUP_PUBLICATION_UNCERTAIN",
+              "BACKUP_RESIDUE_CONFLICT",
+              "BACKUP_TARGET_EXISTS"
+            ],
+            "type": "string"
+          },
+          "operationId": {
+            "$ref": "#/components/schemas/BackupOperationID"
+          },
+          "phase": {
+            "enum": [
+              "accepted",
+              "attention",
+              "complete",
+              "creating",
+              "reconciling"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "accepted",
+              "canceled",
+              "failed",
+              "needs_attention",
+              "running",
+              "succeeded"
+            ],
+            "type": "string"
+          },
+          "totalBytes": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "artifactCount",
+          "blobCount",
+          "cancelRequested",
+          "operationId",
+          "phase",
+          "state",
+          "totalBytes"
+        ],
+        "type": "object"
+      },
+      "CSRFTokenResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "csrfToken": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "csrfToken"
+        ],
+        "type": "object"
+      },
+      "Citation": {
+        "additionalProperties": true,
+        "properties": {
+          "occurrence": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "position": {
+            "maximum": 8,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "occurrence",
+          "position"
+        ],
+        "type": "object"
+      },
+      "Collection": {
+        "additionalProperties": true,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "name",
+          "revision",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "CollectionCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Trimmed display text bounded to 1024 UTF-8 bytes by the implementation.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "CollectionCreateResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "collection": {
+            "$ref": "#/components/schemas/Collection"
+          },
+          "created": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "collection",
+          "created"
+        ],
+        "type": "object"
+      },
+      "CollectionMemberMutationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "collectionId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "documentId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "expectedRevision": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "collectionId",
+          "documentId",
+          "expectedRevision"
+        ],
+        "type": "object"
+      },
+      "CollectionMembersPage": {
+        "additionalProperties": true,
+        "properties": {
+          "collection": {
+            "$ref": "#/components/schemas/Collection"
+          },
+          "members": {
+            "items": {
+              "additionalProperties": true,
+              "properties": {
+                "addedAt": {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                "document": {
+                  "$ref": "#/components/schemas/Document"
+                }
+              },
+              "required": [
+                "addedAt",
+                "document"
+              ],
+              "type": "object"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "collection",
+          "members"
+        ],
+        "type": "object"
+      },
+      "CollectionMutationResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "collection": {
+            "$ref": "#/components/schemas/Collection"
+          }
+        },
+        "required": [
+          "changed",
+          "collection"
+        ],
+        "type": "object"
+      },
+      "CollectionsPage": {
+        "additionalProperties": true,
+        "properties": {
+          "collections": {
+            "items": {
+              "$ref": "#/components/schemas/Collection"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "collections"
+        ],
+        "type": "object"
+      },
+      "Conversation": {
+        "additionalProperties": true,
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "pendingAnswer": {
+            "type": "boolean"
+          },
+          "pendingAnswerId": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "pendingAnswer",
+          "pendingAnswerId",
+          "revision",
+          "title",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "ConversationCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "title": {
+            "description": "Trimmed display text bounded to 1024 UTF-8 bytes by the implementation.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "type": "object"
+      },
+      "ConversationCreateResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "conversation": {
+            "$ref": "#/components/schemas/Conversation"
+          },
+          "created": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "conversation",
+          "created"
+        ],
+        "type": "object"
+      },
+      "ConversationDeleteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "conversationId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "expectedRevision": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "conversationId",
+          "expectedRevision"
+        ],
+        "type": "object"
+      },
+      "ConversationDeleteResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "conversationId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "conversationId",
+          "deleted"
+        ],
+        "type": "object"
+      },
+      "ConversationsPage": {
+        "additionalProperties": true,
+        "properties": {
+          "conversations": {
+            "items": {
+              "$ref": "#/components/schemas/Conversation"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "conversations"
+        ],
+        "type": "object"
+      },
+      "Diagnostics": {
+        "additionalProperties": true,
+        "properties": {
+          "cleanedStagingFiles": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "databaseStatus": {
+            "type": "string"
+          },
+          "modelStatus": {
+            "type": "string"
+          },
+          "pdfAvailable": {
+            "type": "boolean"
+          },
+          "reconciledPendingAnswers": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recoveredJobs": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sweptBlobCandidates": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "vaultStatus": {
+            "type": "string"
+          },
+          "workerStatus": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cleanedStagingFiles",
+          "databaseStatus",
+          "modelStatus",
+          "pdfAvailable",
+          "reconciledPendingAnswers",
+          "recoveredJobs",
+          "sweptBlobCandidates",
+          "vaultStatus",
+          "workerStatus"
+        ],
+        "type": "object"
+      },
+      "Document": {
+        "additionalProperties": true,
+        "properties": {
+          "activeRevisionId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "ingestionAttempt": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ingestionErrorCode": {
+            "type": "string"
+          },
+          "ingestionJobId": {
+            "type": "string"
+          },
+          "ingestionMaxAttempts": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ingestionStatus": {
+            "type": "string"
+          },
+          "mediaType": {
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "purge_pending",
+              "trashed"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "id",
+          "ingestionAttempt",
+          "ingestionMaxAttempts",
+          "mediaType",
+          "revision",
+          "status",
+          "title",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "DocumentMutationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "documentId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "expectedRevision": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "documentId",
+          "expectedRevision"
+        ],
+        "type": "object"
+      },
+      "DocumentRetryResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "document": {
+            "$ref": "#/components/schemas/Document"
+          }
+        },
+        "required": [
+          "changed",
+          "document"
+        ],
+        "type": "object"
+      },
+      "DocumentsPage": {
+        "additionalProperties": true,
+        "properties": {
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/Document"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "documents"
+        ],
+        "type": "object"
+      },
+      "Health": {
+        "additionalProperties": true,
+        "properties": {
+          "status": {
+            "enum": [
+              "ok"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "Identifier": {
+        "description": "Trimmed non-control UTF-8 identifier bounded to 255 encoded bytes by the implementation.",
+        "minLength": 1,
+        "type": "string"
+      },
+      "Job": {
+        "additionalProperties": true,
+        "properties": {
+          "attempt": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cancelRequested": {
+            "type": "boolean"
+          },
+          "errorCode": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "kind": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxAttempts": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "cancelled",
+              "failed",
+              "queued",
+              "running",
+              "succeeded"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempt",
+          "cancelRequested",
+          "id",
+          "kind",
+          "maxAttempts",
+          "status",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "JobCancelRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "JobEnvelope": {
+        "additionalProperties": true,
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/Job"
+          }
+        },
+        "required": [
+          "job"
+        ],
+        "type": "object"
+      },
+      "Lifecycle": {
+        "additionalProperties": true,
+        "properties": {
+          "documentId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "purgeRequestedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "purge_pending",
+              "trashed"
+            ],
+            "type": "string"
+          },
+          "trashedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "documentId",
+          "revision",
+          "status"
+        ],
+        "type": "object"
+      },
+      "LifecycleEnvelope": {
+        "additionalProperties": true,
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/Lifecycle"
+          }
+        },
+        "required": [
+          "document"
+        ],
+        "type": "object"
+      },
+      "Message": {
+        "additionalProperties": true,
+        "oneOf": [
+          {
+            "properties": {
+              "citations": {
+                "maxItems": 0,
+                "type": "array"
+              },
+              "completedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "content": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "errorCode": {
+                "enum": [
+                  ""
+                ],
+                "type": "string"
+              },
+              "limitationCode": {
+                "enum": [
+                  ""
+                ],
+                "type": "string"
+              },
+              "providerConfigVersion": {
+                "maximum": 0,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "reconcileAfter": {
+                "type": "null"
+              },
+              "role": {
+                "enum": [
+                  "user"
+                ],
+                "type": "string"
+              },
+              "sources": {
+                "maxItems": 0,
+                "type": "array"
+              },
+              "status": {
+                "enum": [
+                  "completed"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "citations": {
+                "maxItems": 0,
+                "type": "array"
+              },
+              "completedAt": {
+                "type": "null"
+              },
+              "content": {
+                "enum": [
+                  ""
+                ],
+                "type": "string"
+              },
+              "errorCode": {
+                "enum": [
+                  ""
+                ],
+                "type": "string"
+              },
+              "limitationCode": {
+                "enum": [
+                  ""
+                ],
+                "type": "string"
+              },
+              "providerConfigVersion": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "reconcileAfter": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "role": {
+                "enum": [
+                  "assistant"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pending"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "citations": {
+                "minItems": 1,
+                "type": "array"
+              },
+              "completedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "content": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "errorCode": {
+                "enum": [
+                  ""
+                ],
+                "type": "string"
+              },
+              "limitationCode": {
+                "enum": [
+                  ""
+                ],
+                "type": "string"
+              },
+              "providerConfigVersion": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "reconcileAfter": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "role": {
+                "enum": [
+                  "assistant"
+                ],
+                "type": "string"
+              },
+              "sources": {
+                "minItems": 1,
+                "type": "array"
+              },
+              "status": {
+                "enum": [
+                  "completed"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "citations": {
+                "maxItems": 0,
+                "type": "array"
+              },
+              "completedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "content": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "errorCode": {
+                "enum": [
+                  ""
+                ],
+                "type": "string"
+              },
+              "limitationCode": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Z0-9_]+$",
+                "type": "string"
+              },
+              "providerConfigVersion": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "reconcileAfter": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "role": {
+                "enum": [
+                  "assistant"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "refused"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "properties": {
+              "citations": {
+                "maxItems": 0,
+                "type": "array"
+              },
+              "completedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "content": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "errorCode": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Z0-9_]+$",
+                "type": "string"
+              },
+              "limitationCode": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[A-Z0-9_]+$",
+                "type": "string"
+              },
+              "providerConfigVersion": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "reconcileAfter": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "role": {
+                "enum": [
+                  "assistant"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "failed"
+                ],
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "completedAt": {
+            "oneOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "conversationId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "errorCode": {
+            "type": "string"
+          },
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "limitationCode": {
+            "type": "string"
+          },
+          "ordinal": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "providerConfigVersion": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reconcileAfter": {
+            "oneOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "enum": [
+              "assistant",
+              "user"
+            ],
+            "type": "string"
+          },
+          "scopeCollectionId": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Identifier"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/AnswerSource"
+            },
+            "maxItems": 8,
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "completed",
+              "failed",
+              "pending",
+              "refused"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "citations",
+          "completedAt",
+          "content",
+          "conversationId",
+          "createdAt",
+          "errorCode",
+          "id",
+          "limitationCode",
+          "ordinal",
+          "providerConfigVersion",
+          "reconcileAfter",
+          "role",
+          "scopeCollectionId",
+          "sources",
+          "status"
+        ],
+        "type": "object"
+      },
+      "MessagesPage": {
+        "additionalProperties": true,
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "messages"
+        ],
+        "type": "object"
+      },
+      "OllamaConfig": {
+        "additionalProperties": true,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "endpoint": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "model": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "timeoutMilliseconds": {
+            "maximum": 600000,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "version": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active",
+          "createdAt",
+          "endpoint",
+          "model",
+          "timeoutMilliseconds",
+          "version"
+        ],
+        "type": "object"
+      },
+      "OllamaConfigResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "config": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OllamaConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "configured": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "config",
+          "configured"
+        ],
+        "type": "object"
+      },
+      "OllamaConfigResult": {
+        "additionalProperties": true,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/OllamaConfig"
+          }
+        },
+        "required": [
+          "config"
+        ],
+        "type": "object"
+      },
+      "OllamaConfigureRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "expectedVersion": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "model": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "timeoutMilliseconds": {
+            "maximum": 600000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "endpoint",
+          "expectedVersion",
+          "model",
+          "timeoutMilliseconds"
+        ],
+        "type": "object"
+      },
+      "OllamaProbeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "endpoint": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "model": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "timeoutMilliseconds": {
+            "maximum": 600000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "endpoint",
+          "model",
+          "timeoutMilliseconds"
+        ],
+        "type": "object"
+      },
+      "OllamaProbeResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "available",
+          "models"
+        ],
+        "type": "object"
+      },
+      "Problem": {
+        "additionalProperties": true,
+        "properties": {
+          "code": {
+            "enum": [
+              "CONFLICT",
+              "FORBIDDEN",
+              "INTERNAL",
+              "INVALID_ARGUMENT",
+              "NOT_FOUND",
+              "RESOURCE_LIMIT",
+              "SERVICE_UNAVAILABLE",
+              "UNAUTHENTICATED"
+            ],
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "requestId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "status": {
+            "maximum": 599,
+            "minimum": 400,
+            "type": "integer"
+          },
+          "title": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": {
+            "format": "uri",
+            "type": "string"
+          },
+          "userAction": {
+            "enum": [
+              "correct_request",
+              "inspect_diagnostics",
+              "refresh_state",
+              "restart_session",
+              "retry_later",
+              "review_limits"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "requestId",
+          "retryable",
+          "status",
+          "title",
+          "type",
+          "userAction"
+        ],
+        "type": "object",
+        "x-mindweaver-recovery-by-code": {
+          "CONFLICT": {
+            "retryable": false,
+            "userAction": "refresh_state"
+          },
+          "FORBIDDEN": {
+            "retryable": false,
+            "userAction": "restart_session"
+          },
+          "INTERNAL": {
+            "retryable": false,
+            "userAction": "inspect_diagnostics"
+          },
+          "INVALID_ARGUMENT": {
+            "retryable": false,
+            "userAction": "correct_request"
+          },
+          "NOT_FOUND": {
+            "retryable": false,
+            "userAction": "refresh_state"
+          },
+          "RESOURCE_LIMIT": {
+            "retryable": false,
+            "userAction": "review_limits"
+          },
+          "SERVICE_UNAVAILABLE": {
+            "retryable": true,
+            "userAction": "retry_later"
+          },
+          "UNAUTHENTICATED": {
+            "retryable": false,
+            "userAction": "restart_session"
+          }
+        },
+        "x-mindweaver-status-by-code": {
+          "CONFLICT": 409,
+          "FORBIDDEN": 403,
+          "INTERNAL": 500,
+          "INVALID_ARGUMENT": 400,
+          "NOT_FOUND": 404,
+          "RESOURCE_LIMIT": 413,
+          "SERVICE_UNAVAILABLE": 503,
+          "UNAUTHENTICATED": 401
+        }
+      },
+      "PurgeResult": {
+        "additionalProperties": true,
+        "properties": {
+          "allCandidateObjectsRemoved": {
+            "type": "boolean"
+          },
+          "complete": {
+            "type": "boolean"
+          },
+          "databaseDeleted": {
+            "type": "boolean"
+          },
+          "deletedBlobCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "deletedJobCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "documentId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "pendingBlobCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "retainedSharedCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "enum": [
+              "complete",
+              "failed",
+              "pending"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "allCandidateObjectsRemoved",
+          "complete",
+          "databaseDeleted",
+          "deletedBlobCount",
+          "deletedJobCount",
+          "documentId",
+          "pendingBlobCount",
+          "retainedSharedCount",
+          "state"
+        ],
+        "type": "object"
+      },
+      "PurgeStatus": {
+        "additionalProperties": true,
+        "properties": {
+          "documentId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "lastErrorCode": {
+            "type": "string"
+          },
+          "remainingBlobCount": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "requestedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "failed",
+              "pending"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "documentId",
+          "remainingBlobCount",
+          "requestedAt",
+          "status",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "PurgesPage": {
+        "additionalProperties": true,
+        "properties": {
+          "nextCursor": {
+            "type": "string"
+          },
+          "purges": {
+            "items": {
+              "$ref": "#/components/schemas/PurgeStatus"
+            },
+            "maxItems": 100,
+            "type": "array"
+          }
+        },
+        "required": [
+          "purges"
+        ],
+        "type": "object"
+      },
+      "RejectedRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "enum": [
+              "request rejected"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "type": "object"
+      },
+      "Runtime": {
+        "additionalProperties": true,
+        "properties": {
+          "configCreated": {
+            "type": "boolean"
+          },
+          "modelStatus": {
+            "type": "string"
+          },
+          "pdfAvailable": {
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "ready"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "configCreated",
+          "modelStatus",
+          "pdfAvailable",
+          "state",
+          "version"
+        ],
+        "type": "object"
+      },
+      "SearchHit": {
+        "additionalProperties": true,
+        "properties": {
+          "chunkId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "documentId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "ordinal": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rank": {
+            "type": "number"
+          },
+          "revisionId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "snippet": {
+            "type": "string"
+          },
+          "snippetTruncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "chunkId",
+          "documentId",
+          "ordinal",
+          "rank",
+          "revisionId",
+          "snippet",
+          "snippetTruncated"
+        ],
+        "type": "object"
+      },
+      "SearchPage": {
+        "additionalProperties": true,
+        "properties": {
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/SearchHit"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "nextOffset": {
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hits"
+        ],
+        "type": "object"
+      },
+      "UploadResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "created": {
+            "type": "boolean"
+          },
+          "documentId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "jobId": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "revisionId": {
+            "$ref": "#/components/schemas/Identifier"
+          }
+        },
+        "required": [
+          "created",
+          "documentId",
+          "jobId",
+          "revisionId"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Implementation-bound local CORE HTTP surface. It excludes UI assets, backup restore, SSE, accounts, remote authentication, Agent, vector, and other LATER capabilities.",
+    "title": "MindWeaver CORE local API",
+    "version": "1.0.0"
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/v1/answers": {
+      "get": {
+        "operationId": "getAnswer",
+        "parameters": [
+          {
+            "description": "Durable assistant message identifier.",
+            "in": "query",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerEnvelope"
+                }
+              }
+            },
+            "description": "Terminal durable answer."
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerEnvelope"
+                }
+              }
+            },
+            "description": "Durable answer remains pending.",
+            "headers": {
+              "Retry-After": {
+                "description": "Polling delay in seconds.",
+                "schema": {
+                  "enum": [
+                    "1"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Read one durable answer",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/ask": {
+      "post": {
+        "description": "Creates one durable keyword/continuous-phrase-driven grounded generation attempt. Before any model call, the complete question value is passed unchanged to the same scoped literal continuous-phrase FTS query used by Search. A fact-related natural question whose full text is not contiguous in a source normally returns a controlled NO_CONTEXT refusal; CORE does not claim natural-language retrieval.",
+        "operationId": "ask",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskRequest"
+              }
+            }
+          },
+          "description": "Strict JSON; unknown, duplicate, mis-cased, or trailing fields are rejected. The question is a literal source phrase, despite the stable field name.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerEnvelope"
+                }
+              }
+            },
+            "description": "Terminal durable answer, including an idempotent replay."
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerEnvelope"
+                }
+              }
+            },
+            "description": "Ask pair is durable but provider convergence is pending.",
+            "headers": {
+              "Retry-After": {
+                "description": "Polling delay in seconds.",
+                "schema": {
+                  "enum": [
+                    "1"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem413"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Create one durable literal-phrase-grounded Ask pair",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-optimistic-control": "expectedRevision in strict JSON body; ETag and If-Match are unsupported",
+        "x-mindweaver-retry-safety": "durable Idempotency-Key plus request hash",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/backups": {
+      "post": {
+        "description": "Accept one in-process backup Create. The destination is never overwritten and is never returned. The backup package contains plaintext SQLite and blob files and relies on account, media access-control, and disk-encryption policy for confidentiality. An already existing valid backup is reported as needs_attention and is never claimed as a fresh snapshot. Recovery restore and verify operations are intentionally absent from the live API.",
+        "operationId": "createBackup",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupCreateRequest"
+              }
+            }
+          },
+          "description": "Strict JSON; duplicate, unknown, mis-cased, trailing, relative, remote, cloud, hot-plug, reparse, and active-Vault-overlap destinations are rejected.",
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupOperationStatus"
+                }
+              }
+            },
+            "description": "Backup creation was accepted or the same in-process idempotent operation was replayed. Completion is read through the status operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem413"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Create one no-replace, integrity-verifiable local backup",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-retry-safety": "bounded process-memory Idempotency-Key commitment plus exact destination; history exhaustion fails closed, and an existing valid target is never claimed as a fresh backup",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/backups/cancel": {
+      "post": {
+        "operationId": "cancelBackup",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupCancelRequest"
+              }
+            }
+          },
+          "description": "Strict JSON containing only the process-local operation identifier.",
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupOperationStatus"
+                }
+              }
+            },
+            "description": "For an active operation, cancellation is requested. For a retained terminal operation, the existing terminal status is returned unchanged. A publication that already won may still converge to succeeded or needs_attention."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          }
+        },
+        "summary": "Request cancellation of one accepted backup operation",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-retry-safety": "idempotent cancellation request against one process-local operation identifier",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/backups/status": {
+      "get": {
+        "operationId": "getBackupStatus",
+        "parameters": [
+          {
+            "description": "Process-local backup operation identifier returned by Create.",
+            "in": "query",
+            "name": "operationId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/BackupOperationID"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupOperationStatus"
+                }
+              }
+            },
+            "description": "Bounded path-free status for one retained process-local backup operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          }
+        },
+        "summary": "Read one retained process-local backup status",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/collections": {
+      "get": {
+        "operationId": "listCollections",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit100"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionsPage"
+                }
+              }
+            },
+            "description": "Bounded collection page."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "List collections",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
+        "x-mindweaver-session": "required"
+      },
+      "post": {
+        "operationId": "createCollection",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionCreateResponse"
+                }
+              }
+            },
+            "description": "Idempotent replay."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionCreateResponse"
+                }
+              }
+            },
+            "description": "Collection created."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Create a collection",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-retry-safety": "durable Idempotency-Key plus request hash",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/collections/members": {
+      "delete": {
+        "operationId": "removeCollectionMember",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionMemberMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionMutationResponse"
+                }
+              }
+            },
+            "description": "Collection membership state after removal."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Remove a collection member",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-optimistic-control": "expectedRevision in strict JSON body; ETag and If-Match are unsupported",
+        "x-mindweaver-retry-safety": "revision CAS with changed=false replay result",
+        "x-mindweaver-session": "required"
+      },
+      "get": {
+        "operationId": "listCollectionMembers",
+        "parameters": [
+          {
+            "description": "Collection whose membership is listed.",
+            "in": "query",
+            "name": "collection_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Limit100"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionMembersPage"
+                }
+              }
+            },
+            "description": "Bounded collection membership page."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "List collection members",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
+        "x-mindweaver-session": "required"
+      },
+      "post": {
+        "operationId": "addCollectionMember",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CollectionMemberMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionMutationResponse"
+                }
+              }
+            },
+            "description": "Collection membership state after addition."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Add a collection member",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-optimistic-control": "expectedRevision in strict JSON body; ETag and If-Match are unsupported",
+        "x-mindweaver-retry-safety": "revision CAS with changed=false replay result",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/conversations": {
+      "delete": {
+        "operationId": "deleteConversation",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDeleteResponse"
+                }
+              }
+            },
+            "description": "Conversation deletion result."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Delete a terminal conversation",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-optimistic-control": "expectedRevision in strict JSON body; ETag and If-Match are unsupported",
+        "x-mindweaver-retry-safety": "revision CAS",
+        "x-mindweaver-session": "required"
+      },
+      "get": {
+        "operationId": "listConversations",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit50"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationsPage"
+                }
+              }
+            },
+            "description": "Bounded conversation page."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem413"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "List conversations",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
+        "x-mindweaver-session": "required"
+      },
+      "post": {
+        "operationId": "createConversation",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationCreateResponse"
+                }
+              }
+            },
+            "description": "Idempotent replay."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationCreateResponse"
+                }
+              }
+            },
+            "description": "Conversation created."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Create a conversation",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-retry-safety": "durable Idempotency-Key plus request hash",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/conversations/messages": {
+      "get": {
+        "operationId": "listConversationMessages",
+        "parameters": [
+          {
+            "description": "Conversation whose messages are listed.",
+            "in": "query",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Limit50"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagesPage"
+                }
+              }
+            },
+            "description": "Bounded immutable message page."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem413"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "List conversation messages",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/diagnostics": {
+      "get": {
+        "operationId": "getDiagnostics",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Diagnostics"
+                }
+              }
+            },
+            "description": "Bounded non-sensitive process diagnostics."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          }
+        },
+        "summary": "Read startup and runtime diagnostics",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/documents": {
+      "get": {
+        "operationId": "listDocuments",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit100"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentsPage"
+                }
+              }
+            },
+            "description": "Bounded document page."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "List documents",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/documents/purge": {
+      "post": {
+        "operationId": "purgeDocument",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgeResult"
+                }
+              }
+            },
+            "description": "Database deletion and all object cleanup completed."
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgeResult"
+                }
+              }
+            },
+            "description": "Database deletion committed; bounded object cleanup remains pending or failed."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Permanently delete a trashed document",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-optimistic-control": "expectedRevision in strict JSON body; ETag and If-Match are unsupported",
+        "x-mindweaver-retry-safety": "revision CAS plus current purge tombstone",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/documents/purge-status": {
+      "get": {
+        "operationId": "getPurgeStatus",
+        "parameters": [
+          {
+            "description": "Deleted document identifier whose current cleanup tombstone is read.",
+            "in": "query",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgeStatus"
+                }
+              }
+            },
+            "description": "Current purge cleanup tombstone."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Read current purge cleanup status",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/documents/purges": {
+      "get": {
+        "operationId": "listPurges",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit100"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PurgesPage"
+                }
+              }
+            },
+            "description": "Bounded current purge tombstone page."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "List current purge cleanup tombstones",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/documents/restore": {
+      "post": {
+        "operationId": "restoreDocument",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleEnvelope"
+                }
+              }
+            },
+            "description": "Restored lifecycle state."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Restore a trashed document",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-optimistic-control": "expectedRevision in strict JSON body; ETag and If-Match are unsupported",
+        "x-mindweaver-retry-safety": "revision CAS",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/documents/retry-ingestion": {
+      "post": {
+        "operationId": "retryDocumentIngestion",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentRetryResponse"
+                }
+              }
+            },
+            "description": "Document and durable ingestion state after retry request."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Retry terminal document ingestion",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-optimistic-control": "expectedRevision in strict JSON body; ETag and If-Match are unsupported",
+        "x-mindweaver-retry-safety": "revision CAS with changed=false replay result",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/documents/trash": {
+      "post": {
+        "operationId": "trashDocument",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentMutationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LifecycleEnvelope"
+                }
+              }
+            },
+            "description": "Trashed lifecycle state."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Soft-delete a document",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-optimistic-control": "expectedRevision in strict JSON body; ETag and If-Match are unsupported",
+        "x-mindweaver-retry-safety": "revision CAS",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/documents/upload": {
+      "post": {
+        "operationId": "uploadDocument",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "description": "Raw-URL-base64 UTF-8 title, decoded to at most 1024 bytes.",
+            "in": "header",
+            "name": "X-MindWeaver-Title-B64",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Raw-URL-base64 UTF-8 leaf filename ending in .txt, .md, .markdown, or .pdf.",
+            "in": "header",
+            "name": "X-MindWeaver-Filename-B64",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "description": "Uncompressed immutable source bytes; effective limit is the configured server bound and format-specific workbench limit.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            },
+            "description": "Idempotent replay of the existing durable ingestion."
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            },
+            "description": "Immutable source and durable ingestion job accepted."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem413"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Upload TXT, Markdown, or PDF source bytes",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-retry-safety": "durable Idempotency-Key plus request hash",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/jobs": {
+      "get": {
+        "operationId": "getJob",
+        "parameters": [
+          {
+            "description": "Durable ingestion job identifier.",
+            "in": "query",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobEnvelope"
+                }
+              }
+            },
+            "description": "Current durable job state."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Read one ingestion job",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/jobs/cancel": {
+      "post": {
+        "operationId": "cancelJob",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobCancelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Cancellation requested or already reflected; no response body."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem404"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Request cooperative ingestion cancellation",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-retry-safety": "idempotent cancellation request",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/ollama": {
+      "get": {
+        "operationId": "getOllamaConfiguration",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OllamaConfigResponse"
+                }
+              }
+            },
+            "description": "Active non-secret loopback Ollama configuration intent or configured=false."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Read Ollama configuration",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
+        "x-mindweaver-session": "required"
+      },
+      "put": {
+        "operationId": "configureOllama",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OllamaConfigureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OllamaConfigResult"
+                }
+              }
+            },
+            "description": "New active version or exact lost-response replay."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem409"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Replace active Ollama configuration",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-optimistic-control": "expectedVersion in strict JSON body; ETag and If-Match are unsupported",
+        "x-mindweaver-retry-safety": "expectedVersion plus exact requested-state replay check",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/ollama/probe": {
+      "post": {
+        "operationId": "probeOllama",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CSRFToken"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OllamaProbeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OllamaProbeResponse"
+                }
+              }
+            },
+            "description": "Bounded local model inventory probe."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Probe a candidate loopback Ollama endpoint",
+        "x-mindweaver-csrf": "required",
+        "x-mindweaver-retry-safety": "stateless probe",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/runtime": {
+      "get": {
+        "operationId": "getRuntime",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Runtime"
+                }
+              }
+            },
+            "description": "Current runtime capability state."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          }
+        },
+        "summary": "Read runtime state",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "description": "Searches active chunks for one literal continuous source phrase. The complete trimmed q value is FTS-quoted and parameter-bound unchanged; FTS syntax, word segmentation, token OR, rewriting, synonym expansion, and semantic retrieval are unsupported.",
+        "operationId": "search",
+        "parameters": [
+          {
+            "description": "Literal continuous source phrase. The complete trimmed UTF-8 value must contain at least three Unicode code points and at most 1024 encoded bytes; two-code-point queries are unsupported.",
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "minLength": 3,
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Limit100"
+          },
+          {
+            "description": "Offset inside the fixed 100-hit search window.",
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "maximum": 99,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Optional exact collection scope. A missing collection is an empty scope and never widens.",
+            "in": "query",
+            "name": "collection_id",
+            "schema": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchPage"
+                }
+              }
+            },
+            "description": "Bounded literal continuous-phrase result page."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem503"
+          }
+        },
+        "summary": "Search active chunks by one literal continuous phrase",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
+        "x-mindweaver-session": "required"
+      }
+    },
+    "/bootstrap/exchange": {
+      "post": {
+        "operationId": "exchangeBootstrap",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BootstrapToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CSRFTokenResponse"
+                }
+              }
+            },
+            "description": "One process-memory browser session created; bootstrap token consumed.",
+            "headers": {
+              "Set-Cookie": {
+                "description": "Random-name HttpOnly SameSite=Strict Path=/ process-memory session cookie.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Rejected400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "405": {
+            "$ref": "#/components/responses/Rejected405"
+          },
+          "503": {
+            "$ref": "#/components/responses/Rejected503"
+          }
+        },
+        "summary": "Exchange the one-use bootstrap token",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "not retry-safe after a successful exchange",
+        "x-mindweaver-same-origin-fetch": "Origin and exact loopback transport checks apply",
+        "x-mindweaver-session": "none"
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Loopback process health."
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "405": {
+            "$ref": "#/components/responses/Rejected405"
+          }
+        },
+        "summary": "Read process health",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
+        "x-mindweaver-session": "none"
+      },
+      "head": {
+        "operationId": "headHealth",
+        "responses": {
+          "200": {
+            "description": "Loopback process health without a response body."
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "405": {
+            "$ref": "#/components/responses/Rejected405"
+          }
+        },
+        "summary": "Read process health headers",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only",
+        "x-mindweaver-session": "none"
+      }
+    },
+    "/session/csrf": {
+      "get": {
+        "operationId": "refreshCSRF",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CSRFTokenResponse"
+                }
+              }
+            },
+            "description": "Existing process-memory session CSRF token."
+          },
+          "400": {
+            "$ref": "#/components/responses/Rejected400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Rejected401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Rejected403"
+          },
+          "405": {
+            "$ref": "#/components/responses/Rejected405"
+          }
+        },
+        "summary": "Refresh the current CSRF token",
+        "x-mindweaver-csrf": "none",
+        "x-mindweaver-retry-safety": "read-only credential response",
+        "x-mindweaver-same-origin-fetch": "same-origin cors fetch with browser-controlled Fetch Metadata only",
+        "x-mindweaver-session": "required"
+      }
+    }
+  },
+  "servers": [
+    {
+      "description": "Exact process-selected IPv4 loopback listener; port 0 is descriptive and is replaced at runtime.",
+      "url": "http://127.0.0.1:{port}",
+      "variables": {
+        "port": {
+          "default": "0",
+          "description": "Ephemeral port selected by the operating system."
+        }
+      }
+    }
+  ],
+  "x-mindweaver-auth": {
+    "bootstrapHeader": "X-MindWeaver-Bootstrap",
+    "bootstrapPath": "/bootstrap/exchange",
+    "csrfHeader": "X-MindWeaver-CSRF",
+    "csrfRefreshPath": "/session/csrf",
+    "sameOriginEnforcement": "exact Host/Origin/127.0.0.1 peer plus browser Fetch Metadata",
+    "sessionCookie": "mindweaver_session_\u003c32 lowercase hex\u003e; HttpOnly; SameSite=Strict; Path=/",
+    "sessionPersistence": "single process-memory session; invalidated on shutdown"
+  },
+  "x-mindweaver-etag": "unsupported; use expectedRevision or expectedVersion in strict JSON bodies"
+}

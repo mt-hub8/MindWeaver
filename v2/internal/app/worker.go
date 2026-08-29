@@ -1,0 +1,247 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	store "github.com/mt-hub8/MindWeaver/v2/internal/store/sqlite"
+	"github.com/mt-hub8/MindWeaver/v2/internal/workbench"
+)
+
+type ingestionRunner interface {
+	ClaimOne(context.Context, string, time.Duration) (store.Job, error)
+	RunClaimed(context.Context, store.Job) (store.Job, error)
+	GetJob(context.Context, string) (store.Job, error)
+}
+
+type leaseRecoverer interface {
+	RecoverExpired(context.Context, time.Duration) (int64, error)
+}
+
+// ingestionWorker is a single concrete local executor. SQLite claim and lease
+// fencing remain authoritative; wake is only a latency hint.
+type ingestionWorker struct {
+	runner           ingestionRunner
+	recoverer        leaseRecoverer
+	interval         time.Duration
+	lease            time.Duration
+	recoveryInterval time.Duration
+	wake             chan struct{}
+	quiesce          chan struct{}
+	gateMu           sync.Mutex
+	quiesceRequested atomic.Bool
+
+	mu           sync.RWMutex
+	status       string
+	cancel       context.CancelFunc
+	activeJobID  string
+	activeCancel context.CancelFunc
+	done         chan struct{}
+	started      bool
+	quiesceOnce  sync.Once
+	stopOnce     sync.Once
+}
+
+func newIngestionWorker(runner ingestionRunner, recoverer leaseRecoverer, interval, lease time.Duration) *ingestionWorker {
+	return &ingestionWorker{
+		runner: runner, recoverer: recoverer, interval: interval, lease: lease, recoveryInterval: time.Second,
+		wake: make(chan struct{}, 1), quiesce: make(chan struct{}), status: "starting", done: make(chan struct{}),
+	}
+}
+
+func (worker *ingestionWorker) Start() {
+	worker.mu.Lock()
+	if worker.started {
+		worker.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	worker.cancel = cancel
+	worker.started = true
+	worker.status = "ready"
+	worker.mu.Unlock()
+	go worker.loop(ctx)
+}
+
+func (worker *ingestionWorker) Wake() {
+	select {
+	case worker.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (worker *ingestionWorker) Stop() {
+	worker.Quiesce()
+	worker.stopOnce.Do(func() {
+		worker.mu.Lock()
+		cancel := worker.cancel
+		worker.status = "stopping"
+		worker.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+	})
+}
+
+// Quiesce prevents another claim but lets a currently executing local job
+// finish its fenced commit. Stop remains the bounded forced-cancellation path.
+func (worker *ingestionWorker) Quiesce() {
+	worker.quiesceOnce.Do(func() {
+		// Publish intent before waking the loop. A claim which already crossed
+		// the atomic admission check is current work; Quiesce must not wait on
+		// its physical SQLite call because App owns the bounded drain deadline.
+		worker.quiesceRequested.Store(true)
+		close(worker.quiesce)
+		worker.setStatus("quiescing")
+		worker.Wake()
+	})
+}
+
+func (worker *ingestionWorker) claimOne(ctx context.Context) (store.Job, error) {
+	worker.gateMu.Lock()
+	defer worker.gateMu.Unlock()
+	if worker.quiesceRequested.Load() {
+		return store.Job{}, context.Canceled
+	}
+	return worker.runner.ClaimOne(ctx, "local-ingestion-worker", worker.lease)
+}
+
+func (worker *ingestionWorker) Wait(ctx context.Context) error {
+	if ctx == nil {
+		return errors.New("app: worker wait context is required")
+	}
+	select {
+	case <-worker.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (worker *ingestionWorker) Status() string {
+	worker.mu.RLock()
+	defer worker.mu.RUnlock()
+	return worker.status
+}
+
+// CancelActive propagates an already durable user cancellation into only the
+// matching in-process operation. SQLite remains authoritative: callers must
+// persist the request before invoking this latency hint.
+func (worker *ingestionWorker) CancelActive(jobID string) bool {
+	worker.mu.Lock()
+	defer worker.mu.Unlock()
+	if worker.activeJobID != jobID || worker.activeCancel == nil {
+		return false
+	}
+	worker.activeCancel()
+	return true
+}
+
+func (worker *ingestionWorker) runClaimed(ctx context.Context, claimed store.Job) (store.Job, error) {
+	runContext, cancel := context.WithCancel(ctx)
+	worker.mu.Lock()
+	worker.activeJobID = claimed.ID
+	worker.activeCancel = cancel
+	worker.mu.Unlock()
+	defer func() {
+		worker.mu.Lock()
+		if worker.activeJobID == claimed.ID {
+			worker.activeJobID = ""
+			worker.activeCancel = nil
+		}
+		worker.mu.Unlock()
+		cancel()
+	}()
+
+	// Close the claim-to-registration race. If cancellation became durable
+	// before CancelActive could observe the child context, cancel it before any
+	// source read or PDF helper work proceeds. The claim itself is still passed
+	// to RunClaimed so its durable state converges through the normal fence.
+	current, err := worker.runner.GetJob(runContext, claimed.ID)
+	if err != nil || current.Status != store.JobRunning || current.LeaseToken != claimed.LeaseToken || current.CancelRequested {
+		cancel()
+	}
+	return worker.runner.RunClaimed(runContext, claimed)
+}
+
+func (worker *ingestionWorker) setStatus(status string) {
+	worker.mu.Lock()
+	worker.status = status
+	worker.mu.Unlock()
+}
+
+func (worker *ingestionWorker) loop(ctx context.Context) {
+	defer close(worker.done)
+	ticker := time.NewTicker(worker.interval)
+	defer ticker.Stop()
+	var nextRecovery time.Time
+	for {
+		if err := ctx.Err(); err != nil {
+			worker.setStatus("stopped")
+			return
+		}
+		select {
+		case <-worker.quiesce:
+			worker.setStatus("stopped")
+			return
+		default:
+		}
+		now := time.Now()
+		if worker.recoverer != nil && (nextRecovery.IsZero() || !now.Before(nextRecovery)) {
+			nextRecovery = now.Add(worker.recoveryInterval)
+			if _, err := worker.recoverer.RecoverExpired(ctx, 0); err != nil {
+				worker.setStatus("recovery_degraded")
+				select {
+				case <-ctx.Done():
+					worker.setStatus("stopped")
+					return
+				case <-worker.quiesce:
+					worker.setStatus("stopped")
+					return
+				case <-ticker.C:
+					continue
+				}
+			}
+		}
+		claimed, err := worker.claimOne(ctx)
+		if err == nil {
+			worker.setStatus("processing")
+			_, err = worker.runClaimed(ctx, claimed)
+		}
+		select {
+		case <-worker.quiesce:
+			worker.setStatus("stopped")
+			return
+		default:
+		}
+		switch {
+		case err == nil:
+			worker.setStatus("ready")
+			continue // Drain already-queued work without waiting for the ticker.
+		case errors.Is(err, store.ErrNoRunnableJob):
+			worker.setStatus("ready")
+		case errors.Is(err, context.Canceled) && ctx.Err() != nil:
+			worker.setStatus("stopped")
+			return
+		default:
+			// The concrete runner has already converged the durable job to retry,
+			// failed, or cancelled. Do not expose its error text or spin.
+			worker.setStatus("ready_after_failure")
+		}
+		select {
+		case <-ctx.Done():
+			worker.setStatus("stopped")
+			return
+		case <-worker.quiesce:
+			worker.setStatus("stopped")
+			return
+		case <-worker.wake:
+		case <-ticker.C:
+		}
+	}
+}
+
+var _ ingestionRunner = (*workbench.Service)(nil)
