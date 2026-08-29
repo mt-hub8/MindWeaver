@@ -387,12 +387,23 @@ func TestPDFQualificationDependencyAndLicenseEvidence(t *testing.T) {
 	if len(got) != 5 {
 		t.Fatalf("selected parser dependency closure = %v, want exactly five modules including MindWeaver", got)
 	}
+	cacheCommand := exec.Command(goTool, "env", "GOMODCACHE")
+	cacheCommand.Dir = root
+	cacheCommand.Env = hermeticEnvironment(runtime.GOOS, runtime.GOARCH)
+	cacheOutput, err := cacheCommand.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	moduleCache := strings.TrimSpace(string(cacheOutput))
+	if !filepath.IsAbs(moduleCache) {
+		t.Fatalf("GOMODCACHE is not absolute: %q", moduleCache)
+	}
 
 	licenses := map[string]string{
-		filepath.Join(root, "vendor", "github.com", "mgilbir", "pdf0", "LICENSE"):        "4e9651455e1b761ed462c50f60c4618c8985f46404e8db467def14848e77725a",
-		filepath.Join(root, "vendor", "github.com", "mgilbir", "formalis", "LICENSE"):    "4e9651455e1b761ed462c50f60c4618c8985f46404e8db467def14848e77725a",
-		filepath.Join(root, "vendor", "github.com", "mgilbir", "gopenjpeg", "LICENSE"):   "958dc940b3916ca8b4d373f24027e26e29623828f41205de09e9c680e5539f78",
-		filepath.Join(root, "vendor", "github.com", "mgilbir", "golittlecms", "LICENSE"): "4b0b89edd67872e0507e20e03032e4dc4eb194f88082f80acee13a13fb73317c",
+		filepath.Join(moduleCache, "github.com", "mgilbir", "pdf0@v0.1.0", "LICENSE"):                                    "4e9651455e1b761ed462c50f60c4618c8985f46404e8db467def14848e77725a",
+		filepath.Join(moduleCache, "github.com", "mgilbir", "formalis@v0.3.1", "LICENSE"):                                "4e9651455e1b761ed462c50f60c4618c8985f46404e8db467def14848e77725a",
+		filepath.Join(moduleCache, "github.com", "mgilbir", "gopenjpeg@v0.0.0-20260727163526-8a139bc479b2", "LICENSE"):   "958dc940b3916ca8b4d373f24027e26e29623828f41205de09e9c680e5539f78",
+		filepath.Join(moduleCache, "github.com", "mgilbir", "golittlecms@v0.0.0-20260727161601-f6af7cfe1556", "LICENSE"): "4b0b89edd67872e0507e20e03032e4dc4eb194f88082f80acee13a13fb73317c",
 	}
 	for path, hash := range licenses {
 		assertFileSHA256(t, path, hash)
@@ -707,8 +718,8 @@ func buildPackage(t *testing.T, packagePath, baseName string) string {
 func hermeticEnvironment(goos, goarch string) []string {
 	overrides := map[string]string{
 		"CGO_ENABLED": "0", "GOARCH": goarch, "GOAMD64": "v1", "GOOS": goos,
-		"GOENV": "off", "GOEXPERIMENT": "", "GOFIPS140": "off", "GOFLAGS": "-mod=vendor -buildvcs=false",
-		"GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local", "GOTELEMETRY": "off", "GOVCS": "*:off", "GOWORK": "off",
+		"GOENV": "off", "GOEXPERIMENT": "", "GOFIPS140": "off", "GOFLAGS": "-mod=readonly -buildvcs=false",
+		"GOTOOLCHAIN": "local", "GOTELEMETRY": "off", "GOWORK": "off",
 	}
 	environment := make([]string, 0, len(os.Environ())+len(overrides))
 	for _, entry := range os.Environ() {

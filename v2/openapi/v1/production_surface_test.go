@@ -87,11 +87,11 @@ func (buffer *boundedCommandBuffer) Write(value []byte) (int, error) {
 	return written, nil
 }
 
-func runOfflineGoList(root string, arguments ...string) ([]byte, error) {
-	return runOfflineGoListWithTimeout(root, goInspectionTimeout, arguments...)
+func runModuleGoList(root string, arguments ...string) ([]byte, error) {
+	return runModuleGoListWithTimeout(root, goInspectionTimeout, arguments...)
 }
 
-func runOfflineGoListWithTimeout(root string, timeout time.Duration, arguments ...string) ([]byte, error) {
+func runModuleGoListWithTimeout(root string, timeout time.Duration, arguments ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	goBinary := frozenGoBinary()
@@ -100,25 +100,25 @@ func runOfflineGoListWithTimeout(root string, timeout time.Duration, arguments .
 	}
 	command := exec.CommandContext(ctx, goBinary, arguments...)
 	command.Dir = root
-	command.Env = offlineGoEnvironment(os.Environ())
+	command.Env = moduleGoEnvironment(os.Environ())
 	stdout := &boundedCommandBuffer{limit: maxGoInspectionOutput}
 	stderr := &boundedCommandBuffer{limit: 256 << 10}
 	command.Stdout = stdout
 	command.Stderr = stderr
 	err := command.Run()
 	if ctx.Err() != nil {
-		return nil, errors.New("offline Go inspection exceeded its deadline")
+		return nil, errors.New("Go module inspection exceeded its deadline")
 	}
 	if stdout.exceeded || stderr.exceeded {
-		return nil, errors.New("offline Go inspection exceeded its output bound")
+		return nil, errors.New("Go module inspection exceeded its output bound")
 	}
 	if err != nil {
-		return nil, errors.New("offline Go inspection failed")
+		return nil, errors.New("Go module inspection failed")
 	}
 	return append([]byte(nil), stdout.buffer.Bytes()...), nil
 }
 
-func offlineGoEnvironment(environment []string) []string {
+func moduleGoEnvironment(environment []string) []string {
 	overrides := map[string]string{
 		"CGO_ENABLED": "0",
 		"GO111MODULE": "on",
@@ -131,13 +131,10 @@ func offlineGoEnvironment(environment []string) []string {
 		// graph.
 		"GOEXPERIMENT": "",
 		"GOFIPS140":    "off",
-		"GOFLAGS":      "-mod=vendor -buildvcs=false",
+		"GOFLAGS":      "-mod=readonly -buildvcs=false",
 		"GOOS":         "windows",
-		"GOPROXY":      "off",
-		"GOSUMDB":      "off",
 		"GOTOOLCHAIN":  "local",
 		"GOTELEMETRY":  "off",
-		"GOVCS":        "*:off",
 		"GOWORK":       "off",
 		"GOROOT":       frozenGoRoot(),
 	}
@@ -228,7 +225,7 @@ type commandProductionInventory struct {
 }
 
 func inspectCommandProduction(root, module, command string, libraryRoots, excludedRoots []string) (commandProductionInventory, error) {
-	raw, err := runOfflineGoList(root, "list", "-deps", "-json", "./cmd/"+command)
+	raw, err := runModuleGoList(root, "list", "-deps", "-json", "./cmd/"+command)
 	if err != nil {
 		return commandProductionInventory{}, err
 	}
@@ -243,10 +240,6 @@ func inspectCommandProduction(root, module, command string, libraryRoots, exclud
 	var sourceEntries []commandSourceEntry
 	sourceBudget := commandSourceBudget{}
 	commandImport := module + "/cmd/" + command
-	moduleSums, err := productionModuleSums(filepath.Join(root, "go.sum"))
-	if err != nil {
-		return commandProductionInventory{}, err
-	}
 	seenCommand := false
 	for _, record := range records {
 		if record.Standard {
@@ -257,27 +250,6 @@ func inspectCommandProduction(root, module, command string, libraryRoots, exclud
 			return commandProductionInventory{}, err
 		}
 		if local {
-			if strings.HasPrefix(relative, "vendor/") {
-				if record.Module == nil || record.Module.Main || record.Module.Path == "" || record.Module.Version == "" || record.Module.Sum != "" {
-					return commandProductionInventory{}, errors.New("vendored production module identity is incomplete")
-				}
-				if relative != "vendor/"+record.ImportPath {
-					return commandProductionInventory{}, errors.New("vendored import path does not match its physical directory")
-				}
-				key := record.Module.Path + "@" + record.Module.Version
-				sum := moduleSums[key]
-				if sum == "" {
-					return commandProductionInventory{}, errors.New("vendored production module lacks exact go.sum evidence")
-				}
-				identity := key + "#" + sum
-				folded := strings.ToLower(record.Module.Path)
-				if previous, collision := moduleCase[folded]; collision && previous != record.Module.Path {
-					return commandProductionInventory{}, errors.New("external production module path has a case collision")
-				}
-				moduleCase[folded] = record.Module.Path
-				externalModules[identity] = struct{}{}
-				continue
-			}
 			if record.Module == nil || !record.Module.Main || record.Module.Path != module {
 				return commandProductionInventory{}, errors.New("production command links a package from an unowned module inside the source root")
 			}
@@ -332,29 +304,6 @@ func inspectCommandProduction(root, module, command string, libraryRoots, exclud
 		sourceManifest:  manifest,
 		selectedFiles:   entries,
 	}, nil
-}
-
-func productionModuleSums(filename string) (map[string]string, error) {
-	contents, err := os.ReadFile(filename)
-	if errors.Is(err, os.ErrNotExist) {
-		return map[string]string{}, nil
-	}
-	if err != nil {
-		return nil, errors.New("read production module sums")
-	}
-	result := make(map[string]string)
-	for _, line := range strings.Split(strings.ReplaceAll(string(contents), "\r\n", "\n"), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 3 || strings.HasSuffix(fields[1], "/go.mod") {
-			continue
-		}
-		key := fields[0] + "@" + fields[1]
-		if _, exists := result[key]; exists {
-			return nil, errors.New("duplicate production module sum")
-		}
-		result[key] = fields[2]
-	}
-	return result, nil
 }
 
 func moduleRelativeDirectory(root, directory string) (bool, string, error) {
@@ -924,20 +873,20 @@ func TestDecodeGoListPackagesFailsClosed(t *testing.T) {
 	}
 }
 
-func TestOfflineGoInspectionFailsClosedOnNonzeroAndTimeout(t *testing.T) {
+func TestModuleGoInspectionFailsClosedOnNonzeroAndTimeout(t *testing.T) {
 	root := newGoModuleFixture(t, "example.invalid/surface", map[string]string{
 		"main.go": "package surface\n",
 	})
-	if _, err := runOfflineGoList(root, "list", "./missing"); err == nil {
+	if _, err := runModuleGoList(root, "list", "./missing"); err == nil {
 		t.Fatal("nonzero Go inspection unexpectedly passed")
 	}
-	if _, err := runOfflineGoListWithTimeout(root, time.Nanosecond, "list", "./..."); err == nil {
+	if _, err := runModuleGoListWithTimeout(root, time.Nanosecond, "list", "./..."); err == nil {
 		t.Fatal("expired Go inspection deadline unexpectedly passed")
 	}
 }
 
-func TestOfflineGoEnvironmentOverridesHostileAmbientTargetSettings(t *testing.T) {
-	environment := offlineGoEnvironment([]string{
+func TestModuleGoEnvironmentOverridesHostileAmbientTargetSettings(t *testing.T) {
+	environment := moduleGoEnvironment([]string{
 		"Path=C:\\safe",
 		"goamd64=v4",
 		"GOEXPERIMENT=hostile",

@@ -196,13 +196,13 @@ func TestReliabilityGoToolPrefersConfiguredIdentity(t *testing.T) {
 	if configured == "" {
 		configured = filepath.Join(runtime.GOROOT(), "bin", "go.exe")
 	}
-	resolved, err := filepath.EvalSymlinks(configured)
+	validated, err := validateReliabilityGoTool(configured, "go.exe")
 	if err != nil {
 		t.Fatal(err)
 	}
-	configuredEnvironmentPath := resolved
+	configuredEnvironmentPath := validated.goTool
 	if runtime.GOOS == "windows" {
-		configuredEnvironmentPath = strings.ToUpper(resolved)
+		configuredEnvironmentPath = strings.ToUpper(configuredEnvironmentPath)
 	}
 	t.Setenv("MW_GO", configuredEnvironmentPath)
 	t.Setenv("GOROOT", filepath.Join(t.TempDir(), "bogus-runtime-root"))
@@ -211,21 +211,21 @@ func TestReliabilityGoToolPrefersConfiguredIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantInfo, err := os.Stat(resolved)
+	wantInfo, err := os.Stat(validated.goTool)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !os.SameFile(actualInfo, wantInfo) || !strings.EqualFold(toolchain.goRoot, filepath.Dir(filepath.Dir(resolved))) {
-		t.Fatalf("resolved toolchain = %#v, want executable %q", toolchain, resolved)
+	if !os.SameFile(actualInfo, wantInfo) || !strings.EqualFold(toolchain.goRoot, validated.goRoot) {
+		t.Fatalf("resolved toolchain = %#v, want executable %q", toolchain, validated.goTool)
 	}
 }
 
-func TestReliabilityOfflineEnvironmentReplacesMixedCaseToolVariables(t *testing.T) {
+func TestReliabilityModuleEnvironmentReplacesMixedCaseToolVariables(t *testing.T) {
 	toolchain := reliabilityToolchain{
 		goTool: `C:\Pinned\Go\bin\go.exe`,
 		goRoot: `C:\Pinned\Go`,
 	}
-	got := reliabilityOfflineEnvironment([]string{
+	got := reliabilityModuleEnvironment([]string{
 		"Path=preserved",
 		"goRoot=C:\\bogus",
 		"Mw_Go=C:\\bogus\\go.exe",
@@ -244,8 +244,8 @@ func TestReliabilityOfflineEnvironmentReplacesMixedCaseToolVariables(t *testing.
 	for key, want := range map[string]string{
 		"GOROOT":  toolchain.goRoot,
 		"MW_GO":   toolchain.goTool,
-		"GOFLAGS": "-trimpath -buildvcs=false",
-		"GOPROXY": "off",
+		"GOFLAGS": "-mod=readonly -trimpath -buildvcs=false",
+		"GOPROXY": "https://proxy.invalid",
 	} {
 		if len(values[key]) != 1 || values[key][0] != want {
 			t.Fatalf("%s entries = %#v, want only %q", key, values[key], want)
@@ -280,7 +280,7 @@ func runCoreFuzzTarget(t *testing.T, root string, toolchain reliabilityToolchain
 	}
 	command := exec.CommandContext(ctx, toolchain.goTool, arguments...)
 	command.Dir = root
-	command.Env = reliabilityOfflineEnvironment(os.Environ(), toolchain)
+	command.Env = reliabilityModuleEnvironment(os.Environ(), toolchain)
 	output := &boundedFuzzOutput{limit: maxFuzzOutput}
 	command.Stdout = output
 	command.Stderr = output
@@ -340,7 +340,7 @@ func reliabilityGoTool(t *testing.T) reliabilityToolchain {
 		t.Fatalf("frozen Go fuzz tool is unavailable: %v", err)
 	}
 	command := exec.CommandContext(t.Context(), toolchain.goTool, "version")
-	command.Env = reliabilityOfflineEnvironment(os.Environ(), toolchain)
+	command.Env = reliabilityModuleEnvironment(os.Environ(), toolchain)
 	output, err := command.Output()
 	if err != nil || strings.TrimSpace(string(output)) != "go version go1.27.0 windows/amd64" {
 		t.Fatal("frozen Go fuzz tool has an unsupported identity")
@@ -360,20 +360,14 @@ func validateReliabilityGoTool(candidate, executableName string) (reliabilityToo
 	if err != nil {
 		return reliabilityToolchain{}, err
 	}
-	resolved, err := filepath.EvalSymlinks(absolute)
-	if err != nil {
-		return reliabilityToolchain{}, err
-	}
-	info, err := os.Lstat(resolved)
+	canonical := filepath.Clean(absolute)
+	info, err := os.Lstat(canonical)
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 		return reliabilityToolchain{}, errors.New("Go executable is not a regular file")
 	}
-	root := filepath.Dir(filepath.Dir(resolved))
-	expected, err := filepath.EvalSymlinks(filepath.Join(root, "bin", executableName))
-	if err != nil {
-		return reliabilityToolchain{}, err
-	}
-	expectedInfo, err := os.Stat(expected)
+	root := filepath.Dir(filepath.Dir(canonical))
+	expected := filepath.Join(root, "bin", executableName)
+	expectedInfo, err := os.Lstat(expected)
 	if err != nil || !os.SameFile(info, expectedInfo) {
 		return reliabilityToolchain{}, errors.New("Go executable does not belong to its inferred root")
 	}
@@ -387,33 +381,28 @@ func validateReliabilityGoTool(candidate, executableName string) (reliabilityToo
 			return reliabilityToolchain{}, errors.New("Go toolchain root is incomplete")
 		}
 	}
-	return reliabilityToolchain{goTool: resolved, goRoot: root}, nil
+	return reliabilityToolchain{goTool: canonical, goRoot: root}, nil
 }
 
 func reliabilityModuleMode(t *testing.T, root string) string {
 	t.Helper()
 	manifest := filepath.Join(root, "vendor", "modules.txt")
-	info, err := os.Lstat(manifest)
-	if err == nil {
-		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-			t.Fatal("vendor/modules.txt is not a regular file")
-		}
-		return "vendor"
-	}
-	if !errors.Is(err, os.ErrNotExist) {
-		t.Fatal("inspect vendor/modules.txt")
+	if _, err := os.Lstat(manifest); err == nil {
+		t.Fatal("checked-in vendor/modules.txt is forbidden")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("inspect forbidden vendor/modules.txt")
 	}
 	return "readonly"
 }
 
-func reliabilityOfflineEnvironment(environment []string, toolchain reliabilityToolchain) []string {
+func reliabilityModuleEnvironment(environment []string, toolchain reliabilityToolchain) []string {
 	overrides := map[string]string{
 		"CGO_ENABLED": "0", "GO111MODULE": "on", "GOARCH": "amd64",
 		"GOAMD64": "v1", "GOENV": "off", "GOEXPERIMENT": "",
-		"GOFIPS140": "off", "GOFLAGS": "-trimpath -buildvcs=false",
-		"GOOS": "windows", "GOPROXY": "off", "GOROOT": toolchain.goRoot,
-		"GOSUMDB": "off", "GOTELEMETRY": "off", "GOTOOLCHAIN": "local",
-		"GOVCS": "*:off", "GOWORK": "off", "MW_GO": toolchain.goTool,
+		"GOFIPS140": "off", "GOFLAGS": "-mod=readonly -trimpath -buildvcs=false",
+		"GOOS": "windows", "GOROOT": toolchain.goRoot,
+		"GOTELEMETRY": "off", "GOTOOLCHAIN": "local",
+		"GOWORK": "off", "MW_GO": toolchain.goTool,
 	}
 	result := make([]string, 0, len(environment)+len(overrides))
 	for _, item := range environment {

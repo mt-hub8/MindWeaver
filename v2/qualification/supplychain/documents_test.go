@@ -30,7 +30,7 @@ const (
 	qualificationSourceDateEpoch      = int64(1787935671)
 	qualificationRevision             = "8a9195d5a20ddef3acfeacc974a049724fc2d34f"
 	qualificationModuleTree           = "git-sha1:40cdfdb1d3bcc0c5138da42d58111d3a6a8915bd"
-	qualificationSourceUnion          = "4c7cf44e49052f688a4d7b231ca41ca8d0b48488e2a16e4187eb0b317986d553"
+	qualificationSourceUnion          = "34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff"
 	qualificationVersion              = "0.0.0-qualification.8a9195d"
 	qualificationGeneratorName        = "MindWeaver supply-chain qualification"
 	qualificationGeneratorVersion     = "1.0.0"
@@ -119,9 +119,9 @@ type manifestFile struct {
 	SHA256 string `json:"sha256"`
 }
 
-func assertDerivedSupplyChainDocuments(t *testing.T, root, goTool string, environment []string, artifacts []builtArtifact, prepackageBlockers []string) {
+func assertDerivedSupplyChainDocuments(t *testing.T, root, moduleCache, goTool string, environment []string, artifacts []builtArtifact, prepackageBlockers []string) {
 	t.Helper()
-	inventory, err := assembleReleaseInventory(root, goTool, environment, artifacts, prepackageBlockers)
+	inventory, err := assembleReleaseInventory(root, moduleCache, goTool, environment, artifacts, prepackageBlockers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func assertOfficialSchemaValidation(t *testing.T, root string, environment []str
 	}
 }
 
-func assembleReleaseInventory(root, goTool string, environment []string, artifacts []builtArtifact, prepackageBlockers []string) (releaseInventory, error) {
+func assembleReleaseInventory(root, moduleCache, goTool string, environment []string, artifacts []builtArtifact, prepackageBlockers []string) (releaseInventory, error) {
 	inventory := releaseInventory{
 		Schema:  inventorySchema,
 		Product: inventoryProduct{Name: "MindWeaver", ModulePath: modulePath},
@@ -220,8 +220,8 @@ func assembleReleaseInventory(root, goTool string, environment []string, artifac
 			Dependencies: []string{},
 		}
 		for _, contract := range module.files {
-			relative := filepath.ToSlash(filepath.Join("vendor", filepath.FromSlash(module.path), contract.name))
-			ref, err := addEvidence(relative, filepath.Join(root, filepath.FromSlash(relative)), contract)
+			relative := filepath.ToSlash(filepath.Join("module-cache", filepath.FromSlash(module.path+"@"+module.version), contract.name))
+			ref, err := addEvidence(relative, filepath.Join(moduleCacheDirectory(moduleCache, module), contract.name), contract)
 			if err != nil {
 				return releaseInventory{}, fmt.Errorf("inventory %s: %w", relative, err)
 			}
@@ -357,7 +357,7 @@ func expectedInventoryComponents() map[string]inventoryComponent {
 			Dependencies: []string{},
 		}
 		for _, contract := range module.files {
-			path := filepath.ToSlash(filepath.Join("vendor", filepath.FromSlash(module.path), contract.name))
+			path := filepath.ToSlash(filepath.Join("module-cache", filepath.FromSlash(module.path+"@"+module.version), contract.name))
 			component.Evidence = append(component.Evidence, stableRef("evidence", path+"\n"+contract.sha256))
 		}
 		expected[component.Ref] = component
@@ -400,7 +400,7 @@ func expectedInventoryEvidence() map[string]inventoryEvidence {
 	}
 	for _, module := range moduleContracts {
 		for _, contract := range module.files {
-			add(filepath.ToSlash(filepath.Join("vendor", filepath.FromSlash(module.path), contract.name)), contract)
+			add(filepath.ToSlash(filepath.Join("module-cache", filepath.FromSlash(module.path+"@"+module.version), contract.name)), contract)
 		}
 	}
 	for _, contract := range goRuntimeContract.files {
@@ -1273,7 +1273,7 @@ func TestDerivedSupplyChainDocumentMutationsFailClosed(t *testing.T) {
 		if err := strictJSON(read("inventory.json"), &inventory); err != nil {
 			t.Fatal(err)
 		}
-		inventory.Evidence[0].Path = "vendor/mutated/LICENSE"
+		inventory.Evidence[0].Path = "module-cache/mutated/LICENSE"
 		requireErrorContains(t, validateReleaseInventory(inventory), "committed qualification contract")
 	})
 

@@ -66,8 +66,8 @@ type runtimeContract struct {
 
 var artifactContracts = []artifactContract{
 	{
-		name: "mindweaver.exe", size: 32989184,
-		sha256: "33ad35062dec40e6c89169646fb2d853ed5f58c0a6fe8e4b6eec99357b939fbb",
+		name: "mindweaver.exe", size: 32862720,
+		sha256: "f2c63996741bf6306b8c48a251464961b78e99f7b42bdf07402253de1e511de2",
 		modules: []string{
 			"github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304",
 			"github.com/ncruces/go-sqlite3@v0.35.3",
@@ -77,7 +77,7 @@ var artifactContracts = []artifactContract{
 	},
 	{
 		name: "mindweaver-pdf.exe", size: 8453632,
-		sha256: "a2a6a04b4ade9367aab6cce35e9a3c87351f9c8fabd33d9ea2fe108f7e732241",
+		sha256: "b9cc03b7c139e9fadde86f2ec9564dbe368d85822bd96ac64385e7aa75827384",
 		modules: []string{
 			"github.com/mgilbir/formalis@v0.3.1",
 			"github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556",
@@ -160,8 +160,9 @@ var goRuntimeContract = runtimeContract{
 func TestPrepackageSupplyChainInputClosure(t *testing.T) {
 	root := moduleRoot(t)
 	goTool := selectedGoTool(t)
-	environment, moduleCache := offlineBuildEnvironment(t, goTool)
-	validateSQLiteTranslationUpstreamProvenance(t, root)
+	environment, moduleCache := moduleBuildEnvironment(t, goTool)
+	downloadAndVerifyModules(t, goTool, root, environment)
+	validateSQLiteTranslationUpstreamProvenance(t, root, moduleCache)
 
 	if err := validateContractShape(moduleContracts, goRuntimeContract); err != nil {
 		t.Fatal(err)
@@ -170,7 +171,7 @@ func TestPrepackageSupplyChainInputClosure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateVendoredEvidence(root, moduleContracts, moduleSums); err != nil {
+	if err := validateModuleCacheEvidence(moduleCache, moduleContracts, moduleSums); err != nil {
 		t.Fatal(err)
 	}
 	if err := validateGoRuntime(t, goTool, environment, goRuntimeContract); err != nil {
@@ -197,10 +198,6 @@ func TestPrepackageSupplyChainInputClosure(t *testing.T) {
 	if err := validateArtifactMapping(actual, artifactContracts, moduleContracts); err != nil {
 		t.Fatal(err)
 	}
-	if err := requireEmptyDirectory(moduleCache); err != nil {
-		t.Fatalf("offline vendored build populated GOMODCACHE: %v", err)
-	}
-
 	blockers, err := assessPrepackageBlockers(root)
 	if err != nil {
 		t.Fatal(err)
@@ -209,7 +206,7 @@ func TestPrepackageSupplyChainInputClosure(t *testing.T) {
 	if !slices.Equal(blockers, wantBlockers) {
 		t.Fatalf("pre-package blockers = %q, want %q", blockers, wantBlockers)
 	}
-	assertDerivedSupplyChainDocuments(t, root, goTool, environment, builtArtifacts, blockers)
+	assertDerivedSupplyChainDocuments(t, root, moduleCache, goTool, environment, builtArtifacts, blockers)
 }
 
 func TestPrepackageInventoryStructuralMutationsFailClosed(t *testing.T) {
@@ -320,10 +317,11 @@ func modulesFromBuildInfo(information *buildinfo.BuildInfo, artifact artifactCon
 		if dependency.Replace != nil {
 			return nil, fmt.Errorf("%s contains replacement for %s", artifact.name, dependency.Path)
 		}
-		if dependency.Sum != "" {
-			return nil, fmt.Errorf("%s vendored buildinfo unexpectedly carries sum for %s", artifact.name, dependency.Path)
+		key := dependency.Path + "@" + dependency.Version
+		if dependency.Sum != moduleContractSum(key) {
+			return nil, fmt.Errorf("%s buildinfo sum for %s = %q", artifact.name, key, dependency.Sum)
 		}
-		modules = append(modules, dependency.Path+"@"+dependency.Version)
+		modules = append(modules, key)
 	}
 	sort.Strings(modules)
 	return modules, nil
@@ -361,7 +359,7 @@ func validBuildInfo(artifact artifactContract) *buildinfo.BuildInfo {
 		if !found {
 			panic("invalid test artifact module " + key)
 		}
-		information.Deps = append(information.Deps, &debug.Module{Path: path, Version: version})
+		information.Deps = append(information.Deps, &debug.Module{Path: path, Version: version, Sum: moduleContractSum(key)})
 	}
 	return information
 }
@@ -441,14 +439,27 @@ func cloneArtifactContracts(source []artifactContract) []artifactContract {
 	return result
 }
 
-func validateVendoredEvidence(root string, modules []moduleContract, sums map[string]string) error {
+func moduleContractSum(key string) string {
+	for _, module := range moduleContracts {
+		if module.path+"@"+module.version == key {
+			return module.h1
+		}
+	}
+	return ""
+}
+
+func moduleCacheDirectory(moduleCache string, module moduleContract) string {
+	return filepath.Join(moduleCache, filepath.FromSlash(module.path+"@"+module.version))
+}
+
+func validateModuleCacheEvidence(moduleCache string, modules []moduleContract, sums map[string]string) error {
 	for _, module := range modules {
 		key := module.path + "@" + module.version
 		if sums[key] != module.h1 {
 			return fmt.Errorf("go.sum %s = %q, want %q", key, sums[key], module.h1)
 		}
 		for _, evidence := range module.files {
-			path := filepath.Join(root, "vendor", filepath.FromSlash(module.path), evidence.name)
+			path := filepath.Join(moduleCacheDirectory(moduleCache, module), evidence.name)
 			if err := validateFile(path, evidence); err != nil {
 				return fmt.Errorf("%s evidence %s: %w", key, evidence.name, err)
 			}
@@ -638,7 +649,7 @@ func selectedGoTool(t *testing.T) string {
 	return absolute
 }
 
-func offlineBuildEnvironment(t *testing.T, goTool string) ([]string, string) {
+func moduleBuildEnvironment(t *testing.T, goTool string) ([]string, string) {
 	t.Helper()
 	root := t.TempDir()
 	moduleCache := filepath.Join(root, "gomodcache")
@@ -662,20 +673,29 @@ func offlineBuildEnvironment(t *testing.T, goTool string) ([]string, string) {
 		"GOENV":        "off",
 		"GOEXPERIMENT": "",
 		"GOFIPS140":    "off",
-		"GOFLAGS":      "-mod=vendor -trimpath -buildvcs=false",
+		"GOFLAGS":      "-mod=readonly -trimpath -buildvcs=false",
 		"GOOS":         "windows",
-		"GOPROXY":      "off",
 		"GOROOT":       strings.TrimSpace(string(goRootBytes)),
-		"GOSUMDB":      "off",
 		"GOTOOLCHAIN":  "local",
 		"GOTELEMETRY":  "off",
-		"GOVCS":        "*:off",
 		"GOWORK":       "off",
 		"GOMODCACHE":   moduleCache,
 		"GOCACHE":      buildCache,
 		"GOTMPDIR":     goTemp,
 	}
 	return environmentWith(os.Environ(), overrides), moduleCache
+}
+
+func downloadAndVerifyModules(t *testing.T, goTool, root string, environment []string) {
+	t.Helper()
+	for _, arguments := range [][]string{{"mod", "download"}, {"mod", "verify"}} {
+		command := exec.CommandContext(t.Context(), goTool, arguments...)
+		command.Dir = root
+		command.Env = environment
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("go %s failed: %v bytes=%d", strings.Join(arguments, " "), err, len(output))
+		}
+	}
 }
 
 func environmentWith(base []string, overrides map[string]string) []string {

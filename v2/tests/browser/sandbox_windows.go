@@ -220,8 +220,9 @@ func setOwnerOnlyProbeACL(path string) error {
 		return errors.New("browser sandbox IPC unavailable")
 	}
 	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
-		nil, nil, dacl, nil); err != nil {
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|
+			windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		user.User.Sid, nil, dacl, nil); err != nil {
 		return errors.New("browser sandbox IPC unavailable")
 	}
 	return nil

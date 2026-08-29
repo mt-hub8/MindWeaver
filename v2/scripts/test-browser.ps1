@@ -533,10 +533,9 @@ if (-not $temporaryRoot.StartsWith($temporaryParent, [StringComparison]::Ordinal
 $runnerPath = Join-Path $temporaryRoot "browser-qualification-runner.exe"
 $reportPath = if ($SelfTest) { Join-Path $temporaryRoot "self-test-report.json" } else { $requestedReportPath }
 $beforeProcesses = if ($SelfTest) { Get-TargetProcessIdentities } else { $null }
-$moduleCache = Join-Path $temporaryRoot "gomodcache"
 $buildCache = Join-Path $temporaryRoot "gocache"
 $goTemp = Join-Path $temporaryRoot "gotmp"
-[void](New-Item -ItemType Directory -Path $moduleCache, $buildCache, $goTemp -ErrorAction Stop)
+[void](New-Item -ItemType Directory -Path $buildCache, $goTemp -ErrorAction Stop)
 
 $savedEnvironment = @{
     CGO_ENABLED = $env:CGO_ENABLED
@@ -571,17 +570,13 @@ try {
     $env:GOENV = "off"
     $env:GOEXPERIMENT = ""
     $env:GOFIPS140 = "off"
-    $env:GOFLAGS = "-mod=vendor -trimpath -buildvcs=false"
+    $env:GOFLAGS = "-mod=readonly -trimpath -buildvcs=false"
     $env:GOCACHE = $buildCache
-    $env:GOMODCACHE = $moduleCache
     $env:GOOS = "windows"
-    $env:GOPROXY = "off"
     $env:GOROOT = $goRoot
-    $env:GOSUMDB = "off"
     $env:GOTELEMETRY = "off"
     $env:GOTOOLCHAIN = "local"
     $env:GOTMPDIR = $goTemp
-    $env:GOVCS = "*:off"
     $env:GOWORK = "off"
     $env:MW_GO = $go
 
@@ -592,17 +587,21 @@ try {
 
     Push-Location $moduleRoot
     try {
+        & $go mod download 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Fail-Stable "browser qualification: module download failed"
+        }
+        & $go mod verify 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Fail-Stable "browser qualification: module verification failed"
+        }
         & $go build -trimpath -buildvcs=false -o $runnerPath ./tests/browser/runner 2>$null
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $runnerPath -PathType Leaf)) {
-            Fail-Stable "browser qualification: offline runner build failed"
+            Fail-Stable "browser qualification: runner build failed"
         }
     } finally {
         Pop-Location
     }
-    if (@(Get-ChildItem -LiteralPath $moduleCache -Force -Recurse).Count -ne 0) {
-        Fail-Stable "browser qualification: vendored build wrote to module cache"
-    }
-
     $runnerArguments = @("-source-revision", $revision, "-report", $reportPath)
     $artifactOpenCanary = ""
     if ($SelfTest) {

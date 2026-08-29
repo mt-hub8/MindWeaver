@@ -40,9 +40,13 @@ func createRetainedStagingLeaf(parent *retainedDirectory, name string, ownerOnly
 	attributes.Length = uint32(unsafe.Sizeof(attributes))
 	var handle windows.Handle
 	var status windows.IO_STATUS_BLOCK
+	desiredAccess := windows.ACCESS_MASK(windows.FILE_GENERIC_READ | windows.FILE_GENERIC_WRITE)
+	if ownerOnly {
+		desiredAccess |= windows.WRITE_DAC | windows.WRITE_OWNER
+	}
 	err = windows.NtCreateFile(
 		&handle,
-		windows.FILE_GENERIC_READ|windows.FILE_GENERIC_WRITE,
+		uint32(desiredAccess),
 		&attributes,
 		&status,
 		nil,
@@ -84,7 +88,7 @@ func createRetainedStagingLeaf(parent *retainedDirectory, name string, ownerOnly
 		return failCreatedFile(err)
 	}
 	if ownerOnly {
-		if err := verifyVerifyScratchHandleSecurity(file, true); err != nil {
+		if err := applyVerifyScratchHandleSecurity(file, true); err != nil {
 			return failCreatedFile(err)
 		}
 	}

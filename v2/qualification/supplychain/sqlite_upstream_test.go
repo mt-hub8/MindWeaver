@@ -142,13 +142,13 @@ func TestSQLiteTranslationUpstreamProvenanceMutationsFailClosed(t *testing.T) {
 	})
 }
 
-func validateSQLiteTranslationUpstreamProvenance(t *testing.T, root string) {
+func validateSQLiteTranslationUpstreamProvenance(t *testing.T, root, moduleCache string) {
 	t.Helper()
 	uuid, err := validateSQLiteUpstreamFiles(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := validateSQLiteVendoredEvidence(root); err != nil {
+	if err := validateSQLiteModuleEvidence(moduleCache); err != nil {
 		t.Fatal(err)
 	}
 
@@ -242,8 +242,8 @@ func validateSQLiteUpstreamFiles(root string) (string, error) {
 	return uuid, nil
 }
 
-func validateSQLiteVendoredEvidence(root string) error {
-	moduleRoot := filepath.Join(root, "vendor", "github.com", "ncruces", "go-sqlite3-wasm", "v3")
+func validateSQLiteModuleEvidence(moduleCache string) error {
+	moduleRoot := filepath.Join(moduleCache, "github.com", "ncruces", "go-sqlite3-wasm", "v3@v3.2.35304")
 	statement, err := os.ReadFile(filepath.Join(moduleRoot, "README.md"))
 	if err != nil {
 		return err

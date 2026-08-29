@@ -571,6 +571,10 @@ func verifyBackup(
 	if err != nil {
 		return summary, err
 	}
+	if err := applyVerifyScratchPathSecurity(filepath.Join(staging.directory.path, filepath.FromSlash(databasePath))); err != nil {
+		_ = databaseCopy.Close()
+		return summary, err
+	}
 	if err := secureVerifyScratchFile(databaseCopy); err != nil {
 		_ = databaseCopy.Close()
 		return summary, err

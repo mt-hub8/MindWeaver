@@ -19,7 +19,7 @@ import (
 )
 
 const modulePath = "github.com/mt-hub8/MindWeaver/v2"
-const expectedSourceUnionSHA256 = "4c7cf44e49052f688a4d7b231ca41ca8d0b48488e2a16e4187eb0b317986d553"
+const expectedSourceUnionSHA256 = "34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff"
 
 type artifactContract struct {
 	name              string
@@ -86,8 +86,8 @@ var shippedArtifacts = []artifactContract{
 			"github.com/ncruces/julianday@v1.0.0",
 			"golang.org/x/sys@v0.47.0",
 		},
-		sourceSHA256:   "7433ef472a75ce95dcc49e283cd96afee6bd67404fd763eeefb50101a40bf653",
-		artifactSHA256: "33ad35062dec40e6c89169646fb2d853ed5f58c0a6fe8e4b6eec99357b939fbb",
+		sourceSHA256:   "3f3cf6de017bae3aa0af4a939baade6f626a503302a3060b575f6066151ac01a",
+		artifactSHA256: "f2c63996741bf6306b8c48a251464961b78e99f7b42bdf07402253de1e511de2",
 	},
 	{
 		name:   "mindweaver-pdf.exe",
@@ -125,17 +125,29 @@ var shippedArtifacts = []artifactContract{
 			"github.com/mgilbir/pdf0@v0.1.0",
 		},
 		sourceSHA256:   "0bec9ddde1ea8778ffc3c20740ed55080d7ef0b537cfd070a2d563ccc5a087c6",
-		artifactSHA256: "a2a6a04b4ade9367aab6cce35e9a3c87351f9c8fabd33d9ea2fe108f7e732241",
+		artifactSHA256: "b9cc03b7c139e9fadde86f2ec9564dbe368d85822bd96ac64385e7aa75827384",
 	},
+}
+
+var productionModuleSums = map[string]string{
+	"github.com/mgilbir/formalis@v0.3.1":                                "h1:NyYe/EcRYJ2jUjgaZG98lNXgJ7H+jgy6mq7HXOnQxl8=",
+	"github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556": "h1:2ZUsOgMhxpHCYC8jyzeEnJZFLYGbXhqjAJWJBvY8q4U=",
+	"github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2":   "h1:kdDIM4JNxn9gsRk5Zo6mtmcFpBqnl9gTVUwf9t6lIRk=",
+	"github.com/mgilbir/pdf0@v0.1.0":                                    "h1:rfBK18bcQ4kHQTXBmriAb07TafhG2w1fLflq9lHgaG4=",
+	"github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304":                  "h1:5NoQAewtgKNK3G4bjNPxVoGXu6F6NzLXWCTdD5FFAEY=",
+	"github.com/ncruces/go-sqlite3@v0.35.3":                             "h1:Ei07Zv1qfV/vyXzelhFsyS5Oh9TArBZHsmFk14Xv3GY=",
+	"github.com/ncruces/julianday@v1.0.0":                               "h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M=",
+	"golang.org/x/sys@v0.47.0":                                          "h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=",
 }
 
 // TestWindowsAMD64ShippedDualPEClosure qualifies the actual two executable
 // artifacts. Source imports alone are insufficient: both final PE files are
-// inspected through buildinfo and the Go symbol table after an offline build.
+// inspected through buildinfo and the Go symbol table after a checksum-verified
+// readonly-module build.
 func TestWindowsAMD64ShippedDualPEClosure(t *testing.T) {
 	root := moduleRoot(t)
 	goTool := goTool(t)
-	environment := offlineWindowsAMD64Environment()
+	environment := windowsAMD64ModuleEnvironment()
 
 	wantCommands := make([]string, 0, len(shippedArtifacts))
 	for _, artifact := range shippedArtifacts {
@@ -542,10 +554,11 @@ func assertBuildInfo(t *testing.T, artifact artifactContract, information *build
 				t.Errorf("legacy Java/MySQL dependency %s retained in %s", dependency.Path, artifact.name)
 			}
 		}
-		if dependency.Sum != "" {
-			t.Fatalf("vendored buildinfo unexpectedly carries a module sum for %s", dependency.Path)
+		key := dependency.Path + "@" + dependency.Version
+		if dependency.Sum != productionModuleSums[key] {
+			t.Fatalf("module sum for %s = %q", key, dependency.Sum)
 		}
-		gotModules = append(gotModules, dependency.Path+"@"+dependency.Version)
+		gotModules = append(gotModules, key)
 	}
 	sort.Strings(gotModules)
 	wantModules := append([]string(nil), artifact.modules...)
@@ -679,7 +692,7 @@ func goTool(t *testing.T) string {
 	return absolute
 }
 
-func offlineWindowsAMD64Environment() []string {
+func windowsAMD64ModuleEnvironment() []string {
 	overrides := map[string]string{
 		"CGO_ENABLED":  "0",
 		"GOARCH":       "amd64",
@@ -687,13 +700,10 @@ func offlineWindowsAMD64Environment() []string {
 		"GOENV":        "off",
 		"GOEXPERIMENT": "",
 		"GOFIPS140":    "off",
-		"GOFLAGS":      "-mod=vendor -buildvcs=false",
+		"GOFLAGS":      "-mod=readonly -buildvcs=false",
 		"GOOS":         "windows",
-		"GOPROXY":      "off",
-		"GOSUMDB":      "off",
 		"GOTOOLCHAIN":  "local",
 		"GOTELEMETRY":  "off",
-		"GOVCS":        "*:off",
 		"GOWORK":       "off",
 	}
 	environment := make([]string, 0, len(os.Environ())+len(overrides))

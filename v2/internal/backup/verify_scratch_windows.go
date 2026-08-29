@@ -20,6 +20,64 @@ func secureVerifyScratchFile(file *os.File) error {
 	return verifyVerifyScratchHandleSecurity(file, false)
 }
 
+// applyVerifyScratchHandleSecurity makes a newly-created scratch object
+// current-user owned even when the process token's default owner is the local
+// Administrators group (as is common on elevated CI runners). Existing
+// scratch objects are never repaired through this path: callers still reopen
+// and verify them fail-closed before use.
+func applyVerifyScratchHandleSecurity(file *os.File, inherit bool) error {
+	if file == nil {
+		return errors.New("backup: verification scratch handle is unavailable")
+	}
+	descriptor, err := newVerifyScratchSecurityDescriptor(inherit)
+	if err != nil {
+		return err
+	}
+	owner, _, err := descriptor.Owner()
+	if err != nil || owner == nil {
+		return errors.New("backup: resolve verification scratch owner")
+	}
+	dacl, _, err := descriptor.DACL()
+	if err != nil || dacl == nil {
+		return errors.New("backup: resolve verification scratch access list")
+	}
+	if err := windows.SetSecurityInfo(
+		windows.Handle(file.Fd()),
+		windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|
+			windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		owner, nil, dacl, nil,
+	); err != nil {
+		return errors.New("backup: secure verification scratch object")
+	}
+	return verifyVerifyScratchHandleSecurity(file, true)
+}
+
+func applyVerifyScratchPathSecurity(path string) error {
+	descriptor, err := newVerifyScratchSecurityDescriptor(false)
+	if err != nil {
+		return err
+	}
+	owner, _, err := descriptor.Owner()
+	if err != nil || owner == nil {
+		return errors.New("backup: resolve verification scratch owner")
+	}
+	dacl, _, err := descriptor.DACL()
+	if err != nil || dacl == nil {
+		return errors.New("backup: resolve verification scratch access list")
+	}
+	if err := windows.SetNamedSecurityInfo(
+		path,
+		windows.SE_FILE_OBJECT,
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|
+			windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		owner, nil, dacl, nil,
+	); err != nil {
+		return errors.New("backup: secure verification scratch object")
+	}
+	return nil
+}
+
 func newVerifyScratchSecurityDescriptor(inherit bool) (*windows.SECURITY_DESCRIPTOR, error) {
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {

@@ -85,7 +85,8 @@ func TestPrepackageDualPEOutputBoundary(t *testing.T) {
 	}
 	root := moduleRoot(t)
 	goTool := selectedGoTool(t)
-	environment, moduleCache := offlineBuildEnvironment(t, goTool)
+	environment, _ := moduleBuildEnvironment(t, goTool)
+	downloadAndVerifyModules(t, goTool, root, environment)
 	artifactRoot := filepath.Join(t.TempDir(), "artifacts")
 	if err := os.Mkdir(artifactRoot, 0o700); err != nil {
 		t.Fatal("ARTIFACT_OUTPUT_DIRECTORY_CREATE_FAILED")
@@ -178,9 +179,6 @@ func TestPrepackageDualPEOutputBoundary(t *testing.T) {
 		if err := validateArtifactContent(artifact, needles); err != nil {
 			t.Fatal(err)
 		}
-	}
-	if err := requireEmptyDirectory(moduleCache); err != nil {
-		t.Fatal("OFFLINE_BUILD_POPULATED_MODULE_CACHE")
 	}
 }
 

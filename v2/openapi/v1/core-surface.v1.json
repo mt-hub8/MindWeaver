@@ -45,7 +45,7 @@
         "platform/version"
       ],
       "public": true,
-      "sourceManifestSHA256": "7433ef472a75ce95dcc49e283cd96afee6bd67404fd763eeefb50101a40bf653",
+      "sourceManifestSHA256": "3f3cf6de017bae3aa0af4a939baade6f626a503302a3060b575f6066151ac01a",
       "verbs": [
         "config",
         "help",

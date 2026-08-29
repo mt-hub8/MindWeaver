@@ -3,11 +3,13 @@
 package backup
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"testing"
+	"unsafe"
 
 	store "github.com/mt-hub8/MindWeaver/v2/internal/store/sqlite"
 	"golang.org/x/sys/windows"
@@ -16,8 +18,27 @@ import (
 type savedWindowsDACL struct {
 	path       string
 	descriptor *windows.SECURITY_DESCRIPTOR
-	daclString string
+	daclBytes  []byte
 	protected  bool
+}
+
+type windowsACLHeader struct {
+	revision byte
+	reserved byte
+	size     uint16
+	count    uint16
+	padding  uint16
+}
+
+func copyWindowsACLBytes(dacl *windows.ACL) ([]byte, error) {
+	if dacl == nil {
+		return nil, errors.New("backup: Windows DACL is unavailable")
+	}
+	header := (*windowsACLHeader)(unsafe.Pointer(dacl))
+	if header.size < uint16(unsafe.Sizeof(*header)) {
+		return nil, errors.New("backup: Windows DACL is malformed")
+	}
+	return append([]byte(nil), unsafe.Slice((*byte)(unsafe.Pointer(dacl)), int(header.size))...), nil
 }
 
 func TestRestoreAcceptsReadExecuteOnlyWindowsBackup(t *testing.T) {
@@ -103,10 +124,18 @@ func captureWindowsDACLTree(root string) ([]savedWindowsDACL, error) {
 		if err != nil {
 			return err
 		}
+		dacl, _, err := descriptor.DACL()
+		if err != nil {
+			return errors.New("backup: capture Windows DACL")
+		}
+		daclBytes, err := copyWindowsACLBytes(dacl)
+		if err != nil {
+			return err
+		}
 		saved = append(saved, savedWindowsDACL{
 			path: path, descriptor: descriptor,
-			daclString: descriptor.String(),
-			protected:  control&windows.SE_DACL_PROTECTED != 0,
+			daclBytes: daclBytes,
+			protected: control&windows.SE_DACL_PROTECTED != 0,
 		})
 		return nil
 	})
@@ -190,8 +219,18 @@ func restoreWindowsDACLTree(saved []savedWindowsDACL) error {
 			failures = append(failures, err)
 			continue
 		}
+		dacl, _, err := current.DACL()
+		if err != nil {
+			failures = append(failures, errors.New("backup: inspect restored Windows DACL"))
+			continue
+		}
+		currentBytes, err := copyWindowsACLBytes(dacl)
+		if err != nil {
+			failures = append(failures, err)
+			continue
+		}
 		protected := control&windows.SE_DACL_PROTECTED != 0
-		if current.String() != item.daclString || protected != item.protected {
+		if !bytes.Equal(currentBytes, item.daclBytes) || protected != item.protected {
 			failures = append(failures, errors.New("backup: restored Windows DACL differs from original"))
 		}
 	}

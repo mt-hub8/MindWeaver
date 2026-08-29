@@ -3,7 +3,7 @@
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
   "name": "MindWeaver dual-PE SBOM",
-  "documentNamespace": "https://spdx.org/spdxdocs/mindweaver-5fa81bc4a94412fe7968106c93d70326b8ddc7b1a3c5ce0f569272d5a9c12582",
+  "documentNamespace": "https://spdx.org/spdxdocs/mindweaver-4cb495a426fb294584393a59d71571e85aac35b078a396feeb4bda2f7114e600",
   "creationInfo": {
     "created": "2026-08-28T16:47:51Z",
     "creators": [
@@ -27,7 +27,7 @@
           "referenceLocator": "pkg:golang/github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2"
         }
       ],
-      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:kdDIM4JNxn9gsRk5Zo6mtmcFpBqnl9gTVUwf9t6lIRk= Evidence inventory bindings (not analyzed package files): vendor/github.com/mgilbir/gopenjpeg/LICENSE@sha256:958dc940b3916ca8b4d373f24027e26e29623828f41205de09e9c680e5539f78"
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:kdDIM4JNxn9gsRk5Zo6mtmcFpBqnl9gTVUwf9t6lIRk= Evidence inventory bindings (not analyzed package files): module-cache/github.com/mgilbir/gopenjpeg@v0.0.0-20260727163526-8a139bc479b2/LICENSE@sha256:958dc940b3916ca8b4d373f24027e26e29623828f41205de09e9c680e5539f78"
     },
     {
       "name": "SQLite",
@@ -63,7 +63,7 @@
           "referenceLocator": "pkg:golang/github.com/mgilbir/formalis@v0.3.1"
         }
       ],
-      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:NyYe/EcRYJ2jUjgaZG98lNXgJ7H+jgy6mq7HXOnQxl8= Evidence inventory bindings (not analyzed package files): vendor/github.com/mgilbir/formalis/LICENSE@sha256:4e9651455e1b761ed462c50f60c4618c8985f46404e8db467def14848e77725a"
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:NyYe/EcRYJ2jUjgaZG98lNXgJ7H+jgy6mq7HXOnQxl8= Evidence inventory bindings (not analyzed package files): module-cache/github.com/mgilbir/formalis@v0.3.1/LICENSE@sha256:4e9651455e1b761ed462c50f60c4618c8985f46404e8db467def14848e77725a"
     },
     {
       "name": "mindweaver-pdf.exe",
@@ -77,10 +77,10 @@
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "a2a6a04b4ade9367aab6cce35e9a3c87351f9c8fabd33d9ea2fe108f7e732241"
+          "checksumValue": "b9cc03b7c139e9fadde86f2ec9564dbe368d85822bd96ac64385e7aa75827384"
         }
       ],
-      "sourceInfo": "repository=github.com/mt-hub8/MindWeaver; revision=8a9195d5a20ddef3acfeacc974a049724fc2d34f; moduleTree=git-sha1:40cdfdb1d3bcc0c5138da42d58111d3a6a8915bd; productionSourceUnionSHA256=4c7cf44e49052f688a4d7b231ca41ca8d0b48488e2a16e4187eb0b317986d553; attestation=reviewed qualification input; not independently derived from Git in standalone validation; mainPackage=github.com/mt-hub8/MindWeaver/v2/cmd/mindweaver-pdf"
+      "sourceInfo": "repository=github.com/mt-hub8/MindWeaver; revision=8a9195d5a20ddef3acfeacc974a049724fc2d34f; moduleTree=git-sha1:40cdfdb1d3bcc0c5138da42d58111d3a6a8915bd; productionSourceUnionSHA256=34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff; attestation=reviewed qualification input; not independently derived from Git in standalone validation; mainPackage=github.com/mt-hub8/MindWeaver/v2/cmd/mindweaver-pdf"
     },
     {
       "name": "github.com/ncruces/go-sqlite3",
@@ -98,7 +98,7 @@
           "referenceLocator": "pkg:golang/github.com/ncruces/go-sqlite3@v0.35.3"
         }
       ],
-      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:Ei07Zv1qfV/vyXzelhFsyS5Oh9TArBZHsmFk14Xv3GY= Evidence inventory bindings (not analyzed package files): vendor/github.com/ncruces/go-sqlite3/LICENSE@sha256:8929c89a593807bf0c042272adc7301376a661050876bd702ebdd36cd7c55d2b"
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:Ei07Zv1qfV/vyXzelhFsyS5Oh9TArBZHsmFk14Xv3GY= Evidence inventory bindings (not analyzed package files): module-cache/github.com/ncruces/go-sqlite3@v0.35.3/LICENSE@sha256:8929c89a593807bf0c042272adc7301376a661050876bd702ebdd36cd7c55d2b"
     },
     {
       "name": "github.com/ncruces/julianday",
@@ -116,7 +116,7 @@
           "referenceLocator": "pkg:golang/github.com/ncruces/julianday@v1.0.0"
         }
       ],
-      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M= Evidence inventory bindings (not analyzed package files): vendor/github.com/ncruces/julianday/LICENSE@sha256:38ae43959daf953a393a585b2988672cb65a5a541aca0d0be5e72595a0a16883"
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:fH0OKwa7NWvniGQtxdJRxAgkBMolni2BjDHaWTxqt7M= Evidence inventory bindings (not analyzed package files): module-cache/github.com/ncruces/julianday@v1.0.0/LICENSE@sha256:38ae43959daf953a393a585b2988672cb65a5a541aca0d0be5e72595a0a16883"
     },
     {
       "name": "mindweaver.exe",
@@ -130,10 +130,10 @@
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "33ad35062dec40e6c89169646fb2d853ed5f58c0a6fe8e4b6eec99357b939fbb"
+          "checksumValue": "f2c63996741bf6306b8c48a251464961b78e99f7b42bdf07402253de1e511de2"
         }
       ],
-      "sourceInfo": "repository=github.com/mt-hub8/MindWeaver; revision=8a9195d5a20ddef3acfeacc974a049724fc2d34f; moduleTree=git-sha1:40cdfdb1d3bcc0c5138da42d58111d3a6a8915bd; productionSourceUnionSHA256=4c7cf44e49052f688a4d7b231ca41ca8d0b48488e2a16e4187eb0b317986d553; attestation=reviewed qualification input; not independently derived from Git in standalone validation; mainPackage=github.com/mt-hub8/MindWeaver/v2/cmd/mindweaver"
+      "sourceInfo": "repository=github.com/mt-hub8/MindWeaver; revision=8a9195d5a20ddef3acfeacc974a049724fc2d34f; moduleTree=git-sha1:40cdfdb1d3bcc0c5138da42d58111d3a6a8915bd; productionSourceUnionSHA256=34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff; attestation=reviewed qualification input; not independently derived from Git in standalone validation; mainPackage=github.com/mt-hub8/MindWeaver/v2/cmd/mindweaver"
     },
     {
       "name": "github.com/mgilbir/pdf0",
@@ -151,7 +151,7 @@
           "referenceLocator": "pkg:golang/github.com/mgilbir/pdf0@v0.1.0"
         }
       ],
-      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:rfBK18bcQ4kHQTXBmriAb07TafhG2w1fLflq9lHgaG4= Evidence inventory bindings (not analyzed package files): vendor/github.com/mgilbir/pdf0/LICENSE@sha256:4e9651455e1b761ed462c50f60c4618c8985f46404e8db467def14848e77725a"
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:rfBK18bcQ4kHQTXBmriAb07TafhG2w1fLflq9lHgaG4= Evidence inventory bindings (not analyzed package files): module-cache/github.com/mgilbir/pdf0@v0.1.0/LICENSE@sha256:4e9651455e1b761ed462c50f60c4618c8985f46404e8db467def14848e77725a"
     },
     {
       "name": "golang.org/x/sys",
@@ -169,7 +169,7 @@
           "referenceLocator": "pkg:golang/golang.org/x/sys@v0.47.0"
         }
       ],
-      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs= Evidence inventory bindings (not analyzed package files): vendor/golang.org/x/sys/LICENSE@sha256:911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad,vendor/golang.org/x/sys/PATENTS@sha256:96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc"
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs= Evidence inventory bindings (not analyzed package files): module-cache/golang.org/x/sys@v0.47.0/LICENSE@sha256:911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad,module-cache/golang.org/x/sys@v0.47.0/PATENTS@sha256:96f408bfae65bf137fc2525d3ecb030271c50c1e90799f87abf8846d8dd505cc"
     },
     {
       "name": "github.com/ncruces/go-sqlite3-wasm/v3",
@@ -187,7 +187,7 @@
           "referenceLocator": "pkg:golang/github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304"
         }
       ],
-      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:5NoQAewtgKNK3G4bjNPxVoGXu6F6NzLXWCTdD5FFAEY= Evidence inventory bindings (not analyzed package files): vendor/github.com/ncruces/go-sqlite3-wasm/v3/LICENSE@sha256:13219037ddf63dbbcf174bf59525d602df7a2e30083f63be566715c858fcb19e,vendor/github.com/ncruces/go-sqlite3-wasm/v3/README.md@sha256:fb8084fccb5733ccc4af421ff026812da7852e91516bdf7c70d007eb46744383"
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:5NoQAewtgKNK3G4bjNPxVoGXu6F6NzLXWCTdD5FFAEY= Evidence inventory bindings (not analyzed package files): module-cache/github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304/LICENSE@sha256:13219037ddf63dbbcf174bf59525d602df7a2e30083f63be566715c858fcb19e,module-cache/github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304/README.md@sha256:fb8084fccb5733ccc4af421ff026812da7852e91516bdf7c70d007eb46744383"
     },
     {
       "name": "MindWeaver",
@@ -199,7 +199,7 @@
       "licenseDeclared": "NOASSERTION",
       "copyrightText": "NOASSERTION",
       "comment": "Pre-package supply-chain qualification blocked: FIXTURE_REGENERATION_NOT_IMPLEMENTED,PROJECT_LICENSE_MISSING,RELEASE_METADATA_MISSING,SOURCE_REVISION_ATTESTATION_MISSING,VULNERABILITY_EVIDENCE_MISSING",
-      "sourceInfo": "repository=github.com/mt-hub8/MindWeaver; revision=8a9195d5a20ddef3acfeacc974a049724fc2d34f; moduleTree=git-sha1:40cdfdb1d3bcc0c5138da42d58111d3a6a8915bd; productionSourceUnionSHA256=4c7cf44e49052f688a4d7b231ca41ca8d0b48488e2a16e4187eb0b317986d553; attestation=reviewed qualification input; not independently derived from Git in standalone validation"
+      "sourceInfo": "repository=github.com/mt-hub8/MindWeaver; revision=8a9195d5a20ddef3acfeacc974a049724fc2d34f; moduleTree=git-sha1:40cdfdb1d3bcc0c5138da42d58111d3a6a8915bd; productionSourceUnionSHA256=34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff; attestation=reviewed qualification input; not independently derived from Git in standalone validation"
     },
     {
       "name": "Go runtime",
@@ -235,7 +235,7 @@
           "referenceLocator": "pkg:golang/github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556"
         }
       ],
-      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:2ZUsOgMhxpHCYC8jyzeEnJZFLYGbXhqjAJWJBvY8q4U= Evidence inventory bindings (not analyzed package files): vendor/github.com/mgilbir/golittlecms/LICENSE@sha256:4b0b89edd67872e0507e20e03032e4dc4eb194f88082f80acee13a13fb73317c"
+      "comment": "License expression is a reviewed candidate from hash-bound upstream evidence, not a legal conclusion. Go module h1 (not a raw SHA-256): h1:2ZUsOgMhxpHCYC8jyzeEnJZFLYGbXhqjAJWJBvY8q4U= Evidence inventory bindings (not analyzed package files): module-cache/github.com/mgilbir/golittlecms@v0.0.0-20260727161601-f6af7cfe1556/LICENSE@sha256:4b0b89edd67872e0507e20e03032e4dc4eb194f88082f80acee13a13fb73317c"
     }
   ],
   "relationships": [

@@ -1,21 +1,21 @@
 {
   "schema": "mindweaver.release-documents.v1",
-  "inventorySha256": "f594f758523241ce04f0ad4c449d7e1a8e595523b78ce7b1b696f0246b9cf095",
+  "inventorySha256": "f60902a22e9fac9ef57d2d44a4aaefa839a95d1796a6a940e2307ce09c385ae4",
   "files": [
     {
       "name": "inventory.json",
-      "size": 29816,
-      "sha256": "f594f758523241ce04f0ad4c449d7e1a8e595523b78ce7b1b696f0246b9cf095"
+      "size": 30013,
+      "sha256": "f60902a22e9fac9ef57d2d44a4aaefa839a95d1796a6a940e2307ce09c385ae4"
     },
     {
       "name": "sbom.spdx.json",
-      "size": 19471,
-      "sha256": "841cfce1e4df4b32a70052e7cb342d65e069e4ec3658817ac0600315f8a11003"
+      "size": 19668,
+      "sha256": "e262501f09da39a70e404d96c857e239c7df8417fd2d4c2a849a60d42fe7f959"
     },
     {
       "name": "NOTICE.txt",
-      "size": 24054,
-      "sha256": "bd54ae24d2bb6b9b55ef3db193396b5496411344bf29f1bb9c258a0cdfe2c611"
+      "size": 24448,
+      "sha256": "3c76178cf63f032181ac35a9e04c7f3dff7ef337ad8b9d0f613e2630bbdbdacb"
     }
   ],
   "qualificationBlockers": [

@@ -377,15 +377,22 @@ func rel001KillChildEnvironment(parent []string, temporaryDirectory string) ([]s
 func buildREL001KillBinary(t *testing.T, root string) builtArtifacts {
 	t.Helper()
 	goTool := frozenGoTool(t)
-	moduleCache, buildCache, buildTemporary := t.TempDir(), t.TempDir(), t.TempDir()
+	buildCache, buildTemporary := t.TempDir(), t.TempDir()
+	moduleCacheCommand := exec.Command(goTool, "env", "GOMODCACHE")
+	moduleCacheCommand.Env = os.Environ()
+	moduleCacheBytes, err := moduleCacheCommand.Output()
+	if err != nil || strings.TrimSpace(string(moduleCacheBytes)) == "" {
+		t.Fatal("REL001_KILL_MODULE_CACHE_UNAVAILABLE")
+	}
+	moduleCache := strings.TrimSpace(string(moduleCacheBytes))
 	buildEnvironment, err := rel001KillChildEnvironment(os.Environ(), buildTemporary)
 	if err != nil {
 		t.Fatal(err)
 	}
 	buildEnvironment = append(buildEnvironment,
 		"CGO_ENABLED=0", "GOARCH=amd64", "GOAMD64=v1", "GOOS=windows",
-		"GOENV=off", "GOEXPERIMENT=", "GOFIPS140=off", "GOFLAGS=-mod=vendor -trimpath -buildvcs=false",
-		"GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local", "GOTELEMETRY=off", "GOVCS=*:off", "GOWORK=off",
+		"GOENV=off", "GOEXPERIMENT=", "GOFIPS140=off", "GOFLAGS=-mod=readonly -trimpath -buildvcs=false",
+		"GOTOOLCHAIN=local", "GOTELEMETRY=off", "GOWORK=off",
 		"GOMODCACHE="+moduleCache, "GOCACHE="+buildCache, "GOTMPDIR="+buildTemporary,
 	)
 	command := exec.Command(goTool, "version")
@@ -400,9 +407,6 @@ func buildREL001KillBinary(t *testing.T, root string) builtArtifacts {
 	command.Env = buildEnvironment
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("REL001_KILL_BUILD_FAILED bytes=%d", len(output))
-	}
-	if entries, err := os.ReadDir(moduleCache); err != nil || len(entries) != 0 {
-		t.Fatal("REL001_KILL_MODULE_CACHE_NOT_EMPTY")
 	}
 	if info, err := os.Stat(filepath.Join(filepath.Dir(binaryPath), "mindweaver-pdf.exe")); err == nil || !errors.Is(err, os.ErrNotExist) || info != nil {
 		t.Fatal("REL001_KILL_UNEXPECTED_HELPER_ARTIFACT")

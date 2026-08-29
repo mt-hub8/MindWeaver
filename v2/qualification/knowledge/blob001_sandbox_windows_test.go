@@ -27,9 +27,14 @@ func secureBLOB001SandboxPath(path string) error {
 	if err != nil {
 		return errors.New("BLOB001_SANDBOX_SECURITY_UNAVAILABLE")
 	}
+	owner, _, err := descriptor.Owner()
+	if err != nil || owner == nil {
+		return errors.New("BLOB001_SANDBOX_SECURITY_UNAVAILABLE")
+	}
 	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
-		nil, nil, dacl, nil); err != nil {
+		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|
+			windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		owner, nil, dacl, nil); err != nil {
 		return errors.New("BLOB001_SANDBOX_SECURITY_UNAVAILABLE")
 	}
 	return nil

@@ -28,10 +28,9 @@ $mwSavedGoRoot = [Environment]::GetEnvironmentVariable('GOROOT', 'Process')
 
 $mwBuildRoot = Join-Path ([IO.Path]::GetTempPath()) ('mindweaver-v2-build-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $mwBuildRoot | Out-Null
-$mwModuleCache = Join-Path $mwBuildRoot 'gomodcache'
 $mwBuildCache = Join-Path $mwBuildRoot 'gocache'
 $mwGoTemp = Join-Path $mwBuildRoot 'gotmp'
-New-Item -ItemType Directory -Path $mwModuleCache, $mwBuildCache, $mwGoTemp | Out-Null
+New-Item -ItemType Directory -Path $mwBuildCache, $mwGoTemp | Out-Null
 
 $env:CGO_ENABLED = '0'
 $env:GO111MODULE = 'on'
@@ -40,16 +39,12 @@ $env:GOAMD64 = 'v1'
 $env:GOENV = 'off'
 $env:GOEXPERIMENT = ''
 $env:GOFIPS140 = 'off'
-$env:GOFLAGS = '-mod=vendor -trimpath -buildvcs=false'
+$env:GOFLAGS = '-mod=readonly -trimpath -buildvcs=false'
 $env:GOCACHE = $mwBuildCache
-$env:GOMODCACHE = $mwModuleCache
 $env:GOOS = 'windows'
-$env:GOPROXY = 'off'
-$env:GOSUMDB = 'off'
 $env:GOTOOLCHAIN = 'local'
 $env:GOTELEMETRY = 'off'
 $env:GOTMPDIR = $mwGoTemp
-$env:GOVCS = '*:off'
 $env:GOWORK = 'off'
 $env:GOROOT = $mwGoRoot
 
@@ -62,9 +57,7 @@ try {
     }
     Write-Host $mwGoVersion
 
-    $mwVendorPrefix = (Join-Path $mwModuleRoot 'vendor') + [IO.Path]::DirectorySeparatorChar
     $mwGoFiles = @(Get-ChildItem -LiteralPath $mwModuleRoot -Recurse -File -Filter '*.go' |
-        Where-Object { -not $_.FullName.StartsWith($mwVendorPrefix, [StringComparison]::OrdinalIgnoreCase) } |
         Select-Object -ExpandProperty FullName |
         Sort-Object)
     # Keep the native command line bounded. A tracked-only standalone archive
@@ -98,6 +91,10 @@ try {
         throw ('Go files require formatting: ' + ($mwUnformatted -join ', '))
     }
 
+    & $Go mod download
+    if ($LASTEXITCODE -ne 0) { throw 'go mod download failed' }
+    & $Go mod verify
+    if ($LASTEXITCODE -ne 0) { throw 'go mod verify failed' }
     & $Go test -count=1 ./...
     if ($LASTEXITCODE -ne 0) { throw 'go test failed' }
     & $Go vet ./...
@@ -106,11 +103,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'go build failed' }
     & $Go build -trimpath -buildvcs=false -o (Join-Path $mwBuildRoot 'mindweaver-pdf.exe') ./cmd/mindweaver-pdf
     if ($LASTEXITCODE -ne 0) { throw 'PDF helper build failed' }
-
-    $mwModuleCacheEntries = @(Get-ChildItem -LiteralPath $mwModuleCache -Force -Recurse)
-    if ($mwModuleCacheEntries.Count -ne 0) {
-        throw ('vendored build wrote to the empty module cache: ' + (($mwModuleCacheEntries | Select-Object -ExpandProperty FullName) -join ', '))
-    }
 } finally {
     try {
         Pop-Location
