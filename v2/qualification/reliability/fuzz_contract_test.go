@@ -24,11 +24,13 @@ import (
 )
 
 const (
-	coreFuzzTime              = "1s"
-	knowledgeSequenceFuzzTime = "32x"
-	fuzzCommandTimeout        = 2 * time.Minute
-	maxFuzzOutput             = 2 << 20
-	maxTestSourceBytes        = 4 << 20
+	// A fixed execution count starts after baseline coverage is gathered, so a
+	// slow clean hosted runner cannot consume the mutation budget compiling or
+	// loading the seed corpus before the fuzzer executes an input.
+	coreFuzzExecutions = "32x"
+	fuzzCommandTimeout = 4 * time.Minute
+	maxFuzzOutput      = 2 << 20
+	maxTestSourceBytes = 4 << 20
 )
 
 type fuzzTarget struct {
@@ -275,8 +277,8 @@ func runCoreFuzzTarget(t *testing.T, root string, toolchain reliabilityToolchain
 	defer cancel()
 	arguments := []string{
 		"test", "-mod=" + moduleMode, "-count=1", "-run=^$",
-		"-fuzz=^" + regexp.QuoteMeta(target.Name) + "$", "-fuzztime=" + coreFuzzTimeForTarget(target),
-		"-parallel=1", "-timeout=90s", target.Package,
+		"-fuzz=^" + regexp.QuoteMeta(target.Name) + "$", "-fuzztime=" + coreFuzzExecutions,
+		"-parallel=1", "-timeout=3m", target.Package,
 	}
 	command := exec.CommandContext(ctx, toolchain.goTool, arguments...)
 	command.Dir = root
@@ -298,13 +300,6 @@ func runCoreFuzzTarget(t *testing.T, root string, toolchain reliabilityToolchain
 	if !strings.Contains(text, "fuzz:") || !strings.Contains(text, "execs:") || !strings.Contains(text, "PASS") {
 		t.Fatalf("direct Go fuzz command for %s did not prove mutation and PASS:\n%s", target.Name, text)
 	}
-}
-
-func coreFuzzTimeForTarget(target fuzzTarget) string {
-	if target.Package == "./internal/lifecycle" && target.Name == "FuzzKnowledgeLifecycleOperationSequence" {
-		return knowledgeSequenceFuzzTime
-	}
-	return coreFuzzTime
 }
 
 func reliabilityModuleRoot(t *testing.T) string {
