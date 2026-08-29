@@ -112,6 +112,7 @@ cannot become product inputs:
 | `knowledge-core-qualification-cdd0f40.zip` | 7 | `e56ed6abdb6c7435d708b289bf9afb02bab379d39d3a21ed96f95b403287f47d` |
 | `legacy-import-7d831cf-1f1a9dc.zip` | 4 | `41ab7c4c40076edec17adfd36a81ab0e0a134399e3812d38ccc1c94a00d81c46` |
 | `2026-08-29-v2-final-closure-preflight-complete.zip` | 2 untracked + tracked patches | `b5311b98e06274284ee337bf022c933312a4e1c4daa923c71247a5f3f2000972` |
+| `v2-vendor-head.zip` | 698 tracked dependency files | `feb9e6ed816d5165fbea348c9b89d0aedb59c6b633e449e3b52fcd2ff5d36cbe` |
 
 Each receipt represents the working files, staged and unstaged patches,
 untracked files, Git metadata, and a per-file hash manifest. These backups are

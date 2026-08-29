@@ -1,10 +1,10 @@
 MindWeaver third-party notice candidate
-Inventory-SHA256: f60902a22e9fac9ef57d2d44a4aaefa839a95d1796a6a940e2307ce09c385ae4
-Qualification-Version: 0.0.0-qualification.8a9195d
-Source-Revision: 8a9195d5a20ddef3acfeacc974a049724fc2d34f
-Source-Module-Tree: git-sha1:40cdfdb1d3bcc0c5138da42d58111d3a6a8915bd
+Inventory-SHA256: 2604adbabfce32a285154432334773fea6bdec74e93002461aa6021a9840419a
+Qualification-Version: 0.0.0-qualification.3c7e92a
+Source-Revision: 3c7e92a1848ee7e37e579467428d99f7a7f93e6a
+Source-Module-Tree: git-sha1:e267e3f0c7028b1033a4fa563fee5cc1e20a2aec
 Production-Source-Union-SHA256: 34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff
-Creation-Input: 2026-08-28T16:47:51Z
+Creation-Input: 2026-08-29T04:33:41Z
 Supply-Chain-Qualification-Blockers: FIXTURE_REGENERATION_NOT_IMPLEMENTED,PROJECT_LICENSE_MISSING,RELEASE_METADATA_MISSING,SOURCE_REVISION_ATTESTATION_MISSING,VULNERABILITY_EVIDENCE_MISSING
 This deterministic file is not a release authorization or legal conclusion.
 

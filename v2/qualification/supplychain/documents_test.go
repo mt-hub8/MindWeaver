@@ -27,11 +27,11 @@ const (
 	releaseMetadataMissing            = "RELEASE_METADATA_MISSING"
 	sourceRevisionAttestationMissing  = "SOURCE_REVISION_ATTESTATION_MISSING"
 	vulnerabilityEvidenceMissing      = "VULNERABILITY_EVIDENCE_MISSING"
-	qualificationSourceDateEpoch      = int64(1787935671)
-	qualificationRevision             = "8a9195d5a20ddef3acfeacc974a049724fc2d34f"
-	qualificationModuleTree           = "git-sha1:40cdfdb1d3bcc0c5138da42d58111d3a6a8915bd"
+	qualificationSourceDateEpoch      = int64(1787978021)
+	qualificationRevision             = "3c7e92a1848ee7e37e579467428d99f7a7f93e6a"
+	qualificationModuleTree           = "git-sha1:e267e3f0c7028b1033a4fa563fee5cc1e20a2aec"
 	qualificationSourceUnion          = "34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff"
-	qualificationVersion              = "0.0.0-qualification.8a9195d"
+	qualificationVersion              = "0.0.0-qualification.3c7e92a"
 	qualificationGeneratorName        = "MindWeaver supply-chain qualification"
 	qualificationGeneratorVersion     = "1.0.0"
 	spdxVersion                       = "SPDX-2.3"

@@ -79,14 +79,17 @@ Vault 和备份没有应用层加密。其保密性依赖当前 Windows 账户�
 ## 开发构建与运行
 
 需要冻结的 Go 1.27.0 Windows/amd64 工具链。`go.mod` 保留 Go 1.26
-语言/模块指令，依赖从已审查的 `vendor/` 离线解析。
+语言/模块指令。首次构建需要联网下载模块；`go.sum` 校验模块内容，下载完成后
+可复用 Go 模块缓存。构建时联网不改变应用运行时的本地优先边界。
 
 ```powershell
 Set-Location .\v2
 $go = 'C:\path\to\go1.27.0\bin\go.exe'
 New-Item -ItemType Directory -Force .\dist | Out-Null
-& $go build -mod=vendor -trimpath -buildvcs=false -o .\dist\mindweaver.exe .\cmd\mindweaver
-& $go build -mod=vendor -trimpath -buildvcs=false -o .\dist\mindweaver-pdf.exe .\cmd\mindweaver-pdf
+& $go mod download
+& $go mod verify
+& $go build -mod=readonly -trimpath -buildvcs=false -o .\dist\mindweaver.exe .\cmd\mindweaver
+& $go build -mod=readonly -trimpath -buildvcs=false -o .\dist\mindweaver-pdf.exe .\cmd\mindweaver-pdf
 & .\dist\mindweaver.exe serve -config .\mindweaver.v1.json -vault .\vault
 ```
 
@@ -103,7 +106,7 @@ New-Item -ItemType Directory -Force .\dist | Out-Null
 
 备份目标和恢复目标应是用户明确提供、由当前账户控制的本地固定卷绝对路径。
 
-## 离线验证
+## 构建验证
 
 从 `v2/` 运行：
 
@@ -113,9 +116,10 @@ New-Item -ItemType Directory -Force .\dist | Out-Null
 .\scripts\test-browser.ps1 -GoExecutable C:\path\to\go1.27.0\bin\go.exe -SelfTest
 ```
 
-这些脚本使用空 `GOMODCACHE`/`GOCACHE`、`-mod=vendor` 和禁网模块策略，
-并验证 Go 格式、测试、vet、双 PE 构建与 tracked-only 独立抽取。通过开发
-门禁不等于安装、签名、真实浏览器或 clean-VM 发布资格已经完成。
+这些脚本先执行 `go mod download` 与 `go mod verify`，再以
+`-mod=readonly` 验证 Go 格式、测试、vet、双 PE 构建与 tracked-only 独立
+抽取。CI 可缓存由 `go.sum` 绑定的模块；首次构建或缓存未命中需要网络。
+通过开发门禁不等于安装、签名、真实浏览器或 clean-VM 发布资格已经完成。
 
 ## 明确未实现或未发布
 

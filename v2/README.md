@@ -67,8 +67,10 @@ only in the URL fragment and exchanged for an in-memory session. Press
 To exercise PDF ingestion from built artifacts, place both binaries together:
 
 ```powershell
-& $env:MW_GO build -mod=vendor -trimpath -buildvcs=false -o dist\mindweaver.exe ./cmd/mindweaver
-& $env:MW_GO build -mod=vendor -trimpath -buildvcs=false -o dist\mindweaver-pdf.exe ./cmd/mindweaver-pdf
+& $env:MW_GO mod download
+& $env:MW_GO mod verify
+& $env:MW_GO build -mod=readonly -trimpath -buildvcs=false -o dist\mindweaver.exe ./cmd/mindweaver
+& $env:MW_GO build -mod=readonly -trimpath -buildvcs=false -o dist\mindweaver-pdf.exe ./cmd/mindweaver-pdf
 ```
 
 Relative Vault paths are resolved next to the configuration file so the same
@@ -94,12 +96,12 @@ claim that the application or its Windows tests run natively on Linux.
 
 The scripts format-check, test, vet, and build with the exact Go 1.27.0
 toolchain while `go.mod` retains its Go 1.26 language/module directive. They
-freeze `GOAMD64=v1` with no optional Go experiments and FIPS mode off, force
-`-mod=vendor`, disable telemetry plus module, checksum, VCS, workspace, and
-toolchain network resolution, and create new empty `GOMODCACHE`, `GOCACHE`,
-and `GOTMPDIR` directories for every run. No pre-populated module cache is an
-input. The browser self-test applies the same isolation to its nested runner
-build and restores every Go environment variable it temporarily overrides.
+freeze `GOAMD64=v1` with no optional Go experiments and FIPS mode off, run
+`go mod download` plus `go mod verify`, and force `-mod=readonly` so gates
+cannot rewrite dependency declarations. Module acquisition may use the
+network and Go's module cache; `go.sum` binds downloaded content. Build and
+temporary caches remain disposable. The browser self-test uses the same
+readonly module policy and restores every Go environment variable it changes.
 
 Standalone verification accepts either this `v2/` directory in the monorepo or
 the root of an extracted repository. In both layouts it requires a clean
@@ -114,12 +116,11 @@ qualification.
 In the monorepo, root `.github/workflows/go-ci.yml` is the only active
 workflow and enters `v2/`; the retired Java/MySQL/Rabbit build is not run.
 Both repository layouts pin checkout and Go setup actions to immutable commit
-SHAs. GitHub may download those actions and the pinned Go bootstrap, so the
-workflow runner setup is not described as offline. The offline product-build
-boundary begins when the scripts receive that exact Go executable: module
-resolution is vendor-only with network lookups disabled and empty caches.
-Each workflow declares its checked-out Git root explicitly; an extracted
-checkout validates only its own workflow directory and never inspects a parent.
+SHAs. GitHub downloads those actions, the pinned Go bootstrap, and missing Go
+modules, and caches modules using `go.sum` as the dependency key. This is a
+build-time supply-chain boundary, not runtime product traffic. Each workflow
+declares its checked-out Git root explicitly; an extracted checkout validates
+only its own workflow directory and never inspects a parent.
 
 ## Closed local workflow
 

@@ -5,13 +5,12 @@ installer or signed-release qualification**
 
 ## Current integrated CUT-002 result
 
-The current production-identity change is exact commit
-`8a9195d5a20ddef3acfeacc974a049724fc2d34f`; its frozen assertions are updated
-by the completion-record change containing this current-status section. The
-change closes active ingestion cancellation without adding a command, helper,
-or third shipped artifact. On a clean
-Windows/amd64 checkout with the repository-selected Go 1.27.0 toolchain, the
-controller reruns both committed gates before retaining CUT-002:
+The current checksum-verified module-build baseline is exact commit
+`3c7e92a1848ee7e37e579467428d99f7a7f93e6a`. It retains the completed Go
+product surface while removing the checked-in third-party vendor tree. On a
+clean Windows/amd64 checkout with the repository-selected Go 1.27.0
+toolchain, the controller reruns both committed gates before retaining
+CUT-002:
 
 ```powershell
 $mwGo = $env:MW_GO # repository-selected Go 1.27.0 executable
@@ -22,37 +21,42 @@ $mwGo = $env:MW_GO # repository-selected Go 1.27.0 executable
 The standalone gate inventories the clean `HEAD:v2` Git tree, creates a
 tracked-only archive, verifies the exact archived path and executable-mode
 sets, rejects `.git` metadata, clears the monorepo-root hint, and runs the full
-offline CI from that extracted repository root. The child gate uses fresh
-empty `GOMODCACHE`, `GOCACHE`, and `GOTMPDIR` directories, keeps module and VCS
-network resolution disabled, consumes the canonical vendor tree, runs all Go
-tests and vet, and builds the exact two Windows PE files. This directly closes
-the parent-independence outcome required by CUT-002.
+Go CI from that extracted repository root. Both source layouts execute
+`go mod download` and `go mod verify`, then enforce `-mod=readonly`, run all Go
+tests and vet, and build exactly two Windows PE files. A module cache may be
+reused and a cache miss requires network access; dependency content remains
+bound by the committed `go.sum`. The extracted repository does not inspect or
+consume its parent tree, which is the parent-independence outcome required by
+CUT-002.
 
 The focused production gate rebuilt each PE twice from independent empty build
 caches and passed with these current identities:
 
 - `mindweaver.exe`: 79 first-party source files,
-  `7433ef472a75ce95dcc49e283cd96afee6bd67404fd763eeefb50101a40bf653`;
+  `3f3cf6de017bae3aa0af4a939baade6f626a503302a3060b575f6066151ac01a`;
   PE SHA-256
-  `33ad35062dec40e6c89169646fb2d853ed5f58c0a6fe8e4b6eec99357b939fbb`;
+  `f2c63996741bf6306b8c48a251464961b78e99f7b42bdf07402253de1e511de2`;
 - `mindweaver-pdf.exe`: 5 first-party source files,
   `0bec9ddde1ea8778ffc3c20740ed55080d7ef0b537cfd070a2d563ccc5a087c6`;
   PE SHA-256
-  `a2a6a04b4ade9367aab6cce35e9a3c87351f9c8fabd33d9ea2fe108f7e732241`;
+  `b9cc03b7c139e9fadde86f2ec9564dbe368d85822bd96ac64385e7aa75827384`;
 - deduplicated dual-PE union: 83 first-party source files,
-  `4c7cf44e49052f688a4d7b231ca41ca8d0b48488e2a16e4187eb0b317986d553`.
+  `34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff`.
 
 Each PE was built twice with independent empty build caches and matched its
 frozen bytes. The shipped command and artifact exact-set remains only
 `mindweaver.exe` and `mindweaver-pdf.exe`; no Java, Python, migration exporter,
-or third command enters the build. The canonical vendor contract independently
-binds 698 files, 37 package declarations, eight exact module versions and
-`go.sum` hashes, eight dependency `LICENSE` files, and
-`golang.org/x/sys/PATENTS` while keeping the module cache empty.
+or third command enters the build. `qualification/moduleintegrity` rejects a
+checked-in vendor tree and freezes the exact `go.mod`/`go.sum` contract,
+workflow set, readonly module policy, and checksum verification commands. The
+supply-chain gate independently reads the eight shipped module source trees
+from `GOMODCACHE`, verifies their h1 identities and license/notice file hashes,
+and requires each PE buildinfo module sum to match the committed `go.sum`.
 
 CUT-002 remains PASS only with the final clean-tree CI and tracked-only
-standalone reruns required above. This result does **not** select the project's
-own license, generate final SBOM/NOTICE artifacts, build or sign an MSI, qualify
+standalone reruns required above. It no longer claims an offline or empty-cache
+developer build. This result does **not** select the project's own license,
+generate final SBOM/NOTICE artifacts, build or sign an MSI, qualify
 Authenticode/ICE, or prove clean-machine upgrade/uninstall. Those remain
 separate REL-002 and SEC-002 blockers.
 

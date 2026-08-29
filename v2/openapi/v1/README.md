@@ -46,7 +46,8 @@ rejects an invented ETag/`If-Match` parameter or response header.
 `core-surface.v1.json` is the fail-closed CORE allowlist. It covers production
 Go library packages, HTTP operations, migration filenames, application-declared
 final SQLite tables, and executable command surfaces. Package discovery runs
-the frozen Go tool offline for Windows/amd64 with CGO disabled and derives the
+the frozen Go tool with checksum-verified readonly modules for Windows/amd64
+with CGO disabled and derives the
 actual transitive closure of the two shipped commands. Every module-local
 dependency must be in the exact `internal/` or `platform/` allowlist; excluded
 evidence/tooling roots cannot enter either command. The same closure freezes

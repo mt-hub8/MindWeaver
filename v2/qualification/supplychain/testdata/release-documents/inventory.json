@@ -6,17 +6,17 @@
   },
   "source": {
     "repository": "github.com/mt-hub8/MindWeaver",
-    "revision": "8a9195d5a20ddef3acfeacc974a049724fc2d34f",
-    "moduleTree": "git-sha1:40cdfdb1d3bcc0c5138da42d58111d3a6a8915bd",
+    "revision": "3c7e92a1848ee7e37e579467428d99f7a7f93e6a",
+    "moduleTree": "git-sha1:e267e3f0c7028b1033a4fa563fee5cc1e20a2aec",
     "productionSourceUnionSha256": "34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff",
     "attestation": "reviewed qualification input; not independently derived from Git in standalone validation"
   },
   "version": {
-    "value": "0.0.0-qualification.8a9195d",
+    "value": "0.0.0-qualification.3c7e92a",
     "source": "qualification-only reviewed input; real release metadata is unavailable"
   },
   "creation": {
-    "timestamp": "2026-08-28T16:47:51Z",
+    "timestamp": "2026-08-29T04:33:41Z",
     "source": "qualification fixture SOURCE_DATE_EPOCH=1787935671 bound to source revision; not a release publication time"
   },
   "artifacts": [

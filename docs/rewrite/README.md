@@ -76,8 +76,9 @@ until separately rebuilt from zero and accepted.
   durable completion.
 - Retried core upload and Ask operations do not duplicate work; mutable core
   roots reject stale revisions where concurrent browser edits are possible.
-- Tests are offline by default and never use user data or a developer machine's
-  database/model service.
+- Product tests use synthetic data and loopback fakes, never a developer
+  database or model service. A cold build may download `go.sum`-bound modules;
+  application runtime tests do not require external provider traffic.
 - A feature flag cannot conceal an incomplete invariant or preserve duplicate
   production paths indefinitely.
 - Java receives no new product features or migration tooling. It remains frozen
