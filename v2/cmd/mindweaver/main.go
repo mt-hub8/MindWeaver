@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mt-hub8/MindWeaver/v2/internal/app"
+	"github.com/mt-hub8/MindWeaver/v2/internal/ideashook"
 	"github.com/mt-hub8/MindWeaver/v2/internal/vault"
 	"github.com/mt-hub8/MindWeaver/v2/platform/apperror"
 	"github.com/mt-hub8/MindWeaver/v2/platform/config"
@@ -27,6 +28,9 @@ type serveShutdowner interface {
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if isCodexHookCommand(os.Args[1:]) {
+		os.Exit(runCodexHookProcess(ctx, os.Stdin, os.Stderr))
+	}
 
 	if err := run(ctx, os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, apperror.PublicMessage(err))
@@ -34,7 +38,38 @@ func main() {
 	}
 }
 
+func isCodexHookCommand(args []string) bool {
+	return len(args) == 3 && args[0] == "ideas" && args[1] == "hook" && args[2] == "codex"
+}
+
+func runCodexHookProcess(parent context.Context, stdin io.Reader, stderr io.Writer) int {
+	return runCodexHookProcessWith(parent, stdin, stderr, ideashook.Capture)
+}
+
+func runCodexHookProcessWith(parent context.Context, stdin io.Reader, stderr io.Writer, capture func(context.Context, io.Reader) error) (exit int) {
+	exit = 1
+	defer func() {
+		if recover() != nil {
+			_, _ = fmt.Fprintln(stderr, "ideas.hook_internal")
+			exit = 1
+		}
+	}()
+	if capture == nil {
+		_, _ = fmt.Fprintln(stderr, "ideas.hook_internal")
+		return 1
+	}
+	if err := capture(parent, stdin); err != nil {
+		_, _ = fmt.Fprintln(stderr, ideashook.CodeOf(err))
+		return 1
+	}
+	return 0
+}
+
 func run(ctx context.Context, args []string, stdout io.Writer) error {
+	return runWithIO(ctx, args, os.Stdin, stdout)
+}
+
+func runWithIO(ctx context.Context, args []string, stdin io.Reader, stdout io.Writer) error {
 	if len(args) == 0 {
 		return runServe(ctx, nil, stdout)
 	}
@@ -48,6 +83,8 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		return runConfig(ctx, args[1:], stdout)
 	case "recovery":
 		return runRecovery(ctx, args[1:], stdout)
+	case "ideas":
+		return runIdeas(ctx, args[1:], stdin, stdout)
 	case "serve":
 		return runServe(ctx, args[1:], stdout)
 	default:
@@ -198,9 +235,15 @@ Usage:
   mindweaver version
   mindweaver config init  [-file mindweaver.v1.json] [-vault ./vault]
   mindweaver config check [-file mindweaver.v1.json]
+  mindweaver ideas extract [-input <file|->] [-input-format session-json|chat-jsonl|note] -output <new-directory> [-ollama-model <model>] [-ollama-endpoint <literal-loopback-url>] [-ollama-timeout <duration>]
+  mindweaver ideas extract -session <sha256:id> -output <new-directory> [-ollama-model <model>] [-ollama-endpoint <literal-loopback-url>] [-ollama-timeout <duration>]
+  mindweaver ideas current extract -output <new-directory> [-ollama-model <model>] [-ollama-endpoint <literal-loopback-url>] [-ollama-timeout <duration>]
+  mindweaver ideas sessions
+  mindweaver ideas hooks print|install|status --scope user|repo
   mindweaver recovery verify  -backup <backup-directory>
   mindweaver recovery restore -backup <backup-directory> -vault <new-vault-directory>
 
+Ollama endpoint and timeout overrides require -ollama-model.
 Recovery is a mutually exclusive startup mode. Backups are plaintext, and
 restore never overwrites or merges an existing Vault.`)
 	return outputError(err)

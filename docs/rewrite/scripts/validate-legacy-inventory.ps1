@@ -137,10 +137,10 @@ foreach ($line in Get-Content $ledgerPath) {
     }
     $acceptanceIds[$acceptanceId] = [pscustomobject]@{ phase = $phase; core_gate = $coreGate }
 }
-if ($acceptanceIds.Count -ne 45) { throw "Acceptance ledger has $($acceptanceIds.Count) rows, want 45" }
+if ($acceptanceIds.Count -ne 46) { throw "Acceptance ledger has $($acceptanceIds.Count) rows, want 46" }
 $coreAcceptanceCount = @($acceptanceIds.Values | Where-Object phase -eq "CORE").Count
 $laterAcceptanceCount = @($acceptanceIds.Values | Where-Object phase -eq "LATER").Count
-if ($coreAcceptanceCount -ne 36 -or $laterAcceptanceCount -ne 9) {
+if ($coreAcceptanceCount -ne 37 -or $laterAcceptanceCount -ne 9) {
     throw "Acceptance ledger phase totals drift: CORE=$coreAcceptanceCount, LATER=$laterAcceptanceCount"
 }
 

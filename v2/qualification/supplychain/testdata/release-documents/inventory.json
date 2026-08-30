@@ -36,8 +36,8 @@
     {
       "name": "mindweaver.exe",
       "mainPackage": "github.com/mt-hub8/MindWeaver/v2/cmd/mindweaver",
-      "size": 32862720,
-      "sha256": "f2c63996741bf6306b8c48a251464961b78e99f7b42bdf07402253de1e511de2",
+      "size": 33634304,
+      "sha256": "3a6069e5bd370600daaa29819a15ea0a6379c73f63a93d04715ed352d5a2389b",
       "dependencies": [
         "pkg:generic/golang@1.27.0",
         "pkg:golang/github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304",

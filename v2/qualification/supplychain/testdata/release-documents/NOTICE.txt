@@ -1,5 +1,5 @@
 MindWeaver third-party notice candidate
-Inventory-SHA256: 2604adbabfce32a285154432334773fea6bdec74e93002461aa6021a9840419a
+Inventory-SHA256: 3dd938f503e316b96dc8180a406d55afaa87a1f4cfcc49f985003cabe50759cb
 Qualification-Version: 0.0.0-qualification.3c7e92a
 Source-Revision: 3c7e92a1848ee7e37e579467428d99f7a7f93e6a
 Source-Module-Tree: git-sha1:e267e3f0c7028b1033a4fa563fee5cc1e20a2aec
@@ -10,7 +10,7 @@ This deterministic file is not a release authorization or legal conclusion.
 
 Artifacts
 - mindweaver-pdf.exe 8453632 bytes SHA256:b9cc03b7c139e9fadde86f2ec9564dbe368d85822bd96ac64385e7aa75827384
-- mindweaver.exe 32862720 bytes SHA256:f2c63996741bf6306b8c48a251464961b78e99f7b42bdf07402253de1e511de2
+- mindweaver.exe 33634304 bytes SHA256:3a6069e5bd370600daaa29819a15ea0a6379c73f63a93d04715ed352d5a2389b
 
 Components
 - Go runtime go1.27.0 license:BSD-3-Clause

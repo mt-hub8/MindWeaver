@@ -19,7 +19,7 @@ import (
 )
 
 const modulePath = "github.com/mt-hub8/MindWeaver/v2"
-const expectedSourceUnionSHA256 = "34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff"
+const expectedSourceUnionSHA256 = "91dbc40b1c7b71cdece8e3998f5fafb8162a561d1dfd880035814f50c240599f"
 
 type artifactContract struct {
 	name              string
@@ -43,6 +43,8 @@ var shippedArtifacts = []artifactContract{
 			modulePath + "/internal/app",
 			modulePath + "/internal/backup",
 			modulePath + "/internal/blob",
+			modulePath + "/internal/ideashook",
+			modulePath + "/internal/ideasollama",
 			modulePath + "/internal/ingest",
 			modulePath + "/internal/lifecycle",
 			modulePath + "/internal/localhttp",
@@ -50,6 +52,7 @@ var shippedArtifacts = []artifactContract{
 			modulePath + "/internal/pdfextract/client",
 			modulePath + "/internal/pdfextract/protocol",
 			modulePath + "/internal/rag",
+			modulePath + "/internal/sessiondistill",
 			modulePath + "/internal/store/sqlite",
 			modulePath + "/internal/transport",
 			modulePath + "/internal/vault",
@@ -63,8 +66,11 @@ var shippedArtifacts = []artifactContract{
 		requiredPackages: []string{
 			modulePath + "/internal/app",
 			modulePath + "/internal/backup",
+			modulePath + "/internal/ideashook",
+			modulePath + "/internal/ideasollama",
 			modulePath + "/internal/pdfextract/client",
 			modulePath + "/internal/pdfextract/protocol",
+			modulePath + "/internal/sessiondistill",
 		},
 		forbiddenPackages: []string{
 			modulePath + "/internal/pdfextract/parser",
@@ -86,8 +92,8 @@ var shippedArtifacts = []artifactContract{
 			"github.com/ncruces/julianday@v1.0.0",
 			"golang.org/x/sys@v0.47.0",
 		},
-		sourceSHA256:   "3f3cf6de017bae3aa0af4a939baade6f626a503302a3060b575f6066151ac01a",
-		artifactSHA256: "f2c63996741bf6306b8c48a251464961b78e99f7b42bdf07402253de1e511de2",
+		sourceSHA256:   "3f06aa42bf12af335427a140e07243e99147c48b1ce82f543540698a4b7c26c6",
+		artifactSHA256: "3a6069e5bd370600daaa29819a15ea0a6379c73f63a93d04715ed352d5a2389b",
 	},
 	{
 		name:   "mindweaver-pdf.exe",

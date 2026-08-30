@@ -3,7 +3,7 @@
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
   "name": "MindWeaver dual-PE SBOM",
-  "documentNamespace": "https://spdx.org/spdxdocs/mindweaver-4f6ad3e66ad658affaf2e0abef5661fcbefc6e58fcf1a798f760800cfc3df1f7",
+  "documentNamespace": "https://spdx.org/spdxdocs/mindweaver-4f8568dc201772fa42ab66f24237004387c472488250775d9033699a19a77e70",
   "creationInfo": {
     "created": "2026-08-29T04:33:41Z",
     "creators": [
@@ -130,7 +130,7 @@
       "checksums": [
         {
           "algorithm": "SHA256",
-          "checksumValue": "f2c63996741bf6306b8c48a251464961b78e99f7b42bdf07402253de1e511de2"
+          "checksumValue": "3a6069e5bd370600daaa29819a15ea0a6379c73f63a93d04715ed352d5a2389b"
         }
       ],
       "sourceInfo": "repository=github.com/mt-hub8/MindWeaver; revision=3c7e92a1848ee7e37e579467428d99f7a7f93e6a; moduleTree=git-sha1:e267e3f0c7028b1033a4fa563fee5cc1e20a2aec; productionSourceUnionSHA256=34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff; attestation=reviewed qualification input; not independently derived from Git in standalone validation; mainPackage=github.com/mt-hub8/MindWeaver/v2/cmd/mindweaver"

@@ -102,6 +102,13 @@ backend capabilities is recorded in
 [`java-domain-backend-completion.md`](./java-domain-backend-completion.md). It
 does not promote browser, installer, signing, or long-duration release gates.
 
+The bounded Coding Agent conversation-distillation CLI and its explicit
+non-Memory boundary are defined in
+[`ideas-cli-mvp.md`](./ideas-cli-mvp.md). It captures only supported visible
+Codex events or explicit file/stdin input. Its optional literal-loopback Ollama
+mode may rank only existing verified user-item IDs; it does not revive the
+deferred Agent or formal Memory capabilities.
+
 Gate 0 legacy coverage is tracked in the machine-readable
 [`legacy-inventory.csv`](./legacy-inventory.csv), with its human review in
 [`legacy-inventory-summary.md`](./legacy-inventory-summary.md). The binding

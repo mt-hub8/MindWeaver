@@ -6,7 +6,7 @@ the exact command/report location. Manual inspection alone cannot close a row.
 Only `Phase=CORE` rows are release blockers. `LATER` rows preserve
 traceability without expanding the first Go release.
 
-Current CORE reconciliation: `30 PASS`, `1 IMPLEMENTED`, `3 BLOCKED`, and
+Current CORE reconciliation: `30 PASS`, `2 IMPLEMENTED`, `3 BLOCKED`, and
 `2 NOT_IMPLEMENTED`. All nine `LATER` rows remain `NOT_IMPLEMENTED` and are
 not part of the first Go release.
 
@@ -25,6 +25,7 @@ not part of the first Go release.
 | JOB-001 | A core background operation cannot be executed concurrently by two workers | CORE | YES | PASS | `v2/internal/store/sqlite/jobs_test.go`; concurrent claim and stale-owner fencing tests |
 | JOB-002 | Core retries stop at a configured limit; cancel and final failure stay visible | CORE | YES | PASS | ingestion retry/cancel/terminal/restart product tests |
 | PROG-001 | Document ingestion and Ask progress never reports success before durable completion | CORE | YES | PASS | real-process HTTP Ask/ingestion forced-exit, durable terminal-state and exact-replay tests; browser presentation stays under UI gates; `docs/rewrite/evidence/core-acceptance-boundary-reconciliation-43d2448.md` |
+| IDEA-001 | Supported visible Codex turns or explicit bounded input produce deterministic, provenance-linked bilingual idea reports without becoming formal Memory | CORE | YES | IMPLEMENTED | `v2/internal/{ideashook,sessiondistill,ideasollama}`; `v2/cmd/mindweaver/ideas_test.go`; strict Hook/root-role/redaction/spool, fail-closed unique-open-current plus explicit-session/file/stdin extraction, source-span verification, explicit viewpoint-evolution candidates, and single-publisher no-overwrite directory publication with pre/post exact-set verification and uncertain-outcome handling; optional literal-loopback Ollama may rank only existing verified user-item IDs and deterministically falls back without changing evidence; same-user tamper resistance is not claimed; isolated-profile real built-PE Hook process qualification plus final committed two-PE and standalone evidence remain required before PASS |
 | BKP-001 | Backup manifest comes from its own DB snapshot and every blob verifies | CORE | YES | PASS | concurrent snapshot, exact manifest/blob verification, no-active-Vault standalone restore/reopen and forced-residue tests; installer lifecycle stays under REL-002; `docs/rewrite/evidence/core-acceptance-boundary-reconciliation-43d2448.md` |
 | PUR-001 | Explicit delete removes known in-scope DB/FTS rows and unshared blobs; failure never reports success | CORE | YES | PASS | `v2/internal/lifecycle/service_test.go`; SQLite/filesystem failure, shared-blob and retry tests |
 | DOC-001 | TXT/Markdown/PDF upload is idempotent, bounded and crash recoverable | CORE | YES | PASS | `v2/qualification/knowledge/{production_ingestion_lifecycle_test.go,doc001_remaining_qualification_test.go}`; `docs/rewrite/evidence/{production-ingestion-lifecycle-fda7c63.md,doc001-final-bb176c8.md}` |

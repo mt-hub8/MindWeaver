@@ -66,8 +66,8 @@ type runtimeContract struct {
 
 var artifactContracts = []artifactContract{
 	{
-		name: "mindweaver.exe", size: 32862720,
-		sha256: "f2c63996741bf6306b8c48a251464961b78e99f7b42bdf07402253de1e511de2",
+		name: "mindweaver.exe", size: 33634304,
+		sha256: "3a6069e5bd370600daaa29819a15ea0a6379c73f63a93d04715ed352d5a2389b",
 		modules: []string{
 			"github.com/ncruces/go-sqlite3-wasm/v3@v3.2.35304",
 			"github.com/ncruces/go-sqlite3@v0.35.3",
@@ -255,7 +255,7 @@ func buildArtifact(t *testing.T, goTool, root, outputRoot string, environment []
 	output := filepath.Join(outputRoot, artifact.name)
 	result := runBoundedProcess(
 		t.Context(), prepackageBuildTimeout, maxBuildOutputBytes,
-		goTool, []string{"build", "-trimpath", "-buildvcs=false", "-o", output, target}, root, environment,
+		goTool, []string{"build", "-trimpath", "-buildvcs=false", "-o", output, target}, nil, root, environment,
 	)
 	if err := validateBuildProcessResult(artifact.name, result); err != nil {
 		return builtArtifact{}, err

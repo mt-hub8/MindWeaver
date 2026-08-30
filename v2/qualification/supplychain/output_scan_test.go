@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
@@ -21,6 +22,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf16"
+
+	"github.com/mt-hub8/MindWeaver/v2/internal/ideashook"
 )
 
 const (
@@ -74,6 +77,7 @@ type cliContract struct {
 	name         string
 	artifactName string
 	args         []string
+	stdin        []byte
 	exitCode     int
 	stdout       []byte
 	stderr       []byte
@@ -129,6 +133,14 @@ func TestPrepackageDualPEOutputBoundary(t *testing.T) {
 	}
 	missingConfig := filepath.Join(artifactRoot, canaries["PATH_CANARY"], canaries["SOURCE_CANARY"]+".json")
 	missingPDF := filepath.Join(artifactRoot, canaries["PATH_CANARY"]+"-"+canaries["SOURCE_CANARY"]+".pdf")
+	ignoredHookInput := []byte(fmt.Sprintf(
+		`{"session_id":"ignored-session","turn_id":"ignored-turn","agent_id":"subagent","agent_type":"worker","transcript_path":null,"cwd":%q,"hook_event_name":"UserPromptSubmit","model":"gpt","permission_mode":"default","prompt":"ignored"}`,
+		artifactRoot,
+	))
+	invalidSecretHookInput := []byte(fmt.Sprintf(
+		`{"session_id":"invalid-session","turn_id":"invalid-turn","transcript_path":null,"cwd":%q,"hook_event_name":"UserPromptSubmit","model":"gpt","permission_mode":"default","prompt":"ignored","reasoning":%q}`,
+		artifactRoot, canaries["SECRET_CANARY"],
+	))
 	contracts := []cliContract{
 		{
 			name: "main.version", artifactName: "mindweaver.exe", args: []string{"version"}, exitCode: 0,
@@ -145,6 +157,18 @@ func TestPrepackageDualPEOutputBoundary(t *testing.T) {
 		{
 			name: "main.config_missing", artifactName: "mindweaver.exe", args: []string{"config", "check", "-file", missingConfig}, exitCode: 4,
 			stderr: []byte("configuration file was not found\n"),
+		},
+		{
+			name: "main.ideas_hook_empty", artifactName: "mindweaver.exe", args: []string{"ideas", "hook", "codex"}, exitCode: 1,
+			stderr: []byte("ideas.hook_limit_exceeded\n"),
+		},
+		{
+			name: "main.ideas_hook_ignored", artifactName: "mindweaver.exe", args: []string{"ideas", "hook", "codex"}, stdin: ignoredHookInput,
+			exitCode: 0,
+		},
+		{
+			name: "main.ideas_hook_secret_invalid", artifactName: "mindweaver.exe", args: []string{"ideas", "hook", "codex"}, stdin: invalidSecretHookInput,
+			exitCode: 1, stderr: []byte("ideas.hook_invalid_input\n"),
 		},
 		{
 			name: "helper.probe", artifactName: "mindweaver-pdf.exe",
@@ -166,11 +190,112 @@ func TestPrepackageDualPEOutputBoundary(t *testing.T) {
 		}
 		result := runBoundedProcess(
 			t.Context(), prepackageCLITimeout, maxCLIOutputBytes,
-			artifact.path, contract.args, artifactRoot, environment,
+			artifact.path, contract.args, contract.stdin, artifactRoot, environment,
 		)
 		if err := validateCLIProcessResult(contract, result, needles); err != nil {
 			t.Fatal(err)
 		}
+	}
+	ideasRoot := t.TempDir()
+	ideasInput := filepath.Join(ideasRoot, "session-note.txt")
+	ideasReport := filepath.Join(ideasRoot, "report")
+	ideasText := "我的想法是先做 CLI。\npassword=" + canaries["SECRET_CANARY"] + "\n"
+	if err := os.WriteFile(ideasInput, []byte(ideasText), 0o600); err != nil {
+		t.Fatal("IDEAS_INPUT_CREATE_FAILED")
+	}
+	ideasContract := cliContract{
+		name: "main.ideas_extract", artifactName: "mindweaver.exe",
+		args:     []string{"ideas", "extract", "-input", ideasInput, "-input-format", "note", "-output", ideasReport},
+		exitCode: 0, stdout: []byte("created ideas report (1 user items, 0 assistant context items)\n"),
+	}
+	ideasResult := runBoundedProcess(
+		t.Context(), prepackageCLITimeout, maxCLIOutputBytes,
+		byName[ideasContract.artifactName].path, ideasContract.args, nil, ideasRoot, environment,
+	)
+	if err := validateCLIProcessResult(ideasContract, ideasResult, needles); err != nil {
+		t.Fatal(err)
+	}
+	reportContracts := []artifactContract{{name: "report.json"}, {name: "report.md"}}
+	if err := validateArtifactDirectory(ideasReport, reportContracts); err != nil {
+		t.Fatal("IDEAS_REPORT_DIRECTORY_INVALID")
+	}
+	for _, contract := range reportContracts {
+		content, err := readBoundedArtifact(filepath.Join(ideasReport, contract.name))
+		if err != nil || len(content) == 0 || len(content) > 1<<20 {
+			t.Fatal("IDEAS_REPORT_READ_FAILED")
+		}
+		if label := firstSensitiveMatch(content, needles); label != "" {
+			t.Fatal("IDEAS_REPORT_DISCLOSED_" + label)
+		}
+	}
+
+	hookHome := filepath.Join(t.TempDir(), "codex-home")
+	if err := os.Mkdir(hookHome, 0o700); err != nil {
+		t.Fatal("IDEAS_HOOK_HOME_CREATE_FAILED")
+	}
+	t.Setenv("CODEX_HOME", hookHome)
+	hookEnvironment := environmentWith(environment, map[string]string{"CODEX_HOME": hookHome})
+	hookOptions := ideashook.HookConfigOptions{
+		Scope: ideashook.HookScopeUser, ExecutablePath: byName["mindweaver.exe"].path,
+	}
+	expectedPreview, previewResult, err := ideashook.RenderHookConfig(t.Context(), hookOptions)
+	if err != nil || previewResult.State != ideashook.HookConfigInstalled || !previewResult.Changed {
+		t.Fatal("IDEAS_HOOK_PREVIEW_ORACLE_FAILED")
+	}
+	canaryNeedles := make([]sensitiveNeedle, 0, len(canaries))
+	canaryLabels := make([]string, 0, len(canaries))
+	for label := range canaries {
+		canaryLabels = append(canaryLabels, label)
+	}
+	sort.Strings(canaryLabels)
+	for _, label := range canaryLabels {
+		canaryNeedles = append(canaryNeedles, newSensitiveNeedle(label, canaries[label]))
+	}
+	hookContracts := []struct {
+		contract cliContract
+		needles  []sensitiveNeedle
+	}{
+		{contract: cliContract{
+			name: "main.ideas_hooks_status_absent", artifactName: "mindweaver.exe",
+			args: []string{"ideas", "hooks", "status", "--scope", "user"}, exitCode: 0,
+			stdout: expectedIdeasHookResult("status", "absent", 0, false),
+		}, needles: needles},
+		{contract: cliContract{
+			name: "main.ideas_hooks_print", artifactName: "mindweaver.exe",
+			args: []string{"ideas", "hooks", "print", "--scope", "user"}, exitCode: 0, stdout: expectedPreview,
+		}, needles: canaryNeedles},
+		{contract: cliContract{
+			name: "main.ideas_hooks_install", artifactName: "mindweaver.exe",
+			args: []string{"ideas", "hooks", "install", "--scope", "user"}, exitCode: 0,
+			stdout: expectedIdeasHookResult("install", "installed", 4, true),
+		}, needles: needles},
+		{contract: cliContract{
+			name: "main.ideas_hooks_status_installed", artifactName: "mindweaver.exe",
+			args: []string{"ideas", "hooks", "status", "--scope", "user"}, exitCode: 0,
+			stdout: expectedIdeasHookResult("status", "installed", 4, false),
+		}, needles: needles},
+		{contract: cliContract{
+			name: "main.ideas_hooks_install_replay", artifactName: "mindweaver.exe",
+			args: []string{"ideas", "hooks", "install", "--scope", "user"}, exitCode: 0,
+			stdout: expectedIdeasHookResult("install", "installed", 4, false),
+		}, needles: needles},
+	}
+	for _, item := range hookContracts {
+		result := runBoundedProcess(
+			t.Context(), prepackageCLITimeout, maxCLIOutputBytes,
+			byName[item.contract.artifactName].path, item.contract.args, item.contract.stdin,
+			artifactRoot, hookEnvironment,
+		)
+		if err := validateCLIProcessResult(item.contract, result, item.needles); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := validateArtifactDirectory(hookHome, []artifactContract{{name: "hooks.json"}}); err != nil {
+		t.Fatal("IDEAS_HOOK_CONFIG_EXACT_SET_INVALID")
+	}
+	installedHookConfig, err := readBoundedArtifact(filepath.Join(hookHome, "hooks.json"))
+	if err != nil || !bytes.Equal(installedHookConfig, expectedPreview) || firstSensitiveMatch(installedHookConfig, canaryNeedles) != "" {
+		t.Fatal("IDEAS_HOOK_INSTALLED_CONFIG_INVALID")
 	}
 	if err := validateArtifactDirectory(artifactRoot, artifactContracts); err != nil {
 		t.Fatal(err)
@@ -310,7 +435,7 @@ func TestPrepackageOutputBoundaryMutationsFailClosed(t *testing.T) {
 	})
 }
 
-func runBoundedProcess(parent context.Context, timeout time.Duration, outputLimit int, executable string, args []string, directory string, environment []string) processResult {
+func runBoundedProcess(parent context.Context, timeout time.Duration, outputLimit int, executable string, args []string, stdin []byte, directory string, environment []string) processResult {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	stdout := newBoundedProcessOutput(outputLimit, cancel)
@@ -318,6 +443,9 @@ func runBoundedProcess(parent context.Context, timeout time.Duration, outputLimi
 	command := exec.CommandContext(ctx, executable, args...)
 	command.Dir = directory
 	command.Env = environment
+	if stdin != nil {
+		command.Stdin = bytes.NewReader(stdin)
+	}
 	command.Stdout = stdout
 	command.Stderr = stderr
 	command.WaitDelay = prepackageProcessWaitDelay
@@ -343,6 +471,33 @@ func runBoundedProcess(parent context.Context, timeout time.Duration, outputLimi
 	}
 	result.exitCode = -1
 	return result
+}
+
+func expectedIdeasHookResult(command, state string, managedEvents int, changed bool) []byte {
+	value := struct {
+		SchemaVersion int    `json:"schema_version"`
+		Command       string `json:"command"`
+		Scope         string `json:"scope"`
+		State         string `json:"state"`
+		Activation    string `json:"activation"`
+		ManagedEvents int    `json:"managed_events"`
+		Changed       bool   `json:"changed"`
+		NextStep      string `json:"next_step"`
+	}{
+		SchemaVersion: 1,
+		Command:       command,
+		Scope:         "user",
+		State:         state,
+		Activation:    "unknown",
+		ManagedEvents: managedEvents,
+		Changed:       changed,
+		NextStep:      "review_and_trust_with_slash_hooks_then_start_a_new_codex_task_to_verify_activation",
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return append(encoded, '\n')
 }
 
 func newBoundedProcessOutput(limit int, cancel context.CancelFunc) *boundedProcessOutput {
@@ -688,9 +843,15 @@ Usage:
   mindweaver version
   mindweaver config init  [-file mindweaver.v1.json] [-vault ./vault]
   mindweaver config check [-file mindweaver.v1.json]
+  mindweaver ideas extract [-input <file|->] [-input-format session-json|chat-jsonl|note] -output <new-directory> [-ollama-model <model>] [-ollama-endpoint <literal-loopback-url>] [-ollama-timeout <duration>]
+  mindweaver ideas extract -session <sha256:id> -output <new-directory> [-ollama-model <model>] [-ollama-endpoint <literal-loopback-url>] [-ollama-timeout <duration>]
+  mindweaver ideas current extract -output <new-directory> [-ollama-model <model>] [-ollama-endpoint <literal-loopback-url>] [-ollama-timeout <duration>]
+  mindweaver ideas sessions
+  mindweaver ideas hooks print|install|status --scope user|repo
   mindweaver recovery verify  -backup <backup-directory>
   mindweaver recovery restore -backup <backup-directory> -vault <new-vault-directory>
 
+Ollama endpoint and timeout overrides require -ollama-model.
 Recovery is a mutually exclusive startup mode. Backups are plaintext, and
 restore never overwrites or merges an existing Vault.
 `

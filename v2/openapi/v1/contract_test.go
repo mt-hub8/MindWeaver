@@ -1187,10 +1187,41 @@ func assertCommandSurface(t *testing.T, root string, surface contract.Surface, i
 		t.Fatalf("command packages = %#v, contract = %#v", actualNames, wantNames)
 	}
 	mainSource := filepath.Join(root, "cmd", "mindweaver", "main.go")
-	verbs := switchStringCases(t, mainSource, "run")
+	ideasSource := filepath.Join(root, "cmd", "mindweaver", "ideas.go")
+	verbs := switchStringCases(t, mainSource, "runWithIO")
 	nested := map[string][]string{
 		"config":   switchStringCases(t, mainSource, "runConfig"),
+		"ideas":    switchStringCases(t, ideasSource, "runIdeas"),
 		"recovery": switchStringCases(t, filepath.Join(root, "cmd", "mindweaver", "recovery.go"), "runRecovery"),
+	}
+	if hooks := switchStringCases(t, ideasSource, "runIdeasHooks"); !reflect.DeepEqual(hooks, []string{"install", "print", "status"}) {
+		t.Fatalf("ideas hooks verbs = %#v", hooks)
+	}
+	if current := switchStringCases(t, ideasSource, "runIdeasCurrent"); !reflect.DeepEqual(current, []string{"extract"}) {
+		t.Fatalf("ideas current verbs = %#v", current)
+	}
+	ideasBytes := mustRead(t, ideasSource)
+	for _, fragment := range [][]byte{
+		[]byte(`flags.String("ollama-model"`),
+		[]byte(`ideasollama.DefaultBaseURL`),
+		[]byte(`flags.Duration("ollama-timeout"`),
+		[]byte(`ideasRankCandidates(ctx`),
+		[]byte(`sessiondistill.AttachModelAssistance`),
+	} {
+		if !bytes.Contains(ideasBytes, fragment) {
+			t.Fatalf("ideas optional loopback Ollama boundary missing %q", fragment)
+		}
+	}
+	mainBytes := mustRead(t, mainSource)
+	for _, fragment := range [][]byte{
+		[]byte(`len(args) == 3`),
+		[]byte(`args[0] == "ideas"`),
+		[]byte(`args[1] == "hook"`),
+		[]byte(`args[2] == "codex"`),
+	} {
+		if !bytes.Contains(mainBytes, fragment) {
+			t.Fatalf("mindweaver internal Codex hook boundary missing %q", fragment)
+		}
 	}
 	for _, command := range surface.Commands {
 		if _, exists := inventories[command.Name]; !exists {

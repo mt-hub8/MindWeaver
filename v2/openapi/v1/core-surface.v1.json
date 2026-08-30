@@ -18,6 +18,12 @@
           "check",
           "init"
         ],
+        "ideas": [
+          "current",
+          "extract",
+          "hooks",
+          "sessions"
+        ],
         "recovery": [
           "restore",
           "verify"
@@ -27,6 +33,8 @@
         "internal/app",
         "internal/backup",
         "internal/blob",
+        "internal/ideashook",
+        "internal/ideasollama",
         "internal/ingest",
         "internal/lifecycle",
         "internal/localhttp",
@@ -34,6 +42,7 @@
         "internal/pdfextract/client",
         "internal/pdfextract/protocol",
         "internal/rag",
+        "internal/sessiondistill",
         "internal/store/sqlite",
         "internal/transport",
         "internal/vault",
@@ -45,10 +54,11 @@
         "platform/version"
       ],
       "public": true,
-      "sourceManifestSHA256": "3f3cf6de017bae3aa0af4a939baade6f626a503302a3060b575f6066151ac01a",
+      "sourceManifestSHA256": "3f06aa42bf12af335427a140e07243e99147c48b1ce82f543540698a4b7c26c6",
       "verbs": [
         "config",
         "help",
+        "ideas",
         "recovery",
         "serve",
         "version"
@@ -123,6 +133,8 @@
     "internal/app",
     "internal/backup",
     "internal/blob",
+    "internal/ideashook",
+    "internal/ideasollama",
     "internal/ingest",
     "internal/lifecycle",
     "internal/localhttp",
@@ -131,6 +143,7 @@
     "internal/pdfextract/parser",
     "internal/pdfextract/protocol",
     "internal/rag",
+    "internal/sessiondistill",
     "internal/store/sqlite",
     "internal/transport",
     "internal/vault",

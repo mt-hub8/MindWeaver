@@ -77,6 +77,52 @@ Relative Vault paths are resolved next to the configuration file so the same
 configuration cannot silently select a different Vault when launched from a
 shortcut or another working directory.
 
+## Distill Coding Agent session ideas
+
+`mindweaver ideas` is a bounded CLI for extracting evidence-linked ideas from
+supported visible Codex events or an explicit file/stdin input. To preview and
+install the four Codex Hook groups, then inspect captured sessions:
+
+```powershell
+& .\dist\mindweaver.exe ideas hooks print   --scope user
+& .\dist\mindweaver.exe ideas hooks install --scope user
+# Review and trust the installed commands through /hooks, then start a new Codex task.
+& .\dist\mindweaver.exe ideas hooks status  --scope user
+& .\dist\mindweaver.exe ideas sessions
+```
+
+Create a report from the unique open captured root task for the exact current
+working directory, from an explicitly selected captured session, or from a
+bounded input file:
+
+```powershell
+& .\dist\mindweaver.exe ideas current extract -output .\ideas-current-report
+$captured = & .\dist\mindweaver.exe ideas sessions | ConvertFrom-Json
+$captured.sessions | Format-Table
+$sessionId = Read-Host 'Paste one session_id from the reviewed list'
+& .\dist\mindweaver.exe ideas extract -session $sessionId -output .\ideas-session-report
+& .\dist\mindweaver.exe ideas extract -input .\session.json -input-format session-json -output .\ideas-file-report
+Get-Content .\notes.txt | & .\dist\mindweaver.exe ideas extract -input - -input-format note -output .\ideas-note-report
+```
+
+The output is one new no-overwrite directory containing exactly `report.json`
+and `report.md`. `current extract` fails closed when no matching open task or
+more than one matching task exists; use `ideas sessions` plus `-session` in
+that case. Hook capture keeps only the root user's visible prompts and each
+turn's final visible answer. It does not read private transcripts, hidden
+reasoning, tool arguments/results, or environment variables, and it is not a
+formal Memory or cross-session recall system.
+
+The default extraction path is deterministic and makes no model call. Optional
+ranking can be enabled with `-ollama-model <model>`; advanced overrides are
+`-ollama-endpoint <literal-loopback-url>` and `-ollama-timeout <duration>`.
+The local model may rank only already verified user-item IDs and cannot create,
+rewrite, or reattribute report content. Provider timeout, unavailability,
+invalid response, input limit, or outcome uncertainty produce a bounded
+fallback section; caller cancellation stops publication. The complete command,
+Hook trust, publication, and threat-model contract is in
+[`ideas-cli-mvp.md`](../docs/rewrite/ideas-cli-mvp.md).
+
 ## Verify
 
 ```powershell
