@@ -3,7 +3,7 @@
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
   "name": "MindWeaver dual-PE SBOM",
-  "documentNamespace": "https://spdx.org/spdxdocs/mindweaver-4f8568dc201772fa42ab66f24237004387c472488250775d9033699a19a77e70",
+  "documentNamespace": "https://spdx.org/spdxdocs/mindweaver-9c795b0763b29ac0c1103529df3f46b365d317e08bea73ff12ee84b548e2dc61",
   "creationInfo": {
     "created": "2026-08-29T04:33:41Z",
     "creators": [
@@ -80,7 +80,7 @@
           "checksumValue": "b9cc03b7c139e9fadde86f2ec9564dbe368d85822bd96ac64385e7aa75827384"
         }
       ],
-      "sourceInfo": "repository=github.com/mt-hub8/MindWeaver; revision=3c7e92a1848ee7e37e579467428d99f7a7f93e6a; moduleTree=git-sha1:e267e3f0c7028b1033a4fa563fee5cc1e20a2aec; productionSourceUnionSHA256=34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff; attestation=reviewed qualification input; not independently derived from Git in standalone validation; mainPackage=github.com/mt-hub8/MindWeaver/v2/cmd/mindweaver-pdf"
+      "sourceInfo": "repository=github.com/mt-hub8/MindWeaver; revision=bc5d581d1c39c5e7ef3985727acdcf53c02e3480; moduleTree=git-sha1:0f3ef10e358ca9eb882623a4e6cf0d31d3f5a6b3; productionSourceUnionSHA256=91dbc40b1c7b71cdece8e3998f5fafb8162a561d1dfd880035814f50c240599f; attestation=reviewed qualification input; not independently derived from Git in standalone validation; mainPackage=github.com/mt-hub8/MindWeaver/v2/cmd/mindweaver-pdf"
     },
     {
       "name": "github.com/ncruces/go-sqlite3",
@@ -133,7 +133,7 @@
           "checksumValue": "3a6069e5bd370600daaa29819a15ea0a6379c73f63a93d04715ed352d5a2389b"
         }
       ],
-      "sourceInfo": "repository=github.com/mt-hub8/MindWeaver; revision=3c7e92a1848ee7e37e579467428d99f7a7f93e6a; moduleTree=git-sha1:e267e3f0c7028b1033a4fa563fee5cc1e20a2aec; productionSourceUnionSHA256=34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff; attestation=reviewed qualification input; not independently derived from Git in standalone validation; mainPackage=github.com/mt-hub8/MindWeaver/v2/cmd/mindweaver"
+      "sourceInfo": "repository=github.com/mt-hub8/MindWeaver; revision=bc5d581d1c39c5e7ef3985727acdcf53c02e3480; moduleTree=git-sha1:0f3ef10e358ca9eb882623a4e6cf0d31d3f5a6b3; productionSourceUnionSHA256=91dbc40b1c7b71cdece8e3998f5fafb8162a561d1dfd880035814f50c240599f; attestation=reviewed qualification input; not independently derived from Git in standalone validation; mainPackage=github.com/mt-hub8/MindWeaver/v2/cmd/mindweaver"
     },
     {
       "name": "github.com/mgilbir/pdf0",
@@ -199,7 +199,7 @@
       "licenseDeclared": "NOASSERTION",
       "copyrightText": "NOASSERTION",
       "comment": "Pre-package supply-chain qualification blocked: FIXTURE_REGENERATION_NOT_IMPLEMENTED,PROJECT_LICENSE_MISSING,RELEASE_METADATA_MISSING,SOURCE_REVISION_ATTESTATION_MISSING,VULNERABILITY_EVIDENCE_MISSING",
-      "sourceInfo": "repository=github.com/mt-hub8/MindWeaver; revision=3c7e92a1848ee7e37e579467428d99f7a7f93e6a; moduleTree=git-sha1:e267e3f0c7028b1033a4fa563fee5cc1e20a2aec; productionSourceUnionSHA256=34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff; attestation=reviewed qualification input; not independently derived from Git in standalone validation"
+      "sourceInfo": "repository=github.com/mt-hub8/MindWeaver; revision=bc5d581d1c39c5e7ef3985727acdcf53c02e3480; moduleTree=git-sha1:0f3ef10e358ca9eb882623a4e6cf0d31d3f5a6b3; productionSourceUnionSHA256=91dbc40b1c7b71cdece8e3998f5fafb8162a561d1dfd880035814f50c240599f; attestation=reviewed qualification input; not independently derived from Git in standalone validation"
     },
     {
       "name": "Go runtime",

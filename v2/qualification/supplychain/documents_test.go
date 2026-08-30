@@ -28,9 +28,9 @@ const (
 	sourceRevisionAttestationMissing  = "SOURCE_REVISION_ATTESTATION_MISSING"
 	vulnerabilityEvidenceMissing      = "VULNERABILITY_EVIDENCE_MISSING"
 	qualificationSourceDateEpoch      = int64(1787978021)
-	qualificationRevision             = "3c7e92a1848ee7e37e579467428d99f7a7f93e6a"
-	qualificationModuleTree           = "git-sha1:e267e3f0c7028b1033a4fa563fee5cc1e20a2aec"
-	qualificationSourceUnion          = "34ccd6e3ab8b15575eef652c16052552b7c14bd067e1ec7c7a62467f655084ff"
+	qualificationRevision             = "bc5d581d1c39c5e7ef3985727acdcf53c02e3480"
+	qualificationModuleTree           = "git-sha1:0f3ef10e358ca9eb882623a4e6cf0d31d3f5a6b3"
+	qualificationSourceUnion          = "91dbc40b1c7b71cdece8e3998f5fafb8162a561d1dfd880035814f50c240599f"
 	qualificationVersion              = "0.0.0-qualification.3c7e92a"
 	qualificationGeneratorName        = "MindWeaver supply-chain qualification"
 	qualificationGeneratorVersion     = "1.0.0"
